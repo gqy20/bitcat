@@ -1,6 +1,7 @@
 pub mod action;
 pub mod agent;
 pub mod ai_config;
+pub mod bridge;
 pub mod config;
 pub mod device;
 pub mod hotkey;
