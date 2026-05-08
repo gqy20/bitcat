@@ -113,7 +113,7 @@ fn execute_action(action: &ai_pad::action::ActionDef, defaults: &ai_pad::action:
 
             if action.terminal {
                 let term = &defaults.terminal;
-                let cmd = format!("cd '{workdir}'; {program} {args}");
+                let cmd = format!("cd {workdir}; {program} {args}");
                 let full_args = format!(
                     "Start-Process {term} -ArgumentList '-NoExit','-Command','{cmd}' -WindowStyle Maximized"
                 );
