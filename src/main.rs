@@ -159,6 +159,15 @@ fn execute_action(action: &ai_pad::action::ActionDef, defaults: &ai_pad::action:
                     .spawn();
             }
         }
+        "hotkey" => {
+            if let Some(trigger) = &action.trigger {
+                let key_refs: Vec<&str> = trigger.iter().map(|s| s.as_str()).collect();
+                println!("  热键: {}", key_refs.join("+"));
+                if let Err(e) = ai_pad::hotkey::trigger_hotkey(&key_refs, 0.02) {
+                    eprintln!("  热键触发失败: {e}");
+                }
+            }
+        }
         other => {
             println!("  未知动作类型: {other}");
         }

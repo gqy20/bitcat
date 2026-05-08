@@ -34,6 +34,7 @@ pub struct ActionDef {
     #[serde(default)]
     pub command: Option<String>,
     pub voice: Option<VoiceConfig>,
+    pub trigger: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

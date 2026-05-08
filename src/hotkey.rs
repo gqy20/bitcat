@@ -9,6 +9,7 @@ pub fn parse_keys(keys: &[&str]) -> Vec<u16> {
         ("shift", 0x10),
         ("enter", 0x0D), ("return", 0x0D),
         ("tab", 0x09), ("esc", 0x1B), ("space", 0x20),
+        ("backtick", 0xC0), ("`", 0xC0),
         ("a", 0x41), ("b", 0x42), ("c", 0x43), ("d", 0x44),
     ];
     let map: HashMap<&str, u16> = MAP.iter().cloned().collect();

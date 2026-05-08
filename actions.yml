@@ -21,3 +21,11 @@ actions:
     voice:
       trigger: ["ctrl", "win"]   # 触发系统语音输入法的快捷键
       delay: 1.0                  # 启动终端后等待时间（秒）
+
+  L1:
+    type: hotkey
+    trigger: ["alt", "tab"]       # 切换窗口
+
+  R1:
+    type: hotkey
+    trigger: ["alt", "backtick"]  # 打开 uTools
