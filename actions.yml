@@ -13,15 +13,12 @@ actions:
     workdir: "D:\\C\\Desktop\\ai"
     terminal: true
 
-  # 后续示例:
-  # A:
-  #   type: hotkey
-  #   keys: ["ctrl", "c"]
-  # B:
-  #   type: script
-  #   command: "python my_script.py"
-  # L1:
-  #   type: launch
-  #   program: code
-  #   args: "."
-  #   workdir: "D:\\C\\Desktop\\ai"
+  Y:
+    type: voice
+    program: claude
+    args_template: "-p \"{text}\""
+    workdir: "D:\\C\\Desktop\\ai\\research"
+    terminal: true
+    voice:
+      duration: 5
+      language: "zh-CN"
