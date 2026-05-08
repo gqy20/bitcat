@@ -4,6 +4,5 @@ pub mod ai_config;
 pub mod config;
 pub mod device;
 pub mod hotkey;
-pub mod joystick;
+pub mod pet;
 pub mod tools;
-pub mod tray;

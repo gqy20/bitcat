@@ -1,0 +1,28 @@
+# 8BitDo Micro 按键映射表 (D-Input 模式, PC 蓝牙)
+# 实测校准，按需修改
+
+buttons:
+  0:  { name: "A",      aliases: ["确认"],     position: "面键-右下" }
+  1:  { name: "B",      aliases: ["取消"],     position: "面键-右中" }
+  3:  { name: "X",      aliases: ["X键"],      position: "面键-左中" }
+  4:  { name: "Y",      aliases: ["Y键"],      position: "面键-左上" }
+  6:  { name: "L1",     aliases: ["LB", "左肩键"], position: "左上边缘" }
+  7:  { name: "R1",     aliases: ["RB", "右肩键"], position: "右上边缘" }
+  8:  { name: "L2",     aliases: ["LT", "左扳机"], position: "左上边缘" }
+  9:  { name: "R2",     aliases: ["RT", "右扳机"], position: "右上边缘" }
+  10: { name: "Select", aliases: ["Back", "选择"], position: "中间偏左" }
+  11: { name: "Start",  aliases: ["开始"],     position: "中间偏右" }
+  12: { name: "Home",   aliases: ["Home", "心形"], position: "中间正上" }
+  # Star 键在 PC 蓝牙 D-Input 下不可用
+
+hat:
+  (0, 1):   { arrow: "↑", name: "上" }
+  (0, -1):  { arrow: "↓", name: "下" }
+  (-1, 0):  { arrow: "←", name: "左" }
+  (1, 0):   { arrow: "→", name: "右" }
+  (-1, 1):  { arrow: "↖", name: "左上" }
+  (1, 1):   { arrow: "↗", name: "右上" }
+  (-1, -1): { arrow: "↙", name: "左下" }
+  (1, -1):  { arrow: "↘", name: "右下" }
+
+dpad_activation: "按住 Select + ↑ 五秒激活方向键"

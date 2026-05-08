@@ -1,6 +1,6 @@
-use ai_pad::config::ButtonConfig;
-use ai_pad::device::button_name;
-use ai_pad::joystick::SdlGamepad;
+use ai_pad_core::config::ButtonConfig;
+use ai_pad_core::device::button_name;
+use ai_pad_ctl::joystick::SdlGamepad;
 
 fn main() {
     let btn_config = match ButtonConfig::load("buttons.yml") {

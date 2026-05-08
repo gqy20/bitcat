@@ -26,6 +26,7 @@ release:
 	cp actions.yml target/release/
 
 test:
+	cp buttons.yml actions.yml core/ 2>/dev/null || true
 	cargo test
 
 read:

@@ -3,11 +3,11 @@
 use windows_sys::Win32::System::Console::AllocConsole;
 use windows_sys::Win32::System::Threading::CreateMutexW;
 
-use ai_pad::config::ButtonConfig;
-use ai_pad::action::ActionConfig;
-use ai_pad::device::button_name;
-use ai_pad::joystick::SdlGamepad;
-use ai_pad::tray::{self, TrayCommand};
+use ai_pad_core::config::ButtonConfig;
+use ai_pad_core::action::ActionConfig;
+use ai_pad_core::device::button_name;
+use ai_pad_ctl::joystick::SdlGamepad;
+use ai_pad_ctl::tray::TrayCommand;
 
 fn log(msg: &str) {
     let now = std::time::SystemTime::now()
@@ -37,16 +37,16 @@ impl HeldModifier {
     }
     fn press(&mut self) {
         if !self.held {
-            let _ = ai_pad::hotkey::key_down(self.vk);
+            let _ = ai_pad_core::hotkey::key_down(self.vk);
             self.held = true;
         }
         // 按 tab
-        let _ = ai_pad::hotkey::key_down(VK_TAB);
-        let _ = ai_pad::hotkey::key_up(VK_TAB);
+        let _ = ai_pad_core::hotkey::key_down(VK_TAB);
+        let _ = ai_pad_core::hotkey::key_up(VK_TAB);
     }
     fn release(&mut self) {
         if self.held {
-            let _ = ai_pad::hotkey::key_up(self.vk);
+            let _ = ai_pad_core::hotkey::key_up(self.vk);
             self.held = false;
         }
     }
@@ -96,7 +96,7 @@ fn check_single_instance() -> bool {
 fn main() {
     // 单实例检测：命名互斥体
     if !check_single_instance() {
-        tray::show_error("ai-pad", "ai-pad 已在后台运行，请勿重复启动。");
+        ai_pad_ctl::tray::show_error("ai-pad", "ai-pad 已在后台运行，请勿重复启动。");
         return;
     }
 
@@ -114,8 +114,8 @@ fn main() {
     });
 
     // 主线程：系统托盘消息循环
-    if let Err(e) = tray::run(tx) {
-        tray::show_error("ai-pad", &format!("托盘初始化失败: {e}"));
+    if let Err(e) = ai_pad_ctl::tray::run(tx) {
+        ai_pad_ctl::tray::show_error("ai-pad", &format!("托盘初始化失败: {e}"));
         std::process::exit(1);
     }
 
@@ -126,7 +126,7 @@ fn gamepad_loop(rx: &std::sync::mpsc::Receiver<TrayCommand>) {
     let btn_config = match ButtonConfig::load(&resolve_config("buttons.yml")) {
         Ok(c) => c,
         Err(e) => {
-            tray::show_error("ai-pad", &format!("无法加载 buttons.yml: {e}"));
+            ai_pad_ctl::tray::show_error("ai-pad", &format!("无法加载 buttons.yml: {e}"));
             return;
         }
     };
@@ -134,7 +134,7 @@ fn gamepad_loop(rx: &std::sync::mpsc::Receiver<TrayCommand>) {
     let action_config = match ActionConfig::load(&resolve_config("actions.yml")) {
         Ok(c) => c,
         Err(e) => {
-            tray::show_error("ai-pad", &format!("无法加载 actions.yml: {e}"));
+            ai_pad_ctl::tray::show_error("ai-pad", &format!("无法加载 actions.yml: {e}"));
             return;
         }
     };
@@ -142,7 +142,7 @@ fn gamepad_loop(rx: &std::sync::mpsc::Receiver<TrayCommand>) {
     let sdl = match SdlGamepad::init() {
         Ok(s) => s,
         Err(e) => {
-            tray::show_error("ai-pad", &format!("SDL2 初始化失败: {e}"));
+            ai_pad_ctl::tray::show_error("ai-pad", &format!("SDL2 初始化失败: {e}"));
             return;
         }
     };
@@ -150,13 +150,13 @@ fn gamepad_loop(rx: &std::sync::mpsc::Receiver<TrayCommand>) {
     let pads = match SdlGamepad::list_gamepads(&sdl) {
         Ok(p) => p,
         Err(e) => {
-            tray::show_error("ai-pad", &format!("枚举手柄失败: {e}"));
+            ai_pad_ctl::tray::show_error("ai-pad", &format!("枚举手柄失败: {e}"));
             return;
         }
     };
 
     if pads.is_empty() {
-        tray::show_error("ai-pad", "未检测到游戏手柄，请确保 8BitDo Micro 已连接并开启");
+        ai_pad_ctl::tray::show_error("ai-pad", "未检测到游戏手柄，请确保 8BitDo Micro 已连接并开启");
         return;
     }
 
@@ -225,14 +225,14 @@ fn gamepad_loop(rx: &std::sync::mpsc::Receiver<TrayCommand>) {
             ctrl_tab.release();
             let scroll_speed = 3;
             if dy > 0 {
-                let _ = ai_pad::hotkey::send_scroll(120 * scroll_speed);
+                let _ = ai_pad_core::hotkey::send_scroll(120 * scroll_speed);
             } else if dy < 0 {
-                let _ = ai_pad::hotkey::send_scroll(-120 * scroll_speed);
+                let _ = ai_pad_core::hotkey::send_scroll(-120 * scroll_speed);
             }
             if dx > 0 {
-                let _ = ai_pad::hotkey::send_scroll_h(120 * scroll_speed);
+                let _ = ai_pad_core::hotkey::send_scroll_h(120 * scroll_speed);
             } else if dx < 0 {
-                let _ = ai_pad::hotkey::send_scroll_h(-120 * scroll_speed);
+                let _ = ai_pad_core::hotkey::send_scroll_h(-120 * scroll_speed);
             }
         }
         if hat != prev_hat {
@@ -251,8 +251,8 @@ fn gamepad_loop(rx: &std::sync::mpsc::Receiver<TrayCommand>) {
 }
 
 fn execute_action(
-    action: &ai_pad::action::ActionDef,
-    defaults: &ai_pad::action::Defaults,
+    action: &ai_pad_core::action::ActionDef,
+    defaults: &ai_pad_core::action::Defaults,
     alt_tab: &mut HeldModifier,
     ctrl_tab: &mut HeldModifier,
 ) {
@@ -288,7 +288,7 @@ fn execute_action(
         "voice" => {
             if let Some(voice) = &action.voice {
                 let key_refs: Vec<&str> = voice.trigger.iter().map(|s| s.as_str()).collect();
-                if let Err(e) = ai_pad::hotkey::trigger_hotkey(&key_refs, voice.delay) {
+                if let Err(e) = ai_pad_core::hotkey::trigger_hotkey(&key_refs, voice.delay) {
                     eprintln!("  热键触发失败: {e}");
                 }
             }
@@ -312,7 +312,7 @@ fn execute_action(
                     ctrl_tab.press();
                 } else {
                     let key_refs: Vec<&str> = trigger.iter().map(|s| s.as_str()).collect();
-                    if let Err(e) = ai_pad::hotkey::trigger_hotkey(&key_refs, 0.02) {
+                    if let Err(e) = ai_pad_core::hotkey::trigger_hotkey(&key_refs, 0.02) {
                         eprintln!("  热键触发失败: {e}");
                     }
                 }
