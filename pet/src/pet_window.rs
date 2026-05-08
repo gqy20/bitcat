@@ -1,10 +1,12 @@
 /// 桌宠窗口 — 基于 ggez 0.10 的渲染与事件循环
 
+use ai_pad_core::ipc::IpcReceiver;
 use ai_pad_core::pet::{Pet, PetState};
+use ai_pad_core::bridge::{PetCommand, PetStateName};
 use ggez::{
     conf::{WindowMode, WindowSetup},
     event,
-    graphics::{self, Canvas, Color, DrawParam, Mesh, Rect},
+    graphics::{self, Canvas, Color, DrawParam, Mesh, Rect, Text},
     Context, GameResult,
 };
 
@@ -131,11 +133,20 @@ fn sprite_for_state(state: PetState, _frame: usize) -> &'static [u8] {
 pub struct PetWindow {
     pub pet: Pet,
     window_size: (f32, f32),
+    ipc: IpcReceiver,
+    bubble_text: Option<String>,
 }
 
 impl PetWindow {
     pub fn new() -> Self {
-        Self { pet: Pet::new(64.0, 64.0), window_size: (128.0, 128.0) }
+        let port = ai_pad_core::ipc::default_port();
+        let ipc = IpcReceiver::new(port).expect(&format!("无法绑定 IPC 端口 {port}，请确认端口未被占用"));
+        Self {
+            pet: Pet::new(64.0, 64.0),
+            window_size: (128.0, 128.0),
+            ipc,
+            bubble_text: None,
+        }
     }
     pub fn run() -> GameResult {
         let (ctx, event_loop) = ggez::ContextBuilder::new("ai-pad-pet", "ai-pad")
@@ -150,6 +161,12 @@ impl event::EventHandler for PetWindow {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
         let dt_ms = (ctx.time.delta().as_secs_f32() * 1000.0) as u64;
         self.pet.update(dt_ms);
+
+        // 轮询 IPC 命令
+        while let Some(cmd) = self.ipc.try_recv() {
+            self.apply_command(cmd);
+        }
+
         Ok(())
     }
 
@@ -162,7 +179,53 @@ impl event::EventHandler for PetWindow {
             (self.pet.frame_time_ms as f32 / 75.0).sin() * 2.0
         } else { 0.0 };
         draw_sprite_pixels(&mut canvas, ctx, self.pet.state, self.pet.frame, ox, oy + bounce, scale);
+        // 绘制对话气泡
+        if let Some(ref text) = self.bubble_text {
+            draw_bubble(&mut canvas, ctx, text, self.window_size);
+        }
+
         canvas.finish(ctx)
+    }
+}
+
+impl PetWindow {
+    fn apply_command(&mut self, cmd: PetCommand) {
+        match cmd {
+            PetCommand::SetState { state } => {
+                let ps: PetState = state.into();
+                self.pet.set_state(ps);
+            }
+            PetCommand::WalkTo { x } => {
+                self.pet.set_state(PetState::Walk);
+                self.pet.walk_target = Some(x);
+            }
+            PetCommand::ShowBubble { text } => {
+                self.bubble_text = Some(text);
+            }
+            PetCommand::Exit => {
+                std::process::exit(0);
+            }
+        }
+    }
+}
+
+/// 绘制对话气泡
+fn draw_bubble(canvas: &mut Canvas, ctx: &mut Context, text: &str, window_size: (f32, f32)) {
+    let font_size = 10.0;
+    if let Ok(text_obj) = Text::new(text, graphics::Font::default(), font_size) {
+        let w = text_obj.width(ctx);
+        let padding = 4.0;
+        let bw = w + padding * 2.0;
+        let bh = font_size + padding * 2.0;
+        let bx = (window_size.0 - bw) / 2.0;
+        let by = window_size.1 - bh - 4.0;
+
+        // 气泡背景
+        if let Ok(bg) = Mesh::new_rectangle(ctx, graphics::DrawMode::fill(), Rect::new(bx, by, bw, bh), Color::from((255, 255, 255, 220))) {
+            canvas.draw(&bg, DrawParam::default());
+        }
+        // 文字
+        canvas.draw(&text_obj, DrawParam::default().dest([bx + padding, by + padding]));
     }
 }
 

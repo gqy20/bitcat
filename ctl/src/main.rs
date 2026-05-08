@@ -6,6 +6,8 @@ use windows_sys::Win32::System::Threading::CreateMutexW;
 use ai_pad_core::config::ButtonConfig;
 use ai_pad_core::action::ActionConfig;
 use ai_pad_core::device::button_name;
+use ai_pad_core::bridge::handle_button_press;
+use ai_pad_core::ipc::IpcSender;
 use ai_pad_ctl::joystick::SdlGamepad;
 use ai_pad_ctl::tray::TrayCommand;
 
@@ -166,6 +168,19 @@ fn gamepad_loop(rx: &std::sync::mpsc::Receiver<TrayCommand>) {
     }
     log(&format!("已加载 {} 个动作绑定", action_config.actions.len()));
 
+    // IPC 发送器：向 pet 窗口发送命令
+    let ipc_port = ai_pad_core::ipc::default_port();
+    let ipc = match IpcSender::new(ipc_port) {
+        Ok(s) => {
+            log(&format!("IPC 发送器就绪 → 127.0.0.1:{ipc_port}"));
+            s
+        }
+        Err(e) => {
+            log(&format!("IPC 发送器初始化失败（pet 可能未启动）: {e}"));
+            return;
+        }
+    };
+
     let mut gamepad = match SdlGamepad::open(&sdl, pads[0].index) {
         Ok(g) => g,
         Err(e) => {
@@ -209,6 +224,22 @@ fn gamepad_loop(rx: &std::sync::mpsc::Receiver<TrayCommand>) {
                     }
 
                     log(&format!("按下 #{idx} {display}"));
+
+                    // ---- Bridge: 特殊按键 → AI / 宠物状态 ----
+                    let (agent_msg, pet_cmd) = handle_button_press(idx as u32, "");
+                    if let Some(cmd) = pet_cmd {
+                        if let Err(e) = ipc.send(&cmd) {
+                            log(&format!("IPC 发送失败: {e}"));
+                        } else {
+                            log(&format!("  → IPC: {:?}", cmd));
+                        }
+                    }
+                    if let Some(msg) = agent_msg {
+                        log(&format!("  → AI: {msg}"));
+                        // TODO: 调用 PetAgent 发送消息并获取回复
+                        // let reply = agent.chat(&msg).await;
+                        // for cmd in resolve_agent_response(&reply) { ipc.send(&cmd); }
+                    }
 
                     if let Some(action_def) = action_config.actions.get(display) {
                         log(&format!("  → {} ({})", display, action_def.action_type));
