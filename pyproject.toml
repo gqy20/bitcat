@@ -4,11 +4,8 @@ version = "0.1.0"
 description = "AI 驱动的手柄控制器"
 requires-python = ">=3.12"
 dependencies = [
-    "numpy>=2.4.4",
     "pygame>=2.6",
     "pyyaml>=6.0.3",
-    "sounddevice>=0.5.5",
-    "speechrecognition>=3.16.1",
 ]
 
 [project.scripts]

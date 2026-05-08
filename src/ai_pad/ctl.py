@@ -70,31 +70,24 @@ def _make_handler(action_cfg, defaults):
         return handler
 
     elif atype == "voice":
-        program = action_cfg["program"]
-        args_template = action_cfg.get("args_template", '"{text}"')
+        program = action_cfg.get("program", "")
         workdir = action_cfg.get("workdir", "")
         open_terminal = action_cfg.get("terminal", False)
         window = action_cfg.get("window", defaults.get("window", "normal"))
         voice_cfg = action_cfg.get("voice", {})
-        duration = voice_cfg.get("duration", 5)
-        language = voice_cfg.get("language", "zh-CN")
+        hotkey = voice_cfg.get("trigger", [])
+        delay = voice_cfg.get("delay", 1.0)
 
         def handler():
-            from ai_pad.voice import record_and_transcribe
-            text = record_and_transcribe(duration=duration, language=language)
-            if not text:
-                print("    → 语音识别失败，跳过")
-                return
+            from ai_pad.voice import send_hotkey
 
-            print(f"    → 识别结果: {text}")
-            args = args_template.replace("{text}", text)
-
-            if open_terminal:
+            # 先启动终端（如果需要）
+            if open_terminal and program:
                 shell = defaults.get("terminal", "powershell")
                 cmd_parts = []
                 if workdir:
                     cmd_parts.append(f"cd {workdir}")
-                cmd_parts.append(f"{program} {args}".strip())
+                cmd_parts.append(program)
                 cmd_str = "; ".join(cmd_parts)
                 style = _window_style(window)
                 subprocess.Popen([
@@ -102,14 +95,15 @@ def _make_handler(action_cfg, defaults):
                     f"Start-Process {shell} -ArgumentList "
                     f"'-NoExit','-Command','{cmd_str}' -WindowStyle {style}"
                 ])
+                loc = f" @ {workdir}" if workdir else ""
+                print(f"    → 已启动 {program}{loc}")
+                time.sleep(delay)
+
+            # 触发系统语音输入法
+            if hotkey:
+                send_hotkey(hotkey)
             else:
-                cwd = workdir or None
-                subprocess.Popen(
-                    [program] + args.split(),
-                    cwd=cwd, creationflags=subprocess.DETACHED_PROCESS, close_fds=True,
-                )
-            loc = f" @ {workdir}" if workdir else ""
-            print(f"    → 已启动 {program}{loc}")
+                print("    [警告] 未配置 voice.trigger 快捷键")
 
         return handler
 

@@ -16,9 +16,8 @@ actions:
   Y:
     type: voice
     program: claude
-    args_template: "-p \"{text}\""
     workdir: "D:\\C\\Desktop\\ai\\research"
     terminal: true
     voice:
-      duration: 5
-      language: "zh-CN"
+      trigger: ["ctrl", "win"]   # 触发系统语音输入法的快捷键
+      delay: 1.0                  # 启动终端后等待时间（秒）
