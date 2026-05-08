@@ -6,8 +6,9 @@ use windows_sys::Win32::System::Threading::CreateMutexW;
 use ai_pad_core::config::ButtonConfig;
 use ai_pad_core::action::ActionConfig;
 use ai_pad_core::device::button_name;
-use ai_pad_core::bridge::handle_button_press;
+use ai_pad_core::bridge::{handle_button_press, resolve_agent_response};
 use ai_pad_core::ipc::IpcSender;
+use ai_pad_core::agent::PetAgent;
 use ai_pad_ctl::joystick::SdlGamepad;
 use ai_pad_ctl::tray::TrayCommand;
 
@@ -181,6 +182,25 @@ fn gamepad_loop(rx: &std::sync::mpsc::Receiver<TrayCommand>) {
         }
     };
 
+    // AI Agent（异步运行时）
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(r) => r,
+        Err(e) => {
+            log(&format!("Tokio 运行时创建失败: {e}"));
+            return;
+        }
+    };
+    let agent = match PetAgent::new() {
+        Ok(a) => {
+            log("AI Agent 初始化成功 (8Bit Cat)");
+        Some(a)
+        }
+        Err(e) => {
+            log(&format!("AI Agent 初始化失败: {e}"));
+            None
+        }
+    };
+
     let mut gamepad = match SdlGamepad::open(&sdl, pads[0].index) {
         Ok(g) => g,
         Err(e) => {
@@ -234,11 +254,21 @@ fn gamepad_loop(rx: &std::sync::mpsc::Receiver<TrayCommand>) {
                             log(&format!("  → IPC: {:?}", cmd));
                         }
                     }
-                    if let Some(msg) = agent_msg {
-                        log(&format!("  → AI: {msg}"));
-                        // TODO: 调用 PetAgent 发送消息并获取回复
-                        // let reply = agent.chat(&msg).await;
-                        // for cmd in resolve_agent_response(&reply) { ipc.send(&cmd); }
+                    if let (Some(msg), Some(ag)) = (agent_msg, &agent) {
+                        log(&format!("  → AI 请求: {msg}"));
+                        match rt.block_on(ag.chat(&msg)) {
+                            Ok(reply) => {
+                                log(&format!("  ← AI 回复: {}", &reply[..reply.len().min(60)]));
+                                for cmd in resolve_agent_response(&reply) {
+                                    if let Err(e) = ipc.send(&cmd) {
+                                        log(&format!("  IPC 发送失败: {e}"));
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log(&format!("  ✗ AI 错误: {e}"));
+                            }
+                        }
                     }
 
                     if let Some(action_def) = action_config.actions.get(display) {
