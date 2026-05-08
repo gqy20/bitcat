@@ -17,8 +17,8 @@ os.environ["PYTHONIOENCODING"] = "utf-8"
 sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
 sys.stderr.reconfigure(encoding="utf-8")
 
-from gamepad.config import BUTTON_NAMES, btn
-from gamepad.device import find_gamepad
+from ai_pad.config import BUTTON_NAMES, btn
+from ai_pad.device import find_gamepad
 
 _ACTIONS_PATH = Path(__file__).resolve().parents[2] / "actions.yml"
 
@@ -80,7 +80,7 @@ def _make_handler(action_cfg, defaults):
         language = voice_cfg.get("language", "zh-CN")
 
         def handler():
-            from gamepad.voice import record_and_transcribe
+            from ai_pad.voice import record_and_transcribe
             text = record_and_transcribe(duration=duration, language=language)
             if not text:
                 print("    → 语音识别失败，跳过")

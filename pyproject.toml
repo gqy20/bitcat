@@ -1,7 +1,7 @@
 [project]
-name = "gamepad"
+name = "ai-pad"
 version = "0.1.0"
-description = "8BitDo Micro 手柄控制器"
+description = "AI 驱动的手柄控制器"
 requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.4.4",
@@ -12,12 +12,12 @@ dependencies = [
 ]
 
 [project.scripts]
-gamepad-read = "gamepad.reader:run"
-gamepad-ctl = "gamepad.ctl:run"
+ai-pad-read = "ai_pad.reader:run"
+ai-pad-ctl = "ai_pad.ctl:run"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/gamepad"]
+packages = ["src/ai_pad"]

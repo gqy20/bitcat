@@ -15,8 +15,8 @@ os.environ["PYTHONIOENCODING"] = "utf-8"
 sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
 sys.stderr.reconfigure(encoding="utf-8")
 
-from gamepad.config import BUTTON_MAP, HAT_DIRS
-from gamepad.device import find_gamepad
+from ai_pad.config import BUTTON_MAP, HAT_DIRS
+from ai_pad.device import find_gamepad
 
 
 def run():
