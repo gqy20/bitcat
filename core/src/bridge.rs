@@ -202,8 +202,7 @@ mod tests {
     fn test_praise_action() {
         let (_msg, _cmd) = handle_button_press(99, ""); // 用不存在的索引测试 praise
         // 99 不在映射表里，所以应该是 none
-        // 实际上只有 Start/Select 有特殊映射
-        assert!(msg.is_none());
+        assert!(_msg.is_none());
     }
 
     #[test]
