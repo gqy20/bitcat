@@ -6,3 +6,8 @@ dist/
 *.egg-info/
 .uv/
 PROFILE
+
+
+# Added by cargo
+
+/target

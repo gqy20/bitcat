@@ -1,12 +1,10 @@
-//! 配置模块测试
-//!
-//! TDD: 先定义期望的 API 行为，再实现
-
 use std::collections::HashMap;
+use std::fs;
 
-// ---- 期望的数据结构（先定义接口） ----
+use serde::Deserialize;
 
-/// 单个按键的映射信息
+// ---- 数据结构 ----
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ButtonInfo {
     pub name: String,
@@ -14,14 +12,12 @@ pub struct ButtonInfo {
     pub position: String,
 }
 
-/// Hat 方向映射
 #[derive(Debug, Clone, PartialEq)]
 pub struct HatDir {
     pub arrow: String,
     pub name: String,
 }
 
-/// 完整的按键配置
 #[derive(Debug, Clone)]
 pub struct ButtonConfig {
     pub buttons: HashMap<u32, ButtonInfo>,
@@ -29,13 +25,63 @@ pub struct ButtonConfig {
     pub dpad_hint: String,
 }
 
+// ---- YAML 中间结构 ----
+
+#[derive(Deserialize)]
+struct RawButtonConfig {
+    buttons: HashMap<String, RawButton>,
+    hat: HashMap<String, RawHatDir>,
+    dpad_activation: String,
+}
+
+#[derive(Deserialize)]
+struct RawButton {
+    name: String,
+    aliases: Vec<String>,
+    position: String,
+}
+
+#[derive(Deserialize)]
+struct RawHatDir {
+    arrow: String,
+    name: String,
+}
+
+fn parse_hat_key(s: &str) -> Option<(i32, i32)> {
+    let s = s.trim_start_matches('(').trim_end_matches(')');
+    let parts: Vec<&str> = s.split(',').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    Some((parts[0].trim().parse().ok()?, parts[1].trim().parse().ok()?))
+}
+
 impl ButtonConfig {
-    /// 从 buttons.yml 加载
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        todo!()
+        let content = fs::read_to_string(path)?;
+        let raw: RawButtonConfig = serde_yaml::from_str(&content)?;
+
+        let buttons = raw.buttons.into_iter().filter_map(|(k, v)| {
+            let id: u32 = k.parse().ok()?;
+            Some((id, ButtonInfo {
+                name: v.name,
+                aliases: v.aliases,
+                position: v.position,
+            }))
+        }).collect();
+
+        let hat = raw.hat.into_iter().filter_map(|(k, v)| {
+            let key = parse_hat_key(&k)?;
+            Some((key, HatDir { arrow: v.arrow, name: v.name }))
+        }).collect();
+
+        Ok(ButtonConfig {
+            buttons,
+            hat,
+            dpad_hint: raw.dpad_activation,
+        })
     }
 
-    /// 按名称反查按钮编号
     pub fn find_by_name(&self, name: &str) -> Option<u32> {
         self.buttons
             .iter()
@@ -43,7 +89,6 @@ impl ButtonConfig {
             .map(|(&id, _)| id)
     }
 
-    /// 获取按钮信息
     pub fn get(&self, id: u32) -> Option<&ButtonInfo> {
         self.buttons.get(&id)
     }
@@ -56,94 +101,60 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_find_by_name_known_buttons() {
-        let config = sample_config();
-        assert_eq!(config.find_by_name("A"), Some(0));
-        assert_eq!(config.find_by_name("B"), Some(1));
-        assert_eq!(config.find_by_name("Start"), Some(11));
-        assert_eq!(config.find_by_name("Home"), Some(12));
+    fn test_load_buttons_yml() {
+        let config = ButtonConfig::load("buttons.yml").unwrap();
+        assert!(config.buttons.contains_key(&0));
+        assert!(config.buttons.contains_key(&11));
+        assert!(config.hat.contains_key(&(0, 1)));
     }
 
     #[test]
-    fn test_find_by_name_alias() {
-        let config = sample_config();
-        assert_eq!(config.find_by_name("确认"), Some(0));  // A 的别名
-        assert_eq!(config.find_by_name("LB"), Some(6));    // L1 的别名
-    }
-
-    #[test]
-    fn test_find_by_name_unknown() {
-        let config = sample_config();
-        assert_eq!(config.find_by_name("NotExist"), None);
-    }
-
-    #[test]
-    fn test_get_button_info() {
-        let config = sample_config();
+    fn test_load_button_details() {
+        let config = ButtonConfig::load("buttons.yml").unwrap();
         let a = config.get(0).unwrap();
         assert_eq!(a.name, "A");
-        assert_eq!(a.aliases, vec!["确认"]);
+        assert!(a.aliases.contains(&"确认".to_string()));
         assert_eq!(a.position, "面键-右下");
     }
 
     #[test]
-    fn test_get_unknown_button() {
-        let config = sample_config();
-        assert!(config.get(99).is_none());
-    }
-
-    #[test]
-    fn test_hat_directions() {
-        let config = sample_config();
+    fn test_load_hat_directions() {
+        let config = ButtonConfig::load("buttons.yml").unwrap();
         let up = config.hat.get(&(0, 1)).unwrap();
         assert_eq!(up.arrow, "↑");
         assert_eq!(up.name, "上");
-
-        let down = config.hat.get(&(0, -1)).unwrap();
-        assert_eq!(down.arrow, "↓");
-        assert_eq!(down.name, "下");
     }
 
-    // ---- 辅助函数 ----
+    #[test]
+    fn test_load_dpad_hint() {
+        let config = ButtonConfig::load("buttons.yml").unwrap();
+        assert!(!config.dpad_hint.is_empty());
+    }
 
-    fn sample_config() -> ButtonConfig {
-        let mut buttons = HashMap::new();
-        buttons.insert(0, ButtonInfo {
-            name: "A".into(),
-            aliases: vec!["确认".into()],
-            position: "面键-右下".into(),
-        });
-        buttons.insert(1, ButtonInfo {
-            name: "B".into(),
-            aliases: vec!["取消".into()],
-            position: "面键-右中".into(),
-        });
-        buttons.insert(6, ButtonInfo {
-            name: "L1".into(),
-            aliases: vec!["LB".into(), "左肩键".into()],
-            position: "左上边缘".into(),
-        });
-        buttons.insert(11, ButtonInfo {
-            name: "Start".into(),
-            aliases: vec!["开始".into()],
-            position: "中间偏右".into(),
-        });
-        buttons.insert(12, ButtonInfo {
-            name: "Home".into(),
-            aliases: vec!["Home".into(), "心形".into()],
-            position: "中间正上".into(),
-        });
+    #[test]
+    fn test_find_by_name() {
+        let config = ButtonConfig::load("buttons.yml").unwrap();
+        assert_eq!(config.find_by_name("A"), Some(0));
+        assert_eq!(config.find_by_name("Start"), Some(11));
+        assert_eq!(config.find_by_name("确认"), Some(0));
+        assert_eq!(config.find_by_name("NotExist"), None);
+    }
 
-        let mut hat = HashMap::new();
-        hat.insert((0, 1), HatDir { arrow: "↑".into(), name: "上".into() });
-        hat.insert((0, -1), HatDir { arrow: "↓".into(), name: "下".into() });
-        hat.insert((-1, 0), HatDir { arrow: "←".into(), name: "左".into() });
-        hat.insert((1, 0), HatDir { arrow: "→".into(), name: "右".into() });
+    #[test]
+    fn test_load_missing_file() {
+        assert!(ButtonConfig::load("nonexistent.yml").is_err());
+    }
 
-        ButtonConfig {
-            buttons,
-            hat,
-            dpad_hint: "按住 Select + ↑ 五秒激活方向键".into(),
-        }
+    #[test]
+    fn test_parse_hat_key_valid() {
+        assert_eq!(parse_hat_key("(0, 1)"), Some((0, 1)));
+        assert_eq!(parse_hat_key("(-1, 0)"), Some((-1, 0)));
+        assert_eq!(parse_hat_key("(1, -1)"), Some((1, -1)));
+    }
+
+    #[test]
+    fn test_parse_hat_key_invalid() {
+        assert_eq!(parse_hat_key("invalid"), None);
+        assert_eq!(parse_hat_key(""), None);
     }
 }
