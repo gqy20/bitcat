@@ -82,18 +82,31 @@ fn main() {
         }
         prev_buttons = buttons;
 
-        // 方向键
+        // 方向键 → 持续滚动
         let hat = gamepad.read_hat(0);
+        if let Some((dx, dy)) = hat {
+            let scroll_speed = 3;
+            if dy > 0 {
+                let _ = ai_pad::hotkey::send_scroll(120 * scroll_speed);
+            } else if dy < 0 {
+                let _ = ai_pad::hotkey::send_scroll(-120 * scroll_speed);
+            }
+            if dx > 0 {
+                let _ = ai_pad::hotkey::send_scroll_h(120 * scroll_speed);
+            } else if dx < 0 {
+                let _ = ai_pad::hotkey::send_scroll_h(-120 * scroll_speed);
+            }
+        }
         if hat != prev_hat {
             if let Some((dx, dy)) = hat {
                 if let Some(h) = btn_config.hat.get(&(dx, dy)) {
-                    println!("[方向] {} {}", h.arrow, h.name);
+                    println!("[滚动] {} {}", h.arrow, h.name);
                 }
             }
             prev_hat = hat;
         }
 
-        std::thread::sleep(std::time::Duration::from_millis(16));
+        std::thread::sleep(std::time::Duration::from_millis(80));
     }
 }
 

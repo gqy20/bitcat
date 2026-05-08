@@ -7,7 +7,7 @@ edition = "2024"
 sdl2 = { version = "0.38.0", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
-windows-sys = { version = "0.61.2", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_System_Threading"] }
+windows-sys = { version = "0.61.2", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
 
 [[bin]]
 name = "ai-pad-ctl"
@@ -16,3 +16,7 @@ path = "src/main.rs"
 [[bin]]
 name = "ai-pad-read"
 path = "src/bin/read.rs"
+
+[[bin]]
+name = "rumble-test"
+path = "src/bin/rumble_test.rs"

@@ -73,6 +73,58 @@ pub fn send_hotkey(vk_codes: &[u16], hold: f64) -> Result<(), String> {
     Ok(())
 }
 
+/// 模拟鼠标滚轮滚动
+/// delta > 0 向上滚，delta < 0 向下滚，单次典型值 ±120
+#[cfg(target_os = "windows")]
+pub fn send_scroll(delta: i32) -> Result<(), String> {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT};
+    use std::mem::size_of;
+
+    const INPUT_MOUSE: u32 = 0;
+    const MOUSEEVENTF_WHEEL: u32 = 0x0800;
+
+    let mut input: INPUT = unsafe { std::mem::zeroed() };
+    input.r#type = INPUT_MOUSE;
+    input.Anonymous.mi.dwFlags = MOUSEEVENTF_WHEEL;
+    input.Anonymous.mi.mouseData = delta as u32;
+
+    let sent = unsafe {
+        SendInput(1, &input, size_of::<INPUT>() as i32)
+    };
+
+    if sent == 0 {
+        return Err("SendInput scroll failed".into());
+    }
+
+    Ok(())
+}
+
+/// 模拟鼠标水平滚轮滚动
+/// delta > 0 向右滚，delta < 0 向左滚
+#[cfg(target_os = "windows")]
+pub fn send_scroll_h(delta: i32) -> Result<(), String> {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT};
+    use std::mem::size_of;
+
+    const INPUT_MOUSE: u32 = 0;
+    const MOUSEEVENTF_HWHEEL: u32 = 0x1000;
+
+    let mut input: INPUT = unsafe { std::mem::zeroed() };
+    input.r#type = INPUT_MOUSE;
+    input.Anonymous.mi.dwFlags = MOUSEEVENTF_HWHEEL;
+    input.Anonymous.mi.mouseData = delta as u32;
+
+    let sent = unsafe {
+        SendInput(1, &input, size_of::<INPUT>() as i32)
+    };
+
+    if sent == 0 {
+        return Err("SendInput hscroll failed".into());
+    }
+
+    Ok(())
+}
+
 /// 便捷函数：通过按键名触发热键
 pub fn trigger_hotkey(key_names: &[&str], hold: f64) -> Result<(), String> {
     let vk_codes = parse_keys(key_names);
