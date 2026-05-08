@@ -29,3 +29,7 @@ actions:
   R1:
     type: hotkey
     trigger: ["alt", "backtick"]  # 打开 uTools
+
+  L2:
+    type: hotkey
+    trigger: ["ctrl", "tab"]      # 切换浏览器/应用标签页

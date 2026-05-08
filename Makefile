@@ -17,6 +17,13 @@ export CMAKE_POLICY_VERSION_MINIMUM = 3.5
 
 build:
 	cargo build
+	cp buttons.yml target/debug/ 2>/dev/null || true
+	cp actions.yml target/debug/ 2>/dev/null || true
+
+release:
+	cargo build --release
+	cp buttons.yml target/release/
+	cp actions.yml target/release/
 
 test:
 	cargo test
@@ -26,9 +33,6 @@ read:
 
 ctl:
 	cargo run --bin ai-pad-ctl
-
-release:
-	cargo build --release
 
 check:
 	cargo check

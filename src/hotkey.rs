@@ -74,6 +74,43 @@ pub fn send_hotkey(vk_codes: &[u16], hold: f64) -> Result<(), String> {
     Ok(())
 }
 
+/// 按下单个按键（不释放）
+#[cfg(target_os = "windows")]
+pub fn key_down(vk: u16) -> Result<(), String> {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT, INPUT_KEYBOARD};
+    use std::mem::size_of;
+
+    let mut input: INPUT = unsafe { std::mem::zeroed() };
+    input.r#type = INPUT_KEYBOARD;
+    input.Anonymous.ki.wVk = vk;
+
+    let sent = unsafe { SendInput(1, &input, size_of::<INPUT>() as i32) };
+    if sent == 0 { return Err("key_down failed".into()); }
+    Ok(())
+}
+
+/// 释放单个按键
+#[cfg(target_os = "windows")]
+pub fn key_up(vk: u16) -> Result<(), String> {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_KEYUP};
+    use std::mem::size_of;
+
+    let mut input: INPUT = unsafe { std::mem::zeroed() };
+    input.r#type = INPUT_KEYBOARD;
+    input.Anonymous.ki.wVk = vk;
+    input.Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
+
+    let sent = unsafe { SendInput(1, &input, size_of::<INPUT>() as i32) };
+    if sent == 0 { return Err("key_up failed".into()); }
+    Ok(())
+}
+
+/// 按键名解析为 VK code
+pub fn parse_key(name: &str) -> Option<u16> {
+    let codes = parse_keys(&[name]);
+    codes.into_iter().next().filter(|&v| v != 0)
+}
+
 /// 模拟鼠标滚轮滚动
 /// delta > 0 向上滚，delta < 0 向下滚，单次典型值 ±120
 #[cfg(target_os = "windows")]
