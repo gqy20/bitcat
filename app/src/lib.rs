@@ -5,7 +5,7 @@ pub mod panel;
 pub mod tray;
 
 use commands::SharedPet;
-use tauri::{Emitter, WindowEvent};
+use tauri::{Emitter, Manager, WindowEvent};
 
 use ai_pad_core::action::{ActionConfig, ActionDef};
 use ai_pad_core::bridge::handle_button_press;
@@ -29,6 +29,7 @@ pub fn run() {
             panel::cmd_show_panel,
             panel::cmd_hide_panel,
             panel::cmd_execute_panel_action,
+            panel::cmd_panel_log,
         ])
         .on_window_event(|window, event| {
             // panel 失焦自动隐藏
@@ -68,6 +69,25 @@ pub fn run() {
             std::thread::spawn(move || {
                 gamepad_loop(&handle);
             });
+
+            // 调试模式：自动弹出 panel + 模拟方向键事件，用于无手柄环境验证
+            if std::env::var("AI_PAD_DEBUG").is_ok() {
+                let dbg_app = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                    log("[debug] 自动弹出 panel");
+                    panel::toggle_panel(&dbg_app);
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                    log("[debug] 模拟 panel-nav (1, 0)");
+                    let _ = dbg_app.emit("panel-nav", (1i32, 0i32));
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    log("[debug] 模拟 panel-nav (1, 0)");
+                    let _ = dbg_app.emit("panel-nav", (1i32, 0i32));
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    log("[debug] 模拟 panel-nav (0, -1)");
+                    let _ = dbg_app.emit("panel-nav", (0i32, -1i32));
+                });
+            }
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -145,10 +165,15 @@ fn gamepad_loop(app: &tauri::AppHandle) {
         action_config.as_ref().map(|c| c.actions.len()).unwrap_or(0)));
 
     let mut prev_buttons: u32 = 0;
+    let mut prev_hat: Option<(i32, i32)> = None;
     let mut alt_tab = HeldModifier::new(0x12);  // VK_MENU
     let mut ctrl_tab = HeldModifier::new(0x11); // VK_CONTROL
 
     loop {
+        let panel_visible = app.get_webview_window("panel")
+            .and_then(|w| w.is_visible().ok())
+            .unwrap_or(false);
+
         let buttons = gamepad.read_buttons();
         let new_presses = (buttons ^ prev_buttons) & buttons;
 
@@ -169,6 +194,22 @@ fn gamepad_loop(app: &tauri::AppHandle) {
                     if name == "Home" {
                         log("  → 切换面板");
                         panel::toggle_panel(app);
+                        continue;
+                    }
+
+                    // 面板可见 → 按键转发到面板，不再走 bridge/actions
+                    if panel_visible {
+                        match name {
+                            "A" => {
+                                log("  → 面板确认");
+                                let _ = app.emit("panel-confirm", ());
+                            }
+                            "B" => {
+                                log("  → 面板关闭");
+                                let _ = app.emit("panel-close", ());
+                            }
+                            _ => {}
+                        }
                         continue;
                     }
 
@@ -209,9 +250,16 @@ fn gamepad_loop(app: &tauri::AppHandle) {
         }
         prev_buttons = buttons;
 
-        // 方向键 → 滚动
+        // 方向键：面板可见 → 导航事件（边沿触发）；隐藏 → 滚动（持续触发）
         let hat = gamepad.read_hat(0);
-        if let Some((dx, dy)) = hat {
+        if panel_visible {
+            if hat != prev_hat {
+                if let Some((dx, dy)) = hat {
+                    log(&format!("  → 面板导航 ({dx}, {dy})"));
+                    let _ = app.emit("panel-nav", (dx, dy));
+                }
+            }
+        } else if let Some((dx, dy)) = hat {
             alt_tab.release();
             ctrl_tab.release();
             let speed = 3;
@@ -220,6 +268,7 @@ fn gamepad_loop(app: &tauri::AppHandle) {
             if dx > 0 { let _ = hotkey::send_scroll_h(120 * speed); }
             else if dx < 0 { let _ = hotkey::send_scroll_h(-120 * speed); }
         }
+        prev_hat = hat;
 
         std::thread::sleep(std::time::Duration::from_millis(80));
     }

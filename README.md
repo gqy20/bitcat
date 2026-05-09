@@ -1,22 +1,42 @@
-# ai-pad
+# ai-pad / 8Bit Cat
 
-AI 驱动的蓝牙手柄控制器。通过手柄按键触发系统操作、AI 调用和语音交互。
+蓝牙手柄驱动的桌面工具：8 位像素桌宠 + AI 对话 + Quicker 风格弹出面板 + 系统级按键映射。
+
+基于 Tauri 2.0 + SDL2，单 exe，无 Node.js 依赖。
 
 ## 快速开始
 
 ```bash
-# 构建
-make build
+# 开发运行
+cargo run -p ai-pad-app
 
-# 启动（后台运行，系统托盘图标）
-make ctl
-
-# 调试模式（弹出控制台窗口，显示日志）
-cargo run --bin ai-pad-ctl -- --debug
-
-# 按键测试（查看手柄按键编号和名称）
-make read
+# Release 构建（体积优化：opt-level=z + LTO + strip）
+cargo build -p ai-pad-app --release
 ```
+
+启动后看到屏幕角落的像素猫即为成功。
+
+## 功能概览
+
+| 触发 | 行为 |
+|------|------|
+| 手柄 Start | AI 对话（猫咪根据回复自动切换状态/气泡） |
+| 手柄 Home / `Ctrl+Alt+Space` | 弹出 Quicker 风格面板 |
+| 手柄方向键（dpad）/ 键盘 ↑↓←→ | 桌面滚动（隐藏时）/ 面板选择（弹出时） |
+| 手柄 A / Enter | 面板确认 |
+| 手柄 B / Esc | 关闭面板 |
+| 其他按键 | 按 `actions.yml` 绑定执行（hotkey/launch/voice/script） |
+
+## 弹出面板
+
+3 × 2 玻璃风格网格，默认六个动作：VSCode / 浏览器 / 资源管理器 / PowerShell / 记事本 / 问 AI（待实现）。
+
+- 弹出后窗口居中、置顶、跳过任务栏
+- 失焦自动隐藏
+- 选中项用蓝色光晕高亮，鼠标悬停或方向键移动都会同步选中
+- 按下 A / Enter 启动对应程序后面板自动关闭
+
+后端的 `panel-nav` / `panel-confirm` / `panel-close` 事件由 Rust 主循环根据手柄状态发送，前端 JS 通过 `window.__TAURI__.event.listen` 接收。
 
 ## 手柄配对
 
@@ -30,109 +50,127 @@ make read
 ## 项目结构
 
 ```
-ai-pad/
-├── buttons.yml         # 硬件按键映射（换手柄时改这里）
-├── actions.yml         # 按键动作绑定（个性化配置）
-├── Cargo.toml
-├── Makefile            # 构建快捷命令
-└── src/
-    ├── main.rs         # 入口：托盘 + 单实例检测 + 手柄循环
-    ├── lib.rs          # 库根模块声明
-    ├── config.rs       # YAML 配置加载（buttons / actions）
-    ├── action.rs       # 动作定义与解析
-    ├── device.rs       # 按键编号 → 名称映射
-    ├── joystick.rs     # SDL2 手柄输入读取
-    ├── hotkey.rs       # Win32 SendInput 键鼠模拟
-    └── tray.rs         # 系统托盘 + GDI 绘制手柄图标
+8bit/
+├── Cargo.toml              # workspace: members = ["core", "app"]
+├── actions.yml             # 按键动作绑定（个性化配置）
+├── buttons.yml             # 硬件按键映射（换手柄改这里）
+├── core/                   # 纯逻辑库（无 UI 依赖，81 单测）
+│   └── src/
+│       ├── pet.rs          # 桌宠状态机（Idle/Walk/Sleep/Talk/Happy/Confused）
+│       ├── bridge.rs       # 手柄按键 → 宠物状态/AI 调用
+│       ├── agent.rs        # AI Agent (rig + DeepSeek/Kimi/etc)
+│       ├── ai_config.rs    # AI 模型 / 256K 上下文配置
+│       ├── action.rs       # 动作定义（hotkey/launch/voice/script）
+│       ├── config.rs       # YAML 配置加载
+│       ├── device.rs       # 按键编号 → 名称映射
+│       ├── hotkey.rs       # Win32 SendInput 键鼠模拟
+│       └── tools.rs        # AI tool calls
+└── app/                    # Tauri 应用
+    ├── tauri.conf.json     # 窗口、权限、withGlobalTauri
+    ├── capabilities/
+    ├── src/
+    │   ├── lib.rs          # Tauri Builder + 全局热键 + 手柄循环
+    │   ├── commands.rs     # 宠物状态命令（set_state / walk_to / show_bubble / get_status / tick）
+    │   ├── panel.rs        # 弹出面板（动态创建窗口 + cmd_execute_panel_action）
+    │   ├── tray.rs         # 系统托盘
+    │   ├── gamepad.rs      # 按键事件 → 前端 emit
+    │   └── joystick.rs     # SDL2 封装
+    └── frontend/           # 静态 HTML（无 npm）
+        ├── pet.html        # 宠物窗口（128×128 透明）
+        ├── panel.html      # 面板窗口（480×320 玻璃风）
+        ├── css/
+        └── js/
+            ├── sprite.js   # 16×16 像素精灵数据 + Canvas 绘制
+            ├── pet.js      # 宠物状态机（前端）
+            ├── app.js      # Tauri 事件监听
+            └── panel.js    # 面板交互 + 方向键导航
 ```
 
 ## 配置说明
 
-### buttons.yml — 硬件映射
-
-手柄按键到编号的映射，每种手柄不同。通过 `ai-pad-read` 实测校准后填入。
-
 ### actions.yml — 按键动作
 
-支持以下动作类型：
-
-**launch** — 启动程序
+支持四种动作类型：
 
 ```yaml
-Start:
-  type: launch
-  program: claude
-  args: "--dangerously-skip-permissions"
-  workdir: "D:\\C\\Desktop\\ai"
-  terminal: true          # 在新终端中打开
+defaults:
+  terminal: powershell
+
+actions:
+  # launch: 启动程序（可选在终端中）
+  Start:
+    type: launch
+    program: claude
+    args: "--dangerously-skip-permissions"
+    workdir: "D:\\C\\Desktop\\ai"
+    terminal: true
+
+  # voice: 触发系统语音输入法快捷键
+  Y:
+    type: voice
+    voice:
+      trigger: ["ctrl", "win"]
+      delay: 1.0
+
+  # hotkey: 发送键盘组合键（支持 Alt/Ctrl+Tab 持续按住）
+  L1:
+    type: hotkey
+    trigger: ["alt", "tab"]
+  L2:
+    type: hotkey
+    trigger: ["ctrl", "tab"]
+  R1:
+    type: hotkey
+    trigger: ["alt", "backtick"]
+
+  # script: 执行 PowerShell 命令
+  A:
+    type: script
+    command: "python my_script.py"
 ```
 
-**voice** — 触发系统语音输入法快捷键
+注意：当面板可见时，A / B / dpad 由面板独占，不再触发 actions.yml 绑定。
 
-```yaml
-Y:
-  type: voice
-  voice:
-    trigger: ["ctrl", "win"]   # 系统语音输入法快捷键
-    delay: 1.0                  # 启动后等待时间（秒）
-```
+### buttons.yml — 硬件映射
 
-**hotkey** — 发送键盘组合键
+按键编号到名称的映射，每种手柄不同。8BitDo Micro 已实测填好；换手柄需要校准。
 
-```yaml
-L1:
-  type: hotkey
-  trigger: ["alt", "tab"]      # Alt+Tab 切换窗口（支持按住状态）
+### 方向键（面板隐藏时）
 
-R1:
-  type: hotkey
-  trigger: ["alt", "backtick"] # Alt+` 打开 uTools
-
-L2:
-  type: hotkey
-  trigger: ["ctrl", "tab"]     # Ctrl+Tab 切换标签页（支持按住状态）
-```
-
-**script** — 执行 PowerShell 命令
-
-```yaml
-A:
-  type: script
-  command: "python my_script.py"
-```
-
-### 方向键映射
-
-方向键默认映射为鼠标滚轮滚动：
 - 上/下 → 垂直滚动
 - 左/右 → 水平滚动
-- 长按持续滚动（80ms 间隔，3 倍速）
+- 长按持续滚动（80ms 间隔，3× 速）
 
-## 运行方式
+## AI Agent
 
-| 方式 | 行为 |
-|------|------|
-| 双击 exe | 后台运行，无控制台窗口，托盘显示手柄图标 |
-| `--debug` 参数 | 弹出控制台，输出带时间戳的日志 |
-| 右键托盘 | 重载配置 / 退出 |
-| 重复启动 | 弹窗提示已在运行 |
+`core/src/ai_config.rs` 支持 `~/.claude/ai_config.toml` 配置（兼容 OpenAI 格式的国产模型）：
 
-## 支持的手柄
+```toml
+api_base = "https://api.deepseek.com/v1"
+api_key = "sk-..."
+model = "deepseek-chat"
+# max_tokens 默认 256K，可用 AI_PAD_MAX_TOKENS 环境变量覆盖
+```
 
-| 手柄 | 模式 | 状态 |
-|------|------|------|
-| 8BitDo Micro | D-Input (蓝牙) | 已测试 |
-| 其他手柄 | D-Input / XInput (SDL2) | 需自行校准 buttons.yml |
+按 Start 键触发对话，AI 回复中包含 "好"/"开心" 等关键词时，桌宠自动切到 Happy 状态显示气泡。
 
-添加新手柄：`make read` 逐个按键测试，将结果填入 `buttons.yml`。
+## 调试
+
+```bash
+# env var 控制：启动 2 秒后自动弹面板，并模拟方向键事件
+AI_PAD_DEBUG=1 cargo run -p ai-pad-app
+```
+
+前端 `console.log` 通过 `cmd_panel_log` 命令转发到后端 stderr，方便无 DevTools 时排查。
 
 ## 技术栈
 
-- Rust 2024 edition
-- SDL2 (`bundled`) — 手柄输入读取（DirectInput 后端）
-- windows-sys 0.61 — SendInput 键鼠模拟、系统托盘、GDI 图标绘制
-- serde + serde_yaml — 配置加载
-- 零运行时依赖：单文件 exe + yml 配置即可运行
+- **Tauri 2.0** — WebView 多窗口（pet + 动态创建的 panel），全局热键，托盘
+- **SDL2 (bundled)** — 手柄输入读取（DirectInput）
+- **rig** — AI Agent 抽象层（统一 OpenAI 兼容 API）
+- **windows-sys** — SendInput 键鼠模拟
+- **serde + serde_yaml** — 配置加载
+- **静态 HTML** — 像素精灵用 Canvas 绘制，无 npm / 无打包工具
 
 ## License
 

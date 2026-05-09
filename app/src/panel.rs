@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// Phase A: 硬编码动作映射 (id -> (program, args, terminal))
 ///
@@ -8,7 +8,7 @@ pub fn lookup_action(id: &str) -> Option<(&'static str, &'static [&'static str],
         "vscode"     => Some(("code",         &[],                                    false)),
         "browser"    => Some(("explorer",     &["https://www.bing.com"],              false)),
         "explorer"   => Some(("explorer.exe", &["."],                                 false)),
-        "powershell" => Some(("pwsh",         &[],                                    true)),
+        "powershell" => Some(("powershell",   &[],                                    true)),
         "notepad"    => Some(("notepad.exe",  &[],                                    false)),
         _ => None,
     }
@@ -16,16 +16,22 @@ pub fn lookup_action(id: &str) -> Option<(&'static str, &'static [&'static str],
 
 fn spawn(program: &str, args: &[&str], terminal: bool) -> Result<(), String> {
     if terminal {
-        let cmd = if args.is_empty() {
-            program.to_string()
+        // 容器和目标都是 shell 时不嵌套 -Command
+        let is_shell = matches!(program, "powershell" | "pwsh" | "cmd");
+        let ps_cmd = if is_shell && args.is_empty() {
+            format!("Start-Process {program} -WindowStyle Maximized")
         } else {
-            format!("{} {}", program, args.join(" "))
+            let cmd = if args.is_empty() {
+                program.to_string()
+            } else {
+                format!("{} {}", program, args.join(" "))
+            };
+            format!(
+                "Start-Process powershell -ArgumentList '-NoExit','-Command','{cmd}' -WindowStyle Maximized"
+            )
         };
-        let full = format!(
-            "Start-Process pwsh -ArgumentList '-NoExit','-Command','{cmd}' -WindowStyle Maximized"
-        );
         std::process::Command::new("powershell")
-            .args(["-Command", &full])
+            .args(["-Command", &ps_cmd])
             .spawn()
             .map(|_| ())
             .map_err(|e| format!("启动失败: {e}"))
@@ -45,6 +51,13 @@ pub async fn cmd_execute_panel_action(id: String) -> Result<(), String> {
     spawn(program, args, terminal)
 }
 
+/// 调试用：前端通过此命令把日志转发到后端 stderr
+#[tauri::command]
+pub async fn cmd_panel_log(msg: String) -> Result<(), String> {
+    eprintln!("[panel-js] {msg}");
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn cmd_show_panel(app: AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("panel") {
@@ -62,10 +75,12 @@ pub async fn cmd_hide_panel(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 切换显示状态（全局热键调用）
+/// 切换显示状态（全局热键 / Home 键调用）
+///
+/// 第一次调用时按需创建窗口（避开 Tauri 预创建透明隐藏窗口的崩溃路径）。
 pub fn toggle_panel(app: &AppHandle) {
-    if let Some(w) = app.get_webview_window("panel") {
-        match w.is_visible() {
+    match app.get_webview_window("panel") {
+        Some(w) => match w.is_visible() {
             Ok(true) => {
                 eprintln!("[panel] 隐藏");
                 let _ = w.hide();
@@ -75,13 +90,31 @@ pub fn toggle_panel(app: &AppHandle) {
                 let _ = w.show();
                 let _ = w.set_focus();
             }
-            Err(e) => {
-                eprintln!("[panel] is_visible 错误: {e}");
+            Err(e) => eprintln!("[panel] is_visible 错误: {e}"),
+        },
+        None => match create_panel_window(app) {
+            Ok(w) => {
+                eprintln!("[panel] 已创建并显示");
+                let _ = w.set_focus();
             }
-        }
-    } else {
-        eprintln!("[panel] panel 窗口不存在");
+            Err(e) => eprintln!("[panel] 创建失败: {e}"),
+        },
     }
+}
+
+/// 按需创建 panel 窗口（默认可见、置中、聚焦）
+fn create_panel_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
+    WebviewWindowBuilder::new(app, "panel", WebviewUrl::App("panel.html".into()))
+        .title("8Bit Panel")
+        .inner_size(480.0, 320.0)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .center()
+        .focused(true)
+        .build()
 }
 
 #[cfg(test)]

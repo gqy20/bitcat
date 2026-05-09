@@ -78,9 +78,16 @@ html, body {
   transform: translateY(-1px);
 }
 
+.cell.selected {
+  background: rgba(120, 170, 255, 0.18);
+  border-color: rgba(120, 170, 255, 0.8);
+  box-shadow: 0 0 0 2px rgba(120, 170, 255, 0.35);
+  transform: translateY(-1px);
+}
+
 .cell:active {
   transform: translateY(0);
-  background: rgba(120, 170, 255, 0.18);
+  background: rgba(120, 170, 255, 0.28);
 }
 
 .cell .icon {
