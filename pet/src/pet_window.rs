@@ -2,7 +2,7 @@
 
 use ai_pad_core::ipc::IpcReceiver;
 use ai_pad_core::pet::{Pet, PetState};
-use ai_pad_core::bridge::{PetCommand, PetStateName};
+use ai_pad_core::bridge::PetCommand;
 use ggez::{
     conf::{WindowMode, WindowSetup},
     event,
@@ -196,8 +196,7 @@ impl PetWindow {
                 self.pet.set_state(ps);
             }
             PetCommand::WalkTo { x } => {
-                self.pet.set_state(PetState::Walk);
-                self.pet.walk_target = Some(x);
+                self.pet.walk_to(x);
             }
             PetCommand::ShowBubble { text } => {
                 self.bubble_text = Some(text);
@@ -210,23 +209,23 @@ impl PetWindow {
 }
 
 /// 绘制对话气泡
-fn draw_bubble(canvas: &mut Canvas, ctx: &mut Context, text: &str, window_size: (f32, f32)) {
-    let font_size = 10.0;
-    if let Ok(text_obj) = Text::new(text, graphics::Font::default(), font_size) {
-        let w = text_obj.width(ctx);
-        let padding = 4.0;
-        let bw = w + padding * 2.0;
-        let bh = font_size + padding * 2.0;
-        let bx = (window_size.0 - bw) / 2.0;
-        let by = window_size.1 - bh - 4.0;
+fn draw_bubble(canvas: &mut Canvas, _ctx: &mut Context, text: &str, window_size: (f32, f32)) {
+    let scale = 10.0;
+    let text_obj = Text::new(text).set_scale(scale).clone();
+    let padding = 4.0;
+    let char_w = scale * 0.6;
+    let w = text.len() as f32 * char_w;
+    let bw = w + padding * 2.0;
+    let bh = scale + padding * 2.0;
+    let bx = (window_size.0 - bw) / 2.0;
+    let by = window_size.1 - bh - 4.0;
 
-        // 气泡背景
-        if let Ok(bg) = Mesh::new_rectangle(ctx, graphics::DrawMode::fill(), Rect::new(bx, by, bw, bh), Color::from((255, 255, 255, 220))) {
-            canvas.draw(&bg, DrawParam::default());
-        }
-        // 文字
-        canvas.draw(&text_obj, DrawParam::default().dest([bx + padding, by + padding]));
+    // 气泡背景
+    if let Ok(bg) = Mesh::new_rectangle(_ctx, graphics::DrawMode::fill(), Rect::new(bx, by, bw, bh), Color::from((255, 255, 255, 220))) {
+        canvas.draw(&bg, DrawParam::default());
     }
+    // 文字
+    canvas.draw(&text_obj, DrawParam::default().dest([bx + padding, by + padding]));
 }
 
 /// 内联像素绘制（避免每帧创建大量 Mesh 对象）
