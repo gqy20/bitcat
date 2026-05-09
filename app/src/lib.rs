@@ -9,7 +9,7 @@ pub mod voice;
 use bubble::SharedBubble;
 use commands::SharedPet;
 use voice::SharedVoice;
-use tauri::{Emitter, Manager, WindowEvent};
+use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 use ai_pad_core::action::{ActionConfig, ActionDef};
 use ai_pad_core::bridge::handle_button_press;
@@ -18,6 +18,47 @@ use ai_pad_core::agent::PetAgent;
 use ai_pad_core::hotkey;
 use joystick::SdlGamepad;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+
+/// 销毁旧 pet 窗口并用新尺寸重建，恢复到原位置。
+///
+/// Windows 上 decorations:false + transparent:true 的窗口调用 setSize() 会静默失败
+/// (Tauri Issue #11975)，唯一可靠的方式是销毁后重建。
+#[tauri::command]
+async fn cmd_recreate_pet_window(
+    app: tauri::AppHandle,
+    width: u32,
+    height: u32,
+    x: i32,
+    y: i32,
+) -> Result<(), String> {
+    // 关闭旧窗口（如果存在）
+    if let Some(old) = app.get_webview_window("pet") {
+        old.close().map_err(|e| e.to_string())?;
+    }
+
+    // 用新尺寸重建，保留所有原有属性
+    let window = WebviewWindowBuilder::new(
+        &app,
+        "pet",
+        WebviewUrl::App("pet.html".into()),
+    )
+    .title("8Bit Cat")
+    .inner_size(width as f64, height as f64)
+    .position(x as f64, y as f64)
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(false)
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    // 用物理尺寸和物理位置精确设置（高 DPI 下 inner_size/position 是逻辑像素）
+    let _ = window.set_size(PhysicalSize::new(width, height));
+    let _ = window.set_position(PhysicalPosition::new(x, y));
+
+    Ok(())
+}
 
 pub fn run() {
     tauri::Builder::default()
@@ -40,6 +81,7 @@ pub fn run() {
             bubble::cmd_hide_bubble,
             voice::cmd_voice_update_text,
             voice::cmd_voice_get_text,
+            cmd_recreate_pet_window,
         ])
         .on_window_event(|window, event| {
             // panel 失焦自动隐藏

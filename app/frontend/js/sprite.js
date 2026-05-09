@@ -169,6 +169,34 @@ function renderSprite(ctx, state, frame, facingRight, scale) {
   ctx.restore();
 }
 
+// 折叠态：只画猫头（取精灵上半部分，缩放到 48×48）
+function renderMini(ctx, state) {
+  const data = getSprite(state, 0); // 始终用第 0 帧
+  const miniScale = 3; // 16px × 3 = 48px
+  const headRows = 10; // 只画前 10 行（猫头区域）
+
+  ctx.clearRect(0, 0, 48, 48);
+
+  // 居中偏移：让猫头在 48×48 中居中
+  const offsetY = Math.floor((48 - headRows * miniScale) / 2);
+
+  for (let row = 0; row < headRows; row++) {
+    for (let col = 0; col < SPRITE_W; col++) {
+      const idx = row * SPRITE_W + col;
+      const color = PALETTE[data[idx]];
+      if (color) {
+        ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},${color[3] / 255})`;
+        ctx.fillRect(
+          col * miniScale,
+          offsetY + row * miniScale,
+          miniScale,
+          miniScale
+        );
+      }
+    }
+  }
+}
+
 // 测试函数（test.html 调用）
 function runSpriteTests() {
   const results = [];
@@ -225,6 +253,6 @@ function runSpriteTests() {
 if (typeof window !== 'undefined') {
   window.SpriteRenderer = {
     SPRITES, PALETTE, SPRITE_W, SPRITE_H,
-    getSprite, renderSprite, runSpriteTests, cloneSprite,
+    getSprite, renderSprite, renderMini, runSpriteTests, cloneSprite,
   };
 }
