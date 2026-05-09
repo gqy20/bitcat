@@ -140,7 +140,8 @@ fn gamepad_loop(app: &tauri::AppHandle) {
                         log(&format!("  → AI: {msg}"));
                         match rt.block_on(ag.chat(msg)) {
                             Ok(reply) => {
-                                log(&format!("  ← AI: {}", &reply[..reply.len().min(60)]));
+                                let preview: String = reply.chars().take(60).collect();
+                                log(&format!("  ← AI: {preview}"));
                                 let ai_events = gamepad::process_agent_response(&reply);
                                 for evt in &ai_events {
                                     let _ = app.emit("pet-event", evt);

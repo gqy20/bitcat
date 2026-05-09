@@ -146,9 +146,11 @@ pub fn resolve_agent_response(reply: &str) -> Vec<PetCommand> {
         cmds.push(PetCommand::SetState { state: PetStateName::Happy });
     }
 
-    // 始终显示对话内容
-    let short = if reply.len() > 60 {
-        format!("{}...", &reply[..57])
+    // 始终显示对话内容（按字符切片，防止 UTF-8 边界 panic）
+    let char_count = reply.chars().count();
+    let short = if char_count > 60 {
+        let truncated: String = reply.chars().take(57).collect();
+        format!("{truncated}...")
     } else {
         reply.to_string()
     };
@@ -276,7 +278,21 @@ mod tests {
             _ => None,
         });
         assert!(bubble.is_some());
-        assert!(bubble.unwrap().len() <= 63); // 57 + "..."
+        let text = bubble.unwrap();
+        // 按字符数断言（57 个字符 + "..."）
+        assert_eq!(text.chars().count(), 60);
+        assert!(text.ends_with("..."));
+    }
+
+    #[test]
+    fn test_resolve_truncate_no_panic_on_utf8_boundary() {
+        // 边界长度（恰好接近 60 字符,中英混合）
+        let mixed = format!("{}{}", "a".repeat(50), "中文测试");
+        let _ = resolve_agent_response(&mixed);
+        // 长字符串 + emoji,验证字符切片不会 panic
+        let with_emoji = "喵呜~ 🐱✨ ".repeat(20);
+        let cmds = resolve_agent_response(&with_emoji);
+        assert!(!cmds.is_empty());
     }
 
     #[test]
