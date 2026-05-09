@@ -1,21 +1,23 @@
 // bubble.js — 独立气泡窗口前端
 //
-// 事件：
-//   bubble-start   清空内容、显示窗口、取消旧定时
-//   bubble-chunk   追加文本块（流式）
-//   bubble-end     启动自动隐藏定时
-//   bubble-update  一次性写入文本（兼容非流式路径）
+// 策略: 前端通过定时轮询 cmd_consume_bubble_text 拉取后端累积的文本,
+// 完全不依赖 bubble-chunk 事件的到达时序。
+// bubble-end 事件仅用于知道流式何时结束(停止轮询 + 启动隐藏定时)。
+// bubble-update 用于兼容非流式一次性写入路径。
 
 (function() {
   'use strict';
 
   const HIDE_AFTER_MS = 5500;
+  const POLL_INTERVAL_MS = 120;
+
   let hideTimer = null;
   let contentEl = null;
+  let pollTimer = null;
 
   function ensureVisible() {
     document.body.classList.remove('hidden');
-    void document.body.offsetWidth;  // 强制 reflow
+    void document.body.offsetWidth;
     document.body.classList.add('show');
   }
 
@@ -37,26 +39,8 @@
     contentEl.scrollTop = contentEl.scrollHeight;
   }
 
-  function appendText(chunk) {
-    if (!contentEl || !chunk) return;
-    contentEl.textContent += chunk;
-    // 自动滚到底,跟随生成
-    contentEl.scrollTop = contentEl.scrollHeight;
-  }
-
-  function startStream() {
-    setText('');
-    ensureVisible();
-    clearHideTimer();
-  }
-
-  function show(text) {
-    setText(text);
-    ensureVisible();
-    startHideTimer();
-  }
-
   function hide() {
+    stopPolling();
     document.body.classList.remove('show');
     document.body.classList.add('hidden');
     if (window.__TAURI__ && window.__TAURI__.core) {
@@ -64,46 +48,58 @@
     }
   }
 
+  function startPolling() {
+    stopPolling();
+    pollTimer = setInterval(pollPending, POLL_INTERVAL_MS);
+    // 立即拉一次
+    pollPending();
+  }
+
+  function stopPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function pollPending() {
+    if (!window.__TAURI__ || !window.__TAURI__.core) return;
+    window.__TAURI__.core.invoke('cmd_consume_bubble_text')
+      .then((result) => {
+        const txt = result || '';
+        if (txt.length > 0) {
+          setText(txt);
+          ensureVisible();
+        }
+      })
+      .catch(() => {});
+  }
+
   function init() {
     contentEl = document.getElementById('content');
     if (!window.__TAURI__) return;
     const listen = window.__TAURI__.event.listen;
 
-    // 流式事件
-    listen('bubble-start', () => {
-      startStream();
-    });
-    listen('bubble-chunk', (event) => {
-      const payload = event.payload || {};
-      const chunk = typeof payload === 'string' ? payload : (payload.chunk || '');
-      ensureVisible();
-      clearHideTimer();
-      appendText(chunk);
-    });
+    // 流式结束: 停止轮询,最后一次拉取,启动隐藏定时
     listen('bubble-end', () => {
+      stopPolling();
+      pollPending();  // 确保拿到最终文本
       startHideTimer();
     });
 
     // 兼容: 非流式一次性写入
     listen('bubble-update', (event) => {
+      stopPolling();
       const payload = event.payload || {};
       const text = typeof payload === 'string' ? payload : (payload.text || '');
-      show(text);
+      setText(text);
+      ensureVisible();
+      startHideTimer();
     });
 
-    // 主动拉取后端 pending: 解决首次创建窗口时 emit 早于 listen 注册的时序
-    if (window.__TAURI__.core) {
-      window.__TAURI__.core.invoke('cmd_consume_bubble_text')
-        .then((txt) => {
-          if (txt && txt.length > 0) {
-            // 有累积内容: 显示并视作流式中(等 bubble-end 触发隐藏)
-            ensureVisible();
-            setText(txt);
-            // 不启动隐藏定时,等 bubble-end
-          }
-        })
-        .catch(() => {});
-    }
+    // 窗口显示后 JS 可能刚加载完,此时后端可能已经开始流式
+    // 立即开始轮询拉取已有内容
+    startPolling();
   }
 
   document.addEventListener('DOMContentLoaded', init);

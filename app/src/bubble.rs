@@ -63,7 +63,29 @@ pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// 流式开始: 清空 pending、确保窗口显示、emit "bubble-start"
+/// 应用启动时预创建气泡窗口(hidden),让 JS 在启动时完成初始化
+/// 避免首次流式时 emit 事件早于 listen 注册的竞态
+pub fn precreate_bubble_window(app: &AppHandle) -> Result<(), tauri::Error> {
+    if app.get_webview_window("bubble").is_some() {
+        return Ok(());
+    }
+    WebviewWindowBuilder::new(app, "bubble", WebviewUrl::App("bubble.html".into()))
+        .title("8Bit Bubble")
+        .inner_size(BUBBLE_W, BUBBLE_H)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .focused(false)
+        .visible(false)
+        .build()?;
+    Ok(())
+}
+
+/// 流式开始: 清空 pending、确保窗口显示
+/// 注意: 不 emit 事件,因为 WebView2 首次 show() 后 JS 可能还没加载完
+/// 前端 init 时通过 cmd_consume_bubble_text 拉取已有累积文本
 pub fn start_streaming_bubble(app: &AppHandle) -> Result<(), String> {
     let state: State<SharedBubble> = app.state();
     *state.pending_text.lock().map_err(|e| e.to_string())? = Some(String::new());
@@ -74,7 +96,6 @@ pub fn start_streaming_bubble(app: &AppHandle) -> Result<(), String> {
     };
     position_above_pet(app, &window);
     let _ = window.show();
-    let _ = app.emit_to("bubble", "bubble-start", ());
     Ok(())
 }
 
@@ -101,6 +122,7 @@ pub fn append_bubble_chunk(app: &AppHandle, chunk: &str) -> Result<(), String> {
 /// 流式结束: emit "bubble-end" → 前端启动自动隐藏定时器
 pub fn finalize_bubble(app: &AppHandle) -> Result<(), String> {
     let _ = app.emit_to("bubble", "bubble-end", ());
+    // 流结束后不再需要 pending 累积,但保留内容供迟到的 invoke 拉取
     Ok(())
 }
 
@@ -140,13 +162,13 @@ fn create_bubble_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri::
         .build()
 }
 
-/// 前端 init 时调用：取出待消费文本（取出后清空），用于解决首次创建时 emit 早于 listen 的时序
+/// 前端 init 时调用：读取当前累积文本（不清空）
 #[tauri::command]
 pub async fn cmd_consume_bubble_text(
     state: State<'_, SharedBubble>,
 ) -> Result<Option<String>, String> {
-    let mut t = state.pending_text.lock().map_err(|e| e.to_string())?;
-    Ok(t.take())
+    let t = state.pending_text.lock().map_err(|e| e.to_string())?;
+    Ok(t.clone())
 }
 
 /// 前端自动隐藏定时到了 → 调用此 cmd 隐藏窗口

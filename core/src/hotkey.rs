@@ -111,6 +111,53 @@ pub fn parse_key(name: &str) -> Option<u16> {
     codes.into_iter().next().filter(|&v| v != 0)
 }
 
+/// 读取系统剪贴板文本内容 (Windows)
+#[cfg(target_os = "windows")]
+pub fn read_clipboard() -> Option<String> {
+    use windows_sys::Win32::System::DataExchange::{
+        OpenClipboard, CloseClipboard, GetClipboardData, IsClipboardFormatAvailable,
+    };
+    use windows_sys::Win32::System::Memory::{GlobalLock, GlobalUnlock};
+
+    const CF_UNICODETEXT: u32 = 13;
+
+    unsafe {
+        if IsClipboardFormatAvailable(CF_UNICODETEXT) == 0 {
+            return None;
+        }
+        if OpenClipboard(std::ptr::null_mut()) == 0 {
+            return None;
+        }
+        let handle = GetClipboardData(CF_UNICODETEXT);
+        if handle.is_null() {
+            CloseClipboard();
+            return None;
+        }
+        let ptr = GlobalLock(handle);
+        if ptr.is_null() {
+            CloseClipboard();
+            return None;
+        }
+        let text = {
+            // 从宽字符指针构造 String
+            let mut len = 0usize;
+            let mut p = ptr as *const u16;
+            while *p != 0 {
+                len += 1;
+                p = p.add(1);
+            }
+            let slice = std::slice::from_raw_parts(ptr as *const u16, len);
+            String::from_utf16(slice).ok()
+        };
+        GlobalUnlock(handle);
+        CloseClipboard();
+        text
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn read_clipboard() -> Option<String> { None }
+
 /// 模拟鼠标滚轮滚动
 /// delta > 0 向上滚，delta < 0 向下滚，单次典型值 ±120
 #[cfg(target_os = "windows")]
@@ -180,6 +227,66 @@ pub fn trigger_hotkey(key_names: &[&str], hold: f64) -> Result<(), String> {
         let _ = (&vk_codes, hold);
         Err("SendInput 仅支持 Windows".into())
     }
+}
+
+/// 把指定窗口强制提到前台。
+///
+/// 通过 AttachThreadInput + AllowSetForegroundWindow + SetForegroundWindow 三件套
+/// 绕过 Windows 对非用户驱动进程的前台化限制。
+/// `hwnd` 由 Tauri 的 `window.hwnd()` 取出后传入（isize 形式）。
+#[cfg(target_os = "windows")]
+pub fn force_foreground(hwnd: isize) -> Result<(), String> {
+    use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{SetActiveWindow, SetFocus};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        AllowSetForegroundWindow, BringWindowToTop, GetForegroundWindow,
+        GetWindowThreadProcessId, SetForegroundWindow,
+    };
+
+    if hwnd == 0 {
+        return Err("hwnd is null".into());
+    }
+    let target = hwnd as *mut core::ffi::c_void;
+
+    unsafe {
+        let fg = GetForegroundWindow();
+        let mut fg_pid: u32 = 0;
+        let fg_thread = if !fg.is_null() {
+            GetWindowThreadProcessId(fg, &mut fg_pid)
+        } else {
+            0
+        };
+        let our_thread = GetCurrentThreadId();
+
+        // 把我们的线程附加到前台线程的输入队列，绕过前台化限制
+        let attached = if fg_thread != 0 && fg_thread != our_thread {
+            AttachThreadInput(our_thread, fg_thread, 1) != 0
+        } else {
+            false
+        };
+
+        // ASFW_ANY = 0xFFFFFFFF：放开任何进程前台化的限制
+        let _ = AllowSetForegroundWindow(0xFFFFFFFF);
+        let _ = BringWindowToTop(target);
+        let _ = SetActiveWindow(target);
+        let ok = SetForegroundWindow(target);
+        let _ = SetFocus(target);
+
+        if attached {
+            let _ = AttachThreadInput(our_thread, fg_thread, 0);
+        }
+
+        if ok == 0 {
+            Err("SetForegroundWindow failed".into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn force_foreground(_hwnd: isize) -> Result<(), String> {
+    Err("force_foreground 仅支持 Windows".into())
 }
 
 #[cfg(test)]

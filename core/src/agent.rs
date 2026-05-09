@@ -72,6 +72,8 @@ impl PetAgent {
         let mut stream = self.agent.stream_prompt(message.to_string()).await;
 
         let mut accumulated = String::new();
+        let mut chunk_count = 0u32;
+        let mut tool_call_count = 0u32;
         while let Some(item) = stream.next().await {
             match item {
                 Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(
@@ -79,12 +81,26 @@ impl PetAgent {
                 ))) => {
                     accumulated.push_str(&text.text);
                     on_chunk(&text.text);
+                    chunk_count += 1;
                 }
-                Ok(MultiTurnStreamItem::FinalResponse(_)) => {}
-                Ok(_) => {}
+                Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::ToolCall { .. })) => {
+                    tool_call_count += 1;
+                }
+                Ok(MultiTurnStreamItem::FinalResponse(res)) => {
+                    eprintln!("  [stream] FinalResponse: {} chars, usage={:?}",
+                        res.response().len(), res.usage().total_tokens);
+                }
+                Ok(MultiTurnStreamItem::StreamUserItem(_)) => {
+                    eprintln!("  [stream] UserItem (工具结果)");
+                }
+                Ok(other) => {
+                    eprintln!("  [stream] 其他项: {other:?}");
+                }
                 Err(e) => return Err(format!("AI 流错误: {e}")),
             }
         }
+        eprintln!("  [stream] 完成: {chunk_count} 文本块, {tool_call_count} 工具调用, {} 字符",
+            accumulated.chars().count());
         Ok(accumulated)
     }
 }

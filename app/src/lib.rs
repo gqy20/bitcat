@@ -4,9 +4,11 @@ pub mod gamepad;
 pub mod joystick;
 pub mod panel;
 pub mod tray;
+pub mod voice;
 
 use bubble::SharedBubble;
 use commands::SharedPet;
+use voice::SharedVoice;
 use tauri::{Emitter, Manager, WindowEvent};
 
 use ai_pad_core::action::{ActionConfig, ActionDef};
@@ -23,6 +25,7 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(SharedPet::new())
         .manage(SharedBubble::new())
+        .manage(SharedVoice::new())
         .invoke_handler(tauri::generate_handler![
             commands::cmd_set_state,
             commands::cmd_walk_to,
@@ -35,6 +38,8 @@ pub fn run() {
             panel::cmd_panel_log,
             bubble::cmd_consume_bubble_text,
             bubble::cmd_hide_bubble,
+            voice::cmd_voice_update_text,
+            voice::cmd_voice_get_text,
         ])
         .on_window_event(|window, event| {
             // panel 失焦自动隐藏
@@ -46,6 +51,12 @@ pub fn run() {
         })
         .setup(|app| {
             tray::create_tray(app.handle())?;
+
+            // 预创建 voice 窗口 (visible:true 但小+透明,不易察觉)
+            // 必须 visible 才能成为系统语音输入条的注入目标
+            if let Err(e) = voice::precreate_voice_window(app.handle()) {
+                log(&format!("预创建 voice 窗口失败: {e}"));
+            }
 
             // 注册全局热键 Ctrl+Alt+Space -> 切换 panel 显隐
             // 注：Alt+Space 被 Windows 系统占用为窗口菜单，无法用作全局热键
@@ -173,6 +184,7 @@ fn gamepad_loop(app: &tauri::AppHandle) {
     let mut prev_hat: Option<(i32, i32)> = None;
     let mut alt_tab = HeldModifier::new(0x12);  // VK_MENU
     let mut ctrl_tab = HeldModifier::new(0x11); // VK_CONTROL
+    let mut held_voice = HeldCombo::new();       // voice 按住状态
 
     loop {
         let panel_visible = app.get_webview_window("panel")
@@ -268,6 +280,85 @@ fn gamepad_loop(app: &tauri::AppHandle) {
                 }
             }
         }
+        // Voice 按住检测: 仅边沿检测,实际按键由主循环按"先抢前台再按热键"顺序触发
+        let mut voice_just_released = false;
+        let mut voice_just_pressed = false;
+        if let Some(ref config) = action_config {
+            // 找出所有 voice 类型的按键 bit 位
+            let mut voice_bits: u32 = 0;
+            for (name, action_def) in &config.actions {
+                if action_def.action_type == "voice" {
+                    if let Some(bit) = name_to_bit(name) {
+                        voice_bits |= 1 << bit;
+                    }
+                }
+            }
+            let voice_active = (buttons & voice_bits) != 0;
+            let (jp, jr) = held_voice.detect(voice_active);
+            voice_just_pressed = jp;
+            voice_just_released = jr;
+        }
+
+        // voice 按下: 显示录音条 + 强制前台化 → 等 80ms 让前台化生效 → 按下输入法热键
+        // 顺序很重要:必须先抢前台,再按热键,否则输入法看到的"前台"还是上一个窗口
+        if voice_just_pressed {
+            match voice::open_voice_capture(app) {
+                Ok(()) => log("  [voice] 录音条已显示并强制前台化"),
+                Err(e) => log(&format!("  [voice] 打开录音条失败: {e}")),
+            }
+            std::thread::sleep(std::time::Duration::from_millis(80));
+            if let Some(ref config) = action_config {
+                held_voice.press_keys(config);
+            }
+        }
+
+        // voice 释放: 先松开输入法热键 → 等识别引擎完成注入 → 取走 textarea 内容 → 送 AI
+        if voice_just_released {
+            held_voice.release_keys();
+            log("  [voice] 等待识别注入完成 (700ms)...");
+            std::thread::sleep(std::time::Duration::from_millis(700));
+            match voice::take_voice_text(app) {
+                Ok(raw) => {
+                    let text = raw.trim().to_string();
+                    if text.is_empty() {
+                        log("  [voice] 虚拟输入框为空,跳过 AI (识别可能失败,或焦点被其他窗口抢走)");
+                    } else {
+                        log(&format!("  [voice] 识别全文: {text}"));
+
+                        if let Some(ref ag) = agent {
+                            if let Err(e) = bubble::start_streaming_bubble(app) {
+                                log(&format!("  气泡启动错误: {e}"));
+                            }
+                            let app_for_chunks = app.clone();
+                            eprint!("  [AI 流式] ");
+                            let stream_result = rt.block_on(ag.chat_stream(&text, move |chunk| {
+                                eprint!("{chunk}");
+                                use std::io::Write;
+                                let _ = std::io::stderr().flush();
+                                let _ = bubble::append_bubble_chunk(&app_for_chunks, chunk);
+                            }));
+                            eprintln!();
+                            let _ = bubble::finalize_bubble(app);
+
+                            match stream_result {
+                                Ok(reply) => {
+                                    log(&format!("  [voice] AI 回复全文 ({} 字符): {reply}", reply.chars().count()));
+                                    let ai_events = gamepad::process_agent_response(&reply);
+                                    for evt in &ai_events {
+                                        let _ = app.emit("pet-event", evt);
+                                    }
+                                }
+                                Err(e) => log(&format!("  [voice] AI 错误: {e}")),
+                            }
+                        } else {
+                            log("  [voice] AI Agent 未初始化,无法处理");
+                        }
+                    }
+                }
+                Err(e) => log(&format!("  [voice] 读取虚拟输入框失败: {e}")),
+            }
+        }
+
         prev_buttons = buttons;
 
         // 方向键：面板可见 → 导航事件（边沿触发）；隐藏 → 滚动（持续触发）
@@ -327,12 +418,7 @@ fn execute_action(
             }
         }
         "voice" => {
-            if let Some(voice) = &action.voice {
-                let key_refs: Vec<&str> = voice.trigger.iter().map(|s| s.as_str()).collect();
-                if let Err(e) = hotkey::trigger_hotkey(&key_refs, voice.delay) {
-                    eprintln!("  热键触发失败: {e}");
-                }
-            }
+            // voice 已改为按住模式, 由 HeldCombo 在主循环中处理
         }
         "script" => {
             if let Some(cmd) = &action.command {
@@ -382,5 +468,68 @@ impl HeldModifier {
             let _ = hotkey::key_up(self.vk);
             self.held = false;
         }
+    }
+}
+
+/// 持续按住的多键组合(用于 voice 动作)
+struct HeldCombo {
+    vks: Vec<u16>,
+    held: bool,
+}
+
+impl HeldCombo {
+    fn new() -> Self { Self { vks: Vec::new(), held: false } }
+
+    /// 仅做边沿检测,不实际按键。返回 (just_pressed, just_released)
+    fn detect(&mut self, active: bool) -> (bool, bool) {
+        match (active, self.held) {
+            (true, false)  => { self.held = true;  (true, false) }
+            (false, true)  => { self.held = false; (false, true) }
+            _              => (false, false),
+        }
+    }
+
+    /// 按下输入法语音热键 (从 actions.yml 的 voice.trigger 读)
+    fn press_keys(&mut self, config: &ai_pad_core::action::ActionConfig) {
+        let mut vks = Vec::new();
+        for (_name, action_def) in &config.actions {
+            if action_def.action_type == "voice" {
+                if let Some(voice) = &action_def.voice {
+                    let keys: Vec<&str> = voice.trigger.iter().map(|s| s.as_str()).collect();
+                    vks.extend(hotkey::parse_keys(&keys));
+                }
+            }
+        }
+        self.vks = vks;
+        for &vk in &self.vks {
+            let _ = hotkey::key_down(vk);
+        }
+        log("  → 输入法语音热键已按下");
+    }
+
+    /// 松开热键
+    fn release_keys(&mut self) {
+        for &vk in self.vks.iter().rev() {
+            let _ = hotkey::key_up(vk);
+        }
+        log("  → 输入法语音热键已松开");
+    }
+}
+
+/// 按键名 → 按钮 bit 位 (与 device::button_name 对应)
+fn name_to_bit(name: &str) -> Option<u32> {
+    match name {
+        "A"      => Some(0),
+        "B"      => Some(1),
+        "X"      => Some(3),
+        "Y"      => Some(4),
+        "L1"     => Some(6),
+        "R1"     => Some(7),
+        "L2"     => Some(8),
+        "R2"     => Some(9),
+        "Select" => Some(10),
+        "Start"  => Some(11),
+        "Home"   => Some(12),
+        _ => None,
     }
 }
