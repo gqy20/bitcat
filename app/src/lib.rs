@@ -1,10 +1,11 @@
 pub mod commands;
 pub mod gamepad;
 pub mod joystick;
+pub mod panel;
 pub mod tray;
 
 use commands::SharedPet;
-use tauri::Emitter;
+use tauri::{Emitter, WindowEvent};
 
 use ai_pad_core::action::{ActionConfig, ActionDef};
 use ai_pad_core::bridge::handle_button_press;
@@ -12,10 +13,12 @@ use ai_pad_core::device::button_name;
 use ai_pad_core::agent::PetAgent;
 use ai_pad_core::hotkey;
 use joystick::SdlGamepad;
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(SharedPet::new())
         .invoke_handler(tauri::generate_handler![
             commands::cmd_set_state,
@@ -23,9 +26,34 @@ pub fn run() {
             commands::cmd_show_bubble,
             commands::cmd_get_status,
             commands::cmd_tick,
+            panel::cmd_show_panel,
+            panel::cmd_hide_panel,
+            panel::cmd_execute_panel_action,
         ])
+        .on_window_event(|window, event| {
+            // panel 失焦自动隐藏
+            if window.label() == "panel" {
+                if let WindowEvent::Focused(false) = event {
+                    let _ = window.hide();
+                }
+            }
+        })
         .setup(|app| {
             tray::create_tray(app.handle())?;
+
+            // 注册全局热键 Alt+Space -> 切换 panel 显隐
+            let app_handle = app.handle().clone();
+            let shortcut = "Alt+Space".parse::<tauri_plugin_global_shortcut::Shortcut>()?;
+            let shortcut_for_handler = shortcut.clone();
+            if let Err(e) = app.global_shortcut().on_shortcut(shortcut, move |_app, sc, evt| {
+                if sc == &shortcut_for_handler && evt.state() == ShortcutState::Pressed {
+                    panel::toggle_panel(&app_handle);
+                }
+            }) {
+                log(&format!("注册全局热键失败 (Alt+Space): {e}"));
+            } else {
+                log("已注册全局热键 Alt+Space → 切换面板");
+            }
 
             let handle = app.handle().clone();
             std::thread::spawn(move || {

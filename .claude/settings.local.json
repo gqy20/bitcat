@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($env:CMAKE_POLICY_VERSION_MINIMUM=\"3.5\"; cargo check -p ai-pad-pet 2>&1 | Select-Object -Last 30)"
+    ]
+  }
+}

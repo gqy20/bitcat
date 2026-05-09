@@ -19,6 +19,21 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "resizable": false
+      },
+      {
+        "label": "panel",
+        "title": "8Bit Panel",
+        "url": "/panel.html",
+        "width": 480,
+        "height": 320,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "visible": false,
+        "center": true,
+        "focus": false
       }
     ],
     "security": {
