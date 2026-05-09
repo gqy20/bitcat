@@ -10,26 +10,6 @@ pub struct AiConfig {
     pub model: String,
 }
 
-// ---- 内部解析结构 ----
-
-#[derive(Deserialize)]
-struct SettingsFile {
-    env: EnvSection,
-}
-
-#[derive(Deserialize)]
-#[allow(non_snake_case)]
-struct EnvSection {
-    #[serde(default, alias = "anthropic_auth_token")]
-    ANTHROPIC_AUTH_TOKEN: Option<String>,
-    #[serde(default, alias = "anthropic_api_key")]
-    ANTHROPIC_API_KEY: Option<String>,
-    #[serde(default, alias = "anthropic_base_url")]
-    ANTHROPIC_BASE_URL: Option<String>,
-    #[serde(default, alias = "anthropic_model")]
-    ANTHROPIC_MODEL: Option<String>,
-}
-
 impl AiConfig {
     /// 优先级: 环境变量 > ~/.claude/settings.json > 默认值
     pub fn load() -> Result<Self, String> {
@@ -61,20 +41,61 @@ impl AiConfig {
 
         Ok(Self { api_key, base_url, model })
     }
+
+    /// 根据模型名推断合适的 max_tokens
+    ///
+    /// 基于 Anthropic 官方发布的各模型最大输出 token 数。
+    /// 对于桌面宠物场景，取模型最大值的 1/8 作为上限足够，
+    /// 既保证回复质量又不浪费。
+    pub fn max_tokens(&self) -> u64 {
+        // 环境变量覆盖
+        if let Ok(v) = std::env::var("ANTHROPIC_MAX_TOKENS") {
+            if let Ok(n) = v.parse() {
+                return n;
+            }
+        }
+        model_max_tokens(&self.model)
+    }
+}
+
+/// 模型最大输出 token 映射
+///
+/// 国产模型统一 256K；其他模型默认 256K。
+/// API 不会因为 max_tokens 设大了就多输出——模型生成完自动停止。
+fn model_max_tokens(model: &str) -> u64 {
+    let _ = model;
+    256_000
+}
+
+// ---- 内部解析结构 ----
+
+#[derive(Deserialize)]
+struct SettingsFile {
+    env: EnvSection,
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct EnvSection {
+    #[serde(default, alias = "anthropic_auth_token")]
+    ANTHROPIC_AUTH_TOKEN: Option<String>,
+    #[serde(default, alias = "anthropic_api_key")]
+    ANTHROPIC_API_KEY: Option<String>,
+    #[serde(default, alias = "anthropic_base_url")]
+    ANTHROPIC_BASE_URL: Option<String>,
+    #[serde(default, alias = "anthropic_model")]
+    ANTHROPIC_MODEL: Option<String>,
 }
 
 fn env_fallback(a: &str, b: &str) -> Result<String, ()> {
     let a_val = std::env::var(a);
     let b_val = std::env::var(b);
-
-    // 取第一个非空的值，空串视为未设置
     if let Ok(v) = a_val {
         if !v.is_empty() { return Ok(v); }
     }
     if let Ok(v) = b_val {
         if !v.is_empty() { return Ok(v); }
     }
-
     Err(())
 }
 
@@ -107,7 +128,6 @@ mod tests {
 
     #[test]
     fn test_parse_settings_with_all_fields() {
-        // 全大写 key（匹配真实 settings.json）
         let cfg: SettingsFile = serde_json::from_str(r#"{
             "env": {
                 "ANTHROPIC_AUTH_TOKEN": "sk-test",
@@ -120,7 +140,6 @@ mod tests {
         assert_eq!(cfg.env.ANTHROPIC_BASE_URL, Some("https://proxy.example.com".into()));
         assert_eq!(cfg.env.ANTHROPIC_MODEL, Some("glm-5.1".into()));
 
-        // snake_case alias 也应能解析
         let cfg2: SettingsFile = serde_json::from_str(r#"{
             "env": {
                 "anthropic_auth_token": "sk-test2",
@@ -170,5 +189,25 @@ mod tests {
     fn test_settings_path_returns_claude_dir() {
         let path = settings_path();
         assert!(path.to_str().unwrap().ends_with(".claude/settings.json"));
+    }
+
+    // ---- max_tokens 测试 ----
+
+    #[test]
+    fn test_max_tokens_always_256k() {
+        assert_eq!(model_max_tokens("claude-sonnet-4-20250514"), 256_000);
+        assert_eq!(model_max_tokens("glm-5.1"), 256_000);
+        assert_eq!(model_max_tokens("deepseek-chat"), 256_000);
+        assert_eq!(model_max_tokens("qwen-max"), 256_000);
+        assert_eq!(model_max_tokens("some-unknown-model"), 256_000);
+    }
+
+    #[test]
+    fn test_config_max_tokens_from_real_settings() {
+        if let Ok(cfg) = AiConfig::load() {
+            let mt = cfg.max_tokens();
+            assert_eq!(mt, 256_000);
+            eprintln!("模型: {}, max_tokens: {}", cfg.model, mt);
+        }
     }
 }

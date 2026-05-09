@@ -40,8 +40,11 @@ impl PetAgent {
 
         let model = client.completion_model(config.model.as_str());
 
+        let max_tokens = config.max_tokens();
+
         let agent = rig::agent::AgentBuilder::new(model)
             .preamble(PREAMBLE)
+            .max_tokens(max_tokens)
             .tool(LaunchTool)
             .tool(ShellTool)
             .tool(ReadFileTool)
