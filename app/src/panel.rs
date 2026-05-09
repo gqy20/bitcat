@@ -66,12 +66,21 @@ pub async fn cmd_hide_panel(app: AppHandle) -> Result<(), String> {
 pub fn toggle_panel(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("panel") {
         match w.is_visible() {
-            Ok(true) => { let _ = w.hide(); }
-            _ => {
+            Ok(true) => {
+                eprintln!("[panel] 隐藏");
+                let _ = w.hide();
+            }
+            Ok(false) => {
+                eprintln!("[panel] 显示");
                 let _ = w.show();
                 let _ = w.set_focus();
             }
+            Err(e) => {
+                eprintln!("[panel] is_visible 错误: {e}");
+            }
         }
+    } else {
+        eprintln!("[panel] panel 窗口不存在");
     }
 }
 

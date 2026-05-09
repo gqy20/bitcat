@@ -41,18 +41,27 @@ pub fn run() {
         .setup(|app| {
             tray::create_tray(app.handle())?;
 
-            // 注册全局热键 Alt+Space -> 切换 panel 显隐
+            // 注册全局热键 Ctrl+Alt+Space -> 切换 panel 显隐
+            // 注：Alt+Space 被 Windows 系统占用为窗口菜单，无法用作全局热键
             let app_handle = app.handle().clone();
-            let shortcut = "Alt+Space".parse::<tauri_plugin_global_shortcut::Shortcut>()?;
-            let shortcut_for_handler = shortcut.clone();
-            if let Err(e) = app.global_shortcut().on_shortcut(shortcut, move |_app, sc, evt| {
-                if sc == &shortcut_for_handler && evt.state() == ShortcutState::Pressed {
-                    panel::toggle_panel(&app_handle);
+            let hotkey_str = "CommandOrControl+Alt+Space";
+            log(&format!("准备注册全局热键: {hotkey_str}"));
+            match hotkey_str.parse::<tauri_plugin_global_shortcut::Shortcut>() {
+                Ok(shortcut) => {
+                    let shortcut_for_handler = shortcut.clone();
+                    let handler_app = app_handle.clone();
+                    let result = app.global_shortcut().on_shortcut(shortcut, move |_app, sc, evt| {
+                        log(&format!("热键回调触发: state={:?}", evt.state()));
+                        if sc == &shortcut_for_handler && evt.state() == ShortcutState::Pressed {
+                            panel::toggle_panel(&handler_app);
+                        }
+                    });
+                    match result {
+                        Ok(_) => log(&format!("✓ 已注册 {hotkey_str} → 切换面板")),
+                        Err(e) => log(&format!("✗ 注册 {hotkey_str} 失败: {e}")),
+                    }
                 }
-            }) {
-                log(&format!("注册全局热键失败 (Alt+Space): {e}"));
-            } else {
-                log("已注册全局热键 Alt+Space → 切换面板");
+                Err(e) => log(&format!("✗ 解析热键 {hotkey_str} 失败: {e}")),
             }
 
             let handle = app.handle().clone();
@@ -154,6 +163,13 @@ fn gamepad_loop(app: &tauri::AppHandle) {
                     if (alt_tab.held && name != "L1") || (ctrl_tab.held && name != "L2") {
                         alt_tab.release();
                         ctrl_tab.release();
+                    }
+
+                    // Home 键 → 切换面板（独占处理，跳过 bridge/actions）
+                    if name == "Home" {
+                        log("  → 切换面板");
+                        panel::toggle_panel(app);
+                        continue;
                     }
 
                     // Bridge: 特殊按键 → 宠物状态/AI
