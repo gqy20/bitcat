@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>8Bit Cat Tests</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1a1a2e; color: #e0e0e0; }
+    .pass { color: #4caf50; }
+    .fail { color: #f44336; font-weight: bold; }
+    h2 { color: #90caf9; }
+    .summary { margin-top: 20px; padding: 10px; background: #16213e; border-radius: 8px; }
+    canvas { border: 1px solid #444; image-rendering: pixelated; margin: 10px 0; }
+  </style>
+</head>
+<body>
+  <h1>8Bit Cat — Test Suite</h1>
+
+  <h2>Sprite Tests</h2>
+  <div id="sprite-results"></div>
+  <canvas id="sprite-preview" width="128" height="128"></canvas>
+
+  <h2>Pet State Machine Tests</h2>
+  <div id="pet-results"></div>
+
+  <div id="summary" class="summary"></div>
+
+  <script src="/js/sprite.js"></script>
+  <script src="/js/pet.js"></script>
+  <script>
+    function renderResults(containerId, results) {
+      const el = document.getElementById(containerId);
+      let passed = 0, failed = 0;
+      for (const r of results) {
+        const div = document.createElement('div');
+        div.className = r.pass ? 'pass' : 'fail';
+        div.textContent = (r.pass ? '✓' : '✗') + ' ' + r.name;
+        el.appendChild(div);
+        r.pass ? passed++ : failed++;
+      }
+      return { passed, failed };
+    }
+
+    // 运行 sprite 测试
+    const spriteResults = SpriteRenderer.runSpriteTests();
+    const sr = renderResults('sprite-results', spriteResults);
+
+    // 渲染预览
+    const canvas = document.getElementById('sprite-preview');
+    const ctx = canvas.getContext('2d');
+    SpriteRenderer.renderSprite(ctx, 'idle', 8);
+
+    // 运行 pet 测试
+    const petResults = PetState.runPetTests();
+    const pr = renderResults('pet-results', petResults);
+
+    // 汇总
+    const totalPassed = sr.passed + pr.passed;
+    const totalFailed = sr.failed + pr.failed;
+    const summary = document.getElementById('summary');
+    summary.innerHTML = `<strong>${totalPassed + totalFailed} tests: ${totalPassed} passed, ${totalFailed} failed</strong>`;
+    summary.style.color = totalFailed === 0 ? '#4caf50' : '#f44336';
+  </script>
+</body>
+</html>

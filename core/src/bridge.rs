@@ -80,6 +80,8 @@ fn default_button_mapping(button_index: u32) -> Option<SpecialAction> {
     match button_index {
         11 => Some(SpecialAction::AiChat),       // Start → AI 对话
         10 => Some(SpecialAction::ToggleSleep),   // Select → 睡觉
+        0 => Some(SpecialAction::Praise),         // A → 开心
+        1 => Some(SpecialAction::Wander),         // B → 随机走动
         _ => None,
     }
 }
@@ -193,7 +195,7 @@ mod tests {
 
     #[test]
     fn test_normal_button_no_action() {
-        let (msg, cmd) = handle_button_press(0, "hello");
+        let (msg, cmd) = handle_button_press(99, "hello"); // 不存在的按钮
         assert!(msg.is_none());
         assert!(cmd.is_none());
     }

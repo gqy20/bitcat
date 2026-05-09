@@ -1,0 +1,21 @@
+[package]
+name = "ai-pad-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ai-pad-core = { path = "../core" }
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sdl2 = { version = "0.38", features = ["bundled"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+windows-sys = { version = "0.61", features = ["Win32_System_Console"] }
+
+[lib]
+name = "ai_pad_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

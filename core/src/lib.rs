@@ -5,6 +5,5 @@ pub mod bridge;
 pub mod config;
 pub mod device;
 pub mod hotkey;
-pub mod ipc;
 pub mod pet;
 pub mod tools;
