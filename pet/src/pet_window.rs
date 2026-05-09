@@ -1,6 +1,7 @@
 /// 桌宠窗口 — 基于 ggez 0.10 的渲染与事件循环
 
-use ai_pad_core::ipc::IpcReceiver;
+use std::sync::mpsc::Receiver;
+
 use ai_pad_core::pet::{Pet, PetState};
 use ai_pad_core::bridge::PetCommand;
 use ggez::{
@@ -133,27 +134,26 @@ fn sprite_for_state(state: PetState, _frame: usize) -> &'static [u8] {
 pub struct PetWindow {
     pub pet: Pet,
     window_size: (f32, f32),
-    ipc: IpcReceiver,
+    cmd_rx: Receiver<PetCommand>,
     bubble_text: Option<String>,
 }
 
 impl PetWindow {
-    pub fn new() -> Self {
-        let port = ai_pad_core::ipc::default_port();
-        let ipc = IpcReceiver::new(port).expect(&format!("无法绑定 IPC 端口 {port}，请确认端口未被占用"));
+    pub fn new(cmd_rx: Receiver<PetCommand>) -> Self {
         Self {
             pet: Pet::new(64.0, 64.0),
             window_size: (128.0, 128.0),
-            ipc,
+            cmd_rx,
             bubble_text: None,
         }
     }
-    pub fn run() -> GameResult {
+
+    pub fn run(cmd_rx: Receiver<PetCommand>) -> GameResult {
         let (ctx, event_loop) = ggez::ContextBuilder::new("ai-pad-pet", "ai-pad")
             .window_setup(WindowSetup::default().title("8Bit Cat"))
             .window_mode(WindowMode::default().dimensions(128.0, 128.0).resizable(false))
             .build()?;
-        event::run(ctx, event_loop, Self::new())
+        event::run(ctx, event_loop, Self::new(cmd_rx))
     }
 }
 
@@ -162,8 +162,8 @@ impl event::EventHandler for PetWindow {
         let dt_ms = (ctx.time.delta().as_secs_f32() * 1000.0) as u64;
         self.pet.update(dt_ms);
 
-        // 轮询 IPC 命令
-        while let Some(cmd) = self.ipc.try_recv() {
+        // 轮询 channel 命令
+        while let Ok(cmd) = self.cmd_rx.try_recv() {
             self.apply_command(cmd);
         }
 

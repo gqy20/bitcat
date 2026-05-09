@@ -57,7 +57,9 @@ name = "ai-pad-ctl"
 version = "0.1.0"
 dependencies = [
  "ai-pad-core",
+ "ai-pad-pet",
  "sdl2",
+ "tokio",
  "windows-sys 0.61.2",
 ]
 

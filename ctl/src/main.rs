@@ -3,14 +3,14 @@
 use windows_sys::Win32::System::Console::AllocConsole;
 use windows_sys::Win32::System::Threading::CreateMutexW;
 
+use ai_pad_core::bridge::{handle_button_press, resolve_agent_response, PetCommand};
 use ai_pad_core::config::ButtonConfig;
 use ai_pad_core::action::ActionConfig;
 use ai_pad_core::device::button_name;
-use ai_pad_core::bridge::{handle_button_press, resolve_agent_response};
-use ai_pad_core::ipc::IpcSender;
 use ai_pad_core::agent::PetAgent;
 use ai_pad_ctl::joystick::SdlGamepad;
 use ai_pad_ctl::tray::TrayCommand;
+use ai_pad_pet::PetWindow;
 
 fn log(msg: &str) {
     let now = std::time::SystemTime::now()
@@ -28,7 +28,6 @@ const VK_ALT: u16 = 0x12;
 const VK_CTRL: u16 = 0x11;
 const VK_TAB: u16 = 0x09;
 
-/// 跟踪按住状态的修饰键
 struct HeldModifier {
     vk: u16,
     held: bool,
@@ -43,7 +42,6 @@ impl HeldModifier {
             let _ = ai_pad_core::hotkey::key_down(self.vk);
             self.held = true;
         }
-        // 按 tab
         let _ = ai_pad_core::hotkey::key_down(VK_TAB);
         let _ = ai_pad_core::hotkey::key_up(VK_TAB);
     }
@@ -55,7 +53,6 @@ impl HeldModifier {
     }
 }
 
-/// 获取 exe 所在目录，配置文件相对于此目录查找
 fn exe_dir() -> String {
     std::env::current_exe()
         .ok()
@@ -63,7 +60,6 @@ fn exe_dir() -> String {
         .unwrap_or_else(|| ".".to_string())
 }
 
-/// 解析配置文件路径：优先 exe 同目录，其次当前目录
 fn resolve_config(filename: &str) -> String {
     let base = exe_dir();
     let exe_path = format!("{}\\{}", base, filename);
@@ -74,7 +70,6 @@ fn resolve_config(filename: &str) -> String {
     }
 }
 
-/// 单实例检测：通过命名互斥体防止重复启动
 fn check_single_instance() -> bool {
     use std::ptr::null_mut;
     use windows_sys::w;
@@ -85,9 +80,8 @@ fn check_single_instance() -> bool {
     unsafe {
         let handle = CreateMutexW(null_mut(), 0, MUTEX_NAME);
         if handle.is_null() {
-            return true; // 创建失败，放行
+            return true;
         }
-        // ERROR_ALREADY_EXISTS = 183
         let err = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
         if err == 183 {
             return false;
@@ -97,35 +91,46 @@ fn check_single_instance() -> bool {
 }
 
 fn main() {
-    // 单实例检测：命名互斥体
     if !check_single_instance() {
         ai_pad_ctl::tray::show_error("ai-pad", "ai-pad 已在后台运行，请勿重复启动。");
         return;
     }
 
-    // --debug: 弹出控制台窗口
     let debug = std::env::args().any(|a| a == "--debug");
     if debug {
         unsafe { AllocConsole(); }
     }
 
-    let (tx, rx) = std::sync::mpsc::channel::<TrayCommand>();
+    // pet 命令通道：gamepad → pet window
+    let (pet_tx, pet_rx) = std::sync::mpsc::channel::<PetCommand>();
+    // 托盘命令通道：tray → gamepad thread
+    let (tray_tx, tray_rx) = std::sync::mpsc::channel::<TrayCommand>();
 
-    // 后台线程：手柄轮询
-    let gamepad_thread = std::thread::spawn(move || {
-        gamepad_loop(&rx);
+    // 后台线程：系统托盘消息循环
+    let tray_handle = std::thread::spawn(move || {
+        if let Err(e) = ai_pad_ctl::tray::run(tray_tx) {
+            ai_pad_ctl::tray::show_error("ai-pad", &format!("托盘初始化失败: {e}"));
+        }
     });
 
-    // 主线程：系统托盘消息循环
-    if let Err(e) = ai_pad_ctl::tray::run(tx) {
-        ai_pad_ctl::tray::show_error("ai-pad", &format!("托盘初始化失败: {e}"));
-        std::process::exit(1);
+    // 后台线程：手柄轮询
+    let gamepad_handle = std::thread::spawn(move || {
+        gamepad_loop(&pet_tx, &tray_rx);
+    });
+
+    // 主线程：ggez 桌宠窗口（winit 要求主线程运行事件循环）
+    if let Err(e) = PetWindow::run(pet_rx) {
+        ai_pad_ctl::tray::show_error("ai-pad", &format!("桌宠窗口失败: {e}"));
     }
 
-    let _ = gamepad_thread.join();
+    let _ = tray_handle.join();
+    let _ = gamepad_handle.join();
 }
 
-fn gamepad_loop(rx: &std::sync::mpsc::Receiver<TrayCommand>) {
+fn gamepad_loop(
+    pet_tx: &std::sync::mpsc::Sender<PetCommand>,
+    tray_rx: &std::sync::mpsc::Receiver<TrayCommand>,
+) {
     let btn_config = match ButtonConfig::load(&resolve_config("buttons.yml")) {
         Ok(c) => c,
         Err(e) => {
@@ -145,7 +150,7 @@ fn gamepad_loop(rx: &std::sync::mpsc::Receiver<TrayCommand>) {
     let sdl = match SdlGamepad::init() {
         Ok(s) => s,
         Err(e) => {
-            ai_pad_ctl::tray::show_error("ai-pad", &format!("SDL2 初始化失败: {e}"));
+            log(&format!("SDL2 初始化失败: {e}"));
             return;
         }
     };
@@ -153,36 +158,22 @@ fn gamepad_loop(rx: &std::sync::mpsc::Receiver<TrayCommand>) {
     let pads = match SdlGamepad::list_gamepads(&sdl) {
         Ok(p) => p,
         Err(e) => {
-            ai_pad_ctl::tray::show_error("ai-pad", &format!("枚举手柄失败: {e}"));
+            log(&format!("枚举手柄失败: {e}"));
             return;
         }
     };
 
     if pads.is_empty() {
-        ai_pad_ctl::tray::show_error("ai-pad", "未检测到游戏手柄，请确保 8BitDo Micro 已连接并开启");
-        return;
-    }
-
-    log("ai-pad-ctl 启动");
-    for p in &pads {
-        log(&format!("设备 [{}] {} ({} 按钮)", p.index, p.name, p.num_buttons));
+        log("未检测到游戏手柄，等待连接...");
+    } else {
+        log("ai-pad 启动");
+        for p in &pads {
+            log(&format!("设备 [{}] {} ({} 按钮)", p.index, p.name, p.num_buttons));
+        }
     }
     log(&format!("已加载 {} 个动作绑定", action_config.actions.len()));
 
-    // IPC 发送器：向 pet 窗口发送命令
-    let ipc_port = ai_pad_core::ipc::default_port();
-    let ipc = match IpcSender::new(ipc_port) {
-        Ok(s) => {
-            log(&format!("IPC 发送器就绪 → 127.0.0.1:{ipc_port}"));
-            s
-        }
-        Err(e) => {
-            log(&format!("IPC 发送器初始化失败（pet 可能未启动）: {e}"));
-            return;
-        }
-    };
-
-    // AI Agent（异步运行时）
+    // AI Agent
     let rt = match tokio::runtime::Runtime::new() {
         Ok(r) => r,
         Err(e) => {
@@ -193,7 +184,7 @@ fn gamepad_loop(rx: &std::sync::mpsc::Receiver<TrayCommand>) {
     let agent = match PetAgent::new() {
         Ok(a) => {
             log("AI Agent 初始化成功 (8Bit Cat)");
-        Some(a)
+            Some(a)
         }
         Err(e) => {
             log(&format!("AI Agent 初始化失败: {e}"));
@@ -201,10 +192,10 @@ fn gamepad_loop(rx: &std::sync::mpsc::Receiver<TrayCommand>) {
         }
     };
 
-    let mut gamepad = match SdlGamepad::open(&sdl, pads[0].index) {
+    let mut gamepad = match SdlGamepad::open(&sdl, pads.first().map(|p| p.index).unwrap_or(0)) {
         Ok(g) => g,
         Err(e) => {
-            eprintln!("{e}");
+            log(&format!("打开手柄失败: {e}"));
             return;
         }
     };
@@ -216,14 +207,21 @@ fn gamepad_loop(rx: &std::sync::mpsc::Receiver<TrayCommand>) {
 
     loop {
         // 检查托盘命令
-        if let Ok(cmd) = rx.try_recv() {
+        if let Ok(cmd) = tray_rx.try_recv() {
             match cmd {
-                TrayCommand::Exit => break,
+                TrayCommand::Exit => {
+                    let _ = pet_tx.send(PetCommand::Exit);
+                    break;
+                }
                 TrayCommand::Reload => {
                     log("重载配置...");
                     if let Ok(_c) = ButtonConfig::load(&resolve_config("buttons.yml")) {
                         log("重载配置完成");
                     }
+                }
+                TrayCommand::TogglePet => {
+                    // 切换宠物状态：在 Happy 和 Idle 之间
+                    let _ = pet_tx.send(PetCommand::SetState { state: ai_pad_core::bridge::PetStateName::Happy });
                 }
             }
         }
@@ -245,13 +243,12 @@ fn gamepad_loop(rx: &std::sync::mpsc::Receiver<TrayCommand>) {
 
                     log(&format!("按下 #{idx} {display}"));
 
-                    // ---- Bridge: 特殊按键 → AI / 宠物状态 ----
+                    // Bridge: 特殊按键 → AI / 宠物状态
                     let (agent_msg, pet_cmd) = handle_button_press(idx as u32, "");
                     if let Some(cmd) = pet_cmd {
-                        if let Err(e) = ipc.send(&cmd) {
-                            log(&format!("IPC 发送失败: {e}"));
-                        } else {
-                            log(&format!("  → IPC: {:?}", cmd));
+                        log(&format!("  → Pet: {:?}", cmd));
+                        if let Err(e) = pet_tx.send(cmd) {
+                            log(&format!("发送宠物命令失败: {e}"));
                         }
                     }
                     if let (Some(msg), Some(ag)) = (agent_msg, &agent) {
@@ -260,13 +257,13 @@ fn gamepad_loop(rx: &std::sync::mpsc::Receiver<TrayCommand>) {
                             Ok(reply) => {
                                 log(&format!("  ← AI 回复: {}", &reply[..reply.len().min(60)]));
                                 for cmd in resolve_agent_response(&reply) {
-                                    if let Err(e) = ipc.send(&cmd) {
-                                        log(&format!("  IPC 发送失败: {e}"));
+                                    if let Err(e) = pet_tx.send(cmd) {
+                                        log(&format!("  发送失败: {e}"));
                                     }
                                 }
                             }
                             Err(e) => {
-                                log(&format!("  ✗ AI 错误: {e}"));
+                                log(&format!("  AI 错误: {e}"));
                             }
                         }
                     }
@@ -308,7 +305,7 @@ fn gamepad_loop(rx: &std::sync::mpsc::Receiver<TrayCommand>) {
         std::thread::sleep(std::time::Duration::from_millis(80));
     }
 
-    log("ai-pad-ctl 退出");
+    log("ai-pad 退出");
 }
 
 fn execute_action(

@@ -13,11 +13,13 @@ const WM_TRAYICON: u32 = WM_USER + 1;
 const ID_TRAY: u32 = 1;
 const IDM_EXIT: usize = 1001;
 const IDM_RELOAD: usize = 1002;
+const IDM_TOGGLE_PET: usize = 1003;
 const ICON_SIZE: i32 = 32;
 
 pub enum TrayCommand {
     Exit,
     Reload,
+    TogglePet,
 }
 
 static mut TX: usize = 0;
@@ -206,6 +208,7 @@ unsafe extern "system" fn wnd_proc(
                     PostQuitMessage(0);
                 },
                 IDM_RELOAD => unsafe { send_cmd(TrayCommand::Reload) },
+                IDM_TOGGLE_PET => unsafe { send_cmd(TrayCommand::TogglePet) },
                 _ => {}
             }
             0
@@ -222,6 +225,7 @@ unsafe fn show_menu(hwnd: HWND) {
     unsafe {
         let menu = CreatePopupMenu();
         AppendMenuW(menu, MF_STRING, IDM_RELOAD, w!("重载配置"));
+        AppendMenuW(menu, MF_STRING, IDM_TOGGLE_PET, w!("显示/隐藏宠物"));
         AppendMenuW(menu, MF_SEPARATOR, 0, null());
         AppendMenuW(menu, MF_STRING, IDM_EXIT, w!("退出"));
 
