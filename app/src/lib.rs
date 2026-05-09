@@ -1,9 +1,11 @@
+pub mod bubble;
 pub mod commands;
 pub mod gamepad;
 pub mod joystick;
 pub mod panel;
 pub mod tray;
 
+use bubble::SharedBubble;
 use commands::SharedPet;
 use tauri::{Emitter, Manager, WindowEvent};
 
@@ -20,6 +22,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(SharedPet::new())
+        .manage(SharedBubble::new())
         .invoke_handler(tauri::generate_handler![
             commands::cmd_set_state,
             commands::cmd_walk_to,
@@ -30,6 +33,8 @@ pub fn run() {
             panel::cmd_hide_panel,
             panel::cmd_execute_panel_action,
             panel::cmd_panel_log,
+            bubble::cmd_consume_bubble_text,
+            bubble::cmd_hide_bubble,
         ])
         .on_window_event(|window, event| {
             // panel 失焦自动隐藏
@@ -223,7 +228,22 @@ fn gamepad_loop(app: &tauri::AppHandle) {
 
                     if let (Some(msg), Some(ag)) = (&agent_msg, &agent) {
                         log(&format!("  → AI: {msg}"));
-                        match rt.block_on(ag.chat(msg)) {
+
+                        // 启动流式气泡: 清空内容 + 显示窗口
+                        if let Err(e) = bubble::start_streaming_bubble(app) {
+                            log(&format!("  气泡启动错误: {e}"));
+                        }
+
+                        // 边生成边追加
+                        let app_for_chunks = app.clone();
+                        let stream_result = rt.block_on(ag.chat_stream(msg, move |chunk| {
+                            let _ = bubble::append_bubble_chunk(&app_for_chunks, chunk);
+                        }));
+
+                        // 通知前端流式结束 → 启动自动隐藏定时
+                        let _ = bubble::finalize_bubble(app);
+
+                        match stream_result {
                             Ok(reply) => {
                                 let preview: String = reply.chars().take(60).collect();
                                 log(&format!("  ← AI: {preview}"));

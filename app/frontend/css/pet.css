@@ -13,29 +13,132 @@ html, body {
 }
 
 #sprite {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 128px;
   height: 128px;
   image-rendering: pixelated;
+  transform-origin: 50% 60%;
+  z-index: 2;
 }
 
-.bubble {
+/* idle 状态下的呼吸节奏（轻微缩放） */
+body.state-idle #sprite {
+  animation: breath 2.4s ease-in-out infinite;
+}
+
+/* sleep 状态下的更慢更深的呼吸 */
+body.state-sleep #sprite {
+  animation: breath-deep 3.2s ease-in-out infinite;
+}
+
+@keyframes breath {
+  0%, 100% { transform: scale(1.0); }
+  50%      { transform: scale(1.02); }
+}
+
+@keyframes breath-deep {
+  0%, 100% { transform: scale(0.98); }
+  50%      { transform: scale(1.03); }
+}
+
+/* 状态切换瞬间的淡入闪烁 */
+.flash {
+  animation: flash 0.22s ease-out;
+}
+
+@keyframes flash {
+  0%   { opacity: 0.55; filter: brightness(1.4); }
+  100% { opacity: 1;    filter: brightness(1.0); }
+}
+
+/* 精灵脚下的椭圆阴影 */
+.shadow {
   position: absolute;
-  bottom: 4px;
+  bottom: 8px;
   left: 50%;
-  transform: translateX(-50%);
-  background: rgba(255, 255, 255, 0.9);
-  color: #1e1e28;
-  font-size: 10px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  white-space: nowrap;
-  max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  width: 56px;
+  height: 8px;
+  margin-left: -28px;
+  background: radial-gradient(ellipse at center,
+    rgba(0, 0, 0, 0.38) 0%,
+    rgba(0, 0, 0, 0.18) 45%,
+    rgba(0, 0, 0, 0) 75%);
   pointer-events: none;
-  transition: opacity 0.3s ease;
+  z-index: 1;
+  transition: transform 0.15s ease, opacity 0.2s ease;
 }
 
-.bubble.hidden {
-  opacity: 0;
+/* walk 时阴影略小（脚抬起） */
+body.state-walk .shadow {
+  animation: shadow-walk 0.6s ease-in-out infinite;
+}
+
+@keyframes shadow-walk {
+  0%, 100% { transform: scaleX(1.0); opacity: 1; }
+  50%      { transform: scaleX(0.85); opacity: 0.7; }
+}
+
+/* 粒子层 */
+.particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 3;
+}
+
+/* ========== 粒子效果 ========== */
+
+.particle {
+  position: absolute;
+  font-size: 13px;
+  font-weight: bold;
+  pointer-events: none;
+  user-select: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  will-change: transform, opacity;
+}
+
+/* happy: 喷出红心向上漂浮 */
+.p-heart {
+  color: #ff5577;
+  animation: heart-float 1.2s ease-out forwards;
+}
+
+@keyframes heart-float {
+  0%   { transform: translateY(4px) scale(0.3); opacity: 0; }
+  20%  { transform: translateY(-4px) scale(1.1); opacity: 1; }
+  60%  { transform: translateY(-18px) scale(1.0); opacity: 1; }
+  100% { transform: translateY(-32px) scale(0.6); opacity: 0; }
+}
+
+/* sleep: Z 字向右上方漂浮 */
+.p-zzz {
+  color: #88aadd;
+  font-style: italic;
+  font-family: 'Courier New', monospace;
+  animation: zzz-float 1.8s ease-out forwards;
+}
+
+@keyframes zzz-float {
+  0%   { transform: translate(0, 4px) scale(0.5); opacity: 0; }
+  15%  { transform: translate(2px, 0) scale(0.9); opacity: 1; }
+  60%  { transform: translate(8px, -16px) scale(1.1); opacity: 0.9; }
+  100% { transform: translate(16px, -30px) scale(1.3); opacity: 0; }
+}
+
+/* confused: ? 左右晃动向上漂浮 */
+.p-confused {
+  color: #e8a040;
+  animation: confused-float 1.4s ease-out forwards;
+}
+
+@keyframes confused-float {
+  0%   { transform: translate(0, 4px) scale(0.4); opacity: 0; }
+  20%  { transform: translate(-3px, -2px) scale(1.1); opacity: 1; }
+  50%  { transform: translate(3px, -10px) scale(1.0); opacity: 1; }
+  80%  { transform: translate(-2px, -18px) scale(0.9); opacity: 0.6; }
+  100% { transform: translate(0, -24px) scale(0.7); opacity: 0; }
 }

@@ -3,29 +3,40 @@
 <head>
   <meta charset="UTF-8" />
   <title>8Bit Cat Tests</title>
+  <link rel="stylesheet" href="/css/pet.css" />
   <style>
-    body { font-family: monospace; padding: 20px; background: #1a1a2e; color: #e0e0e0; }
+    body { font-family: monospace; padding: 20px; background: #1a1a2e; color: #e0e0e0; width: auto; height: auto; overflow: visible; }
     .pass { color: #4caf50; }
     .fail { color: #f44336; font-weight: bold; }
     h2 { color: #90caf9; }
     .summary { margin-top: 20px; padding: 10px; background: #16213e; border-radius: 8px; }
-    canvas { border: 1px solid #444; image-rendering: pixelated; margin: 10px 0; }
+    .preview-row { display: flex; gap: 12px; flex-wrap: wrap; margin: 10px 0; }
+    .preview { position: relative; width: 128px; height: 128px; background: #2a2a4a; border: 1px solid #444; }
+    .preview canvas { width: 128px; height: 128px; image-rendering: pixelated; position: absolute; top: 0; left: 0; }
+    .preview-label { position: absolute; bottom: 2px; left: 4px; font-size: 10px; color: #aaa; z-index: 10; }
   </style>
 </head>
 <body>
   <h1>8Bit Cat — Test Suite</h1>
 
+  <h2>Sprite Animation Preview</h2>
+  <div class="preview-row" id="previews"></div>
+
   <h2>Sprite Tests</h2>
   <div id="sprite-results"></div>
-  <canvas id="sprite-preview" width="128" height="128"></canvas>
 
   <h2>Pet State Machine Tests</h2>
   <div id="pet-results"></div>
+
+  <h2>Particle Tests</h2>
+  <div id="particle-results"></div>
+  <div id="particles" style="position: relative; height: 80px; background: #2a2a4a; margin-top: 10px;"></div>
 
   <div id="summary" class="summary"></div>
 
   <script src="/js/sprite.js"></script>
   <script src="/js/pet.js"></script>
+  <script src="/js/particles.js"></script>
   <script>
     function renderResults(containerId, results) {
       const el = document.getElementById(containerId);
@@ -40,22 +51,61 @@
       return { passed, failed };
     }
 
-    // 运行 sprite 测试
+    // 创建动画预览：每个状态一个画布，循环播放帧
+    const states = ['idle', 'walk', 'sleep', 'talk', 'happy', 'confused'];
+    const previewRow = document.getElementById('previews');
+    const previewCtxs = {};
+    states.forEach(state => {
+      const wrap = document.createElement('div');
+      wrap.className = 'preview';
+      const canvas = document.createElement('canvas');
+      canvas.width = 128; canvas.height = 128;
+      const label = document.createElement('div');
+      label.className = 'preview-label';
+      label.textContent = state;
+      wrap.appendChild(canvas);
+      wrap.appendChild(label);
+      previewRow.appendChild(wrap);
+      previewCtxs[state] = canvas.getContext('2d');
+    });
+
+    // 动画循环：每个 state 按其 frameDuration 推进
+    const stateConfig = PetState.STATE_CONFIG;
+    const stateAnims = {};
+    states.forEach(s => stateAnims[s] = { frame: 0, t: 0, facing: true });
+    let lastT = performance.now();
+    function previewLoop(now) {
+      const dt = now - lastT;
+      lastT = now;
+      states.forEach(s => {
+        const a = stateAnims[s];
+        const cfg = stateConfig[s];
+        a.t += dt;
+        while (a.t >= cfg.frameDuration) {
+          a.t -= cfg.frameDuration;
+          a.frame = (a.frame + 1) % cfg.frameCount;
+        }
+        // walk 状态来回翻转方向
+        if (s === 'walk' && a.frame === 0 && a.t < 50) a.facing = !a.facing;
+        SpriteRenderer.renderSprite(previewCtxs[s], s, a.frame, a.facing, 8);
+      });
+      requestAnimationFrame(previewLoop);
+    }
+    requestAnimationFrame(previewLoop);
+
+    // 运行测试
     const spriteResults = SpriteRenderer.runSpriteTests();
     const sr = renderResults('sprite-results', spriteResults);
 
-    // 渲染预览
-    const canvas = document.getElementById('sprite-preview');
-    const ctx = canvas.getContext('2d');
-    SpriteRenderer.renderSprite(ctx, 'idle', 8);
-
-    // 运行 pet 测试
     const petResults = PetState.runPetTests();
     const pr = renderResults('pet-results', petResults);
 
+    const particleResults = Particles.runParticleTests();
+    const par = renderResults('particle-results', particleResults);
+
     // 汇总
-    const totalPassed = sr.passed + pr.passed;
-    const totalFailed = sr.failed + pr.failed;
+    const totalPassed = sr.passed + pr.passed + par.passed;
+    const totalFailed = sr.failed + pr.failed + par.failed;
     const summary = document.getElementById('summary');
     summary.innerHTML = `<strong>${totalPassed + totalFailed} tests: ${totalPassed} passed, ${totalFailed} failed</strong>`;
     summary.style.color = totalFailed === 0 ? '#4caf50' : '#f44336';

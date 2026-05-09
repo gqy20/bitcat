@@ -11,6 +11,7 @@ dirs = "5"
 chrono = { version = "0.4", features = ["default"] }
 rig-core = "0.36"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+futures = "0.3"
 windows-sys = { version = "0.61.2", features = ["Win32_UI_Input_KeyboardAndMouse"] }
 
 [dev-dependencies]

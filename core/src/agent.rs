@@ -1,9 +1,12 @@
 use crate::ai_config::AiConfig;
 use crate::tools::{self, LaunchArgs, ReadFileArgs, ShellArgs};
+use futures::StreamExt;
 use rig::agent::Agent;
+use rig::agent::MultiTurnStreamItem;
 use rig::client::CompletionClient;
 use rig::completion::{Prompt, ToolDefinition};
 use rig::providers::anthropic;
+use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
 use rig::tool::Tool;
 use serde_json::json;
 
@@ -59,6 +62,30 @@ impl PetAgent {
             .prompt(message)
             .await
             .map_err(|e| format!("AI 对话失败: {e}"))
+    }
+
+    /// 流式对话: 每收到文本块通过 on_chunk 回调发出, 返回累积的完整回复
+    pub async fn chat_stream<F>(&self, message: &str, mut on_chunk: F) -> Result<String, String>
+    where
+        F: FnMut(&str),
+    {
+        let mut stream = self.agent.stream_prompt(message.to_string()).await;
+
+        let mut accumulated = String::new();
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(
+                    text,
+                ))) => {
+                    accumulated.push_str(&text.text);
+                    on_chunk(&text.text);
+                }
+                Ok(MultiTurnStreamItem::FinalResponse(_)) => {}
+                Ok(_) => {}
+                Err(e) => return Err(format!("AI 流错误: {e}")),
+            }
+        }
+        Ok(accumulated)
     }
 }
 

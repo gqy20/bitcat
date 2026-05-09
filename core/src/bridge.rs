@@ -148,8 +148,8 @@ pub fn resolve_agent_response(reply: &str) -> Vec<PetCommand> {
 
     // 始终显示对话内容（按字符切片，防止 UTF-8 边界 panic）
     let char_count = reply.chars().count();
-    let short = if char_count > 60 {
-        let truncated: String = reply.chars().take(57).collect();
+    let short = if char_count > 200 {
+        let truncated: String = reply.chars().take(197).collect();
         format!("{truncated}...")
     } else {
         reply.to_string()
@@ -271,7 +271,8 @@ mod tests {
 
     #[test]
     fn test_resolve_long_text_truncated() {
-        let long = "这是一个非常长的回复".repeat(10);
+        // 25×10=250 字 > 阈值 200，触发截断
+        let long = "这是一个非常长的回复".repeat(25);
         let cmds = resolve_agent_response(&long);
         let bubble = cmds.iter().find_map(|c| match c {
             PetCommand::ShowBubble { text } => Some(text.clone()),
@@ -279,9 +280,20 @@ mod tests {
         });
         assert!(bubble.is_some());
         let text = bubble.unwrap();
-        // 按字符数断言（57 个字符 + "..."）
-        assert_eq!(text.chars().count(), 60);
+        // 按字符数断言（197 个字符 + "..."）
+        assert_eq!(text.chars().count(), 200);
         assert!(text.ends_with("..."));
+    }
+
+    #[test]
+    fn test_resolve_short_text_not_truncated() {
+        let short = "短回复，不该截断";
+        let cmds = resolve_agent_response(short);
+        let bubble = cmds.iter().find_map(|c| match c {
+            PetCommand::ShowBubble { text } => Some(text.clone()),
+            _ => None,
+        });
+        assert_eq!(bubble.unwrap(), short);
     }
 
     #[test]

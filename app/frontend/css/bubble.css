@@ -1,0 +1,84 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 280px;
+  height: 140px;
+  background: transparent;
+  font-family: 'Segoe UI', system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.bubble {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  right: 8px;
+  bottom: 22px;
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 12px;
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.22),
+    0 2px 4px rgba(0, 0, 0, 0.12);
+  padding: 10px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transform-origin: 50% 100%;
+  transition: opacity 0.22s ease-out, transform 0.22s ease-out;
+}
+
+/* 底部三角向下指向精灵 */
+.bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-top: 10px solid rgba(255, 255, 255, 0.96);
+  filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.12));
+}
+
+.content {
+  flex: 1;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #1a1a2a;
+  overflow-y: auto;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.content::-webkit-scrollbar {
+  width: 4px;
+}
+
+.content::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 2px;
+}
+
+.content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+body.hidden .bubble {
+  opacity: 0;
+  transform: scale(0.92) translateY(6px);
+  pointer-events: none;
+}
+
+body.show .bubble {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
