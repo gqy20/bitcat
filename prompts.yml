@@ -34,3 +34,10 @@ vision:
   prompt_multi: |
     注意：这张截图是多显示器拼接的，内容从左到右排列。
     左边通常是副屏，右边通常是主屏。请分别描述各屏的内容。
+
+# ---- 记忆配置（Phase 1：对话摘要滚动窗口） ----
+memory:
+  max_entries: 20          # 保留最近 N 条对话
+  max_context_chars: 1500  # 注入 prompt 的上下文最大字符数
+  max_user_chars: 100      # 每条用户消息截断长度
+  max_reply_chars: 200     # 每条 AI 回复截断长度

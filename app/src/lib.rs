@@ -17,6 +17,7 @@ use ai_pad_core::action::{ActionConfig, ActionDef};
 use ai_pad_core::bridge::handle_button_press;
 use ai_pad_core::device::button_name;
 use ai_pad_core::agent::PetAgent;
+use ai_pad_core::memory::MemoryStore;
 use ai_pad_core::hotkey;
 use joystick::SdlGamepad;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
@@ -291,6 +292,10 @@ fn gamepad_loop(app: &tauri::AppHandle) {
     let ac = action_config.as_ref().map(|c| c.actions.len()).unwrap_or(0);
     info!(action_count = ac, "已加载 {ac} 个动作绑定");
 
+    let mut memory = MemoryStore::load();
+    let memory_config = ai_pad_core::prompts::PromptsConfig::load().memory;
+    info!(entries = memory.entries.len(), "记忆系统已初始化");
+
     let mut prev_buttons: u32 = 0;
     let mut prev_hat: Option<(i32, i32)> = None;
     let mut alt_tab = HeldModifier::new(0x12);  // VK_MENU
@@ -345,7 +350,7 @@ fn gamepad_loop(app: &tauri::AppHandle) {
 
                     if let (Some(msg), Some(ag)) = (&agent_msg, get_agent(&agent)) {
                         info!(msg = %msg, "→ AI: {msg}");
-                        run_ai_chat(&rt, ag, app, msg, "");
+                        run_ai_chat(&rt, ag, app, msg, "", &mut memory, &memory_config);
                     }
 
                     // Actions: 按键名 → 动作绑定
@@ -403,7 +408,7 @@ fn gamepad_loop(app: &tauri::AppHandle) {
                         info!(text = %text, len = text.chars().count(), "[voice] 识别全文: {text}");
 
                         if let Some(ag) = get_agent(&agent) {
-                            run_ai_chat(&rt, ag, app, &text, "[voice]");
+                            run_ai_chat(&rt, ag, app, &text, "[voice]", &mut memory, &memory_config);
                         } else {
                             warn!("[voice] AI Agent 未初始化");
                         }
@@ -439,30 +444,46 @@ fn gamepad_loop(app: &tauri::AppHandle) {
     }
 }
 
-/// 统一的 AI 流式对话执行：启动气泡 → 流式追加 chunk → 结束气泡 → 处理回复
+/// 统一的 AI 流式对话执行：启动气泡 → 注入记忆 → 流式追加 chunk → 结束气泡 → 记录记忆 + 处理回复
 fn run_ai_chat(
     rt: &tokio::runtime::Runtime,
     agent: &PetAgent,
     app: &tauri::AppHandle,
     msg: &str,
     log_prefix: &str,
+    memory: &mut MemoryStore,
+    memory_config: &ai_pad_core::memory::MemoryConfig,
 ) {
     let tag = if log_prefix.is_empty() { "" } else { " " };
     if let Err(e) = bubble::start_streaming_bubble(app) {
         warn!(error = %e, "{log_prefix}气泡启动错误");
         return;
     }
+
+    // 注入记忆上下文
+    let ctx = memory.build_context(memory_config);
+    let enriched_msg = if ctx.is_empty() {
+        msg.to_string()
+    } else {
+        format!("{ctx}\n用户说: {msg}")
+    };
+
     let app_for_chunks = app.clone();
-    let msg = msg.to_string();
     let prefix = log_prefix.to_string();
     let prefix_for_log = prefix.clone();
-    let stream_result = rt.block_on(agent.chat_stream(&msg, move |chunk| {
+    let stream_result = rt.block_on(agent.chat_stream(&enriched_msg, move |chunk| {
         debug!(len = chunk.len(), "{prefix_for_log}{tag}AI chunk");
         let _ = bubble::append_bubble_chunk(&app_for_chunks, chunk);
     }));
     let _ = bubble::finalize_bubble(app);
     match stream_result {
         Ok(reply) => {
+            // 持久化到记忆
+            memory.record_conversation(msg, &reply, memory_config);
+            if let Err(e) = memory.save() {
+                warn!(error = %e, "保存记忆失败");
+            }
+
             if prefix.is_empty() {
                 let preview: String = reply.chars().take(60).collect();
                 info!(preview = %preview, "← AI: {preview}");

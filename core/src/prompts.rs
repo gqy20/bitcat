@@ -1,3 +1,4 @@
+use crate::memory::MemoryConfig;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 
@@ -55,6 +56,8 @@ pub struct PromptsConfig {
     pub agent: AgentPromptConfig,
     #[serde(default)]
     pub vision: VisionPromptConfig,
+    #[serde(default)]
+    pub memory: MemoryConfig,
 }
 
 fn default_agent_preamble() -> String {
@@ -87,6 +90,7 @@ impl Default for PromptsConfig {
         Self {
             agent: AgentPromptConfig::default(),
             vision: VisionPromptConfig::default(),
+            memory: MemoryConfig::default(),
         }
     }
 }
@@ -160,5 +164,18 @@ agent:
         let cfg: PromptsConfig = serde_yaml::from_str("{}").unwrap();
         assert!(cfg.agent.preamble.contains("8Bit"));
         assert!(cfg.vision.prompt.contains("8Bit"));
+        assert_eq!(cfg.memory.max_entries, 20);
+    }
+
+    #[test]
+    fn test_partial_config_gets_default_memory() {
+        let yaml = r#"
+agent:
+  preamble: "只有 agent"
+"#;
+        let cfg: PromptsConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(cfg.agent.preamble, "只有 agent");
+        assert_eq!(cfg.memory.max_entries, 20);
+        assert_eq!(cfg.memory.max_context_chars, 1500);
     }
 }
