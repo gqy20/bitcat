@@ -1,6 +1,6 @@
 use crate::ai_config::AiConfig;
 use crate::prompts::PromptsConfig;
-use crate::tools::{self, LaunchArgs, ReadFileArgs, ShellArgs};
+use crate::tools::{self, LaunchArgs, ReadFileArgs, RecentScreenshotsArgs, ShellArgs};
 use futures::StreamExt;
 use rig::agent::Agent;
 use rig::agent::MultiTurnStreamItem;
@@ -40,6 +40,7 @@ impl PetAgent {
             .tool(ShellTool)
             .tool(ReadFileTool)
             .tool(GetTimeTool)
+            .tool(RecentScreenshotsTool)
             .build();
 
         Ok(Self { agent, config })
@@ -211,6 +212,34 @@ impl Tool for GetTimeTool {
     }
 }
 
+// ---- Tool: 查询最近截图分析记录 ----
+
+struct RecentScreenshotsTool;
+
+impl Tool for RecentScreenshotsTool {
+    const NAME: &'static str = "recent_screenshots";
+    type Error = std::convert::Infallible;
+    type Args = RecentScreenshotsArgs;
+    type Output = tools::ToolResult;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: "recent_screenshots".into(),
+            description: "查询最近的截图视觉分析记录，了解用户最近在屏幕上做什么".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "count": { "type": "integer", "description": "返回的记录数量，默认 3" }
+                },
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        Ok(tools::execute_recent_screenshots(&args, None))
+    }
+}
+
 // ---- 测试 ----
 
 #[cfg(test)]
@@ -302,6 +331,30 @@ mod tests {
         let args = GetTimeArgs { format: "date".into() };
         let result = rt.block_on(tool.call(args)).unwrap();
         assert!(result.success);
+        assert!(!result.output.is_empty());
+    }
+
+    // ---- RecentScreenshotsTool TDD 测试 ----
+
+    #[test]
+    fn test_recent_screenshots_tool_definition() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let tool = RecentScreenshotsTool;
+        let def = rt.block_on(tool.definition(String::new()));
+        assert_eq!(def.name, "recent_screenshots");
+        assert!(def.description.contains("截图"));
+        let params = def.parameters.as_object().unwrap();
+        assert!(params.contains_key("properties"));
+    }
+
+    #[test]
+    fn test_recent_screenshots_tool_call_returns_result() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let tool = RecentScreenshotsTool;
+        let args = RecentScreenshotsArgs { count: Some(3) };
+        let result = rt.block_on(tool.call(args)).unwrap();
+        assert!(result.success);
+        // 无真实数据时返回提示信息
         assert!(!result.output.is_empty());
     }
 }

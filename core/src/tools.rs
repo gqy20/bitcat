@@ -35,6 +35,14 @@ pub struct GetTimeArgs {
 
 fn default_format() -> String { "full".into() }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RecentScreenshotsArgs {
+    #[serde(default = "default_screenshot_count")]
+    pub count: Option<u32>,
+}
+
+fn default_screenshot_count() -> Option<u32> { Some(3) }
+
 // ---- Tool 执行结果 ----
 
 #[derive(Debug, Clone, Serialize)]
@@ -111,6 +119,41 @@ pub fn execute_get_time(args: &GetTimeArgs) -> ToolResult {
         "time" => ToolResult::ok(now.format("%H:%M:%S").to_string()),
         _ => ToolResult::ok(now.format("%Y-%m-%d %H:%M:%S %Z").to_string()),
     }
+}
+
+/// 查询最近的截图分析记录。
+///
+/// `override_dir` 仅用于测试，生产环境传 None 则读取真实截图目录。
+pub fn execute_recent_screenshots(
+    args: &RecentScreenshotsArgs,
+    override_dir: Option<&std::path::Path>,
+) -> ToolResult {
+    use crate::screenshot::{ensure_today_dir, list_recent_analyses};
+
+    let count = args.count.unwrap_or(3);
+
+    let dir = match override_dir {
+        Some(d) => d.to_path_buf(),
+        None => match ensure_today_dir() {
+            Ok(d) => d,
+            Err(e) => return ToolResult::err(format!("获取截图目录失败: {e}")),
+        },
+    };
+
+    let records = list_recent_analyses(&dir, count);
+    if records.is_empty() {
+        return ToolResult::ok("暂无截图分析记录");
+    }
+
+    let mut lines = Vec::with_capacity(records.len() + 1);
+    lines.push(format!("最近 {} 条截图分析:", records.len()));
+    for (i, r) in records.iter().enumerate() {
+        lines.push(format!(
+            "  {}. {} ({}x{}, {} bytes)",
+            i + 1, r.description, r.width, r.height, r.jpeg_size
+        ));
+    }
+    ToolResult::ok(lines.join("\n"))
 }
 
 // ---- 测试 ----
@@ -229,5 +272,67 @@ mod tests {
         assert!(result.success);
         assert!(result.output.ends_with("字符)"));
         assert!(result.output.len() < 10000); // 应该被截断
+    }
+
+    // ---- recent_screenshots TDD 测试 ----
+
+    #[test]
+    fn test_recent_screenshots_args_default_count() {
+        let json = r#"{}"#;
+        let args: RecentScreenshotsArgs = serde_json::from_str(json).unwrap();
+        assert_eq!(args.count, Some(3)); // default
+    }
+
+    #[test]
+    fn test_recent_screenshots_args_custom_count() {
+        let json = r#"{"count": 5}"#;
+        let args: RecentScreenshotsArgs = serde_json::from_str(json).unwrap();
+        assert_eq!(args.count, Some(5));
+    }
+
+    #[test]
+    fn test_execute_recent_screenshots_with_mock_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let today = dir.path().join("2026-05-11");
+        std::fs::create_dir_all(&today).unwrap();
+
+        // 写入 2 条模拟截图分析
+        for (i, desc) in ["用户在用浏览器", "用户在写代码"].iter().enumerate() {
+            use crate::screenshot::{ScreenshotRecord, save_analysis_json};
+            let prefix = format!("{:06}", 100000 + i * 10);
+            let record = ScreenshotRecord {
+                description: (*desc).into(),
+                hash: i as u64,
+                skipped: false,
+                width: 1280,
+                height: 800,
+                jpeg_size: 5000,
+            };
+            save_analysis_json(&today, &prefix, "", &record).unwrap();
+        }
+
+        // 用临时目录替换 screenshot_base_dir 的行为
+        // 这里测试的是格式化输出，不依赖真实 HOME 目录
+        let args = RecentScreenshotsArgs { count: Some(5) };
+        let result = execute_recent_screenshots(&args, Some(today.as_path()));
+        assert!(result.success);
+        assert!(result.output.contains("浏览器"));
+        assert!(result.output.contains("代码"));
+        // 最新的在前
+        let code_pos = result.output.find("代码").unwrap();
+        let browser_pos = result.output.find("浏览器").unwrap();
+        assert!(code_pos < browser_pos, "最新记录应在前面");
+    }
+
+    #[test]
+    fn test_execute_recent_screenshots_empty_returns_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let empty = dir.path().join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+
+        let args = RecentScreenshotsArgs { count: Some(3) };
+        let result = execute_recent_screenshots(&args, Some(empty.as_path()));
+        assert!(result.success);
+        assert!(result.output.contains("暂无"));
     }
 }

@@ -302,6 +302,30 @@ pub fn save_analysis_json(
     Ok(())
 }
 
+/// 从指定目录读取最近的 N 条截图分析记录，按时间倒序（最新在前）。
+pub fn list_recent_analyses(dir: &std::path::Path, count: u32) -> Vec<ScreenshotRecord> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+
+    let mut records: Vec<(String, ScreenshotRecord)> = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with("_analysis.json") {
+            continue;
+        }
+        if let Ok(raw) = std::fs::read_to_string(entry.path()) {
+            if let Ok(record) = serde_json::from_str::<ScreenshotRecord>(&raw) {
+                records.push((name, record));
+            }
+        }
+    }
+
+    // 按文件名倒序（文件名 HHMMSS 越大越新）
+    records.sort_by(|a, b| b.0.cmp(&a.0));
+    records.into_iter().take(count as usize).map(|(_, r)| r).collect()
+}
+
 /// 清理超过 keep_days 天的截图目录。返回清理的目录数。
 pub fn cleanup_old_screenshots(keep_days: u64) -> Result<u32, String> {
     let base = screenshot_base_dir()?;
@@ -769,5 +793,95 @@ min_width: 480
         assert!(json.contains("999"));
         let back: ScreenshotRecord = serde_json::from_str(&json).unwrap();
         assert_eq!(back.jpeg_size, 32000);
+    }
+
+    // ---- list_recent_analyses TDD 测试 ----
+
+    #[test]
+    fn test_list_recent_analyses_returns_records_in_time_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let today = dir.path().join("2026-05-11");
+        std::fs::create_dir_all(&today).unwrap();
+
+        // 写入 3 条分析记录（文件名按时间排序）
+        for (i, desc) in ["浏览器", "终端", "VS Code"].iter().enumerate() {
+            let prefix = format!("{:06}", 100000 + i * 10);
+            let record = ScreenshotRecord {
+                description: (*desc).into(),
+                hash: i as u64,
+                skipped: false,
+                width: 1280,
+                height: 800,
+                jpeg_size: 5000 + i * 1000,
+            };
+            save_analysis_json(&today, &prefix, "", &record).unwrap();
+        }
+
+        // 调用待实现的函数
+        let results = list_recent_analyses(today.as_path(), 3);
+        assert_eq!(results.len(), 3);
+        // 应该按时间倒序（最新的在前）
+        assert_eq!(results[0].description, "VS Code");   // 100020
+        assert_eq!(results[1].description, "终端");       // 100010
+        assert_eq!(results[2].description, "浏览器");     // 100000
+    }
+
+    #[test]
+    fn test_list_recent_analyses_respects_count_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let today = dir.path().join("2026-05-11");
+        std::fs::create_dir_all(&today).unwrap();
+
+        for i in 0..5 {
+            let prefix = format!("{:06}", 100000 + i * 10);
+            let record = ScreenshotRecord {
+                description: format!("截图{}", i),
+                hash: i as u64,
+                skipped: false,
+                width: 1280,
+                height: 800,
+                jpeg_size: 5000,
+            };
+            save_analysis_json(&today, &prefix, "", &record).unwrap();
+        }
+
+        let results = list_recent_analyses(today.as_path(), 2);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].description, "截图4");
+        assert_eq!(results[1].description, "截图3");
+    }
+
+    #[test]
+    fn test_list_recent_analyses_empty_dir_returns_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let empty = dir.path().join("empty-day");
+        std::fs::create_dir_all(&empty).unwrap();
+
+        let results = list_recent_analyses(empty.as_path(), 5);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_list_recent_analyses_skips_non_json_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let today = dir.path().join("2026-05-11");
+        std::fs::create_dir_all(&today).unwrap();
+
+        // 混合文件：有效 JSON + 干扰文件
+        let record = ScreenshotRecord {
+            description: "有效".into(),
+            hash: 1,
+            skipped: false,
+            width: 1280,
+            height: 800,
+            jpeg_size: 5000,
+        };
+        save_analysis_json(&today, "120000", "", &record).unwrap();
+        std::fs::write(today.join("120001.jpg"), b"fake").unwrap();
+        std::fs::write(today.join("README.txt"), b"notes").unwrap();
+
+        let results = list_recent_analyses(today.as_path(), 10);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].description, "有效");
     }
 }
