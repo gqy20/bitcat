@@ -278,14 +278,14 @@ fn gamepad_loop(app: &tauri::AppHandle) {
         }
     };
 
-    let agent: std::sync::OnceLock<PetAgent> = std::sync::OnceLock::new();
+    let agent: std::sync::OnceLock<std::option::Option<PetAgent>> = std::sync::OnceLock::new();
 
     /// 懒加载：首次调用时才初始化 PetAgent（避免启动阻塞 2-5s）
-    fn get_agent(agent: &std::sync::OnceLock<PetAgent>) -> Option<&PetAgent> {
+    fn get_agent(agent: &std::sync::OnceLock<std::option::Option<PetAgent>>) -> Option<&PetAgent> {
         agent.get_or_init(|| match PetAgent::new() {
-            Ok(a) => { info!("AI Agent 初始化成功 (8Bit Cat)"); a }
-            Err(e) => { warn!(error = %e, "AI Agent 初始化失败"); panic!("PetAgent 初始化失败") }
-        }).into()
+            Ok(a) => { info!("AI Agent 初始化成功 (8Bit Cat)"); Some(a) }
+            Err(e) => { error!(error = %e, "AI Agent 初始化失败，后续对话将不可用"); None }
+        }).as_ref()
     }
 
     let action_config = ActionConfig::load("actions.yml").ok();

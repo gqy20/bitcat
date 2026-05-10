@@ -15,7 +15,7 @@ pub fn capture_target(target: &ScreenshotTarget) -> Result<CapturedFrame, String
 fn capture_primary() -> Result<CapturedFrame, String> {
     use windows_sys::Win32::Graphics::Gdi::{
         BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
-        GetDIBits, SelectObject, SRCCOPY, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, BI_RGB,
+        GetDIBits, ReleaseDC, SelectObject, SRCCOPY, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, BI_RGB,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
 
@@ -34,10 +34,13 @@ fn capture_primary() -> Result<CapturedFrame, String> {
         }
         let hdc_mem = CreateCompatibleDC(hdc_screen);
         if hdc_mem.is_null() {
+            ReleaseDC(std::ptr::null_mut(), hdc_screen);
             return Err("CreateCompatibleDC 失败".into());
         }
         let hbitmap = CreateCompatibleBitmap(hdc_screen, w as i32, h as i32);
         if hbitmap.is_null() {
+            DeleteDC(hdc_mem);
+            ReleaseDC(std::ptr::null_mut(), hdc_screen);
             return Err("CreateCompatibleBitmap 失败".into());
         }
 
@@ -47,6 +50,7 @@ fn capture_primary() -> Result<CapturedFrame, String> {
             SelectObject(hdc_mem, old);
             DeleteObject(hbitmap);
             DeleteDC(hdc_mem);
+            ReleaseDC(std::ptr::null_mut(), hdc_screen);
             return Err("BitBlt 失败".into());
         }
 
@@ -75,6 +79,7 @@ fn capture_primary() -> Result<CapturedFrame, String> {
         SelectObject(hdc_mem, old);
         DeleteObject(hbitmap);
         DeleteDC(hdc_mem);
+        ReleaseDC(std::ptr::null_mut(), hdc_screen);
 
         if scan_lines == 0 {
             return Err("GetDIBits 失败".into());
@@ -94,7 +99,7 @@ fn capture_all_screens() -> Result<CapturedFrame, String> {
     use windows_sys::Win32::Foundation::{LPARAM, RECT};
     use windows_sys::Win32::Graphics::Gdi::{
         BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
-        GetDIBits, SelectObject, EnumDisplayMonitors, SRCCOPY, BITMAPINFO, BITMAPINFOHEADER,
+        GetDIBits, ReleaseDC, SelectObject, EnumDisplayMonitors, SRCCOPY, BITMAPINFO, BITMAPINFOHEADER,
         DIB_RGB_COLORS, BI_RGB, HMONITOR, HDC,
     };
 
@@ -149,6 +154,7 @@ fn capture_all_screens() -> Result<CapturedFrame, String> {
         SelectObject(hdc_mem, old);
         DeleteObject(hbitmap);
         DeleteDC(hdc_mem);
+        ReleaseDC(std::ptr::null_mut(), hdc_screen);
 
         (*FRAMES_PTR).lock().unwrap().push(CapturedFrame {
             pixels,

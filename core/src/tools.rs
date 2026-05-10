@@ -1,5 +1,6 @@
 use crate::action::launch_program;
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 // ---- Tool 参数定义 ----
 
@@ -57,6 +58,7 @@ impl ToolResult {
 /// 启动程序
 pub fn execute_launch(args: &LaunchArgs) -> ToolResult {
     let terminal_name = std::env::var("TERMINAL").unwrap_or_else(|_| "powershell".into());
+    debug!(program = %args.program, args = %args.args, terminal = args.terminal, "AI 启动程序");
     match launch_program(&args.program, &args.args, &args.workdir, args.terminal, &terminal_name) {
         Ok(()) => ToolResult::ok(format!("已启动: {} {}", args.program, args.args)),
         Err(e) => ToolResult::err(e),
@@ -65,6 +67,7 @@ pub fn execute_launch(args: &LaunchArgs) -> ToolResult {
 
 /// 执行 shell 命令
 pub fn execute_shell(args: &ShellArgs) -> ToolResult {
+    debug!(command = %args.command, "AI 执行 shell 命令");
     let output = std::process::Command::new("powershell")
         .args(["-Command", &args.command])
         .output();

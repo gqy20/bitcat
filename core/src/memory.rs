@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 // ---- 数据结构 ----
 
@@ -124,7 +124,7 @@ impl MemoryStore {
         let mut result = String::from(header);
 
         for line in &lines {
-            if result.len() + line.len() + 1 > config.max_context_chars {
+            if result.chars().count() + line.chars().count() + 1 > config.max_context_chars {
                 break;
             }
             result.push_str(line);
@@ -135,7 +135,7 @@ impl MemoryStore {
         result
     }
 
-    /// 持久化到磁盘
+    /// 持久化到磁盘（原子写入：先写临时文件再 rename）
     pub fn save(&self) -> Result<(), String> {
         let path = memory_file_path()?;
         if let Some(parent) = path.parent() {
@@ -144,8 +144,13 @@ impl MemoryStore {
         }
         let json = serde_json::to_string(self)
             .map_err(|e| format!("序列化记忆失败: {e}"))?;
-        fs::write(&path, json)
-            .map_err(|e| format!("写入记忆文件失败: {e}"))?;
+        let mut tmp = tempfile::NamedTempFile::new_in(path.parent().unwrap())
+            .map_err(|e| format!("创建临时文件失败: {e}"))?;
+        std::io::Write::write_all(&mut tmp, json.as_bytes())
+            .map_err(|e| format!("写入临时文件失败: {e}"))?;
+        tmp.persist(&path)
+            .map_err(|e| format!("原子替换记忆文件失败: {e}"))?;
+        debug!(path = ?path, "记忆已持久化");
         Ok(())
     }
 }
@@ -234,6 +239,34 @@ mod tests {
     }
 
     #[test]
+    fn test_build_context_uses_char_count_not_bytes() {
+        // 纯中文内容：每条约 25 中文字 ≈ 75 字节。
+        // 若用字节计数 max_context_chars=100，只能放 ~1 条（75 < 100）。
+        // 若用字符计数，应能放 ~4 条（25*4=100 chars）。
+        // 此测试验证用的是字符计数而非字节计数。
+        let mut store = MemoryStore { entries: Vec::new() };
+        for _ in 0..6 {
+            store.entries.push(MemoryEntry {
+                timestamp: "14:00".into(),
+                user_msg: "用户询问今天天气如何".into(),     // 8 中文字
+                ai_reply: "今天是晴天适合出门散步".into(),   // 10 中文字
+            });
+        }
+        // 每条约: "[14:00] 用户询问今天天气如何 | 今天是晴天适合出门散步" ≈ 28 中文字 + 时间戳 ≈ 33 字符
+        // 用字节计数时 100 字节只能放不到 2 条；用字符计数应能放 3 条
+        let cfg = MemoryConfig { max_context_chars: 120, ..Default::default() };
+        let ctx = store.build_context(&cfg);
+        let char_count = ctx.chars().count();
+        // 如果按字节截断，~2 条就超了(2条≈80字节+header≈20=100)，实际字符数只有 ~70
+        // 按字符截断应能放下 3 条 ≈ 110 字符
+        assert!(
+            char_count > 90,
+            "build_context 应使用字符计数而非字节计数。实际字符数={}，若用字节计数则过早截断",
+            char_count
+        );
+    }
+
+    #[test]
     fn test_build_context_respects_char_limit() {
         let mut store = MemoryStore { entries: Vec::new() };
         for _ in 0..50 {
@@ -243,8 +276,9 @@ mod tests {
                 ai_reply: "这是一条很长的AI回复用于测试字符限制".into(),
             });
         }
-        let ctx = store.build_context(&MemoryConfig { max_context_chars: 300, ..Default::default() });
-        assert!(ctx.len() <= 350);
+        let cfg = MemoryConfig { max_context_chars: 300, ..Default::default() };
+        let ctx = store.build_context(&cfg);
+        assert!(ctx.chars().count() <= 350);
     }
 
     #[test]
@@ -278,6 +312,23 @@ mod tests {
         assert!(s.contains(".ai-pad"), "应在 .ai-pad 下");
         assert!(s.contains("memory"), "应有 memory 子目录");
         assert!(s.ends_with("chat_summary.json"));
+    }
+
+    #[test]
+    fn test_truncated_json_detected_as_corrupt() {
+        // 模拟崩溃导致文件截断：load() 应返回空记忆而非静默接受损坏数据
+        let store = MemoryStore {
+            entries: vec![MemoryEntry {
+                timestamp: "14:23".into(),
+                user_msg: "重要数据".into(),
+                ai_reply: "重要回复".into(),
+            }],
+        };
+        let json = serde_json::to_string(&store).unwrap();
+        // 截断到一半
+        let truncated = &json[..json.len() / 2];
+        let result = serde_json::from_str::<MemoryStore>(truncated);
+        assert!(result.is_err(), "截断的 JSON 应解析失败，防止静默丢失数据");
     }
 
     #[test]

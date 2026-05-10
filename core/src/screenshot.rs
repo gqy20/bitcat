@@ -57,7 +57,7 @@ fn default_min_width() -> u32 {
     480
 }
 fn default_debug_resolutions() -> Vec<u32> {
-    vec![640, 960, 1280, 1600]
+    Vec::new()
 }
 
 impl Default for ScreenshotConfig {
@@ -335,6 +335,12 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_default_debug_resolutions_is_empty() {
+        let cfg = ScreenshotConfig::default();
+        assert!(cfg.debug_resolutions.is_empty(), "生产默认不应启用调试多分辨率，当前 {:?}", cfg.debug_resolutions);
+    }
+
+    #[test]
     fn test_default_config_values() {
         let cfg = ScreenshotConfig::default();
         assert!(matches!(cfg.target, ScreenshotTarget::All));
@@ -344,7 +350,7 @@ mod tests {
         assert!(cfg.dedup);
         assert!((cfg.similarity_threshold - 0.95).abs() < 0.001);
         assert_eq!(cfg.min_width, 480);
-        assert_eq!(cfg.debug_resolutions, vec![640, 960, 1280, 1600]);
+        assert!(cfg.debug_resolutions.is_empty());
     }
 
     #[test]

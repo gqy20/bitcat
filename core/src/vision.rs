@@ -3,6 +3,7 @@ use serde_json::{json, Value};
 
 use crate::ai_config::AiConfig;
 use crate::prompts::VisionPromptConfig;
+use tracing::{debug, warn};
 
 // ---- 配置 ----
 
@@ -100,8 +101,10 @@ pub async fn analyze_screenshot(
     };
 
     let url = build_api_url(config);
+    debug!(model, url, "视觉分析请求");
 
     let client = reqwest::Client::new();
+    let start = std::time::Instant::now();
     let response = client
         .post(&url)
         .header("x-api-key", &config.api_key)
@@ -115,6 +118,7 @@ pub async fn analyze_screenshot(
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
+        warn!(status = %status, "视觉 API 返回错误");
         return Err(format!("视觉 API 返回错误 {}: {}", status, text));
     }
 
@@ -122,6 +126,8 @@ pub async fn analyze_screenshot(
         .json()
         .await
         .map_err(|e| format!("解析视觉 API 响应失败: {e}"))?;
+    let elapsed = start.elapsed();
+    debug!(elapsed_ms = elapsed.as_millis(), chars = json.to_string().chars().count(), "视觉分析完成");
 
     parse_vision_response(&json)
 }
