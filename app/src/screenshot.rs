@@ -308,11 +308,33 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             continue;
         }
 
+        // 熄屏检测：显示器关闭时跳过（SM_MONITORISOFF = 0x8000）
+        {
+            use windows_sys::Win32::UI::WindowsAndMessaging::GetSystemMetrics;
+            if unsafe { GetSystemMetrics(0x8000) } != 0 {
+                info!("显示器已关闭，跳过本周期");
+                continue;
+            }
+        }
+
         // 截图（只截一次，多分辨率共享原始帧）
         info!("截图周期: 开始捕获 target={:?}", config.target);
         let frame = match capture_target(&config.target) {
             Ok(f) => {
                 info!("截图周期: 捕获成功 {}x{}", f.width, f.height);
+                // 全黑帧检测（覆盖屏保/锁屏等 SM_MONITORISOFF 未覆盖的场景）
+                let sample_count = 256;
+                let step = (f.pixels.len() / 4).max(1) / sample_count.max(1);
+                let black_pixels = (0..sample_count)
+                    .filter(|&i| {
+                        let idx = i * step * 4;
+                        idx + 3 < f.pixels.len() && f.pixels[idx] == 0 && f.pixels[idx + 1] == 0 && f.pixels[idx + 2] == 0
+                    })
+                    .count();
+                if black_pixels > sample_count * 95 / 100 {
+                    info!(black = black_pixels, total = sample_count, "检测到全黑帧，跳过");
+                    continue;
+                }
                 f
             }
             Err(e) => {
