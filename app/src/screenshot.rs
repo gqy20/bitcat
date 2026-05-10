@@ -293,32 +293,31 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
     );
 
     let mut cycle_count: u32 = 0;
+    eprintln!("[SS-DBG] 进入主循环");
     loop {
+        eprintln!("[SS-DBG] 开始 sleep");
         std::thread::sleep(std::time::Duration::from_secs(config.interval_sec));
         cycle_count += 1;
-        info!(cycle = cycle_count, interval_sec = config.interval_sec, "截图周期开始");
+        eprintln!("[SS-DBG] sleep 结束, cycle={}", cycle_count);
 
+        eprintln!("[SS-DBG] 获取 state");
         let state: tauri::State<SharedScreenshotState> = app.state();
         if !*state.enabled.lock().unwrap() {
             continue;
         }
 
-        let state: tauri::State<SharedScreenshotState> = app.state();
-        if !*state.enabled.lock().unwrap() {
-            continue;
-        }
-
-        // 熄屏检测：显示器关闭时跳过（SM_MONITORISOFF = 0x8000）
+        // 熄屏检测
+        eprintln!("[SS-DBG] 检查熄屏");
         {
             use windows_sys::Win32::UI::WindowsAndMessaging::GetSystemMetrics;
             if unsafe { GetSystemMetrics(0x8000) } != 0 {
-                info!("显示器已关闭，跳过本周期");
+                eprintln!("[SS-DBG] 显示器关闭，跳过");
                 continue;
             }
         }
 
-        // 截图（只截一次，多分辨率共享原始帧）
-        info!("截图周期: 开始捕获 target={:?}", config.target);
+        // 截图
+        eprintln!("[SS-DBG] 开始捕获");
         let frame = match capture_target(&config.target) {
             Ok(f) => {
                 info!("截图周期: 捕获成功 {}x{}", f.width, f.height);
@@ -394,6 +393,8 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
 
             // Vision API
             let prompt_cfg = ai_pad_core::prompts::PromptsConfig::load().vision;
+            let vision_model = ai_config.model.clone();
+            info!(model = %vision_model, "视觉分析: 开始请求");
             let description = match rt.block_on(vision::analyze_screenshot(
                 &ai_config,
                 &VisionConfig::default(),
@@ -403,6 +404,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             )) {
                 Ok(desc) => {
                     info!(
+                        model = %vision_model,
                         width = w,
                         height = h,
                         chars = desc.chars().count(),

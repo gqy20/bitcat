@@ -161,16 +161,36 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            // 从 exe 同目录加载 .env（优先级低于系统环境变量）
+            // 加载 .env（优先级低于系统环境变量），按顺序尝试多个路径
+            let mut env_loaded = false;
             if let Some(exe_dir) = app.path().resource_dir().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())) {
                 let env_path = exe_dir.join(".env");
                 if env_path.exists() {
                     dotenvy::from_path(&env_path).ok();
                     info!(path = ?env_path, "已加载 .env");
+                    env_loaded = true;
                 }
-            } else {
-                // 开发模式：尝试项目根目录
-                dotenvy::dotenv().ok();
+            }
+            if !env_loaded {
+                // 开发模式：尝试当前目录和项目根目录
+                if dotenvy::dotenv().is_ok() {
+                    info!("已加载 .env (CWD)");
+                    env_loaded = true;
+                }
+            }
+            if !env_loaded {
+                // 兜底：尝试 exe 向上两级（target/debug → 项目根）
+                if let Some(exe_dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())).and_then(|p| p.parent().map(|p| p.to_path_buf())) {
+                    let fallback = exe_dir.join(".env");
+                    if fallback.exists() {
+                        dotenvy::from_path(&fallback).ok();
+                        info!(path = ?fallback, "已加载 .env (项目根目录)");
+                        env_loaded = true;
+                    }
+                }
+            }
+            if !env_loaded {
+                warn!(".env 未找到，将使用 ~/.claude/settings.json 或默认配置");
             }
 
             tray::create_tray(app.handle())?;
@@ -207,6 +227,7 @@ pub fn run() {
 
             let ss_handle = app.handle().clone();
             std::thread::spawn(move || {
+                eprintln!("[SS-DBG] 截图线程已 spawn");
                 screenshot::screenshot_loop(&ss_handle);
             });
 
@@ -236,6 +257,7 @@ pub fn run() {
 /// 主游戏手柄循环 — 80ms tick，按键检测 → 状态机 → AI → 气泡/动作
 #[instrument(skip(app))]
 fn gamepad_loop(app: &tauri::AppHandle) {
+    eprintln!("[GP-DBG] gamepad_loop 开始");
     let sdl = match SdlGamepad::init() {
         Ok(s) => s,
         Err(e) => {
@@ -455,6 +477,7 @@ fn run_ai_chat(
     memory_config: &ai_pad_core::memory::MemoryConfig,
 ) {
     let tag = if log_prefix.is_empty() { "" } else { " " };
+    info!(model = %agent.config.model, msg = %msg, "{log_prefix}→ AI 对话开始");
     if let Err(e) = bubble::start_streaming_bubble(app) {
         warn!(error = %e, "{log_prefix}气泡启动错误");
         return;
@@ -486,16 +509,16 @@ fn run_ai_chat(
 
             if prefix.is_empty() {
                 let preview: String = reply.chars().take(60).collect();
-                info!(preview = %preview, "← AI: {preview}");
+                info!(model = %agent.config.model, preview = %preview, "← AI: {preview}");
             } else {
-                info!(chars = reply.chars().count(), reply = %reply, "{prefix} AI 回复全文 ({reply})");
+                info!(model = %agent.config.model, chars = reply.chars().count(), reply = %reply, "{prefix} AI 回复全文 ({reply})");
             }
             let ai_events = gamepad::process_agent_response(&reply);
             for evt in &ai_events {
                 let _ = app.emit("pet-event", evt);
             }
         }
-        Err(e) => warn!(error = %e, "{prefix} AI 错误"),
+        Err(e) => warn!(model = %agent.config.model, error = %e, "{prefix} AI 错误"),
     }
 }
 
