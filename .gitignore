@@ -29,6 +29,7 @@ Desktop.ini
 # Tauri / Node (if ever added)
 node_modules/
 app/frontend/dist/
+app/frontend/package-lock.json
 
 # Env / Secrets
 .env
