@@ -15,7 +15,7 @@ pub fn capture_target(target: &ScreenshotTarget) -> Result<CapturedFrame, String
 fn capture_primary() -> Result<CapturedFrame, String> {
     use windows_sys::Win32::Graphics::Gdi::{
         BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
-        GetDIBits, ReleaseDC, SelectObject, SRCCOPY, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, BI_RGB,
+        GetDIBits, SelectObject, SRCCOPY, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, BI_RGB,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
 
@@ -34,13 +34,11 @@ fn capture_primary() -> Result<CapturedFrame, String> {
         }
         let hdc_mem = CreateCompatibleDC(hdc_screen);
         if hdc_mem.is_null() {
-            ReleaseDC(std::ptr::null_mut(), hdc_screen);
             return Err("CreateCompatibleDC 失败".into());
         }
         let hbitmap = CreateCompatibleBitmap(hdc_screen, w as i32, h as i32);
         if hbitmap.is_null() {
             DeleteDC(hdc_mem);
-            ReleaseDC(std::ptr::null_mut(), hdc_screen);
             return Err("CreateCompatibleBitmap 失败".into());
         }
 
@@ -50,7 +48,6 @@ fn capture_primary() -> Result<CapturedFrame, String> {
             SelectObject(hdc_mem, old);
             DeleteObject(hbitmap);
             DeleteDC(hdc_mem);
-            ReleaseDC(std::ptr::null_mut(), hdc_screen);
             return Err("BitBlt 失败".into());
         }
 
@@ -79,7 +76,6 @@ fn capture_primary() -> Result<CapturedFrame, String> {
         SelectObject(hdc_mem, old);
         DeleteObject(hbitmap);
         DeleteDC(hdc_mem);
-        ReleaseDC(std::ptr::null_mut(), hdc_screen);
 
         if scan_lines == 0 {
             return Err("GetDIBits 失败".into());
@@ -99,7 +95,7 @@ fn capture_all_screens() -> Result<CapturedFrame, String> {
     use windows_sys::Win32::Foundation::{LPARAM, RECT};
     use windows_sys::Win32::Graphics::Gdi::{
         BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
-        GetDIBits, ReleaseDC, SelectObject, EnumDisplayMonitors, SRCCOPY, BITMAPINFO, BITMAPINFOHEADER,
+        GetDIBits, SelectObject, EnumDisplayMonitors, SRCCOPY, BITMAPINFO, BITMAPINFOHEADER,
         DIB_RGB_COLORS, BI_RGB, HMONITOR, HDC,
     };
 
@@ -154,7 +150,6 @@ fn capture_all_screens() -> Result<CapturedFrame, String> {
         SelectObject(hdc_mem, old);
         DeleteObject(hbitmap);
         DeleteDC(hdc_mem);
-        ReleaseDC(std::ptr::null_mut(), hdc_screen);
 
         (*FRAMES_PTR).lock().unwrap().push(CapturedFrame {
             pixels,
@@ -266,11 +261,11 @@ impl SharedScreenshotState {
 /// 截图观察线程主循环。
 pub fn screenshot_loop(app: &tauri::AppHandle) {
     use ai_pad_core::screenshot::{
-        encode_jpeg, is_similar, perceptual_hash, resize_bgra, ScreenshotConfig,
+        encode_jpeg, resize_bgra, ScreenshotConfig,
     };
     use ai_pad_core::vision::{self, VisionConfig};
     use base64::Engine;
-    use tracing::{debug, error, info, warn};
+    use tracing::{error, info, warn};
 
     let rt = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -297,8 +292,16 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
         "截图观察线程启动"
     );
 
+    let mut cycle_count: u32 = 0;
     loop {
         std::thread::sleep(std::time::Duration::from_secs(config.interval_sec));
+        cycle_count += 1;
+        info!(cycle = cycle_count, interval_sec = config.interval_sec, "截图周期开始");
+
+        let state: tauri::State<SharedScreenshotState> = app.state();
+        if !*state.enabled.lock().unwrap() {
+            continue;
+        }
 
         let state: tauri::State<SharedScreenshotState> = app.state();
         if !*state.enabled.lock().unwrap() {
@@ -306,8 +309,12 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
         }
 
         // 截图（只截一次，多分辨率共享原始帧）
+        info!("截图周期: 开始捕获 target={:?}", config.target);
         let frame = match capture_target(&config.target) {
-            Ok(f) => f,
+            Ok(f) => {
+                info!("截图周期: 捕获成功 {}x{}", f.width, f.height);
+                f
+            }
             Err(e) => {
                 warn!(error = %e, "截图捕获失败");
                 continue;
@@ -321,7 +328,6 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             config.debug_resolutions.clone()
         };
 
-        // 用第一个分辨率做 dHash 去重
         let (first_rgb, first_w, first_h) =
             match resize_bgra(&frame.pixels, frame.width, frame.height, resolutions[0]) {
                 Ok(r) => r,
@@ -330,20 +336,6 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
                     continue;
                 }
             };
-        let gray: Vec<u8> = first_rgb
-            .chunks_exact(3)
-            .map(|p| ((p[0] as u32 * 299 + p[1] as u32 * 587 + p[2] as u32 * 114) / 1000) as u8)
-            .collect();
-        let hash = perceptual_hash(&gray, first_w, first_h);
-
-        if config.dedup {
-            let last = *state.last_hash.lock().unwrap();
-            if is_similar(hash, last, config.similarity_threshold) {
-                debug!("截图与上一帧相似，跳过");
-                continue;
-            }
-            *state.last_hash.lock().unwrap() = hash;
-        }
 
         // 逐分辨率处理
         let ai_config = match ai_pad_core::ai_config::AiConfig::load() {
@@ -406,7 +398,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             // 保存（文件名带分辨率后缀）
             let record = ai_pad_core::screenshot::ScreenshotRecord {
                 description: description.clone(),
-                hash,
+                hash: 0,
                 skipped: false,
                 width: w,
                 height: h,
@@ -433,9 +425,13 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
                 warn!(error = %e, "保存分析结果失败");
             }
 
-            // 只在最后一个分辨率显示气泡（复用已有分析结果，不重复调用 API）
-            if is_last && !description.is_empty() {
-                let _ = crate::bubble::show_bubble(app, &description);
+            // 只在最后一个分辨率显示气泡
+            if is_last {
+                if description.is_empty() {
+                    let _ = crate::bubble::show_bubble(app, "喵~ 看不太清屏幕内容，可能需要检查 API 配置");
+                } else {
+                    let _ = crate::bubble::show_bubble(app, &description);
+                }
             }
         }
 
