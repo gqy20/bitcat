@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test (Windows ${{ matrix.target }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ai-pad-core -> target
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}
+
+      - name: Copy config files for tests
+        run: |
+          copy core\buttons.yml core\
+          copy core\actions.yml core\
+
+      - name: Run tests (cargo test)
+        if: ${{ !cancelled() }}
+        run: cargo test --workspace --all-features -- --test-threads=4 2>&1
+
+      - name: Check formatting
+        if: ${{ !cancelled() }}
+        run: cargo fmt --all -- --check 2>&1
+
+      - name: Clippy lints
+        if: ${{ !cancelled() }}
+        run: cargo clippy --workspace -- -D warnings 2>&1
+
+  # 当网络恢复后，取消下面的注释启用 nextest 加速
+  # test-fast:
+  #   name: Fast Tests (nextest)
+  #   runs-on: windows-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: dtolnay/rust-toolchain@stable
+  #     - uses: Swatinem/rust-cache@v2
+  #     - run: copy core\buttons.yml core\ && copy core\actions.yml core\
+  #     - run: cargo nextest run --profile ci --workspace --all-features

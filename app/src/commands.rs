@@ -224,3 +224,148 @@ mod tests {
         assert_eq!(pet.state, ai_pad_core::pet::PetState::Idle);
     }
 }
+
+// ---- Tauri IPC 集成测试 (Mock Runtime) ----
+// 测试命令通过 IPC 层的序列化/反序列化和 State 提取
+//
+// 运行: cargo test -p ai-pad-app --features ipc-tests -- commands::ipc_tests
+// 需要: WebView2 Evergreen Runtime (CI 已预装，本地可能需要手动安装)
+// Windows 本地缺少 WebView2 时会报 STATUS_ENTRYPOINT_NOT_FOUND
+
+#[cfg(all(test, feature = "ipc-tests"))]
+mod ipc_tests {
+    use super::*;
+    use tauri::test::{mock_builder, noop_assets, mock_context, assert_ipc_response, get_ipc_response, MockRuntime};
+    use tauri::{WebviewWindowBuilder, ipc::InvokeBody, ipc::CallbackFn, webview::InvokeRequest};
+    use serde_json::json;
+
+    fn build_test_app() -> (tauri::App<MockRuntime>, tauri::WebviewWindow<MockRuntime>) {
+        let app = mock_builder()
+            .manage(SharedPet::new())
+            .invoke_handler(tauri::generate_handler![
+                cmd_set_state,
+                cmd_walk_to,
+                cmd_show_bubble,
+                cmd_get_status,
+                cmd_tick,
+            ])
+            .build(mock_context(noop_assets()))
+            .expect("failed to build mock app");
+
+        let webview = WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::App("index.html".into()))
+            .build()
+            .expect("failed to build mock webview");
+
+        (app, webview)
+    }
+
+    fn invoke_request(cmd: &str, body: serde_json::Value) -> InvokeRequest {
+        InvokeRequest {
+            cmd: cmd.into(),
+            callback: CallbackFn(0),
+            error: CallbackFn(1),
+            url: "http://tauri.localhost".parse().unwrap(),
+            body: InvokeBody::from(body),
+            headers: Default::default(),
+            invoke_key: tauri::test::INVOKE_KEY.to_string(),
+        }
+    }
+
+    #[test]
+    fn ipc_cmd_get_status_returns_initial() {
+        let (_app, wv) = build_test_app();
+        let req = invoke_request("cmd_get_status", json!({}));
+        assert_ipc_response(&wv, req, Ok(json!({
+            "state": "idle",
+            "x": 64.0,
+            "y": 64.0,
+            "frame": 0,
+            "facing_right": true,
+            "bubble": null,
+        })));
+    }
+
+    #[test]
+    fn ipc_cmd_set_state_talk() {
+        let (_app, wv) = build_test_app();
+        let req = invoke_request("cmd_set_state", json!({ "state": "Talk" }));
+        assert_ipc_response(&wv, req, Ok(json!({
+            "state": "talk",
+            "x": 64.0,
+            "y": 64.0,
+            "frame": 0,
+            "facing_right": true,
+            "bubble": null,
+        })));
+    }
+
+    #[test]
+    fn ipc_cmd_walk_to() {
+        let (_app, wv) = build_test_app();
+        let req = invoke_request("cmd_walk_to", json!({ "x": 200.0 }));
+        let resp = get_ipc_response(&wv, req).expect("ipc response ok");
+        let status: PetStatus = resp.deserialize().expect("deserialize PetStatus");
+        assert_eq!(status.state, "walk");
+        assert!((status.x - 64.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn ipc_cmd_show_bubble() {
+        let (_app, wv) = build_test_app();
+        let req = invoke_request("cmd_show_bubble", json!({ "text": "你好世界" }));
+        assert_ipc_response(&wv, req, Ok(json!({
+            "state": "idle",
+            "x": 64.0,
+            "y": 64.0,
+            "frame": 0,
+            "facing_right": true,
+            "bubble": "你好世界",
+        })));
+    }
+
+    #[test]
+    fn ipc_cmd_tick_advances_frame() {
+        let (_app, wv) = build_test_app();
+        let req = invoke_request("cmd_tick", json!({ "dt_ms": 500 }));
+        let resp = get_ipc_response(&wv, req).expect("ipc response ok");
+        let status: PetStatus = resp.deserialize().expect("deserialize PetStatus");
+        assert_eq!(status.frame, 1);
+    }
+
+    #[test]
+    fn ipc_multiple_commands_share_state() {
+        let (_app, wv) = build_test_app();
+        let req1 = invoke_request("cmd_show_bubble", json!({ "text": "persistent" }));
+        get_ipc_response(&wv, req1).expect("show_bubble ok");
+
+        let req2 = invoke_request("cmd_get_status", json!({}));
+        assert_ipc_response(&wv, req2, Ok(json!({
+            "state": "idle",
+            "bubble": "persistent",
+        })));
+    }
+
+    #[test]
+    fn ipc_cmd_set_state_all_variants() {
+        for state_name in &["Idle", "Walk", "Sleep", "Talk", "Happy", "Confused"] {
+            let (_app, wv) = build_test_app();
+            let req = invoke_request("cmd_set_state", json!({ "state": state_name }));
+            let resp = get_ipc_response(&wv, req).unwrap();
+            let status: PetStatus = resp.deserialize().unwrap();
+            assert_eq!(
+                status.state, state_name.to_lowercase(),
+                "state mismatch for {state_name}"
+            );
+            assert_eq!(status.frame, 0, "frame should reset on state change");
+        }
+    }
+
+    #[test]
+    fn ipc_serialization_roundtrip_chinese() {
+        let (_app, wv) = build_test_app();
+        let req = invoke_request("cmd_show_bubble", json!({ "text": "喵喵喵 🐱" }));
+        assert_ipc_response(&wv, req, Ok(json!({
+            "bubble": "喵喵喵 🐱",
+        })));
+    }
+}

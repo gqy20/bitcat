@@ -13,6 +13,8 @@ rig-core = "0.36"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 futures = "0.3"
 windows-sys = { version = "0.61.2", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_Foundation"] }
+tracing = "0.1"
 
 [dev-dependencies]
 tempfile = "3"
+proptest = "1"

@@ -9,6 +9,7 @@ use rig::providers::anthropic;
 use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
 use rig::tool::Tool;
 use serde_json::json;
+use tracing::{debug, info};
 
 /// 桌宠 AI Agent
 pub struct PetAgent {
@@ -87,20 +88,22 @@ impl PetAgent {
                     tool_call_count += 1;
                 }
                 Ok(MultiTurnStreamItem::FinalResponse(res)) => {
-                    eprintln!("  [stream] FinalResponse: {} chars, usage={:?}",
-                        res.response().len(), res.usage().total_tokens);
+                    debug!(chars = res.response().len(), tokens = res.usage().total_tokens, "[stream] FinalResponse");
                 }
                 Ok(MultiTurnStreamItem::StreamUserItem(_)) => {
-                    eprintln!("  [stream] UserItem (工具结果)");
+                    debug!("[stream] UserItem (工具结果)");
                 }
                 Ok(other) => {
-                    eprintln!("  [stream] 其他项: {other:?}");
+                    debug!(item = ?other, "[stream] 其他项");
                 }
                 Err(e) => return Err(format!("AI 流错误: {e}")),
             }
         }
-        eprintln!("  [stream] 完成: {chunk_count} 文本块, {tool_call_count} 工具调用, {} 字符",
-            accumulated.chars().count());
+        info!(
+            chunk_count, tool_call_count,
+            chars = accumulated.chars().count(),
+            "[stream] 完成"
+        );
         Ok(accumulated)
     }
 }

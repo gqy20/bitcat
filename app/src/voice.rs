@@ -10,6 +10,7 @@
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, WebviewUrl, WebviewWindowBuilder};
+use tracing::{info, warn};
 
 const VOICE_W: u32 = 280;
 const VOICE_H: u32 = 40;
@@ -79,9 +80,9 @@ pub fn open_voice_capture(app: &AppHandle) -> Result<(), String> {
     let _ = window.show();
     let _ = window.set_focus();
     if let Err(e) = app.emit_to("voice", "voice-clear", ()) {
-        eprintln!("[voice] emit voice-clear 失败: {e}");
+        warn!(error = %e, "[voice] emit voice-clear 失败");
     } else {
-        eprintln!("[voice] ✓ 已发送 voice-clear");
+        info!("[voice] ✓ 已发送 voice-clear");
     }
 
     // 用 AttachThreadInput 强制前台化,绕过 Windows 安全限制
@@ -92,7 +93,7 @@ pub fn open_voice_capture(app: &AppHandle) -> Result<(), String> {
             let hwnd_raw = hwnd.0 as isize;
             if let Err(e) = ai_pad_core::hotkey::force_foreground(hwnd_raw) {
                 // 失败不致命,焦点可能已经够用,但日志要记
-                eprintln!("[voice] force_foreground 失败: {e}");
+                warn!(error = %e, "[voice] force_foreground 失败");
             }
         }
     }
@@ -114,7 +115,7 @@ pub fn take_voice_text(app: &AppHandle) -> Result<String, String> {
             Ok(()) => {}
             Err(e) => {
                 eval_ok = false;
-                eprintln!("[voice] eval 失败（将依赖 input 事件兜底）: {e}");
+                warn!(error = %e, "[voice] eval 失败（将依赖 input 事件兜底）");
             }
         }
 
@@ -123,7 +124,7 @@ pub fn take_voice_text(app: &AppHandle) -> Result<String, String> {
         // 在 gamepad 线程上调用时主线程可能繁忙，给充裕时间
         std::thread::sleep(std::time::Duration::from_millis(500));
     } else {
-        eprintln!("[voice] ⚠ voice 窗口不存在");
+        warn!("[voice] ⚠ voice 窗口不存在");
         eval_ok = false;
     }
 
@@ -138,18 +139,18 @@ pub fn take_voice_text(app: &AppHandle) -> Result<String, String> {
             std::thread::sleep(std::time::Duration::from_millis(300));
             let retry = std::mem::take(&mut *state.text.lock().map_err(|e| e.to_string())?);
             if !retry.is_empty() {
-                eprintln!("[voice] 重试取值成功: {} 字符", retry.chars().count());
+                info!(chars = retry.chars().count(), "[voice] 重试取值成功");
                 return Ok(retry);
             }
         }
     }
 
     // Step 4: 日志 + 归位
-    eprintln!(
-        "[voice] 取走文本: {} 字符 (eval={}, 来源={})",
-        text.chars().count(),
+    info!(
+        chars = text.chars().count(),
         eval_ok,
-        if text.is_empty() { "空" } else { "有内容" }
+        source = if text.is_empty() { "空" } else { "有内容" },
+        "[voice] 取走文本"
     );
 
     if let Some(window) = app.get_webview_window("voice") {

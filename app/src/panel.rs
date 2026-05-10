@@ -1,4 +1,5 @@
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tracing::{info, warn};
 
 /// Phase A: 硬编码动作映射 (id -> (program, args, terminal))
 ///
@@ -54,7 +55,7 @@ pub async fn cmd_execute_panel_action(id: String) -> Result<(), String> {
 /// 调试用：前端通过此命令把日志转发到后端 stderr
 #[tauri::command]
 pub async fn cmd_panel_log(msg: String) -> Result<(), String> {
-    eprintln!("[panel-js] {msg}");
+    info!(msg = %msg, "[panel-js]");
     Ok(())
 }
 
@@ -82,22 +83,22 @@ pub fn toggle_panel(app: &AppHandle) {
     match app.get_webview_window("panel") {
         Some(w) => match w.is_visible() {
             Ok(true) => {
-                eprintln!("[panel] 隐藏");
+                info!("[panel] 隐藏");
                 let _ = w.hide();
             }
             Ok(false) => {
-                eprintln!("[panel] 显示");
+                info!("[panel] 显示");
                 let _ = w.show();
                 let _ = w.set_focus();
             }
-            Err(e) => eprintln!("[panel] is_visible 错误: {e}"),
+            Err(e) => warn!(error = %e, "[panel] is_visible 错误"),
         },
         None => match create_panel_window(app) {
             Ok(w) => {
-                eprintln!("[panel] 已创建并显示");
+                info!("[panel] 已创建并显示");
                 let _ = w.set_focus();
             }
-            Err(e) => eprintln!("[panel] 创建失败: {e}"),
+            Err(e) => warn!(error = %e, "[panel] 创建失败"),
         },
     }
 }

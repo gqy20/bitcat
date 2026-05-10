@@ -18,6 +18,7 @@ use ai_pad_core::agent::PetAgent;
 use ai_pad_core::hotkey;
 use joystick::SdlGamepad;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+use tracing::{info, warn, error, debug, instrument};
 
 /// 销毁旧 pet 窗口并用新尺寸重建，恢复到原位置。
 ///
@@ -31,12 +32,10 @@ async fn cmd_recreate_pet_window(
     x: i32,
     y: i32,
 ) -> Result<(), String> {
-    // 关闭旧窗口（如果存在）
     if let Some(old) = app.get_webview_window("pet") {
         old.close().map_err(|e| e.to_string())?;
     }
 
-    // 用新尺寸重建，保留所有原有属性
     let window = WebviewWindowBuilder::new(
         &app,
         "pet",
@@ -53,7 +52,6 @@ async fn cmd_recreate_pet_window(
     .build()
     .map_err(|e| e.to_string())?;
 
-    // 用物理尺寸和物理位置精确设置（高 DPI 下 inner_size/position 是逻辑像素）
     let _ = window.set_size(PhysicalSize::new(width, height));
     let _ = window.set_position(PhysicalPosition::new(x, y));
 
@@ -84,7 +82,6 @@ pub fn run() {
             cmd_recreate_pet_window,
         ])
         .on_window_event(|window, event| {
-            // panel 失焦自动隐藏
             if window.label() == "panel" {
                 if let WindowEvent::Focused(false) = event {
                     let _ = window.hide();
@@ -94,33 +91,29 @@ pub fn run() {
         .setup(|app| {
             tray::create_tray(app.handle())?;
 
-            // 预创建 voice 窗口 (visible:true 但小+透明,不易察觉)
-            // 必须 visible 才能成为系统语音输入条的注入目标
             if let Err(e) = voice::precreate_voice_window(app.handle()) {
-                log(&format!("预创建 voice 窗口失败: {e}"));
+                warn!(error = %e, "预创建 voice 窗口失败");
             }
 
-            // 注册全局热键 Ctrl+Alt+Space -> 切换 panel 显隐
-            // 注：Alt+Space 被 Windows 系统占用为窗口菜单，无法用作全局热键
             let app_handle = app.handle().clone();
             let hotkey_str = "CommandOrControl+Alt+Space";
-            log(&format!("准备注册全局热键: {hotkey_str}"));
+            info!(hotkey = %hotkey_str, "准备注册全局热键");
             match hotkey_str.parse::<tauri_plugin_global_shortcut::Shortcut>() {
                 Ok(shortcut) => {
                     let shortcut_for_handler = shortcut.clone();
                     let handler_app = app_handle.clone();
                     let result = app.global_shortcut().on_shortcut(shortcut, move |_app, sc, evt| {
-                        log(&format!("热键回调触发: state={:?}", evt.state()));
+                        debug!(state = ? evt.state(), "热键回调触发");
                         if sc == &shortcut_for_handler && evt.state() == ShortcutState::Pressed {
                             panel::toggle_panel(&handler_app);
                         }
                     });
                     match result {
-                        Ok(_) => log(&format!("✓ 已注册 {hotkey_str} → 切换面板")),
-                        Err(e) => log(&format!("✗ 注册 {hotkey_str} 失败: {e}")),
+                        Ok(_) => info!(hotkey = %hotkey_str, "✓ 已注册 → 切换面板"),
+                        Err(e) => warn!(error = %e, hotkey = %hotkey_str, "✗ 注册失败"),
                     }
                 }
-                Err(e) => log(&format!("✗ 解析热键 {hotkey_str} 失败: {e}")),
+                Err(e) => warn!(error = %e, hotkey = %hotkey_str, "✗ 解析失败"),
             }
 
             let handle = app.handle().clone();
@@ -128,21 +121,20 @@ pub fn run() {
                 gamepad_loop(&handle);
             });
 
-            // 调试模式：自动弹出 panel + 模拟方向键事件，用于无手柄环境验证
             if std::env::var("AI_PAD_DEBUG").is_ok() {
                 let dbg_app = app.handle().clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_secs(2));
-                    log("[debug] 自动弹出 panel");
+                    info!("[debug] 自动弹出 panel");
                     panel::toggle_panel(&dbg_app);
                     std::thread::sleep(std::time::Duration::from_secs(2));
-                    log("[debug] 模拟 panel-nav (1, 0)");
+                    info!("[debug] 模拟 panel-nav (1, 0)");
                     let _ = dbg_app.emit("panel-nav", (1i32, 0i32));
                     std::thread::sleep(std::time::Duration::from_millis(500));
-                    log("[debug] 模拟 panel-nav (1, 0)");
+                    info!("[debug] 模拟 panel-nav (1, 0)");
                     let _ = dbg_app.emit("panel-nav", (1i32, 0i32));
                     std::thread::sleep(std::time::Duration::from_millis(500));
-                    log("[debug] 模拟 panel-nav (0, -1)");
+                    info!("[debug] 模拟 panel-nav (0, -1)");
                     let _ = dbg_app.emit("panel-nav", (0i32, -1i32));
                 });
             }
@@ -152,23 +144,13 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-fn log(msg: &str) {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = now.as_secs() % 86400;
-    let h = secs / 3600;
-    let m = (secs % 3600) / 60;
-    let s = secs % 60;
-    let ms = now.subsec_millis();
-    eprintln!("[{h:02}:{m:02}:{s:02}.{ms:03}] {msg}");
-}
-
+/// 主游戏手柄循环 — 80ms tick，按键检测 → 状态机 → AI → 气泡/动作
+#[instrument(skip(app))]
 fn gamepad_loop(app: &tauri::AppHandle) {
     let sdl = match SdlGamepad::init() {
         Ok(s) => s,
         Err(e) => {
-            log(&format!("SDL2 初始化失败: {e}"));
+            error!(error = %e, "SDL2 初始化失败");
             return;
         }
     };
@@ -176,25 +158,25 @@ fn gamepad_loop(app: &tauri::AppHandle) {
     let pads = match SdlGamepad::list_gamepads(&sdl) {
         Ok(p) => p,
         Err(e) => {
-            log(&format!("枚举手柄失败: {e}"));
+            error!(error = %e, "枚举手柄失败");
             return;
         }
     };
 
     if pads.is_empty() {
-        log("未检测到游戏手柄，等待连接...");
+        warn!("未检测到游戏手柄，等待连接...");
         return;
     }
 
     for p in &pads {
-        log(&format!("设备 [{}] {} ({} 按钮)", p.index, p.name, p.num_buttons));
+        info!(index = p.index, name = %p.name, buttons = p.num_buttons, "设备 [{}] {} ({} 按钮)", p.index, p.name, p.num_buttons);
     }
-    log("ai-pad 启动");
+    info!("ai-pad 启动");
 
     let mut gamepad = match SdlGamepad::open(&sdl, pads.first().map(|p| p.index).unwrap_or(0)) {
         Ok(g) => g,
         Err(e) => {
-            log(&format!("打开手柄失败: {e}"));
+            error!(error = %e, "打开手柄失败");
             return;
         }
     };
@@ -202,31 +184,31 @@ fn gamepad_loop(app: &tauri::AppHandle) {
     let rt = match tokio::runtime::Runtime::new() {
         Ok(r) => r,
         Err(e) => {
-            log(&format!("Tokio 运行时创建失败: {e}"));
+            error!(error = %e, "Tokio 运行时创建失败");
             return;
         }
     };
 
     let agent = match PetAgent::new() {
         Ok(a) => {
-            log("AI Agent 初始化成功 (8Bit Cat)");
+            info!("AI Agent 初始化成功 (8Bit Cat)");
             Some(a)
         }
         Err(e) => {
-            log(&format!("AI Agent 初始化失败: {e}"));
+            warn!(error = %e, "AI Agent 初始化失败");
             None
         }
     };
 
     let action_config = ActionConfig::load("actions.yml").ok();
-    log(&format!("已加载 {} 个动作绑定",
-        action_config.as_ref().map(|c| c.actions.len()).unwrap_or(0)));
+    let ac = action_config.as_ref().map(|c| c.actions.len()).unwrap_or(0);
+    info!(action_count = ac, "已加载 {ac} 个动作绑定");
 
     let mut prev_buttons: u32 = 0;
     let mut prev_hat: Option<(i32, i32)> = None;
     let mut alt_tab = HeldModifier::new(0x12);  // VK_MENU
     let mut ctrl_tab = HeldModifier::new(0x11); // VK_CONTROL
-    let mut held_voice = HeldCombo::new();       // voice 按住状态
+    let mut held_voice = HeldCombo::new();
 
     loop {
         let panel_visible = app.get_webview_window("panel")
@@ -241,7 +223,7 @@ fn gamepad_loop(app: &tauri::AppHandle) {
                 if new_presses & (1 << bit) != 0 {
                     let idx = bit as u32;
                     let name = button_name(idx as usize).unwrap_or("?");
-                    log(&format!("按下 #{idx} {name}"));
+                    debug!(button_idx = idx, button_name = name, "按下 #{idx} {name}");
 
                     // 如果 Alt/Ctrl+Tab 按住中，按其他键时先释放
                     if (alt_tab.held && name != "L1") || (ctrl_tab.held && name != "L2") {
@@ -249,24 +231,18 @@ fn gamepad_loop(app: &tauri::AppHandle) {
                         ctrl_tab.release();
                     }
 
-                    // Home 键 → 切换面板（独占处理，跳过 bridge/actions）
+                    // Home 键 → 切换面板（独占处理）
                     if name == "Home" {
-                        log("  → 切换面板");
+                        info!("→ 切换面板");
                         panel::toggle_panel(app);
                         continue;
                     }
 
-                    // 面板可见 → 按键转发到面板，不再走 bridge/actions
+                    // 面板可见 → 按键转发到面板
                     if panel_visible {
                         match name {
-                            "A" => {
-                                log("  → 面板确认");
-                                let _ = app.emit("panel-confirm", ());
-                            }
-                            "B" => {
-                                log("  → 面板关闭");
-                                let _ = app.emit("panel-close", ());
-                            }
+                            "A" => { info!("→ 面板确认"); let _ = app.emit("panel-confirm", ()); }
+                            "B" => { info!("→ 面板关闭"); let _ = app.emit("panel-close", ()); }
                             _ => {}
                         }
                         continue;
@@ -281,52 +257,50 @@ fn gamepad_loop(app: &tauri::AppHandle) {
                     }
 
                     if let (Some(msg), Some(ag)) = (&agent_msg, &agent) {
-                        log(&format!("  → AI: {msg}"));
+                        info!(msg = %msg, "→ AI: {msg}");
 
-                        // 启动流式气泡: 清空内容 + 显示窗口
                         if let Err(e) = bubble::start_streaming_bubble(app) {
-                            log(&format!("  气泡启动错误: {e}"));
+                            warn!(error = %e, "气泡启动错误");
                         }
 
-                        // 边生成边追加
                         let app_for_chunks = app.clone();
                         let stream_result = rt.block_on(ag.chat_stream(msg, move |chunk| {
+                            debug!(chunk_len = chunk.len(), "AI chunk"); // 可通过 RUST_LOG 过滤
                             let _ = bubble::append_bubble_chunk(&app_for_chunks, chunk);
                         }));
 
-                        // 通知前端流式结束 → 启动自动隐藏定时
                         let _ = bubble::finalize_bubble(app);
 
                         match stream_result {
                             Ok(reply) => {
                                 let preview: String = reply.chars().take(60).collect();
-                                log(&format!("  ← AI: {preview}"));
+                                info!(preview = %preview, "← AI: {preview}");
                                 let ai_events = gamepad::process_agent_response(&reply);
                                 for evt in &ai_events {
                                     let _ = app.emit("pet-event", evt);
                                 }
                             }
                             Err(e) => {
-                                log(&format!("  AI 错误: {e}"));
+                                warn!(error = %e, "AI 错误");
                             }
                         }
                     }
 
-                    // Actions: 按键名 → 动作绑定（hotkey/launch/voice/script）
+                    // Actions: 按键名 → 动作绑定
                     if let Some(ref config) = action_config {
                         if let Some(action_def) = config.actions.get(name) {
-                            log(&format!("  → {} ({})", name, action_def.action_type));
+                            info!(name = name, action_type = %action_def.action_type, "→ {} ({})", name, action_def.action_type);
                             execute_action(action_def, &config.defaults, &mut alt_tab, &mut ctrl_tab);
                         }
                     }
                 }
             }
         }
-        // Voice 按住检测: 仅边沿检测,实际按键由主循环按"先抢前台再按热键"顺序触发
+
+        // Voice 按住检测
         let mut voice_just_released = false;
         let mut voice_just_pressed = false;
         if let Some(ref config) = action_config {
-            // 找出所有 voice 类型的按键 bit 位
             let mut voice_bits: u32 = 0;
             for (name, action_def) in &config.actions {
                 if action_def.action_type == "voice" {
@@ -341,12 +315,11 @@ fn gamepad_loop(app: &tauri::AppHandle) {
             voice_just_released = jr;
         }
 
-        // voice 按下: 显示录音条 + 强制前台化 → 等 80ms 让前台化生效 → 按下输入法热键
-        // 顺序很重要:必须先抢前台,再按热键,否则输入法看到的"前台"还是上一个窗口
+        // voice 按下
         if voice_just_pressed {
             match voice::open_voice_capture(app) {
-                Ok(()) => log("  [voice] 录音条已显示并强制前台化"),
-                Err(e) => log(&format!("  [voice] 打开录音条失败: {e}")),
+                Ok(()) => info!("[voice] 录音条已显示并强制前台化"),
+                Err(e) => warn!(error = %e, "[voice] 打开录音条失败"),
             }
             std::thread::sleep(std::time::Duration::from_millis(80));
             if let Some(ref config) = action_config {
@@ -354,61 +327,57 @@ fn gamepad_loop(app: &tauri::AppHandle) {
             }
         }
 
-        // voice 释放: 先松开输入法热键 → 等识别引擎完成注入 → 取走 textarea 内容 → 送 AI
+        // voice 释放
         if voice_just_released {
             held_voice.release_keys();
-            log("  [voice] 等待识别注入完成 (700ms)...");
+            info!("[voice] 等待识别注入完成 (700ms)...");
             std::thread::sleep(std::time::Duration::from_millis(700));
             match voice::take_voice_text(app) {
                 Ok(raw) => {
                     let text = raw.trim().to_string();
                     if text.is_empty() {
-                        log("  [voice] 虚拟输入框为空,跳过 AI (识别可能失败,或焦点被其他窗口抢走)");
+                        warn!("[voice] 虚拟输入框为空 (识别可能失败或焦点被抢走)");
                     } else {
-                        log(&format!("  [voice] 识别全文: {text}"));
+                        info!(text = %text, len = text.chars().count(), "[voice] 识别全文: {text}");
 
                         if let Some(ref ag) = agent {
                             if let Err(e) = bubble::start_streaming_bubble(app) {
-                                log(&format!("  气泡启动错误: {e}"));
+                                warn!(error = %e, "[voice] 气泡启动错误");
                             }
                             let app_for_chunks = app.clone();
-                            eprint!("  [AI 流式] ");
                             let stream_result = rt.block_on(ag.chat_stream(&text, move |chunk| {
-                                eprint!("{chunk}");
-                                use std::io::Write;
-                                let _ = std::io::stderr().flush();
+                                debug!(len = chunk.len(), "[voice] AI chunk");
                                 let _ = bubble::append_bubble_chunk(&app_for_chunks, chunk);
                             }));
-                            eprintln!();
                             let _ = bubble::finalize_bubble(app);
 
                             match stream_result {
                                 Ok(reply) => {
-                                    log(&format!("  [voice] AI 回复全文 ({} 字符): {reply}", reply.chars().count()));
+                                    info!(chars = reply.chars().count(), reply = %reply, "[voice] AI 回复全文 ({reply})");
                                     let ai_events = gamepad::process_agent_response(&reply);
                                     for evt in &ai_events {
                                         let _ = app.emit("pet-event", evt);
                                     }
                                 }
-                                Err(e) => log(&format!("  [voice] AI 错误: {e}")),
+                                Err(e) => warn!(error = %e, "[voice] AI 错误"),
                             }
                         } else {
-                            log("  [voice] AI Agent 未初始化,无法处理");
+                            warn!("[voice] AI Agent 未初始化");
                         }
                     }
                 }
-                Err(e) => log(&format!("  [voice] 读取虚拟输入框失败: {e}")),
+                Err(e) => warn!(error = %e, "[voice] 读取虚拟输入框失败"),
             }
         }
 
         prev_buttons = buttons;
 
-        // 方向键：面板可见 → 导航事件（边沿触发）；隐藏 → 滚动（持续触发）
+        // 方向键
         let hat = gamepad.read_hat(0);
         if panel_visible {
             if hat != prev_hat {
                 if let Some((dx, dy)) = hat {
-                    log(&format!("  → 面板导航 ({dx}, {dy})"));
+                    info!(dx = dx, dy = dy, "→ 面板导航");
                     let _ = app.emit("panel-nav", (dx, dy));
                 }
             }
@@ -433,7 +402,6 @@ fn execute_action(
     alt_tab: &mut HeldModifier,
     ctrl_tab: &mut HeldModifier,
 ) {
-    // HeldModifier 定义在 gamepad_loop 内，这里用内联方式处理
     match action.action_type.as_str() {
         "launch" => {
             let program = match &action.program {
@@ -441,7 +409,7 @@ fn execute_action(
                 None => return,
             };
             let args = action.args.as_deref().unwrap_or("");
-            let workdir = if action.workdir.is_empty() { ".".into() } else { action.workdir.clone() };
+            let workdir = if action.workdir.is_empty() { ".".to_string() } else { action.workdir.clone() };
 
             if action.terminal {
                 let term = &defaults.terminal;
@@ -459,9 +427,7 @@ fn execute_action(
                     .spawn();
             }
         }
-        "voice" => {
-            // voice 已改为按住模式, 由 HeldCombo 在主循环中处理
-        }
+        "voice" => {}
         "script" => {
             if let Some(cmd) = &action.command {
                 let _ = std::process::Command::new("powershell")
@@ -482,13 +448,13 @@ fn execute_action(
                 } else {
                     let key_refs: Vec<&str> = trigger.iter().map(|s| s.as_str()).collect();
                     if let Err(e) = hotkey::trigger_hotkey(&key_refs, 0.02) {
-                        eprintln!("  热键触发失败: {e}");
+                        warn!(error = %e, "热键触发失败");
                     }
                 }
             }
         }
         other => {
-            eprintln!("  未知动作类型: {other}");
+            warn!(action_type = other, "未知动作类型");
         }
     }
 }
@@ -522,16 +488,14 @@ struct HeldCombo {
 impl HeldCombo {
     fn new() -> Self { Self { vks: Vec::new(), held: false } }
 
-    /// 仅做边沿检测,不实际按键。返回 (just_pressed, just_released)
     fn detect(&mut self, active: bool) -> (bool, bool) {
         match (active, self.held) {
             (true, false)  => { self.held = true;  (true, false) }
-            (false, true)  => { self.held = false; (false, true) }
+            (false, true) => { self.held = false; (false, true) }
             _              => (false, false),
         }
     }
 
-    /// 按下输入法语音热键 (从 actions.yml 的 voice.trigger 读)
     fn press_keys(&mut self, config: &ai_pad_core::action::ActionConfig) {
         let mut vks = Vec::new();
         for (_name, action_def) in &config.actions {
@@ -546,19 +510,17 @@ impl HeldCombo {
         for &vk in &self.vks {
             let _ = hotkey::key_down(vk);
         }
-        log("  → 输入法语音热键已按下");
+        info!(vk_count = self.vks.len(), "→ 输入法语音热键已按下");
     }
 
-    /// 松开热键
     fn release_keys(&mut self) {
         for &vk in self.vks.iter().rev() {
             let _ = hotkey::key_up(vk);
         }
-        log("  → 输入法语音热键已松开");
+        info!("→ 输入法语音热键已松开");
     }
 }
 
-/// 按键名 → 按钮 bit 位 (与 device::button_name 对应)
 fn name_to_bit(name: &str) -> Option<u32> {
     match name {
         "A"      => Some(0),

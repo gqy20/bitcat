@@ -1,0 +1,16 @@
+# nextest configuration for 8Bit Cat
+
+[profile.default]
+# 慢速测试（需要真实硬件/外部 API 的）放这里
+slow = []
+
+# 最终输出格式
+final-status-level = "skip"
+failure-output = "immediate-final"
+success-output = "immediate"
+
+[profile.ci]
+# CI 环境用这个 profile
+slow = []
+fail-fast = true
+retries = { backoff = "fixed", delay = "0.1", times = 2 }

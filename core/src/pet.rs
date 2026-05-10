@@ -361,3 +361,247 @@ mod tests {
         assert!((pet.x - 50.0).abs() < 1.0); // 允许误差
     }
 }
+
+// ---- Proptest 属性测试 ----
+
+#[cfg(test)]
+mod prop_tests {
+    use super::*;
+    use proptest::prelude::*;
+    use proptest::strategy::Just;
+
+    // PetState 的 6 个变体，用索引 0..5 选择
+    fn any_state() -> impl Strategy<Value = PetState> {
+        prop_oneof![
+            Just(PetState::Idle),
+            Just(PetState::Walk),
+            Just(PetState::Sleep),
+            Just(PetState::Talk),
+            Just(PetState::Happy),
+            Just(PetState::Confused),
+        ]
+    }
+
+    // 有超时的状态子集
+    fn any_timed_state() -> impl Strategy<Value = PetState> {
+        prop_oneof![
+            Just(PetState::Walk),
+            Just(PetState::Talk),
+            Just(PetState::Happy),
+            Just(PetState::Confused),
+        ]
+    }
+
+    // === 帧推进属性 ===
+
+    proptest! {
+        #[test]
+        fn frame_always_in_range(state in any_state(), dt_ms in 0u64..10_000u64) {
+            let mut pet = Pet::default();
+            pet.set_state(state);
+            pet.update(dt_ms);
+
+            prop_assert!(pet.frame < state.frame_count(),
+                "frame {} >= frame_count {} for state {:?}",
+                pet.frame, state.frame_count(), state
+            );
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn frame_advances_monotonically_until_wrap(dt_ms in 1u64..500u64) {
+            let mut pet = Pet::default();
+            let f0 = pet.frame;
+            pet.update(dt_ms);
+
+            // 要么推进一帧（或更多），要么回绕到 0
+            if pet.frame != 0 {
+                prop_assert!(pet.frame > f0,
+                    "frame should advance or wrap: {} -> {}", f0, pet.frame
+                );
+            }
+        }
+    }
+
+    // === Walk 移动属性 ===
+
+    proptest! {
+        #[test]
+        fn walk_never_overshoots_target(
+            start in -1000f32..1000f32,
+            target in -1000f32..1000f32,
+            speed in 1f32..1000f32,
+            dt_ms in 1u64..5000u64,
+        ) {
+            let mut pet = Pet::new(start, 0.0);
+            pet.speed = speed;
+
+            if start != target {
+                pet.walk_to(target);
+                pet.update(dt_ms);
+
+                let dx = target - start;
+                let max_move = speed * dt_ms as f32 / 1000.0;
+
+                if dx.abs() <= max_move {
+                    // 应该到达目标
+                    prop_assert!((pet.x - target).abs() < 1.0,
+                        "should reach target: x={} target={}", pet.x, target
+                    );
+                } else {
+                    // 不应超过目标
+                    if dx > 0.0 {
+                        prop_assert!(pet.x <= target + 0.01,
+                            "overshoot right: x={} > target={}", pet.x, target
+                        );
+                    } else {
+                        prop_assert!(pet.x >= target - 0.01,
+                            "overshoot left: x={} < target={}", pet.x, target
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn facing_matches_movement_direction(
+            start in 0f32..500f32,
+            target in 0f32..500f32,
+        ) {
+            if (start - target).abs() > 1.0 {
+                let mut pet = Pet::new(start, 0.0);
+                pet.speed = 1000.0; // 足够快，一次更新就能移动
+                pet.walk_to(target);
+                pet.update(100); // 100ms 内走 100px
+
+                if target > start {
+                    prop_assert!(pet.facing_right,
+                        "moving right but facing left: start={} target={}", start, target
+                    );
+                } else {
+                    prop_assert!(!pet.facing_right,
+                        "moving left but facing right: start={} target={}", start, target
+                    );
+                }
+            }
+        }
+    }
+
+    // === 状态转换属性 ===
+
+    proptest! {
+        #[test]
+        fn set_state_idempotent(state in any_state()) {
+            let mut pet = Pet::default();
+            pet.set_state(state);
+            let frame_after_first = pet.frame;
+
+            pet.set_state(state); // 同状态再次设置
+            prop_assert_eq!(pet.frame, frame_after_first,
+                "set_state should be idempotent for same state"
+            );
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn set_state_resets_timers(state in any_state()) {
+            let mut pet = Pet::default();
+            // 确保初始状态与目标不同: 先设 Sleep（不会自动超时）
+            pet.set_state(PetState::Sleep);
+            pet.frame_time_ms = 9999;
+            pet.state_time_ms = 8888;
+            pet.frame = 3;
+
+            pet.set_state(state); // 切换到目标状态
+
+            // Sleep → Idle 是 no-op（Idle 的 auto_idle_timeout 是 None）
+            // Sleep → 其他状态: 总是重置
+            // 其他 → 不同状态: 重置; 相同状态(非Idle): 不重置
+            if state != PetState::Sleep && state != PetState::Idle {
+                prop_assert_eq!(pet.frame_time_ms, 0, "frame_time_ms not reset for {:?}", state);
+                prop_assert_eq!(pet.state_time_ms, 0, "state_time_ms not reset for {:?}", state);
+                prop_assert_eq!(pet.frame, 0, "frame not reset for {:?}", state);
+            }
+        }
+    }
+
+    // === 自动超时属性 ===
+
+    proptest! {
+        #[test]
+        fn auto_idle_transitions_to_idle(
+            state in any_timed_state(),
+            ) {
+            let timeout = state.auto_idle_timeout_ms().unwrap();
+            let mut pet = Pet::default();
+            pet.set_state(state);
+
+            // 超时前不切换
+            pet.update(timeout - 1);
+            prop_assert_eq!(pet.state, state,
+                "should not auto-idle before timeout for {:?}", state
+            );
+
+            // 超时后切换到 Idle
+            pet.update(1);
+            prop_assert_eq!(pet.state, PetState::Idle,
+                "should auto-idle to Idle after timeout for {:?}", state
+            );
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn no_timeout_states_stay_put(dt_ms in 1u64..100_000u64) {
+            for &state in &[PetState::Idle, PetState::Sleep] {
+                let mut pet = Pet::default();
+                pet.set_state(state);
+                pet.update(dt_ms);
+                prop_assert_eq!(pet.state, state,
+                    "{:?} should never auto-timeout after {}ms", state, dt_ms
+                );
+            }
+        }
+    }
+
+    // === 坐标计算属性 (模拟 DragCalc 逻辑) ===
+
+    proptest! {
+        #[test]
+        fn dpi_scaling_roundtrip(
+            win_x in -3840f64..3840f64,
+            win_y in -2160f64..2160f64,
+            screen_dx in -1920f64..1920f64,
+            screen_dy in -1080f64..1080f64,
+            scale in 1.0f64..4.0f64,
+        ) {
+            let new_x = (win_x + screen_dx * scale).round();
+            let new_y = (win_y + screen_dy * scale).round();
+
+            // round-trip: 反向计算应一致
+            let back_x = ((new_x - win_x) / scale).round();
+            let back_y = ((new_y - win_y) / scale).round();
+
+            prop_assert!((back_x - screen_dx).abs() < 1.0, "x round-trip failed");
+            prop_assert!((back_y - screen_dy).abs() < 1.0, "y round-trip failed");
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn zero_delta_no_change(
+            win_x in -3840f64..3840f64,
+            win_y in -2160f64..2160f64,
+            scale in 0.5f64..5.0f64,
+        ) {
+            let new_x = win_x + 0.0 * scale;
+            let new_y = win_y + 0.0 * scale;
+            prop_assert!((new_x - win_x).abs() < 0.001);
+            prop_assert!((new_y - win_y).abs() < 0.001);
+        }
+    }
+}
