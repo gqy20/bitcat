@@ -19,14 +19,16 @@ build:
 	cargo build
 	cp buttons.yml target/debug/ 2>/dev/null || true
 	cp actions.yml target/debug/ 2>/dev/null || true
+	cp prompts.yml target/debug/ 2>/dev/null || true
 
 release:
 	cargo build --release
 	cp buttons.yml target/release/
 	cp actions.yml target/release/
+	cp prompts.yml target/release/
 
 test:
-	cp buttons.yml actions.yml core/ 2>/dev/null || true
+	cp buttons.yml actions.yml prompts.yml core/ 2>/dev/null || true
 	cargo test
 
 read:

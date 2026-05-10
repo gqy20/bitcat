@@ -1,4 +1,5 @@
 use crate::ai_config::AiConfig;
+use crate::prompts::PromptsConfig;
 use crate::tools::{self, LaunchArgs, ReadFileArgs, ShellArgs};
 use futures::StreamExt;
 use rig::agent::Agent;
@@ -17,24 +18,10 @@ pub struct PetAgent {
     pub config: AiConfig,
 }
 
-const PREAMBLE: &str = r#"你是 8Bit，一只住在电脑屏幕上的像素风小猫助手。
-
-性格特点：
-- 活泼好奇，喜欢用 emoji
-- 偶尔调皮，但做事靠谱
-- 回答简洁，不说废话
-- 用中文交流
-
-你通过手柄和用户交互，可以帮用户：
-- 启动程序、执行命令
-- 查时间、读文件
-- 闲聊、讲笑话、提醒事项
-
-回答时保持角色感，像一只懂技术的猫。"#;
-
 impl PetAgent {
     pub fn new() -> Result<Self, String> {
         let config = AiConfig::load()?;
+        let prompts = PromptsConfig::load();
 
         let client = anthropic::Client::builder()
             .api_key(&config.api_key)
@@ -47,7 +34,7 @@ impl PetAgent {
         let max_tokens = config.max_tokens();
 
         let agent = rig::agent::AgentBuilder::new(model)
-            .preamble(PREAMBLE)
+            .preamble(&prompts.agent.preamble)
             .max_tokens(max_tokens)
             .tool(LaunchTool)
             .tool(ShellTool)
@@ -232,9 +219,10 @@ mod tests {
 
     #[test]
     fn test_preamble_is_non_empty() {
-        assert!(!PREAMBLE.is_empty());
-        assert!(PREAMBLE.contains("8Bit"));
-        assert!(PREAMBLE.contains("猫"));
+        let cfg = PromptsConfig::default();
+        assert!(!cfg.agent.preamble.is_empty());
+        assert!(cfg.agent.preamble.contains("8Bit"));
+        assert!(cfg.agent.preamble.contains("猫"));
     }
 
     #[test]

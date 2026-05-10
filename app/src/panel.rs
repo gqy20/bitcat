@@ -161,7 +161,7 @@ mod tests {
     fn test_panel_actions_are_launch_type() {
         let config = ai_pad_core::action::ActionConfig::load("actions.yml").unwrap();
         for key in ["vscode", "browser", "notepad"] {
-            let action = config.actions.get(*key).unwrap();
+            let action = config.actions.get(key).unwrap();
             assert_eq!(action.action_type, "launch", "{key} 应为 launch 类型");
         }
     }

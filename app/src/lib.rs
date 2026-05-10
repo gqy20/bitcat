@@ -3,12 +3,14 @@ pub mod commands;
 pub mod gamepad;
 pub mod joystick;
 pub mod panel;
+pub mod screenshot;
 pub mod tray;
 pub mod voice;
 
 use bubble::SharedBubble;
 use commands::SharedPet;
 use voice::SharedVoice;
+use screenshot::SharedScreenshotState;
 use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 use ai_pad_core::action::{ActionConfig, ActionDef};
@@ -131,6 +133,7 @@ pub fn run() {
         .manage(SharedPet::new())
         .manage(SharedBubble::new())
         .manage(SharedVoice::new())
+        .manage(SharedScreenshotState::new())
         .invoke_handler(tauri::generate_handler![
             commands::cmd_set_state,
             commands::cmd_walk_to,
@@ -147,6 +150,7 @@ pub fn run() {
             voice::cmd_voice_get_text,
             cmd_recreate_pet_window,
             cmd_context_menu,
+            screenshot::cmd_screenshot_now,
         ])
         .on_window_event(|window, event| {
             if window.label() == "panel" {
@@ -156,6 +160,18 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            // 从 exe 同目录加载 .env（优先级低于系统环境变量）
+            if let Some(exe_dir) = app.path().resource_dir().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())) {
+                let env_path = exe_dir.join(".env");
+                if env_path.exists() {
+                    dotenvy::from_path(&env_path).ok();
+                    info!(path = ?env_path, "已加载 .env");
+                }
+            } else {
+                // 开发模式：尝试项目根目录
+                dotenvy::dotenv().ok();
+            }
+
             tray::create_tray(app.handle())?;
 
             if let Err(e) = voice::precreate_voice_window(app.handle()) {
@@ -186,6 +202,11 @@ pub fn run() {
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 gamepad_loop(&handle);
+            });
+
+            let ss_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                screenshot::screenshot_loop(&ss_handle);
             });
 
             if std::env::var("AI_PAD_DEBUG").is_ok() {

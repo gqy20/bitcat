@@ -6,4 +6,7 @@ pub mod config;
 pub mod device;
 pub mod hotkey;
 pub mod pet;
+pub mod prompts;
+pub mod screenshot;
 pub mod tools;
+pub mod vision;
