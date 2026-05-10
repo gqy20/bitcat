@@ -34,9 +34,9 @@
     setupDrag();
   }
 
-  // ========== 拖拽：纯 JS 手动跟踪 ==========
+  // ========== 拖拽：纯 JS 手动跟踪（使用 DragCalc 纯函数计算坐标）==========
 
-  let dragState = null; // { startX, startY, winX, winY }
+  let dragState = null; // { startX, startY, winX, winY, scale }
 
   function setupDrag() {
     const root = document.getElementById('pet-root');
@@ -51,14 +51,16 @@
 
       try {
         const pos = await win.outerPosition();
+        const scale = await win.scaleFactor();
         dragState = {
           startX: e.screenX,
           startY: e.screenY,
           winX: pos.x,
           winY: pos.y,
+          scale: scale,
         };
       } catch (err) {
-        console.error('[pet] outerPosition 失败:', err);
+        console.error('[pet] outerPosition/scaleFactor 失败:', err);
       }
     });
 
@@ -67,10 +69,13 @@
       const win = getCurrentWin();
       if (!win) return;
       try {
-        await win.setPosition({
-          x: dragState.winX + (e.screenX - dragState.startX),
-          y: dragState.winY + (e.screenY - dragState.startY),
-        });
+        const newPos = DragCalc.calcNewPhysicalPosition(
+          dragState.winX, dragState.winY,
+          dragState.startX, dragState.startY,
+          e.screenX, e.screenY,
+          dragState.scale
+        );
+        await win.setPosition(new window.__TAURI__.window.PhysicalPosition(newPos.x, newPos.y));
       } catch (err) {
         // setPosition 在拖拽中频繁调用，偶尔失败不打印避免刷屏
       }

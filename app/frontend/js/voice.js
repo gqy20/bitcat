@@ -1,6 +1,7 @@
 // voice.js — 可见的录音条 textarea，接收任意输入法注入的文字
-// 关键: IME composition 过程中 input 事件可能延迟,需要 input + compositionend 双监听
-// 后端取文本前会 emit voice-flush 强制把当前 ta.value 上报一次
+//
+// 后端取文本方式: eval 直接在 WebView2 中执行 invoke + 清空（不依赖事件握手）
+// 前端仍监听 input 事件实时 pushText 作为兜底
 
 (function() {
   'use strict';
@@ -40,11 +41,13 @@
     });
 
     // 多事件监听: 不同输入法/不同合成阶段触发的事件不一样
+    // 这些 pushText 作为 eval 取值的实时兜底（IME 注入过程中就同步文本）
     ['input', 'compositionend', 'keyup', 'change'].forEach((ev) => {
       ta.addEventListener(ev, pushText);
     });
 
     if (window.__TAURI__ && window.__TAURI__.event) {
+      // 后端 open_voice_capture 时发此事件 → 清空 textarea 准备接收新语音
       window.__TAURI__.event.listen('voice-clear', () => {
         ta.value = '';
         pushText();
@@ -53,15 +56,6 @@
 
       window.__TAURI__.event.listen('voice-focus', () => {
         refocus();
-      });
-
-      // 后端取文本前广播: 前端 invoke 上报 → 完成后再 emit voice-ready 通知后端
-      window.__TAURI__.event.listen('voice-flush', () => {
-        pushText().then(() => {
-          if (window.__TAURI__ && window.__TAURI__.event) {
-            window.__TAURI__.event.emit('voice-ready');
-          }
-        });
       });
     } else {
       console.warn('[voice] __TAURI__.event 不可用');

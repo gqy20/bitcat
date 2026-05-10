@@ -7,9 +7,9 @@
 // 3. 用户松开手柄 voice 键 → 等识别引擎完成注入 → 取走 textarea 内容 → 送 AI
 // 4. 取走文本后窗口移回屏幕外,等待下次使用
 
-use std::sync::{Mutex, mpsc};
+use std::sync::Mutex;
 
-use tauri::{AppHandle, Emitter, Listener, Manager, PhysicalPosition, PhysicalSize, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, WebviewUrl, WebviewWindowBuilder};
 
 const VOICE_W: u32 = 280;
 const VOICE_H: u32 = 40;
@@ -78,7 +78,11 @@ pub fn open_voice_capture(app: &AppHandle) -> Result<(), String> {
     // 确保可见 + 抢焦点
     let _ = window.show();
     let _ = window.set_focus();
-    let _ = app.emit_to("voice", "voice-clear", ());
+    if let Err(e) = app.emit_to("voice", "voice-clear", ()) {
+        eprintln!("[voice] emit voice-clear 失败: {e}");
+    } else {
+        eprintln!("[voice] ✓ 已发送 voice-clear");
+    }
 
     // 用 AttachThreadInput 强制前台化,绕过 Windows 安全限制
     // 否则输入法语音注入会跑到我们之前的前台窗口（终端/桌面/浏览器…）
@@ -96,40 +100,65 @@ pub fn open_voice_capture(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// voice 释放: 等前端确认文本已同步 → 取走 → 移回屏幕外
+/// voice 释放: eval 取值+清空 → 等待完成 → 取走 → 归位
 ///
-/// 不再用固定 sleep 猜 IPC 延迟,而是:
-/// 1. emit voice-flush → 前端 invoke(cmd_voice_update_text) 写入 SharedVoice.text
-/// 2. 前端 invoke 完成后 emit voice-ready
-/// 3. 后端阻塞等 voice-ready 到达 → 此时 SharedVoice.text 保证是最新的
+/// 核心改进: 捕获 eval 错误 + 增加等待时间 + 双重保险清空
 pub fn take_voice_text(app: &AppHandle) -> Result<String, String> {
-    let (tx, rx) = mpsc::channel::<()>();
+    let mut eval_ok = true;
 
-    // 注册一次性监听: 前端 invoke 完成后发 voice-ready,我们收到就继续
-    let _listener_id = app.listen("voice-ready", move |_event| {
-        let _ = tx.send(());
-    });
-
-    // 通知前端: 把当前 ta.value 通过 invoke 同步到后端
-    let _ = app.emit_to("voice", "voice-flush", ());
-
-    // 阻塞等待前端确认 (最多 3 秒超时,防止前端挂死导致永远卡住)
-    match rx.recv_timeout(std::time::Duration::from_secs(3)) {
-        Ok(()) => {}
-        Err(mpsc::RecvTimeoutError::Timeout) => {
-            eprintln!("[voice] ⚠ voice-ready 超时 (3s),将读取可能过期的文本");
+    // Step 1: eval — 在 WebView2 中原子地读取 textarea + 清空 + 上报
+    if let Some(window) = app.get_webview_window("voice") {
+        match window.eval(
+            r#"(async()=>{const t=document.getElementById('vox');if(t){const v=t.value;t.value='';await window.__TAURI__.core.invoke('cmd_voice_update_text',{text:v});}})()"#
+        ) {
+            Ok(()) => {}
+            Err(e) => {
+                eval_ok = false;
+                eprintln!("[voice] eval 失败（将依赖 input 事件兜底）: {e}");
+            }
         }
-        Err(e) => return Err(format!("channel error: {e}")),
+
+        // 给 ExecuteScriptAsync + 内部 invoke IPC 足够时间完成
+        // ExecuteScriptAsync 本身通常 < 50ms，但 invoke IPC 需要主线程调度
+        // 在 gamepad 线程上调用时主线程可能繁忙，给充裕时间
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    } else {
+        eprintln!("[voice] ⚠ voice 窗口不存在");
+        eval_ok = false;
     }
 
-    // 此时 SharedVoice.text 已被前端 invoke 更新为最新值
+    // Step 2: 取走文本（来源: input 事件实时上报 或 eval invoke）
     let state: State<SharedVoice> = app.state();
     let text = std::mem::take(&mut *state.text.lock().map_err(|e| e.to_string())?);
 
-    // 清理 + 归位
-    let _ = app.emit_to("voice", "voice-clear", ());
+    // Step 3: 如果文本为空且 eval 成功了，说明可能时序问题导致 invoke 还没写回
+    // 再等一轮并重试取值
+    if text.is_empty() && eval_ok {
+        if let Some(_window) = app.get_webview_window("voice") {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            let retry = std::mem::take(&mut *state.text.lock().map_err(|e| e.to_string())?);
+            if !retry.is_empty() {
+                eprintln!("[voice] 重试取值成功: {} 字符", retry.chars().count());
+                return Ok(retry);
+            }
+        }
+    }
+
+    // Step 4: 日志 + 归位
+    eprintln!(
+        "[voice] 取走文本: {} 字符 (eval={}, 来源={})",
+        text.chars().count(),
+        eval_ok,
+        if text.is_empty() { "空" } else { "有内容" }
+    );
+
     if let Some(window) = app.get_webview_window("voice") {
         let _ = window.set_position(PhysicalPosition::new(OFFSCREEN, OFFSCREEN));
+    }
+
+    // Step 5: 再次确保清空（防止残留）
+    if let Some(window) = app.get_webview_window("voice") {
+        let _ = window.eval(r#"if(document.getElementById('vox'))document.getElementById('vox').value=''"#);
     }
 
     Ok(text)
@@ -173,5 +202,30 @@ mod tests {
         // 280x40 是用户能看到的小录音条尺寸
         assert!(VOICE_W >= 200 && VOICE_W <= 500);
         assert!(VOICE_H >= 30 && VOICE_H <= 80);
+    }
+
+    #[test]
+    fn test_offscreen_constant_far_enough() {
+        // -10000 应该在任何屏幕配置下都不可见
+        assert!(OFFSCREEN < -5000);
+    }
+
+    #[test]
+    fn test_shared_voice_overwrite() {
+        // 模拟连续两次写入，验证后一次覆盖前一次
+        let v = SharedVoice::new();
+        *v.text.lock().unwrap() = "第一次".into();
+        *v.text.lock().unwrap() = "第二次".into();
+        let taken = std::mem::take(&mut *v.text.lock().unwrap());
+        assert_eq!(taken, "第二次");
+        assert!(v.text.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_shared_voice_empty_take_returns_empty() {
+        // 取空文本不应 panic
+        let v = SharedVoice::new();
+        let taken = std::mem::take(&mut *v.text.lock().unwrap());
+        assert!(taken.is_empty());
     }
 }
