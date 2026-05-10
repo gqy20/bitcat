@@ -1,55 +1,38 @@
 use tauri::{AppHandle, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 use tracing::{info, warn};
 
-/// Phase A: 硬编码动作映射 (id -> (program, args, terminal))
-///
-/// Phase B 会从 panel.yml 加载，这里先写死。
-pub fn lookup_action(id: &str) -> Option<(&'static str, &'static [&'static str], bool)> {
-    match id {
-        "vscode"     => Some(("code",         &[],                                    false)),
-        "browser"    => Some(("explorer",     &["https://www.bing.com"],              false)),
-        "explorer"   => Some(("explorer.exe", &["."],                                 false)),
-        "powershell" => Some(("powershell",   &[],                                    true)),
-        "notepad"    => Some(("notepad.exe",  &[],                                    false)),
-        _ => None,
-    }
-}
-
-fn spawn(program: &str, args: &[&str], terminal: bool) -> Result<(), String> {
-    if terminal {
-        // 容器和目标都是 shell 时不嵌套 -Command
-        let is_shell = matches!(program, "powershell" | "pwsh" | "cmd");
-        let ps_cmd = if is_shell && args.is_empty() {
-            format!("Start-Process {program} -WindowStyle Maximized")
-        } else {
-            let cmd = if args.is_empty() {
-                program.to_string()
-            } else {
-                format!("{} {}", program, args.join(" "))
-            };
-            format!(
-                "Start-Process powershell -ArgumentList '-NoExit','-Command','{cmd}' -WindowStyle Maximized"
-            )
-        };
-        std::process::Command::new("powershell")
-            .args(["-Command", &ps_cmd])
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| format!("启动失败: {e}"))
-    } else {
-        std::process::Command::new(program)
-            .args(args)
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| format!("启动失败: {e}"))
-    }
-}
-
+/// 从 actions.yml 加载配置并执行面板动作（复用 core::action::launch_program）
 #[tauri::command]
 pub async fn cmd_execute_panel_action(id: String) -> Result<(), String> {
-    let (program, args, terminal) = lookup_action(&id)
-        .ok_or_else(|| format!("未知 action_id: {id}"))?;
-    spawn(program, args, terminal)
+    let config = ai_pad_core::action::ActionConfig::load("actions.yml")
+        .map_err(|e| format!("加载 actions.yml 失败: {e}"))?;
+    let action_def = config.actions.get(&id)
+        .ok_or_else(|| format!("未知动作: {id}"))?;
+
+    match action_def.action_type.as_str() {
+        "launch" => {
+            let program = action_def.program.as_deref().ok_or("缺少 program")?;
+            let args = action_def.args.as_deref().unwrap_or("");
+            ai_pad_core::action::launch_program(
+                program, args,
+                &action_def.workdir,
+                action_def.terminal,
+                &config.defaults.terminal,
+            )
+        }
+        "script" => {
+            if let Some(cmd) = &action_def.command {
+                std::process::Command::new("powershell")
+                    .args(["-Command", cmd])
+                    .spawn()
+                    .map(|_| ())
+                    .map_err(|e| format!("脚本执行失败: {e}"))
+            } else {
+                Err("缺少 command".into())
+            }
+        }
+        other => Err(format!("不支持的动作类型: {other}")),
+    }
 }
 
 /// 调试用：前端通过此命令把日志转发到后端 stderr
@@ -116,9 +99,6 @@ fn position_near_pet(app: &AppHandle, panel: &tauri::WebviewWindow) {
 }
 
 /// 切换显示状态（全局热键 / Home 键调用）
-///
-/// 第一次调用时按需创建窗口（避开 Tauri 预创建透明隐藏窗口的崩溃路径）。
-/// 每次显示时重新定位到宠物附近。
 pub fn toggle_panel(app: &AppHandle) {
     match app.get_webview_window("panel") {
         Some(w) => match w.is_visible() {
@@ -167,42 +147,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_lookup_known_actions() {
-        assert!(lookup_action("vscode").is_some());
-        assert!(lookup_action("browser").is_some());
-        assert!(lookup_action("explorer").is_some());
-        assert!(lookup_action("powershell").is_some());
-        assert!(lookup_action("notepad").is_some());
+    fn test_load_panel_actions_from_yml() {
+        let config = ai_pad_core::action::ActionConfig::load("actions.yml").unwrap();
+        // 面板动作都在 actions.yml 中了
+        assert!(config.actions.contains_key("vscode"));
+        assert!(config.actions.contains_key("browser"));
+        assert!(config.actions.contains_key("explorer"));
+        assert!(config.actions.contains_key("powershell"));
+        assert!(config.actions.contains_key("notepad"));
     }
 
     #[test]
-    fn test_lookup_unknown_action() {
-        assert!(lookup_action("not_a_real_action").is_none());
-        assert!(lookup_action("").is_none());
+    fn test_panel_actions_are_launch_type() {
+        let config = ai_pad_core::action::ActionConfig::load("actions.yml").unwrap();
+        for key in ["vscode", "browser", "notepad"] {
+            let action = config.actions.get(*key).unwrap();
+            assert_eq!(action.action_type, "launch", "{key} 应为 launch 类型");
+        }
     }
 
     #[test]
-    fn test_powershell_is_terminal() {
-        let (_, _, terminal) = lookup_action("powershell").unwrap();
-        assert!(terminal, "PowerShell 必须在终端中运行");
-    }
-
-    #[test]
-    fn test_vscode_not_terminal() {
-        let (_, _, terminal) = lookup_action("vscode").unwrap();
-        assert!(!terminal);
-    }
-
-    #[test]
-    fn test_explorer_has_args() {
-        let (program, args, _) = lookup_action("explorer").unwrap();
-        assert_eq!(program, "explorer.exe");
-        assert_eq!(args.len(), 1);
-    }
-
-    #[test]
-    fn test_browser_opens_url() {
-        let (_, args, _) = lookup_action("browser").unwrap();
-        assert!(args[0].starts_with("https://"));
+    fn test_unknown_action_errors() {
+        let config = ai_pad_core::action::ActionConfig::load("actions.yml").unwrap();
+        assert!(config.actions.get("nonexistent").is_none());
     }
 }

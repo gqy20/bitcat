@@ -61,53 +61,63 @@ async fn cmd_recreate_pet_window(
 }
 
 /// 在光标位置弹出原生 Win32 右键菜单，返回被点击的菜单项 id
+///
+/// TrackPopupMenu 是模态消息循环函数，必须在 UI 线程执行。
+/// Tauri async command 运行在 tokio 线程池上，需通过 run_on_main_thread 派发。
 #[tauri::command]
 async fn cmd_context_menu(app: tauri::AppHandle, collapsed: bool, always_on_top: bool) -> Result<String, String> {
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
     use windows_sys::Win32::Foundation::POINT;
     use std::ptr;
 
-    unsafe {
-        let menu = CreateMenu();
-        if menu.is_null() {
-            return Err("CreateMenu 失败".into());
-        }
+    let (tx, rx) = std::sync::mpsc::channel();
+    let app_clone = app.clone();
+    app.run_on_main_thread(move || {
+        let result = unsafe {
+            let menu = CreateMenu();
+            if menu.is_null() {
+                let _ = tx.send(Err("CreateMenu 失败".into()));
+                return;
+            }
 
-        let collapse_label = if collapsed { "展开" } else { "折叠" };
-        let top_label = if always_on_top { "取消置顶" } else { "置顶" };
+            let collapse_label = if collapsed { "展开" } else { "折叠" };
+            let top_label = if always_on_top { "取消置顶" } else { "置顶" };
 
-        AppendMenuW(menu, MF_STRING, 1, encode_wide(collapse_label).as_ptr());
-        AppendMenuW(menu, MF_STRING, 2, encode_wide(top_label).as_ptr());
-        AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
-        AppendMenuW(menu, MF_STRING, 3, encode_wide("退出").as_ptr());
+            AppendMenuW(menu, MF_STRING, 1, encode_wide(collapse_label).as_ptr());
+            AppendMenuW(menu, MF_STRING, 2, encode_wide(top_label).as_ptr());
+            AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
+            AppendMenuW(menu, MF_STRING, 3, encode_wide("退出").as_ptr());
 
-        // 获取光标位置
-        let mut pt = std::mem::zeroed::<POINT>();
-        GetCursorPos(&mut pt);
+            let mut pt = std::mem::zeroed::<POINT>();
+            GetCursorPos(&mut pt);
 
-        let hwnd = app.get_webview_window("pet")
-            .and_then(|w| w.hwnd().ok())
-            .map(|h| h.0 as windows_sys::Win32::Foundation::HWND)
-            .unwrap_or(std::ptr::null_mut());
-        let result = TrackPopupMenu(
-            menu,
-            TPM_RETURNCMD | TPM_RIGHTBUTTON,
-            pt.x,
-            pt.y,
-            0,
-            hwnd,
-            ptr::null(),
-        );
+            let hwnd = app_clone.get_webview_window("pet")
+                .and_then(|w| w.hwnd().ok())
+                .map(|h| h.0 as windows_sys::Win32::Foundation::HWND)
+                .unwrap_or(std::ptr::null_mut());
+            let r = TrackPopupMenu(
+                menu,
+                TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                pt.x,
+                pt.y,
+                0,
+                hwnd,
+                ptr::null(),
+            );
 
-        DestroyMenu(menu);
+            DestroyMenu(menu);
 
-        match result {
-            1 => Ok("collapse".into()),
-            2 => Ok("top".into()),
-            3 => Ok("exit".into()),
-            _ => Ok("dismissed".into()),
-        }
-    }
+            match r {
+                1 => Ok("collapse".into()),
+                2 => Ok("top".into()),
+                3 => Ok("exit".into()),
+                _ => Ok("dismissed".into()),
+            }
+        };
+        let _ = tx.send(result);
+    }).map_err(|e| format!("run_on_main_thread 失败: {e}"))?;
+
+    rx.recv().map_err(|_| "主线程通信失败".to_string())?
 }
 
 fn encode_wide(s: &str) -> Vec<u16> {
@@ -456,27 +466,13 @@ fn execute_action(
     match action.action_type.as_str() {
         "launch" => {
             let program = match &action.program {
-                Some(p) => p.clone(),
+                Some(p) => p.as_str(),
                 None => return,
             };
             let args = action.args.as_deref().unwrap_or("");
-            let workdir = if action.workdir.is_empty() { ".".to_string() } else { action.workdir.clone() };
-
-            if action.terminal {
-                let term = &defaults.terminal;
-                let cmd = format!("cd {workdir}; {program} {args}");
-                let full_args = format!(
-                    "Start-Process {term} -ArgumentList '-NoExit','-Command','{cmd}' -WindowStyle Maximized"
-                );
-                let _ = std::process::Command::new("powershell")
-                    .args(["-Command", &full_args])
-                    .spawn();
-            } else {
-                let _ = std::process::Command::new(&program)
-                    .args(args.split_whitespace())
-                    .current_dir(&workdir)
-                    .spawn();
-            }
+            let _ = ai_pad_core::action::launch_program(
+                program, args, &action.workdir, action.terminal, &defaults.terminal,
+            );
         }
         "voice" => {}
         "script" => {

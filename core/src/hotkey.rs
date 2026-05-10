@@ -1,21 +1,61 @@
 use std::collections::HashMap;
+use std::sync::OnceLock;
+
+/// 按键名 → Windows Virtual Key Code（完整映射表，OnceLock 初始化一次）
+fn key_map() -> &'static HashMap<String, u16> {
+    static MAP: OnceLock<HashMap<String, u16>> = OnceLock::new();
+    MAP.get_or_init(|| {
+        let mut m = HashMap::new();
+        // 修饰键
+        m.insert("ctrl".into(), 0x11); m.insert("control".into(), 0x11);
+        m.insert("win".into(), 0x5B); m.insert("windows".into(), 0x5B);
+        m.insert("alt".into(), 0x12);
+        m.insert("shift".into(), 0x10);
+        // 功能键
+        m.insert("enter".into(), 0x0D); m.insert("return".into(), 0x0D);
+        m.insert("tab".into(), 0x09);
+        m.insert("esc".into(), 0x1B); m.insert("escape".into(), 0x1B);
+        m.insert("space".into(), 0x20);
+        m.insert("backspace".into(), 0x08);
+        m.insert("delete".into(), 0x2E); m.insert("del".into(), 0x2E);
+        m.insert("insert".into(), 0x2D);
+        m.insert("home".into(), 0x24);
+        m.insert("end".into(), 0x23);
+        m.insert("pageup".into(), 0x21); m.insert("page_up".into(), 0x21);
+        m.insert("pagedown".into(), 0x22); m.insert("page_down".into(), 0x22);
+        // 符号键
+        m.insert("backtick".into(), 0xC0); m.insert("`".into(), 0xC0);
+        m.insert("-".into(), 0xBD); m.insert("_".into(), 0xBD);
+        m.insert("=".into(), 0xBB); m.insert("+".into(), 0xBB);
+        m.insert("[".into(), 0xDB); m.insert("{".into(), 0xDB);
+        m.insert("]".into(), 0xDD); m.insert("}".into(), 0xDD);
+        m.insert("\\".into(), 0xDC); m.insert("|".into(), 0xDC);
+        m.insert(";".into(), 0xBA); m.insert(":".into(), 0xBA);
+        m.insert("'".into(), 0xDE); m.insert("\"".into(), 0xDE);
+        m.insert(",".into(), 0xBC); m.insert("<".into(), 0xBC);
+        m.insert(".".into(), 0xBE); m.insert(">".into(), 0xBE);
+        m.insert("/".into(), 0xBF); m.insert("?".into(), 0xBF);
+        // 字母 a-z
+        for (i, c) in (b'a'..=b'z').enumerate() {
+            let s = String::from(char::from(c));
+            m.insert(s, 0x41 + i as u16);
+        }
+        // 数字键
+        for (i, c) in (b'0'..=b'9').enumerate() {
+            let s = String::from(char::from(c));
+            m.insert(s, 0x30 + i as u16);
+        }
+        // F1-F12
+        for i in 1u16..=12u16 { m.insert(format!("f{i}"), 0x6F + i); }
+        m
+    })
+}
 
 /// 按键名 → Windows Virtual Key Code
 pub fn parse_keys(keys: &[&str]) -> Vec<u16> {
-    static MAP: &[(&str, u16)] = &[
-        ("ctrl", 0x11), ("control", 0x11),
-        ("win", 0x5B), ("windows", 0x5B),
-        ("alt", 0x12),
-        ("shift", 0x10),
-        ("enter", 0x0D), ("return", 0x0D),
-        ("tab", 0x09), ("esc", 0x1B), ("space", 0x20),
-        ("backtick", 0xC0), ("`", 0xC0),
-        ("a", 0x41), ("b", 0x42), ("c", 0x43), ("d", 0x44),
-    ];
-    let map: HashMap<&str, u16> = MAP.iter().cloned().collect();
-
+    let map = key_map();
     keys.iter().map(|k| {
-        *map.get(k.to_lowercase().as_str()).unwrap_or(&0)
+        *map.get(&k.to_ascii_lowercase()).unwrap_or(&0)
     }).collect()
 }
 
@@ -340,5 +380,41 @@ mod tests {
         let codes = parse_keys(&["ctrl", "win"]);
         assert_eq!(codes, vec![0x11, 0x5B]);
         assert!(!codes.iter().any(|&v| v == 0));
+    }
+
+    #[test]
+    fn test_parse_full_alphabet() {
+        // a-d 原来就有，现在验证 e-z 也能解析
+        let codes = parse_keys(&["e", "z"]);
+        assert_eq!(codes, vec![0x45, 0x5A]);
+    }
+
+    #[test]
+    fn test_parse_fkeys() {
+        // 大小写不敏感，内部统一小写存储
+        assert_eq!(parse_keys(&["F1"])[0], 0x70);
+        assert_eq!(parse_keys(&["f12"])[0], 0x7B);
+        assert_eq!(parse_keys(&["f1"])[0], 0x70);
+    }
+
+    #[test]
+    fn test_parse_digit_keys() {
+        assert_eq!(parse_keys(&["0"])[0], 0x30);
+        assert_eq!(parse_keys(&["9"])[0], 0x39);
+    }
+
+    #[test]
+    fn test_parse_navigation_keys() {
+        assert_eq!(parse_keys(&["home"])[0], 0x24);
+        assert_eq!(parse_keys(&["end"])[0], 0x23);
+        assert_eq!(parse_keys(&["pageup"])[0], 0x21);
+        assert_eq!(parse_keys(&["delete"])[0], 0x2E);
+    }
+
+    #[test]
+    fn test_parse_symbol_keys() {
+        assert_eq!(parse_keys(&["-"])[0], 0xBD);
+        assert_eq!(parse_keys(&["="])[0], 0xBB);
+        assert_eq!(parse_keys(&["["])[0], 0xDB);
     }
 }

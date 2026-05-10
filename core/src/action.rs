@@ -55,6 +55,33 @@ impl ActionConfig {
     }
 }
 
+/// 统一程序启动逻辑（tools.rs / panel.rs / lib.rs 共用）
+pub fn launch_program(program: &str, args: &str, workdir: &str, terminal: bool, default_terminal: &str) -> Result<(), String> {
+    if terminal {
+        let term = if terminal && default_terminal.is_empty() { "powershell" } else { default_terminal };
+        let is_shell = matches!(program, "powershell" | "pwsh" | "cmd");
+        let ps_cmd = if is_shell && args.is_empty() {
+            format!("Start-Process {program} -WindowStyle Maximized")
+        } else {
+            let cmd = if args.is_empty() { program.to_string() } else { format!("{program} {args}") };
+            format!("Start-Process {term} -ArgumentList '-NoExit','-Command','{cmd}' -WindowStyle Maximized")
+        };
+        std::process::Command::new("powershell")
+            .args(["-Command", &ps_cmd])
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("启动失败: {e}"))
+    } else {
+        let workdir = if workdir.is_empty() { "." } else { workdir };
+        std::process::Command::new(program)
+            .args(args.split_whitespace().filter(|s| !s.is_empty()))
+            .current_dir(workdir)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("启动失败: {e}"))
+    }
+}
+
 // ---- 测试 ----
 
 #[cfg(test)]

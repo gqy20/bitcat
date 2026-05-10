@@ -1,3 +1,4 @@
+use crate::action::launch_program;
 use serde::{Deserialize, Serialize};
 
 // ---- Tool 参数定义 ----
@@ -55,28 +56,10 @@ impl ToolResult {
 
 /// 启动程序
 pub fn execute_launch(args: &LaunchArgs) -> ToolResult {
-    let workdir = if args.workdir.is_empty() { ".".into() } else { args.workdir.clone() };
-
-    let result = if args.terminal {
-        let term = std::env::var("TERMINAL").unwrap_or_else(|_| "powershell".into());
-        let cmd = format!("cd {}; {} {}", workdir, args.program, args.args);
-        let full_args = format!(
-            "Start-Process {} -ArgumentList '-NoExit','-Command','{}' -WindowStyle Maximized",
-            term, cmd
-        );
-        std::process::Command::new("powershell")
-            .args(["-Command", &full_args])
-            .spawn()
-    } else {
-        std::process::Command::new(&args.program)
-            .args(args.args.split_whitespace().filter(|s| !s.is_empty()))
-            .current_dir(&workdir)
-            .spawn()
-    };
-
-    match result {
-        Ok(_) => ToolResult::ok(format!("已启动: {} {}", args.program, args.args)),
-        Err(e) => ToolResult::err(format!("启动失败: {e}")),
+    let terminal_name = std::env::var("TERMINAL").unwrap_or_else(|_| "powershell".into());
+    match launch_program(&args.program, &args.args, &args.workdir, args.terminal, &terminal_name) {
+        Ok(()) => ToolResult::ok(format!("已启动: {} {}", args.program, args.args)),
+        Err(e) => ToolResult::err(e),
     }
 }
 
