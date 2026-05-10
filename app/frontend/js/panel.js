@@ -144,6 +144,9 @@ async function initEvents() {
 
 initEvents();
 
+// 阻止透明窗口的滚轮弹回（WebView2 native scroll 不稳定）
+document.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
+
 // 重新显示时复位到第一项
 window.addEventListener('focus', () => {
   selectedIndex = 0;

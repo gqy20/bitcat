@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 use tracing::{info, warn};
 
 /// Phase A: 硬编码动作映射 (id -> (program, args, terminal))
@@ -62,6 +62,7 @@ pub async fn cmd_panel_log(msg: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn cmd_show_panel(app: AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("panel") {
+        position_near_pet(&app, &w);
         w.show().map_err(|e| e.to_string())?;
         w.set_focus().map_err(|e| e.to_string())?;
     }
@@ -76,9 +77,48 @@ pub async fn cmd_hide_panel(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+const PANEL_W: f64 = 480.0;
+const PANEL_H: f64 = 320.0;
+const GAP: f64 = 10.0;
+
+/// 把 panel 窗口定位到宠物附近（优先右下，超出屏幕则自动换边）
+fn position_near_pet(app: &AppHandle, panel: &tauri::WebviewWindow) {
+    let Some(pet) = app.get_webview_window("pet") else { return };
+    let (Ok(pet_pos), Ok(pet_size)) = (pet.outer_position(), pet.outer_size()) else { return };
+    let Some(monitor) = pet.current_monitor().ok().flatten() else { return };
+    let monitor_size = monitor.size();
+    let monitor_pos = monitor.position();
+
+    let scale = panel.scale_factor().unwrap_or(1.0);
+    let pw = PANEL_W * scale;
+    let ph = PANEL_H * scale;
+
+    let screen_right = monitor_pos.x + monitor_size.width as i32 - pw as i32 - 8;
+    let screen_bottom = monitor_pos.y + monitor_size.height as i32 - ph as i32 - 8;
+
+    // 优先放右下
+    let (mut px, mut py) = if pet_pos.x + pet_size.width as i32 + GAP as i32 + pw as i32 <= monitor_pos.x + monitor_size.width as i32 {
+        ((pet_pos.x + pet_size.width as i32 + GAP as i32), (pet_pos.y + pet_size.height as i32 + GAP as i32))
+    } else {
+        // 右边放不下 → 放左边
+        ((pet_pos.x - GAP as i32 - pw as i32), (pet_pos.y + pet_size.height as i32 + GAP as i32))
+    };
+
+    // 垂直方向：如果下方超出屏幕就放到上方
+    if py > screen_bottom {
+        py = (pet_pos.y as f64 - GAP as f64 - ph) as i32;
+    }
+    // 水平方向：确保不出界
+    if px < monitor_pos.x { px = monitor_pos.x; }
+    if px > screen_right { px = screen_right; }
+
+    let _ = panel.set_position(PhysicalPosition::new(px, py));
+}
+
 /// 切换显示状态（全局热键 / Home 键调用）
 ///
 /// 第一次调用时按需创建窗口（避开 Tauri 预创建透明隐藏窗口的崩溃路径）。
+/// 每次显示时重新定位到宠物附近。
 pub fn toggle_panel(app: &AppHandle) {
     match app.get_webview_window("panel") {
         Some(w) => match w.is_visible() {
@@ -88,6 +128,7 @@ pub fn toggle_panel(app: &AppHandle) {
             }
             Ok(false) => {
                 info!("[panel] 显示");
+                position_near_pet(app, &w);
                 let _ = w.show();
                 let _ = w.set_focus();
             }
@@ -95,6 +136,7 @@ pub fn toggle_panel(app: &AppHandle) {
         },
         None => match create_panel_window(app) {
             Ok(w) => {
+                position_near_pet(app, &w);
                 info!("[panel] 已创建并显示");
                 let _ = w.set_focus();
             }
@@ -111,6 +153,7 @@ fn create_panel_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri::E
         .decorations(false)
         .transparent(true)
         .background_color(tauri::webview::Color(0, 0, 0, 0))
+        .shadow(false)
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)

@@ -47,6 +47,7 @@ async fn cmd_recreate_pet_window(
     .decorations(false)
     .transparent(true)
     .background_color(tauri::webview::Color(0, 0, 0, 0))
+    .shadow(false)
     .always_on_top(true)
     .skip_taskbar(true)
     .resizable(false)
