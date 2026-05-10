@@ -34,55 +34,15 @@
     setupDrag();
   }
 
-  // ========== 拖拽：纯 JS 手动跟踪（使用 DragCalc 纯函数计算坐标）==========
-
-  let dragState = null; // { startX, startY, winX, winY, scale }
+  // ========== 拖拽：Tauri 原生 startDragging（自动处理 DPI）==========
 
   function setupDrag() {
     const root = document.getElementById('pet-root');
     if (!root) return;
-
     root.addEventListener('mousedown', async (e) => {
       if (e.button !== 0) return;
-      if (e.target && e.target.closest('.ctx-menu')) return;
-
       const win = getCurrentWin();
-      if (!win) return;
-
-      try {
-        const pos = await win.outerPosition();
-        const scale = await win.scaleFactor();
-        dragState = {
-          startX: e.screenX,
-          startY: e.screenY,
-          winX: pos.x,
-          winY: pos.y,
-          scale: scale,
-        };
-      } catch (err) {
-        console.error('[pet] outerPosition/scaleFactor 失败:', err);
-      }
-    });
-
-    document.addEventListener('mousemove', async (e) => {
-      if (!dragState) return;
-      const win = getCurrentWin();
-      if (!win) return;
-      try {
-        const newPos = DragCalc.calcNewPhysicalPosition(
-          dragState.winX, dragState.winY,
-          dragState.startX, dragState.startY,
-          e.screenX, e.screenY,
-          dragState.scale
-        );
-        await win.setPosition(new window.__TAURI__.window.PhysicalPosition(newPos.x, newPos.y));
-      } catch (err) {
-        // setPosition 在拖拽中频繁调用，偶尔失败不打印避免刷屏
-      }
-    });
-
-    document.addEventListener('mouseup', () => {
-      dragState = null;
+      if (win) try { await win.startDragging(); } catch (_) {}
     });
   }
 
@@ -126,48 +86,22 @@
     canvas.classList.add('flash');
   }
 
-  // ========== 右键上下文菜单 ==========
+  // ========== 右键上下文菜单（原生 Win32 弹出）==========
 
   function setupContextMenu() {
-    const menu = document.getElementById('ctx-menu');
-    const ctxCollapse = document.getElementById('ctx-collapse');
-    const ctxTop = document.getElementById('ctx-top');
-    const ctxExit = document.getElementById('ctx-exit');
-
-    bodyEl.addEventListener('contextmenu', (e) => {
+    bodyEl.addEventListener('contextmenu', async (e) => {
       e.preventDefault();
-
-      const mx = e.clientX || 0;
-      const my = e.clientY || 0;
-      menu.style.left = Math.min(mx, window.innerWidth - 130) + 'px';
-      menu.style.top = Math.min(my, window.innerHeight - 120) + 'px';
-      menu.classList.remove('hidden');
-
-      ctxCollapse.textContent = collapsed ? '展开' : '折叠';
-      ctxTop.textContent = alwaysOnTop ? '取消置顶' : '置顶';
-    });
-
-    document.addEventListener('mousedown', (e) => {
-      if (!menu.contains(e.target)) {
-        menu.classList.add('hidden');
-      }
-    });
-
-    ctxCollapse.addEventListener('click', () => {
-      toggleCollapse();
-      menu.classList.add('hidden');
-    });
-
-    ctxTop.addEventListener('click', () => {
-      toggleAlwaysOnTop();
-      menu.classList.add('hidden');
-    });
-
-    ctxExit.addEventListener('click', () => {
-      if (window.__TAURI__ && window.__TAURI__.core) {
-        window.__TAURI__.core.invoke('tauri:exit').catch(() => {});
-      }
-      menu.classList.add('hidden');
+      if (!window.__TAURI__?.core) return;
+      try {
+        const action = await window.__TAURI__.core.invoke('cmd_context_menu', {
+          collapsed, alwaysOnTop,
+        });
+        switch (action) {
+          case 'collapse': toggleCollapse(); break;
+          case 'top': toggleAlwaysOnTop(); break;
+          case 'exit': window.__TAURI__.core.invoke('tauri:exit').catch(() => {}); break;
+        }
+      } catch (_) {}
     });
   }
 

@@ -30,9 +30,6 @@
 
   <h2>Particle Tests</h2>
   <div id="particle-results"></div>
-
-  <h2>Drag Coordinate Tests</h2>
-  <div id="drag-results"></div>
   <div id="particles" style="position: relative; height: 80px; background: #2a2a4a; margin-top: 10px;"></div>
 
   <div id="summary" class="summary"></div>
@@ -40,7 +37,6 @@
   <script src="/js/sprite.js"></script>
   <script src="/js/pet.js"></script>
   <script src="/js/particles.js"></script>
-  <script src="/js/drag.js"></script>
   <script>
     function renderResults(containerId, results) {
       const el = document.getElementById(containerId);
@@ -107,12 +103,9 @@
     const particleResults = Particles.runParticleTests();
     const par = renderResults('particle-results', particleResults);
 
-    const dragResults = runDragTests();
-    const dr = renderResults('drag-results', dragResults);
-
     // 汇总
-    const totalPassed = sr.passed + pr.passed + par.passed + dr.passed;
-    const totalFailed = sr.failed + pr.failed + par.failed + dr.failed;
+    const totalPassed = sr.passed + pr.passed + par.passed;
+    const totalFailed = sr.failed + pr.failed + par.failed;
     const summary = document.getElementById('summary');
     summary.innerHTML = `<strong>${totalPassed + totalFailed} tests: ${totalPassed} passed, ${totalFailed} failed</strong>`;
     summary.style.color = totalFailed === 0 ? '#4caf50' : '#f44336';

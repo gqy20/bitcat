@@ -153,57 +153,6 @@ body.state-walk .shadow {
   100% { transform: translate(0, -24px) scale(0.7); opacity: 0; }
 }
 
-/* ========== 右键上下文菜单 ========== */
-
-.ctx-menu {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  min-width: 120px;
-  background: rgba(28, 28, 32, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
-  z-index: 999;
-  display: flex;
-  flex-direction: column;
-  padding: 4px 0;
-  font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
-  font-size: 13px;
-  user-select: none;
-}
-
-.ctx-menu.hidden {
-  display: none;
-}
-
-.ctx-item {
-  padding: 8px 14px;
-  color: #e8eaed;
-  cursor: pointer;
-  transition: background-color 0.12s;
-}
-
-.ctx-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.ctx-danger {
-  color: #ff6b6b;
-}
-
-.ctx-danger:hover {
-  background: rgba(255, 70, 70, 0.12);
-}
-
-.ctx-sep {
-  height: 1px;
-  margin: 4px 10px;
-  background: rgba(255, 255, 255, 0.08);
-}
-
 /* ========== 折叠态 ========== */
 
 body.collapsed {
@@ -221,7 +170,6 @@ body.collapsed #sprite {
 }
 
 body.collapsed .shadow,
-body.collapsed .particles,
-body.collapsed .ctx-menu {
+body.collapsed .particles {
   display: none;
 }

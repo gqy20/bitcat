@@ -43,6 +43,7 @@ dependencies = [
  "dirs 5.0.1",
  "futures",
  "proptest",
+ "rand 0.9.4",
  "rig-core",
  "serde",
  "serde_json",

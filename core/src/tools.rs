@@ -106,8 +106,9 @@ pub fn execute_read_file(args: &ReadFileArgs) -> ToolResult {
         Ok(content) => {
             // 截断过长的文件，避免 token 浪费
             let max_chars = 8000;
-            if content.len() > max_chars {
-                ToolResult::ok(format!("{}...(截断，共 {} 字符)", &content[..max_chars], content.len()))
+            if content.chars().count() > max_chars {
+                let truncated: String = content.chars().take(max_chars).collect();
+                ToolResult::ok(format!("{truncated}...(截断，共 {} 字符)", content.len()))
             } else {
                 ToolResult::ok(content)
             }

@@ -163,10 +163,8 @@ pub fn resolve_agent_response(reply: &str) -> Vec<PetCommand> {
 }
 
 fn rand_range(lo: f32, hi: f32) -> f32 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let n = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
-    let normalized = (n % 1000000) as f32 / 1000000.0;
-    lo + (hi - lo) * normalized
+    use rand::Rng;
+    rand::rng().random_range(lo..hi)
 }
 
 // ---- 测试 ----

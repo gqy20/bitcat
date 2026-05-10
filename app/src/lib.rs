@@ -60,6 +60,60 @@ async fn cmd_recreate_pet_window(
     Ok(())
 }
 
+/// 在光标位置弹出原生 Win32 右键菜单，返回被点击的菜单项 id
+#[tauri::command]
+async fn cmd_context_menu(app: tauri::AppHandle, collapsed: bool, always_on_top: bool) -> Result<String, String> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::*;
+    use windows_sys::Win32::Foundation::POINT;
+    use std::ptr;
+
+    unsafe {
+        let menu = CreateMenu();
+        if menu.is_null() {
+            return Err("CreateMenu 失败".into());
+        }
+
+        let collapse_label = if collapsed { "展开" } else { "折叠" };
+        let top_label = if always_on_top { "取消置顶" } else { "置顶" };
+
+        AppendMenuW(menu, MF_STRING, 1, encode_wide(collapse_label).as_ptr());
+        AppendMenuW(menu, MF_STRING, 2, encode_wide(top_label).as_ptr());
+        AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
+        AppendMenuW(menu, MF_STRING, 3, encode_wide("退出").as_ptr());
+
+        // 获取光标位置
+        let mut pt = std::mem::zeroed::<POINT>();
+        GetCursorPos(&mut pt);
+
+        let hwnd = app.get_webview_window("pet")
+            .and_then(|w| w.hwnd().ok())
+            .map(|h| h.0 as windows_sys::Win32::Foundation::HWND)
+            .unwrap_or(std::ptr::null_mut());
+        let result = TrackPopupMenu(
+            menu,
+            TPM_RETURNCMD | TPM_RIGHTBUTTON,
+            pt.x,
+            pt.y,
+            0,
+            hwnd,
+            ptr::null(),
+        );
+
+        DestroyMenu(menu);
+
+        match result {
+            1 => Ok("collapse".into()),
+            2 => Ok("top".into()),
+            3 => Ok("exit".into()),
+            _ => Ok("dismissed".into()),
+        }
+    }
+}
+
+fn encode_wide(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -82,6 +136,7 @@ pub fn run() {
             voice::cmd_voice_update_text,
             voice::cmd_voice_get_text,
             cmd_recreate_pet_window,
+            cmd_context_menu,
         ])
         .on_window_event(|window, event| {
             if window.label() == "panel" {
@@ -183,7 +238,7 @@ fn gamepad_loop(app: &tauri::AppHandle) {
         }
     };
 
-    let rt = match tokio::runtime::Runtime::new() {
+    let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
         Ok(r) => r,
         Err(e) => {
             error!(error = %e, "Tokio 运行时创建失败");
@@ -191,16 +246,15 @@ fn gamepad_loop(app: &tauri::AppHandle) {
         }
     };
 
-    let agent = match PetAgent::new() {
-        Ok(a) => {
-            info!("AI Agent 初始化成功 (8Bit Cat)");
-            Some(a)
-        }
-        Err(e) => {
-            warn!(error = %e, "AI Agent 初始化失败");
-            None
-        }
-    };
+    let agent: std::sync::OnceLock<PetAgent> = std::sync::OnceLock::new();
+
+    /// 懒加载：首次调用时才初始化 PetAgent（避免启动阻塞 2-5s）
+    fn get_agent(agent: &std::sync::OnceLock<PetAgent>) -> Option<&PetAgent> {
+        agent.get_or_init(|| match PetAgent::new() {
+            Ok(a) => { info!("AI Agent 初始化成功 (8Bit Cat)"); a }
+            Err(e) => { warn!(error = %e, "AI Agent 初始化失败"); panic!("PetAgent 初始化失败") }
+        }).into()
+    }
 
     let action_config = ActionConfig::load("actions.yml").ok();
     let ac = action_config.as_ref().map(|c| c.actions.len()).unwrap_or(0);
@@ -258,34 +312,9 @@ fn gamepad_loop(app: &tauri::AppHandle) {
                         let _ = app.emit("pet-event", evt);
                     }
 
-                    if let (Some(msg), Some(ag)) = (&agent_msg, &agent) {
+                    if let (Some(msg), Some(ag)) = (&agent_msg, get_agent(&agent)) {
                         info!(msg = %msg, "→ AI: {msg}");
-
-                        if let Err(e) = bubble::start_streaming_bubble(app) {
-                            warn!(error = %e, "气泡启动错误");
-                        }
-
-                        let app_for_chunks = app.clone();
-                        let stream_result = rt.block_on(ag.chat_stream(msg, move |chunk| {
-                            debug!(chunk_len = chunk.len(), "AI chunk"); // 可通过 RUST_LOG 过滤
-                            let _ = bubble::append_bubble_chunk(&app_for_chunks, chunk);
-                        }));
-
-                        let _ = bubble::finalize_bubble(app);
-
-                        match stream_result {
-                            Ok(reply) => {
-                                let preview: String = reply.chars().take(60).collect();
-                                info!(preview = %preview, "← AI: {preview}");
-                                let ai_events = gamepad::process_agent_response(&reply);
-                                for evt in &ai_events {
-                                    let _ = app.emit("pet-event", evt);
-                                }
-                            }
-                            Err(e) => {
-                                warn!(error = %e, "AI 错误");
-                            }
-                        }
+                        run_ai_chat(&rt, ag, app, msg, "");
                     }
 
                     // Actions: 按键名 → 动作绑定
@@ -342,27 +371,8 @@ fn gamepad_loop(app: &tauri::AppHandle) {
                     } else {
                         info!(text = %text, len = text.chars().count(), "[voice] 识别全文: {text}");
 
-                        if let Some(ref ag) = agent {
-                            if let Err(e) = bubble::start_streaming_bubble(app) {
-                                warn!(error = %e, "[voice] 气泡启动错误");
-                            }
-                            let app_for_chunks = app.clone();
-                            let stream_result = rt.block_on(ag.chat_stream(&text, move |chunk| {
-                                debug!(len = chunk.len(), "[voice] AI chunk");
-                                let _ = bubble::append_bubble_chunk(&app_for_chunks, chunk);
-                            }));
-                            let _ = bubble::finalize_bubble(app);
-
-                            match stream_result {
-                                Ok(reply) => {
-                                    info!(chars = reply.chars().count(), reply = %reply, "[voice] AI 回复全文 ({reply})");
-                                    let ai_events = gamepad::process_agent_response(&reply);
-                                    for evt in &ai_events {
-                                        let _ = app.emit("pet-event", evt);
-                                    }
-                                }
-                                Err(e) => warn!(error = %e, "[voice] AI 错误"),
-                            }
+                        if let Some(ag) = get_agent(&agent) {
+                            run_ai_chat(&rt, ag, app, &text, "[voice]");
                         } else {
                             warn!("[voice] AI Agent 未初始化");
                         }
@@ -395,6 +405,45 @@ fn gamepad_loop(app: &tauri::AppHandle) {
         prev_hat = hat;
 
         std::thread::sleep(std::time::Duration::from_millis(80));
+    }
+}
+
+/// 统一的 AI 流式对话执行：启动气泡 → 流式追加 chunk → 结束气泡 → 处理回复
+fn run_ai_chat(
+    rt: &tokio::runtime::Runtime,
+    agent: &PetAgent,
+    app: &tauri::AppHandle,
+    msg: &str,
+    log_prefix: &str,
+) {
+    let tag = if log_prefix.is_empty() { "" } else { " " };
+    if let Err(e) = bubble::start_streaming_bubble(app) {
+        warn!(error = %e, "{log_prefix}气泡启动错误");
+        return;
+    }
+    let app_for_chunks = app.clone();
+    let msg = msg.to_string();
+    let prefix = log_prefix.to_string();
+    let prefix_for_log = prefix.clone();
+    let stream_result = rt.block_on(agent.chat_stream(&msg, move |chunk| {
+        debug!(len = chunk.len(), "{prefix_for_log}{tag}AI chunk");
+        let _ = bubble::append_bubble_chunk(&app_for_chunks, chunk);
+    }));
+    let _ = bubble::finalize_bubble(app);
+    match stream_result {
+        Ok(reply) => {
+            if prefix.is_empty() {
+                let preview: String = reply.chars().take(60).collect();
+                info!(preview = %preview, "← AI: {preview}");
+            } else {
+                info!(chars = reply.chars().count(), reply = %reply, "{prefix} AI 回复全文 ({reply})");
+            }
+            let ai_events = gamepad::process_agent_response(&reply);
+            for evt in &ai_events {
+                let _ = app.emit("pet-event", evt);
+            }
+        }
+        Err(e) => warn!(error = %e, "{prefix} AI 错误"),
     }
 }
 
