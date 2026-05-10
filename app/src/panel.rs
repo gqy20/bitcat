@@ -110,6 +110,7 @@ fn create_panel_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri::E
         .inner_size(480.0, 320.0)
         .decorations(false)
         .transparent(true)
+        .background_color(tauri::webview::Color(0, 0, 0, 0))
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)

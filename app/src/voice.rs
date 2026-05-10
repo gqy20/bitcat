@@ -6,6 +6,11 @@
 //    → 模拟用户配置的输入法语音热键 → 输入法识别文字注入到 textarea
 // 3. 用户松开手柄 voice 键 → 等识别引擎完成注入 → 取走 textarea 内容 → 送 AI
 // 4. 取走文本后窗口移回屏幕外,等待下次使用
+//
+// 防残留机制: generation 计数器
+//   open_voice_capture 时递增 generation 并清空文本
+//   cmd_voice_update_text 写入时附带当前 generation
+//   take_voice_text 只接受匹配当前 generation 的文本（拒绝旧会话残留）
 
 use std::sync::Mutex;
 
@@ -16,13 +21,25 @@ const VOICE_W: u32 = 280;
 const VOICE_H: u32 = 40;
 const OFFSCREEN: i32 = -10000;
 
+/// 带版本号的文本条目
+#[derive(Debug, Clone, Default)]
+struct VoiceEntry {
+    text: String,
+    generation: u64,
+}
+
 pub struct SharedVoice {
-    pub text: Mutex<String>,
+    entry: Mutex<VoiceEntry>,
+    /// 全局递增计数，每次 open_voice_capture 时 +1
+    pub generation: Mutex<u64>,
 }
 
 impl SharedVoice {
     pub fn new() -> Self {
-        Self { text: Mutex::new(String::new()) }
+        Self {
+            entry: Mutex::new(VoiceEntry { text: String::new(), generation: 0 }),
+            generation: Mutex::new(0),
+        }
     }
 }
 
@@ -41,6 +58,7 @@ pub fn precreate_voice_window(app: &AppHandle) -> Result<(), tauri::Error> {
         .position(OFFSCREEN as f64, OFFSCREEN as f64)
         .decorations(false)
         .transparent(true)
+        .background_color(tauri::webview::Color(0, 0, 0, 0))
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)
@@ -52,15 +70,20 @@ pub fn precreate_voice_window(app: &AppHandle) -> Result<(), tauri::Error> {
     Ok(())
 }
 
-/// voice 按下: 清空状态 + 移到屏幕中下 + 强制前台化 + 通知前端清空 textarea
+/// voice 按下: 递增 generation + 清空状态 + 移到屏幕中下 + 强制前台化 + 通知前端清空 textarea
 pub fn open_voice_capture(app: &AppHandle) -> Result<(), String> {
     let state: State<SharedVoice> = app.state();
-    state.text.lock().map_err(|e| e.to_string())?.clear();
+    // 新会话: 递增 generation + 清空文本
+    let mut gen = state.generation.lock().map_err(|e| e.to_string())?;
+    *gen += 1;
+    let new_gen = *gen;
+    drop(gen);
+    *state.entry.lock().map_err(|e| e.to_string())? = VoiceEntry { text: String::new(), generation: new_gen };
+    info!(generation = new_gen, "[voice] 新语音会话开始");
 
     let window = match app.get_webview_window("voice") {
         Some(w) => w,
         None => {
-            // 兜底: 启动时预创建失败,这里再试
             precreate_voice_window(app).map_err(|e| e.to_string())?;
             app.get_webview_window("voice")
                 .ok_or_else(|| "voice 窗口创建失败".to_string())?
@@ -86,13 +109,11 @@ pub fn open_voice_capture(app: &AppHandle) -> Result<(), String> {
     }
 
     // 用 AttachThreadInput 强制前台化,绕过 Windows 安全限制
-    // 否则输入法语音注入会跑到我们之前的前台窗口（终端/桌面/浏览器…）
     #[cfg(target_os = "windows")]
     {
         if let Ok(hwnd) = window.hwnd() {
             let hwnd_raw = hwnd.0 as isize;
             if let Err(e) = ai_pad_core::hotkey::force_foreground(hwnd_raw) {
-                // 失败不致命,焦点可能已经够用,但日志要记
                 warn!(error = %e, "[voice] force_foreground 失败");
             }
         }
@@ -101,11 +122,13 @@ pub fn open_voice_capture(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// voice 释放: eval 取值+清空 → 等待完成 → 取走 → 归位
-///
-/// 核心改进: 捕获 eval 错误 + 增加等待时间 + 双重保险清空
+/// voice 释放: eval 取值+清空 → 等待完成 → 校验 generation → 取走 → 归位
 pub fn take_voice_text(app: &AppHandle) -> Result<String, String> {
     let mut eval_ok = true;
+
+    // 当前活跃 generation — 只接受匹配此值的文本
+    let state: State<SharedVoice> = app.state();
+    let current_gen = *state.generation.lock().map_err(|e| e.to_string())?;
 
     // Step 1: eval — 在 WebView2 中原子地读取 textarea + 清空 + 上报
     if let Some(window) = app.get_webview_window("voice") {
@@ -118,29 +141,44 @@ pub fn take_voice_text(app: &AppHandle) -> Result<String, String> {
                 warn!(error = %e, "[voice] eval 失败（将依赖 input 事件兜底）");
             }
         }
-
-        // 给 ExecuteScriptAsync + 内部 invoke IPC 足够时间完成
-        // ExecuteScriptAsync 本身通常 < 50ms，但 invoke IPC 需要主线程调度
-        // 在 gamepad 线程上调用时主线程可能繁忙，给充裕时间
         std::thread::sleep(std::time::Duration::from_millis(500));
     } else {
         warn!("[voice] ⚠ voice 窗口不存在");
         eval_ok = false;
     }
 
-    // Step 2: 取走文本（来源: input 事件实时上报 或 eval invoke）
-    let state: State<SharedVoice> = app.state();
-    let text = std::mem::take(&mut *state.text.lock().map_err(|e| e.to_string())?);
+    // Step 2: 取走文本，校验 generation
+    let entry = std::mem::take(&mut *state.entry.lock().map_err(|e| e.to_string())?);
 
-    // Step 3: 如果文本为空且 eval 成功了，说明可能时序问题导致 invoke 还没写回
-    // 再等一轮并重试取值
+    if entry.generation != current_gen && !entry.text.is_empty() {
+        warn!(
+            entry_gen = entry.generation,
+            current_gen,
+            stale_text = %entry.text,
+            "[voice] 拒绝残留旧文本 (generation 不匹配)"
+        );
+    }
+
+    let text = if entry.generation == current_gen {
+        entry.text
+    } else {
+        String::new()
+    };
+
+    // Step 3: 如果文本为空且 eval 成功了，再等一轮重试
     if text.is_empty() && eval_ok {
         if let Some(_window) = app.get_webview_window("voice") {
             std::thread::sleep(std::time::Duration::from_millis(300));
-            let retry = std::mem::take(&mut *state.text.lock().map_err(|e| e.to_string())?);
-            if !retry.is_empty() {
-                info!(chars = retry.chars().count(), "[voice] 重试取值成功");
-                return Ok(retry);
+            let retry_entry = std::mem::take(&mut *state.entry.lock().map_err(|e| e.to_string())?);
+            if !retry_entry.text.is_empty() && retry_entry.generation == current_gen {
+                info!(chars = retry_entry.text.chars().count(), "[voice] 重试取值成功");
+                return Ok(retry_entry.text);
+            } else if !retry_entry.text.is_empty() {
+                warn!(
+                    entry_gen = retry_entry.generation,
+                    current_gen,
+                    "[voice] 重试取到的也是旧文本，丢弃"
+                );
             }
         }
     }
@@ -149,7 +187,10 @@ pub fn take_voice_text(app: &AppHandle) -> Result<String, String> {
     info!(
         chars = text.chars().count(),
         eval_ok,
+        entry_gen = entry.generation,
+        current_gen,
         source = if text.is_empty() { "空" } else { "有内容" },
+        fresh = entry.generation == current_gen,
         "[voice] 取走文本"
     );
 
@@ -170,13 +211,15 @@ pub async fn cmd_voice_update_text(
     state: State<'_, SharedVoice>,
     text: String,
 ) -> Result<(), String> {
-    *state.text.lock().map_err(|e| e.to_string())? = text;
+    let gen = *state.generation.lock().map_err(|e| e.to_string())?;
+    *state.entry.lock().map_err(|e| e.to_string())? = VoiceEntry { text, generation: gen };
     Ok(())
 }
 
 #[tauri::command]
 pub async fn cmd_voice_get_text(state: State<'_, SharedVoice>) -> Result<String, String> {
-    Ok(state.text.lock().map_err(|e| e.to_string())?.clone())
+    let entry = state.entry.lock().map_err(|e| e.to_string())?;
+    Ok(entry.text.clone())
 }
 
 #[cfg(test)]
@@ -186,47 +229,102 @@ mod tests {
     #[test]
     fn test_shared_voice_default_empty() {
         let v = SharedVoice::new();
-        assert!(v.text.lock().unwrap().is_empty());
+        assert!(v.entry.lock().unwrap().text.is_empty());
+        assert_eq!(v.entry.lock().unwrap().generation, 0);
     }
 
     #[test]
     fn test_shared_voice_take_clears() {
         let v = SharedVoice::new();
-        *v.text.lock().unwrap() = "你好世界".into();
-        let taken = std::mem::take(&mut *v.text.lock().unwrap());
-        assert_eq!(taken, "你好世界");
-        assert!(v.text.lock().unwrap().is_empty());
+        *v.entry.lock().unwrap() = VoiceEntry { text: "你好世界".into(), generation: 1 };
+        let taken = std::mem::take(&mut *v.entry.lock().unwrap());
+        assert_eq!(taken.text, "你好世界");
+        assert!(v.entry.lock().unwrap().text.is_empty());
     }
 
     #[test]
     fn test_voice_constants_reasonable() {
-        // 280x40 是用户能看到的小录音条尺寸
         assert!(VOICE_W >= 200 && VOICE_W <= 500);
         assert!(VOICE_H >= 30 && VOICE_H <= 80);
     }
 
     #[test]
     fn test_offscreen_constant_far_enough() {
-        // -10000 应该在任何屏幕配置下都不可见
         assert!(OFFSCREEN < -5000);
     }
 
     #[test]
     fn test_shared_voice_overwrite() {
-        // 模拟连续两次写入，验证后一次覆盖前一次
         let v = SharedVoice::new();
-        *v.text.lock().unwrap() = "第一次".into();
-        *v.text.lock().unwrap() = "第二次".into();
-        let taken = std::mem::take(&mut *v.text.lock().unwrap());
-        assert_eq!(taken, "第二次");
-        assert!(v.text.lock().unwrap().is_empty());
+        *v.generation.lock().unwrap() = 1;
+        *v.entry.lock().unwrap() = VoiceEntry { text: "第一次".into(), generation: 1 };
+        *v.entry.lock().unwrap() = VoiceEntry { text: "第二次".into(), generation: 1 };
+        let taken = std::mem::take(&mut *v.entry.lock().unwrap());
+        assert_eq!(taken.text, "第二次");
+        assert!(v.entry.lock().unwrap().text.is_empty());
     }
 
     #[test]
     fn test_shared_voice_empty_take_returns_empty() {
-        // 取空文本不应 panic
         let v = SharedVoice::new();
-        let taken = std::mem::take(&mut *v.text.lock().unwrap());
-        assert!(taken.is_empty());
+        let taken = std::mem::take(&mut *v.entry.lock().unwrap());
+        assert!(taken.text.is_empty());
+    }
+
+    #[test]
+    fn test_generation_isolation_rejects_stale_text() {
+        // 模拟: gen=1 时写入的旧文本，在 gen=2 时应被拒绝
+        let v = SharedVoice::new();
+        *v.generation.lock().unwrap() = 1;
+        *v.entry.lock().unwrap() = VoiceEntry { text: "旧文本".into(), generation: 1 };
+
+        // 模拟新会话开始 (generation 递增)
+        *v.generation.lock().unwrap() = 2;
+        let current_gen = *v.generation.lock().unwrap();
+
+        let entry = std::mem::take(&mut *v.entry.lock().unwrap());
+        assert!(entry.generation != current_gen); // 旧文本 gen=1 ≠ current_gen=2
+
+        // 模拟 take_voice_text 的过滤逻辑
+        let accepted = if entry.generation == current_gen { entry.text } else { String::new() };
+        assert!(accepted.is_empty(), "旧文本应被丢弃");
+    }
+
+    #[test]
+    fn test_generation_accepts_fresh_text() {
+        let v = SharedVoice::new();
+        *v.generation.lock().unwrap() = 2;
+        *v.entry.lock().unwrap() = VoiceEntry { text: "新文本".into(), generation: 2 };
+
+        let current_gen = *v.generation.lock().unwrap();
+        let entry = std::mem::take(&mut *v.entry.lock().unwrap());
+        assert_eq!(entry.generation, current_gen);
+
+        let accepted = if entry.generation == current_gen { entry.text } else { String::new() };
+        assert_eq!(accepted, "新文本");
+    }
+
+    #[test]
+    fn test_open_capture_increments_generation() {
+        // 验证连续两次 open 会递增 generation
+        let v = SharedVoice::new();
+        assert_eq!(*v.generation.lock().unwrap(), 0);
+
+        // 模拟 open 的效果
+        let mut gen = v.generation.lock().unwrap();
+        *gen += 1;
+        let g1 = *gen;
+        drop(gen);
+        *v.entry.lock().unwrap() = VoiceEntry { text: String::new(), generation: g1 };
+        assert_eq!(g1, 1);
+
+        // 第二次 open
+        let mut gen = v.generation.lock().unwrap();
+        *gen += 1;
+        let g2 = *gen;
+        drop(gen);
+        *v.entry.lock().unwrap() = VoiceEntry { text: String::new(), generation: g2 };
+        assert_eq!(g2, 2);
+        assert!(g2 > g1);
     }
 }

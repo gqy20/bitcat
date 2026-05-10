@@ -4,16 +4,24 @@
 // 完全不依赖 bubble-chunk 事件的到达时序。
 // bubble-end 事件仅用于知道流式何时结束(停止轮询 + 启动隐藏定时)。
 // bubble-update 用于兼容非流式一次性写入路径。
+//
+// 滚动: Tauri 透明无框窗口中 native scroll 经常失效,
+//       用 wheel 事件手动 scrollTop 兜底 + 动态调整窗口高度。
 
 (function() {
   'use strict';
 
   const HIDE_AFTER_MS = 5500;
   const POLL_INTERVAL_MS = 120;
+  const MIN_H = 140;          // 最小窗口高度
+  const MAX_H = 340;          // 最大窗口高度（超出后内部滚动）
+  const LINE_H = 13 * 1.55;   // 单行约 20px（font-size 13px × line-height 1.55）
+  const PADDING_V = 22;       // .bubble padding(10×2) + 上下间距(~12)
 
   let hideTimer = null;
   let contentEl = null;
   let pollTimer = null;
+  let currentWinH = MIN_H;
 
   function ensureVisible() {
     document.body.classList.remove('hidden');
@@ -33,14 +41,49 @@
     hideTimer = setTimeout(hide, HIDE_AFTER_MS);
   }
 
+  /// 根据文本行数动态调整窗口高度，避免长回答被截断或无法滚动
+  function autoResize(text) {
+    if (!contentEl || !text) return;
+
+    var lines = Math.ceil(text.length / 28);
+    var neededH = Math.min(MAX_H, Math.max(MIN_H, lines * LINE_H + PADDING_V));
+    var newH = Math.round(neededH);
+
+    if (newH !== currentWinH && window.__TAURI__ && window.__TAURI__.window) {
+      var delta = newH - currentWinH;
+      currentWinH = newH;
+      var win = window.__TAURI__.window.getCurrentWindow();
+      win.setSize(new window.__TAURI__.window.LogicalSize(280, newH))
+        .then(function() {
+          // 窗口变高了 → 整体上移，保持底部对齐宠物顶部
+          if (delta !== 0) {
+            return win.outerPosition().then(function(pos) {
+              return win.setPosition(
+                new window.__TAURI__.window.LogicalPosition(pos.x, pos.y - delta)
+              );
+            });
+          }
+        })
+        .catch(function() {});
+    }
+  }
+
   function setText(text) {
     if (!contentEl) return;
     contentEl.textContent = text || '';
     contentEl.scrollTop = contentEl.scrollHeight;
+    autoResize(text);
   }
 
   function hide() {
     stopPolling();
+    // 隐藏前恢复默认高度
+    if (currentWinH !== MIN_H && window.__TAURI__ && window.__TAURI__.window) {
+      window.__TAURI__.window.getCurrentWindow()
+        .setSize(new window.__TAURI__.window.LogicalSize(280, MIN_H))
+        .catch(() => {});
+      currentWinH = MIN_H;
+    }
     document.body.classList.remove('show');
     document.body.classList.add('hidden');
     if (window.__TAURI__ && window.__TAURI__.core) {
@@ -51,7 +94,6 @@
   function startPolling() {
     stopPolling();
     pollTimer = setInterval(pollPending, POLL_INTERVAL_MS);
-    // 立即拉一次
     pollPending();
   }
 
@@ -75,30 +117,43 @@
       .catch(() => {});
   }
 
+  /// wheel 事件兜底：Tauri 透明窗口的 native scroll 不稳定，
+  /// 手动控制 scrollTop 确保滚轮可用
+  function onWheel(e) {
+    if (!contentEl) return;
+    e.preventDefault();
+    contentEl.scrollTop += e.deltaY;
+  }
+
   function init() {
     contentEl = document.getElementById('content');
-    if (!window.__TAURI__) return;
-    const listen = window.__TAURI__.event.listen;
+    if (!contentEl) return;
 
-    // 流式结束: 停止轮询,最后一次拉取,启动隐藏定时
+    // 滚轮兜底：监听 content 和 bubble 容器的 wheel 事件
+    contentEl.addEventListener('wheel', onWheel, { passive: false });
+    var bubbleEl = contentEl.closest('.bubble');
+    if (bubbleEl) {
+      bubbleEl.addEventListener('wheel', onWheel, { passive: false });
+    }
+
+    if (!window.__TAURI__) return;
+    var listen = window.__TAURI__.event.listen;
+
     listen('bubble-end', () => {
       stopPolling();
-      pollPending();  // 确保拿到最终文本
+      pollPending();
       startHideTimer();
     });
 
-    // 兼容: 非流式一次性写入
     listen('bubble-update', (event) => {
       stopPolling();
-      const payload = event.payload || {};
-      const text = typeof payload === 'string' ? payload : (payload.text || '');
+      var payload = event.payload || {};
+      var text = typeof payload === 'string' ? payload : (payload.text || '');
       setText(text);
       ensureVisible();
       startHideTimer();
     });
 
-    // 窗口显示后 JS 可能刚加载完,此时后端可能已经开始流式
-    // 立即开始轮询拉取已有内容
     startPolling();
   }
 

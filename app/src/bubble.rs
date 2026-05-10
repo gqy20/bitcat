@@ -50,6 +50,7 @@ pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
     // 定位到 pet 上方
     position_above_pet(app, &window);
 
+    let _ = window.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
     let _ = window.show();
     // emit 兜底：窗口已存在时 listener 已注册，立刻刷新
     let _ = app.emit_to(
@@ -74,12 +75,17 @@ pub fn precreate_bubble_window(app: &AppHandle) -> Result<(), tauri::Error> {
         .inner_size(BUBBLE_W, BUBBLE_H)
         .decorations(false)
         .transparent(true)
+        .background_color(tauri::webview::Color(0, 0, 0, 0))
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)
         .focused(false)
         .visible(false)
         .build()?;
+    // 运行时再设一次（Windows WebView2 需要）
+    if let Some(w) = app.get_webview_window("bubble") {
+        let _ = w.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
+    }
     Ok(())
 }
 
@@ -95,6 +101,8 @@ pub fn start_streaming_bubble(app: &AppHandle) -> Result<(), String> {
         None => create_bubble_window(app).map_err(|e| e.to_string())?,
     };
     position_above_pet(app, &window);
+    // Windows WebView2: builder 的 background_color 可能不够，运行时再设一次确保透明
+    let _ = window.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
     let _ = window.show();
     Ok(())
 }
@@ -154,6 +162,7 @@ fn create_bubble_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri::
         .inner_size(BUBBLE_W, BUBBLE_H)
         .decorations(false)
         .transparent(true)
+        .background_color(tauri::webview::Color(0, 0, 0, 0))
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)

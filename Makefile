@@ -30,10 +30,10 @@ test:
 	cargo test
 
 read:
-	cargo run --bin ai-pad-read
+	cargo run
 
 ctl:
-	cargo run --bin ai-pad-ctl
+	cargo run
 
 check:
 	cargo check
