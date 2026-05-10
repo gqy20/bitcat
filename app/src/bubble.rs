@@ -2,6 +2,15 @@ use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindowBuilder};
 
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    FindWindowExW, PostMessageW, WM_MOUSEWHEEL,
+};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
+
+const BUBBLE_SUBCLASS_ID: usize = 100;
+
 const BUBBLE_W: f64 = 280.0;
 const BUBBLE_H: f64 = 140.0;
 
@@ -86,6 +95,18 @@ pub fn precreate_bubble_window(app: &AppHandle) -> Result<(), tauri::Error> {
     // 运行时再设一次（Windows WebView2 需要）
     if let Some(w) = app.get_webview_window("bubble") {
         let _ = w.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
+        // 安装 Win32 子类：转发 WM_MOUSEWHEEL 到 WebView2 子窗口
+        // （Tao 的 WndProc 返回 LRESULT(0) 消费了滚轮消息，导致 WebView2 收不到）
+        #[cfg(target_os = "windows")]
+        {
+            if let Ok(hwnd) = w.hwnd() {
+                let raw_hwnd = hwnd.0 as windows_sys::Win32::Foundation::HWND;
+                let installed = unsafe { install_wheel_subclass(raw_hwnd) };
+                if !installed {
+                    tracing::warn!("Failed to install wheel subclass on bubble window");
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -173,6 +194,58 @@ fn create_bubble_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri::
         .build()
 }
 
+// ---- Win32 WM_MOUSEWHEEL 转发辅助 ----
+
+/// 构建 WM_MOUSEWHEEL 的 wParam: HIWORD=signed delta, LOWORD=key flags
+#[cfg(target_os = "windows")]
+#[allow(dead_code)]
+fn build_wheel_wparam(delta: i32, key_flags: u16) -> usize {
+    ((delta as i16 as u16) as usize) << 16 | (key_flags as usize)
+}
+
+/// 将屏幕坐标 (x, y) 打包为 LPARAM (MAKELPARAM 等价)
+#[cfg(target_os = "windows")]
+#[allow(dead_code)]
+fn build_lparam_from_point(x: i32, y: i32) -> isize {
+    ((y as isize) << 16) | ((x as isize) & 0xFFFF)
+}
+
+// ---- Win32 Subclass 滚轮转发 ----
+
+/// Win32 子类回调：拦截 WM_MOUSEWHEEL 并转发到 WebView2 子窗口。
+/// 安装在 Tao 的 subclass 之后（ID=100），LIFO 链中先于 Tao 执行。
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn bubble_wheel_subclass_proc(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    umsg: u32,
+    wparam: windows_sys::Win32::Foundation::WPARAM,
+    lparam: windows_sys::Win32::Foundation::LPARAM,
+    _uidsubclass: usize,
+    _dwrefdata: usize,
+) -> windows_sys::Win32::Foundation::LRESULT {
+    if umsg == WM_MOUSEWHEEL {
+        let webview = FindWindowExW(hwnd, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut());
+        if !webview.is_null() {
+            let _ = PostMessageW(webview, WM_MOUSEWHEEL, wparam, lparam);
+        }
+    }
+    DefSubclassProc(hwnd, umsg, wparam, lparam)
+}
+
+/// 在 bubble 窗口 HWND 上安装滚轮转发子类。
+/// 必须在窗口创建后调用（WebView2 子窗口已存在）。
+#[cfg(target_os = "windows")]
+unsafe fn install_wheel_subclass(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+) -> bool {
+    SetWindowSubclass(
+        hwnd,
+        Some(bubble_wheel_subclass_proc),
+        BUBBLE_SUBCLASS_ID,
+        0,
+    ) != 0
+}
+
 /// 前端 init 时调用：读取当前累积文本（不清空）
 #[tauri::command]
 pub async fn cmd_consume_bubble_text(
@@ -242,9 +315,7 @@ mod tests {
     #[test]
     fn test_pending_accumulates() {
         let b = SharedBubble::new();
-        // 模拟 start_streaming 的清空
         *b.pending_text.lock().unwrap() = Some(String::new());
-        // 模拟 append 累加
         if let Some(s) = b.pending_text.lock().unwrap().as_mut() {
             s.push_str("Hello");
         }
@@ -253,5 +324,72 @@ mod tests {
         }
         let taken = b.pending_text.lock().unwrap().take();
         assert_eq!(taken, Some("Hello World".to_string()));
+    }
+
+    // ---- Cycle 1: WM_MOUSEWHEEL 参数构建 ----
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_build_wheel_wparam_positive_delta() {
+        let w = build_wheel_wparam(120, 0);
+        assert_eq!((w >> 16) as i16, 120);
+        assert_eq!(w & 0xFFFF, 0);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_build_wheel_wparam_negative_delta() {
+        let w = build_wheel_wparam(-120, 0);
+        assert_eq!((w >> 16) as i16, -120);
+        assert_eq!(w & 0xFFFF, 0);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_build_wheel_wparam_with_keys() {
+        let w = build_wheel_wparam(240, 0x0004); // MK_SHIFT
+        assert_eq!((w >> 16) as i16, 240);
+        assert_eq!(w & 0xFFFF, 0x0004);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_build_lparam_from_point() {
+        let lp = build_lparam_from_point(100, 200);
+        assert_eq!((lp & 0xFFFF) as i16, 100);
+        assert_eq!(((lp >> 16) & 0xFFFF) as i16, 200);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_build_lparam_negative_coords() {
+        let lp = build_lparam_from_point(-50, -100);
+        assert_eq!((lp & 0xFFFF) as i16, -50);
+        assert_eq!(((lp >> 16) & 0xFFFF) as i16, -100);
+    }
+
+    // ---- Cycle 2: Subclass 类型编译检查 ----
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_subclass_proc_type_matches() {
+        fn _assert(
+            _f: unsafe extern "system" fn(
+                windows_sys::Win32::Foundation::HWND,
+                u32,
+                windows_sys::Win32::Foundation::WPARAM,
+                windows_sys::Win32::Foundation::LPARAM,
+                usize,
+                usize,
+            ) -> windows_sys::Win32::Foundation::LRESULT,
+        ) {
+        }
+        _assert(bubble_wheel_subclass_proc);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_install_wheel_subclass_signature() {
+        let _: unsafe fn(windows_sys::Win32::Foundation::HWND) -> bool = install_wheel_subclass;
     }
 }

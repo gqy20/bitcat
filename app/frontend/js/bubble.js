@@ -125,6 +125,26 @@
     contentEl.scrollTop += e.deltaY;
   }
 
+  /// 键盘滚动兜底：方向键/PageDown/PageUp/Home/End 控制滚动
+  function onKeyDown(e) {
+    if (!contentEl) return;
+    var step = 40;
+    switch (e.key) {
+      case 'ArrowDown':
+        contentEl.scrollTop += step; e.preventDefault(); break;
+      case 'ArrowUp':
+        contentEl.scrollTop -= step; e.preventDefault(); break;
+      case 'PageDown':
+        contentEl.scrollTop += contentEl.clientHeight; e.preventDefault(); break;
+      case 'PageUp':
+        contentEl.scrollTop -= contentEl.clientHeight; e.preventDefault(); break;
+      case 'Home':
+        contentEl.scrollTop = 0; e.preventDefault(); break;
+      case 'End':
+        contentEl.scrollTop = contentEl.scrollHeight; e.preventDefault(); break;
+    }
+  }
+
   function init() {
     contentEl = document.getElementById('content');
     if (!contentEl) return;
@@ -135,6 +155,10 @@
     if (bubbleEl) {
       bubbleEl.addEventListener('wheel', onWheel, { passive: false });
     }
+
+    // 键盘滚动：使 content 可聚焦，监听方向键/Page/Home/End
+    contentEl.setAttribute('tabindex', '0');
+    contentEl.addEventListener('keydown', onKeyDown);
 
     if (!window.__TAURI__) return;
     var listen = window.__TAURI__.event.listen;

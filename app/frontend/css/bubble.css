@@ -74,6 +74,10 @@ html, body {
   background: transparent;
 }
 
+.content:focus {
+  outline: none;
+}
+
 body.hidden .bubble {
   opacity: 0;
   transform: scale(0.92) translateY(6px);
