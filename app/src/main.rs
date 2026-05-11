@@ -1,4 +1,6 @@
 fn main() {
+    use tracing_subscriber::{prelude::*, Layer};
+
     // --debug 参数时分配控制台窗口用于查看日志
     let debug = std::env::args().any(|a| a == "--debug");
     if debug {
@@ -27,10 +29,10 @@ fn main() {
 
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer()
-            .with_env_filter(filter.clone())
+            .with_filter(filter.clone())
             .with_writer(std::io::stderr))
         .with(tracing_subscriber::fmt::layer()
-            .with_env_filter(filter)
+            .with_filter(filter)
             .with_writer(non_blocking)
             .with_ansi(false)
             .with_target(true))
