@@ -268,11 +268,14 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
         }
     };
 
-    let config = match ScreenshotConfig::default().validate() {
-        Ok(()) => ScreenshotConfig::default(),
-        Err(e) => {
-            error!(error = %e, "截图配置无效");
-            return;
+    let config = {
+        let cfg = ScreenshotConfig::from_env();
+        match cfg.validate() {
+            Ok(()) => cfg,
+            Err(e) => {
+                error!(error = %e, "截图配置无效");
+                return;
+            }
         }
     };
 

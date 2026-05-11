@@ -34,7 +34,7 @@ pub struct ScreenshotConfig {
 }
 
 fn default_max_width() -> u32 {
-    1280
+    960
 }
 fn default_jpeg_quality() -> u8 {
     80
@@ -71,6 +71,18 @@ impl Default for ScreenshotConfig {
 }
 
 impl ScreenshotConfig {
+    /// 从默认值 + 环境变量构建配置。
+    /// 环境变量 `SCREENSHOT_MAX_WIDTH` 可覆盖默认的截图缩放宽度。
+    pub fn from_env() -> Self {
+        let mut cfg = Self::default();
+        if let Ok(v) = std::env::var("SCREENSHOT_MAX_WIDTH") {
+            if let Ok(w) = v.parse::<u32>() {
+                cfg.max_width = w;
+            }
+        }
+        cfg
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         if self.jpeg_quality == 0 || self.jpeg_quality > 100 {
             return Err(format!(
@@ -366,13 +378,34 @@ mod tests {
     fn test_default_config_values() {
         let cfg = ScreenshotConfig::default();
         assert!(matches!(cfg.target, ScreenshotTarget::All));
-        assert_eq!(cfg.max_width, 1280);
+        assert_eq!(cfg.max_width, 960);
         assert_eq!(cfg.jpeg_quality, 80);
         assert_eq!(cfg.interval_sec, 30);
         assert!(cfg.dedup);
         assert!((cfg.similarity_threshold - 0.95).abs() < 0.001);
         assert_eq!(cfg.min_width, 480);
         assert!(cfg.debug_resolutions.is_empty());
+    }
+
+    #[test]
+    fn test_from_env_overrides_max_width() {
+        // 设置环境变量
+        unsafe { std::env::set_var("SCREENSHOT_MAX_WIDTH", "640") };
+        let cfg = ScreenshotConfig::from_env();
+        assert_eq!(cfg.max_width, 640);
+        unsafe { std::env::remove_var("SCREENSHOT_MAX_WIDTH") };
+
+        // 未设置时使用默认值
+        let cfg = ScreenshotConfig::from_env();
+        assert_eq!(cfg.max_width, 960);
+    }
+
+    #[test]
+    fn test_from_env_ignores_invalid_value() {
+        unsafe { std::env::set_var("SCREENSHOT_MAX_WIDTH", "not_a_number") };
+        let cfg = ScreenshotConfig::from_env();
+        assert_eq!(cfg.max_width, 960);
+        unsafe { std::env::remove_var("SCREENSHOT_MAX_WIDTH") };
     }
 
     #[test]
@@ -396,7 +429,7 @@ min_width: 480
         let yaml = "target: Primary\n";
         let cfg: ScreenshotConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(matches!(cfg.target, ScreenshotTarget::Primary));
-        assert_eq!(cfg.max_width, 1280);
+        assert_eq!(cfg.max_width, 960);
         assert_eq!(cfg.jpeg_quality, 80);
     }
 
@@ -405,7 +438,7 @@ min_width: 480
         let yaml = "\n";
         let cfg: ScreenshotConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(matches!(cfg.target, ScreenshotTarget::All));
-        assert_eq!(cfg.max_width, 1280);
+        assert_eq!(cfg.max_width, 960);
     }
 
     #[test]
