@@ -41,3 +41,20 @@ memory:
   max_context_chars: 1500  # 注入 prompt 的上下文最大字符数
   max_user_chars: 100      # 每条用户消息截断长度
   max_reply_chars: 200     # 每条 AI 回复截断长度
+
+# ---- 屏幕活动摘要（定时 AI 聚合截图分析结果） ----
+screen_summary:
+  interval_min: 15         # 摘要间隔（分钟）
+  max_recent_analyses: 30  # 摘要时取最近 N 条截图分析记录
+  max_summary_chars: 500   # 单条摘要最大字符数（超长截断）
+  max_context_entries: 20  # 注入 prompt 的最近 N 条摘要
+  max_context_chars: 2000  # 注入 prompt 的摘要总字符预算
+  prompt: |
+    你是 8Bit 的观察模块。以下是一段时间内对主人屏幕的多次 AI 观察记录。
+
+    请将它们整理为结构化的活动日志：
+    - 按活动类型分组（编程、浏览、通讯、娱乐、文档等）
+    - 每组列出时间段和具体活动
+    - 合并重复的观察（如连续多次看到同一应用，合并为时间段范围）
+    - 保留关键细节（项目名、文件名、网站等能看清的信息）
+    - 控制在 300 字以内

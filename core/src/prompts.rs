@@ -1,4 +1,5 @@
 use crate::memory::MemoryConfig;
+use crate::screen_summary::ScreenSummaryConfig;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 
@@ -58,6 +59,8 @@ pub struct PromptsConfig {
     pub vision: VisionPromptConfig,
     #[serde(default)]
     pub memory: MemoryConfig,
+    #[serde(default)]
+    pub screen_summary: ScreenSummaryConfig,
 }
 
 fn default_agent_preamble() -> String {
@@ -155,6 +158,8 @@ agent:
         assert!(cfg.agent.preamble.contains("8Bit"));
         assert!(cfg.vision.prompt.contains("8Bit"));
         assert_eq!(cfg.memory.max_entries, 20);
+        assert_eq!(cfg.screen_summary.interval_min, 15);
+        assert!(!cfg.screen_summary.prompt.is_empty());
     }
 
     #[test]

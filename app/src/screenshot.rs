@@ -470,6 +470,57 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
                 info!(removed = removed, "清理过期截图");
             }
         }
+
+        // 定时 AI 摘要：每 interval_min 分钟触发一次
+        {
+            let prompts_cfg = ai_pad_core::prompts::PromptsConfig::load();
+            let summary_cfg = &prompts_cfg.screen_summary;
+            let summary_cycles = (summary_cfg.interval_min as u64 * 60) / config.interval_sec;
+            if summary_cycles > 0 && cycle_count % summary_cycles as u32 == 0 && cycle_count > 0 {
+                let now = chrono::Local::now();
+                let end_time = now.format("%H:%M").to_string();
+                let start_time = (now - chrono::Duration::minutes(summary_cfg.interval_min as i64))
+                    .format("%H:%M")
+                    .to_string();
+                let time_range = format!("{start_time}-{end_time}");
+
+                info!(time_range = %time_range, "开始生成屏幕活动摘要");
+
+                if let Ok(today_dir) = ai_pad_core::screenshot::ensure_today_dir() {
+                    let records =
+                        ai_pad_core::screenshot::list_recent_analyses(&today_dir, summary_cfg.max_recent_analyses);
+                    let descriptions: Vec<String> =
+                        records.into_iter().map(|r| r.description).filter(|d| !d.is_empty()).collect();
+
+                    if !descriptions.is_empty() {
+                        match rt.block_on(ai_pad_core::screen_summary::generate_summary(
+                            &descriptions,
+                            summary_cfg,
+                            &ai_config,
+                        )) {
+                            Ok(summary) => {
+                                info!(
+                                    chars = summary.chars().count(),
+                                    time_range = %time_range,
+                                    "屏幕摘要生成完成"
+                                );
+                                let mut store =
+                                    ai_pad_core::screen_summary::ScreenSummaryStore::load();
+                                store.record(&time_range, &summary, summary_cfg);
+                                if let Err(e) = store.save() {
+                                    warn!(error = %e, "保存屏幕摘要失败");
+                                }
+                            }
+                            Err(e) => warn!(error = %e, "屏幕摘要生成失败"),
+                        }
+                    } else {
+                        info!("没有可用的截图分析记录，跳过摘要");
+                    }
+                } else {
+                    warn!("无法获取今日截图目录，跳过摘要");
+                }
+            }
+        }
     }
 }
 

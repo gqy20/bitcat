@@ -8,6 +8,7 @@ pub mod hotkey;
 pub mod memory;
 pub mod pet;
 pub mod prompts;
+pub mod screen_summary;
 pub mod screenshot;
 pub mod tools;
 pub mod vision;

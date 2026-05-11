@@ -82,7 +82,7 @@ impl MemoryStore {
         };
 
         if !path.exists() {
-            info!("记忆文件不存在，使用空记忆");
+            info!("对话记忆文件不存在，使用空对话记忆");
             return Self {
                 entries: Vec::new(),
             };
@@ -91,18 +91,18 @@ impl MemoryStore {
         match fs::read_to_string(&path) {
             Ok(content) => match serde_json::from_str::<MemoryStore>(&content) {
                 Ok(store) => {
-                    info!(count = store.entries.len(), "已加载记忆");
+                    info!(count = store.entries.len(), "已加载对话记忆");
                     store
                 }
                 Err(e) => {
-                    warn!(error = %e, "解析记忆文件失败，使用空记忆");
+                    warn!(error = %e, "解析对话记忆文件失败，使用空对话记忆");
                     Self {
                         entries: Vec::new(),
                     }
                 }
             },
             Err(e) => {
-                warn!(error = %e, "读取记忆文件失败，使用空记忆");
+                warn!(error = %e, "读取对话记忆文件失败，使用空对话记忆");
                 Self {
                     entries: Vec::new(),
                 }
@@ -169,7 +169,7 @@ impl MemoryStore {
             .map_err(|e| format!("写入临时文件失败: {e}"))?;
         tmp.persist(&path)
             .map_err(|e| format!("原子替换记忆文件失败: {e}"))?;
-        debug!(path = ?path, "记忆已持久化");
+        debug!(path = ?path, "对话记忆已持久化");
         Ok(())
     }
 }

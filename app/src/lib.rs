@@ -337,7 +337,9 @@ fn gamepad_loop(app: &tauri::AppHandle) {
 
     let mut memory = MemoryStore::load();
     let memory_config = ai_pad_core::prompts::PromptsConfig::load().memory;
-    info!(entries = memory.entries.len(), "记忆系统已初始化");
+    info!(entries = memory.entries.len(), "对话记忆系统已初始化");
+    let summary_store = ai_pad_core::screen_summary::ScreenSummaryStore::load();
+    info!(entries = summary_store.entries.len(), "屏幕活动摘要系统已初始化");
 
     let mut prev_buttons: u32 = 0;
     let mut prev_hat: Option<(i32, i32)> = None;
@@ -543,12 +545,17 @@ fn run_ai_chat(
         return;
     }
 
-    // 注入记忆上下文
+    // 注入记忆上下文 + 屏幕活动摘要
     let ctx = memory.build_context(memory_config);
-    let enriched_msg = if ctx.is_empty() {
-        msg.to_string()
-    } else {
-        format!("{ctx}\n用户说: {msg}")
+    let summary_store = ai_pad_core::screen_summary::ScreenSummaryStore::load();
+    let summary_config = ai_pad_core::prompts::PromptsConfig::load().screen_summary;
+    info!(entries = summary_store.entries.len(), "屏幕活动摘要已加载");
+    let summary_ctx = summary_store.build_context(&summary_config);
+    let enriched_msg = match (ctx.is_empty(), summary_ctx.is_empty()) {
+        (true, true) => msg.to_string(),
+        (false, true) => format!("{ctx}\n用户说: {msg}"),
+        (true, false) => format!("{summary_ctx}\n用户说: {msg}"),
+        (false, false) => format!("{ctx}\n{summary_ctx}\n用户说: {msg}"),
     };
 
     let app_for_chunks = app.clone();
@@ -564,7 +571,7 @@ fn run_ai_chat(
             // 持久化到记忆
             memory.record_conversation(msg, &reply, memory_config);
             if let Err(e) = memory.save() {
-                warn!(error = %e, "保存记忆失败");
+                warn!(error = %e, "保存对话记忆失败");
             }
 
             if prefix.is_empty() {
