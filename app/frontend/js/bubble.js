@@ -13,15 +13,15 @@
 
   const HIDE_AFTER_MS = 5500;
   const POLL_INTERVAL_MS = 120;
-  const MIN_H = 140;          // 最小窗口高度
-  const MAX_H = 340;          // 最大窗口高度（超出后内部滚动）
-  const LINE_H = 13 * 1.55;   // 单行约 20px（font-size 13px × line-height 1.55）
-  const PADDING_V = 22;       // .bubble padding(10×2) + 上下间距(~12)
+  const MIN_H = 140;
+  const MAX_H = 340;
+  const PADDING_TOTAL = 48;   // body top(6) + bubble padding(20) + body bottom(22)
 
   let hideTimer = null;
   let contentEl = null;
   let pollTimer = null;
   let currentWinH = MIN_H;
+  let lastRawText = '';       // 记录最近一次原始文本，用于最终渲染去光标
 
   function ensureVisible() {
     document.body.classList.remove('hidden');
@@ -41,12 +41,11 @@
     hideTimer = setTimeout(hide, HIDE_AFTER_MS);
   }
 
-  /// 根据文本行数动态调整窗口高度，避免长回答被截断或无法滚动
-  function autoResize(text) {
-    if (!contentEl || !text) return;
-
-    var lines = Math.ceil(text.length / 28);
-    var neededH = Math.min(MAX_H, Math.max(MIN_H, lines * LINE_H + PADDING_V));
+  /// 根据实际渲染高度动态调整窗口高度
+  function autoResize() {
+    if (!contentEl) return;
+    var contentH = contentEl.scrollHeight;
+    var neededH = Math.min(MAX_H, Math.max(MIN_H, contentH + PADDING_TOTAL));
     var newH = Math.round(neededH);
 
     if (newH !== currentWinH && window.__TAURI__ && window.__TAURI__.window) {
@@ -68,11 +67,14 @@
     }
   }
 
-  function setText(text) {
+  function setText(text, streaming) {
     if (!contentEl) return;
-    contentEl.textContent = text || '';
+    lastRawText = text || '';
+    var src = streaming ? lastRawText + '█' : lastRawText;
+    contentEl.innerHTML = typeof marked !== 'undefined'
+      ? marked.parse(src) : src;
     contentEl.scrollTop = contentEl.scrollHeight;
-    autoResize(text);
+    autoResize();
   }
 
   function hide() {
@@ -110,7 +112,7 @@
       .then((result) => {
         const txt = result || '';
         if (txt.length > 0) {
-          setText(txt);
+          setText(txt, true);
           ensureVisible();
         }
       })
@@ -166,6 +168,8 @@
     listen('bubble-end', () => {
       stopPolling();
       pollPending();
+      // 最终渲染：去掉打字光标
+      if (lastRawText) setText(lastRawText, false);
       startHideTimer();
     });
 
@@ -173,7 +177,7 @@
       stopPolling();
       var payload = event.payload || {};
       var text = typeof payload === 'string' ? payload : (payload.text || '');
-      setText(text);
+      setText(text, false);
       ensureVisible();
       startHideTimer();
     });

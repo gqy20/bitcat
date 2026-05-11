@@ -1,0 +1,48 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 40px;
+  height: 120px;
+  background: transparent;
+  overflow: hidden;
+}
+
+/* 侧边发光条：半透明渐变条，视觉主体在窗口内可见 */
+.glow-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  /* 渐变：实色边缘 → 快速衰减透明 */
+  background: linear-gradient(
+    to right,
+    rgba(96, 216, 255, 0.9),
+    rgba(96, 216, 255, 0.5),
+    rgba(96, 216, 255, 0.15),
+    rgba(96, 216, 255, 0)
+  );
+  box-shadow: 0 0 6px 1px rgba(96, 216, 255, 0.4);
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* 贴在右侧边缘时，翻转渐变方向（亮边在右，朝向左） */
+body.right .glow-bar {
+  background: linear-gradient(
+    to left,
+    rgba(96, 216, 255, 0.9),
+    rgba(96, 216, 255, 0.5),
+    rgba(96, 216, 255, 0.15),
+    rgba(96, 216, 255, 0)
+  );
+  box-shadow: 0 0 6px 1px rgba(96, 216, 255, 0.4);
+}
+
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.85; }
+  50%       { opacity: 1; }
+}

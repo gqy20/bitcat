@@ -76,6 +76,211 @@ async fn cmd_recreate_pet_window(
     Ok(())
 }
 
+/// 贴边吸附：计算宠物窗口的吸附目标位置（水平贴左/右 + 垂直贴任务栏上方）。
+#[tauri::command]
+async fn cmd_snap_pet(app: tauri::AppHandle, x: i32, _y: i32) -> Result<SnapResult, String> {
+    // 优先查找可见的宠物窗口（支持折叠态）
+    let win = app
+        .get_webview_window("pet")
+        .filter(|w| w.is_visible().unwrap_or(false))
+        .or_else(|| app.get_webview_window("pet-mini"))
+        .ok_or("no visible pet window")?;
+
+    let pet_size = win.outer_size().map_err(|e| e.to_string())?;
+    let pw = pet_size.width as i32;
+    let ph = pet_size.height as i32;
+    let scale = win.scale_factor().unwrap_or(1.0);
+    let snap_h_px = (SNAP_H as f64 * scale) as i32; // 竖条物理像素高度
+    let snap_w_px = (SNAP_W * scale) as i32;         // 竖条物理像素宽度
+
+    // 通过 Win32 获取宠物所在显示器的工作区（排除任务栏）
+    let work = get_work_area_for_window(&win);
+    info!(
+        snap_cmd = true,
+        input_x = x,
+        work_left = work.left,
+        work_right = work.right,
+        work_top = work.top,
+        work_bottom = work.bottom,
+        work_w = work.right - work.left,
+        work_h = work.bottom - work.top,
+        pet_w = pw,
+        pet_h = ph,
+        "cmd_snap_pet: 工作区信息"
+    );
+
+    // 水平：吸附到更近的左/右边缘（距离阈值 80 逻辑像素，按 DPI 缩放）
+    let snap_threshold = (80.0 * scale) as u32;
+    let left_dist = (x - work.left).unsigned_abs();
+    let right_dist = (work.right - pw - x).unsigned_abs();
+
+    let snap_result = if left_dist <= right_dist && left_dist <= snap_threshold {
+        ("left", work.left, work.bottom - snap_h_px)
+    } else if right_dist <= snap_threshold {
+        ("right", work.right - snap_w_px, work.bottom - snap_h_px)
+    } else {
+        // 不吸附，返回当前位置
+        return Ok(SnapResult {
+            edge: "none".to_string(),
+            x: x,
+            y: work.bottom - ph,
+        });
+    };
+
+    let (edge, target_x, target_y) = snap_result;
+
+    info!(
+        snap_cmd = true,
+        input_x = x,
+        left_dist = left_dist,
+        right_dist = right_dist,
+        edge = %edge,
+        target_x = target_x,
+        target_y = target_y,
+        "cmd_snap_pet: 吸附结果"
+    );
+
+    Ok(SnapResult { edge: edge.to_string(), x: target_x, y: target_y })
+}
+
+#[derive(serde::Serialize)]
+struct SnapResult {
+    edge: String,
+    x: i32,
+    y: i32,
+}
+
+/// 贴边吸附：将宠物窗口转换为吸附态（细长竖条）
+#[tauri::command]
+async fn cmd_snap_transform(app: tauri::AppHandle, edge: String, x: i32, y: i32) -> Result<(), String> {
+    let ws: tauri::State<'_, SharedWindowState> = app.state();
+    let on_top = ws.always_on_top.load(Ordering::SeqCst);
+
+    // 隐藏当前宠物窗口
+    for label in ["pet", "pet-mini"] {
+        if let Some(w) = app.get_webview_window(label) {
+            let _ = w.hide();
+        }
+    }
+
+    // 显示吸附态窗口
+    let snap_win = app.get_webview_window("pet-snap")
+        .ok_or("pet-snap window not found")?;
+
+    let _ = snap_win.set_position(PhysicalPosition::new(x, y));
+    let _ = snap_win.set_always_on_top(on_top);
+    snap_win.show().map_err(|e| e.to_string())?;
+
+    // 通知竖条窗口渐变方向（需要延迟等 JS 初始化）
+    let edge_for_emit = edge.clone();
+    let app_clone = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let _ = app_clone.emit_to("pet-snap", "snap-edge", edge_for_emit);
+    });
+
+    // 记录吸附状态
+    *ws.is_snapped.lock().map_err(|e| e.to_string())? = true;
+    *ws.snap_edge.lock().map_err(|e| e.to_string())? = Some(edge.clone());
+
+    info!(snap_transform = true, edge = %edge, x = x, y = y, "吸附态切换成功");
+    Ok(())
+}
+
+/// 取消吸附：恢复宠物窗口原大小
+#[tauri::command]
+async fn cmd_unsnap_transform(app: tauri::AppHandle) -> Result<(), String> {
+    let ws: tauri::State<'_, SharedWindowState> = app.state();
+    let on_top = ws.always_on_top.load(Ordering::SeqCst);
+
+    // 隐藏吸附态窗口
+    if let Some(w) = app.get_webview_window("pet-snap") {
+        let _ = w.hide();
+    }
+
+    // 显示正常宠物窗口
+    let collapsed = ws.collapsed.load(Ordering::SeqCst);
+    let target = if collapsed { "pet-mini" } else { "pet" };
+
+    let win = app.get_webview_window(target)
+        .ok_or(format!("window '{}' not found", target))?;
+
+    // 从吸附态窗口获取当前位置
+    if let Some(snap_win) = app.get_webview_window("pet-snap") {
+        if let Ok(pos) = snap_win.outer_position() {
+            // 恢复时往屏幕内移动一点（40px），避免还在边缘
+            let offset = if ws.snap_edge.lock().ok().and_then(|e| e.clone()).as_deref() == Some("left") {
+                80 // 从左边吸附态出来，往右移 80px
+            } else {
+                -80 // 从右边吸附态出来，往左移 80px
+            };
+            let _ = win.set_position(PhysicalPosition::new(pos.x + offset, pos.y));
+        }
+    }
+
+    let _ = win.set_always_on_top(on_top);
+    win.show().map_err(|e| e.to_string())?;
+
+    // 清除吸附状态
+    *ws.is_snapped.lock().map_err(|e| e.to_string())? = false;
+    *ws.snap_edge.lock().map_err(|e| e.to_string())? = None;
+
+    info!(unsnap_transform = true, "取消吸附成功");
+    Ok(())
+}
+
+/// 获取窗口所在显示器的工作区（Win32: MonitorFromWindow → GetMonitorInfoW → rcWork）
+#[cfg(target_os = "windows")]
+fn get_work_area_for_window(
+    win: &tauri::WebviewWindow,
+) -> windows_sys::Win32::Foundation::RECT {
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MonitorFromWindow, MONITOR_DEFAULTTONEAREST, MONITORINFO,
+    };
+
+    let mut mi = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..unsafe { std::mem::zeroed() }
+    };
+
+    if let Ok(hwnd) = win.hwnd() {
+        let raw_hwnd = hwnd.0 as windows_sys::Win32::Foundation::HWND;
+        let hmon_val: isize;
+        unsafe {
+            hmon_val = MonitorFromWindow(raw_hwnd, MONITOR_DEFAULTTONEAREST) as isize;
+            GetMonitorInfoW(hmon_val as _, &mut mi);
+        }
+        info!(
+            work_area = true,
+            hmon = hmon_val,
+            rcWork_left = mi.rcWork.left,
+            rcWork_top = mi.rcWork.top,
+            rcWork_right = mi.rcWork.right,
+            rcWork_bottom = mi.rcWork.bottom,
+            rcWork_w = mi.rcWork.right - mi.rcWork.left,
+            rcWork_h = mi.rcWork.bottom - mi.rcWork.top,
+            "get_work_area_for_window: Win32 GetMonitorInfoW 结果"
+        );
+    } else {
+        warn!("get_work_area_for_window: 无法获取 HWND");
+    }
+
+    mi.rcWork
+}
+
+#[cfg(not(target_os = "windows"))]
+fn get_work_area_for_window(win: &tauri::WebviewWindow) -> (i32, i32, i32, i32) {
+    // 非 Windows 回退：使用 Tauri Monitor API 的完整屏幕边界
+    let (x, y, w, h) = if let Ok(Some(m)) = win.current_monitor() {
+        let s = m.size();
+        let p = m.position();
+        (p.x, p.y, s.width as i32, s.height as i32)
+    } else {
+        (0, 0, 1920, 1080)
+    };
+    windows_sys::Win32::Foundation::RECT { left: x, top: y, right: x + w, bottom: y + h }
+}
+
 /// 预创建两个 pet 窗口（正常 + 折叠），启动时隐藏备用。
 /// 避免运行时 destroy+recreate 的 WebView2 竞态（#9307）。
 fn precreate_pet_windows(app: &tauri::AppHandle) -> Result<(), tauri::Error> {
@@ -115,6 +320,155 @@ fn precreate_pet_windows(app: &tauri::AppHandle) -> Result<(), tauri::Error> {
         info!("预创建 pet-mini 窗口 (48x48, hidden)");
     }
 
+    // 吸附窗口 40x120（启动时隐藏）
+    if app.get_webview_window("pet-snap").is_none() {
+        WebviewWindowBuilder::new(app, "pet-snap", WebviewUrl::App("pet.html".into()))
+            .title("8Bit Cat Snap")
+            .inner_size(SNAP_W, SNAP_H as f64)
+            .decorations(false)
+            .transparent(true)
+            .background_color(tauri::webview::Color(0, 0, 0, 0))
+            .shadow(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .resizable(false)
+            .visible(false)
+            .build()?;
+        if let Some(w) = app.get_webview_window("pet-snap") {
+            let _ = w.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
+        }
+        info!("预创建 pet-snap 窗口 ({}x{}, hidden)", SNAP_W, SNAP_H);
+    }
+
+    Ok(())
+}
+
+const GLOW_W: f64 = 40.0;
+const GLOW_H: f64 = 120.0;
+const SNAP_W: f64 = 14.0;  // 贴边后宠物窗口宽度（竖条，精致细线）
+const SNAP_H: i32 = 100;   // 贴边后宠物窗口高度（竖条）
+
+/// 预创建侧边亮条窗口（启动时隐藏），避免运行时竞态
+fn precreate_edge_glow_window(app: &tauri::AppHandle) -> Result<(), tauri::Error> {
+    let label = "edge-glow";
+    if let Some(existing) = app.get_webview_window(label) {
+        info!(glow_precreate = true, label = label, "precreate_edge_glow_window: glow 窗口已存在");
+        let is_vis = existing.is_visible().unwrap_or(false);
+        if let Ok(pos) = existing.outer_position() {
+            if let Ok(size) = existing.outer_size() {
+                info!(glow_precreate = true, label = label, is_visible = is_vis, pos_x = pos.x, pos_y = pos.y, size_w = size.width, size_h = size.height, "已存在 glow 窗口状态");
+            }
+        }
+    } else {
+        info!(glow_precreate = true, glow_w = GLOW_W, glow_h = GLOW_H, "precreate_edge_glow_window: 开始创建 glow 窗口");
+        let result = WebviewWindowBuilder::new(app, label, WebviewUrl::App("glow.html".into()))
+            .title("Edge Glow")
+            .inner_size(GLOW_W, GLOW_H)
+            .decorations(false)
+            .transparent(true)
+            .background_color(tauri::webview::Color(0, 0, 0, 0))
+            .shadow(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .resizable(false)
+            .focused(false)
+            .visible(false)
+            .build();
+        match result {
+            Ok(_) => {
+                info!("precreate_edge_glow_window: glow 窗口创建成功");
+                if let Some(w) = app.get_webview_window(label) {
+                    let _ = w.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
+                    if let (Ok(pos), Ok(size)) = (w.outer_position(), w.outer_size()) {
+                        info!(glow_precreate = true, label = label, inner_w = GLOW_W, inner_h = GLOW_H, pos_x = pos.x, pos_y = pos.y, size_w = size.width, size_h = size.height, "glow 窗口创建后状态");
+                    }
+                }
+            }
+            Err(e) => {
+                error!(glow_precreate = true, label = label, error = %e, "precreate_edge_glow_window: glow 窗口创建失败");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 显示侧边亮条
+#[tauri::command]
+async fn cmd_show_edge_glow(app: tauri::AppHandle, edge: String, pet_y: i32) -> Result<(), String> {
+    let Some(glow) = app.get_webview_window("edge-glow") else {
+        return Err("edge-glow window not found".into());
+    };
+
+    // 获取可见的宠物窗口
+    let pet_win = app
+        .get_webview_window("pet")
+        .filter(|w| w.is_visible().unwrap_or(false))
+        .or_else(|| app.get_webview_window("pet-mini"))
+        .ok_or("no visible pet window")?;
+
+    let pet_pos = pet_win.outer_position().map_err(|e| e.to_string())?;
+    let pet_size = pet_win.outer_size().map_err(|e| e.to_string())?;
+    let scale = pet_win.scale_factor().unwrap_or(1.0);
+    let pet_h = pet_size.height as f64;
+    let pw = pet_size.width as f64;
+
+    // 获取工作区（排除任务栏），和 cmd_snap_pet 保持一致
+    let work = get_work_area_for_window(&pet_win);
+    let glow_h_px = GLOW_H * scale;
+    let glow_w_px = GLOW_W * scale;
+    let pet_center_y = pet_y as f64 + pet_h / 2.0;
+
+    // glow 和 pet 对齐在同一 x 坐标
+    let (glow_x, glow_y) = if edge == "left" {
+        let x = work.left as f64;
+        let y = pet_center_y - glow_h_px / 2.0;
+        (x, y)
+    } else {
+        let x = work.right as f64 - pw;
+        let y = pet_center_y - glow_h_px / 2.0;
+        (x, y)
+    };
+
+    info!(
+        glow_show = true,
+        edge = %edge,
+        pet_pos_x = pet_pos.x,
+        pet_pos_y = pet_pos.y,
+        pet_y_arg = pet_y,
+        pet_w = pw,
+        pet_h = pet_h,
+        pet_center_y = pet_center_y,
+        scale = scale,
+        work_left = work.left,
+        work_right = work.right,
+        work_top = work.top,
+        work_bottom = work.bottom,
+        glow_w = glow_w_px,
+        glow_h = glow_h_px,
+        glow_x = glow_x,
+        glow_y = glow_y,
+        "cmd_show_edge_glow: 完整参数"
+    );
+
+    let result = glow.set_position(PhysicalPosition::new(glow_x as i32, glow_y as i32));
+    info!(glow_set_pos = ?result, "set_position 结果");
+
+    let show_result = glow.show();
+    info!(glow_show_result = ?show_result, "show() 结果");
+
+    // 通知 glow 窗口切换 right class（用于右侧时翻转渐变）
+    let edge_clone = edge.clone();
+    let emit_result = glow.emit_to("edge-glow", "glow-edge", edge_clone);
+    info!(glow_emit_result = ?emit_result, "emit_to glow-edge 结果");
+    Ok(())
+}
+
+/// 隐藏侧边亮条
+#[tauri::command]
+async fn cmd_hide_edge_glow(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(glow) = app.get_webview_window("edge-glow") {
+        glow.hide().map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -143,6 +497,11 @@ pub fn run() {
             voice::cmd_voice_update_text,
             voice::cmd_voice_get_text,
             cmd_recreate_pet_window,
+            cmd_snap_pet,
+            cmd_snap_transform,
+            cmd_unsnap_transform,
+            cmd_show_edge_glow,
+            cmd_hide_edge_glow,
             screenshot::cmd_screenshot_now,
         ])
         .on_window_event(|window, event| {
@@ -204,6 +563,8 @@ pub fn run() {
             if let Err(e) = voice::precreate_voice_window(app.handle()) {
                 warn!(error = %e, "预创建 voice 窗口失败");
             }
+
+            // edge-glow 窗口已不再需要（pet-snap 窗口替代了吸附竖条功能）
 
             let app_handle = app.handle().clone();
             let hotkey_str = "CommandOrControl+Alt+Space";

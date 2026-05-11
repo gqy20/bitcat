@@ -156,24 +156,43 @@ pub fn finalize_bubble(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 把 bubble 窗口对齐到 pet 窗口正上方
+/// 把 bubble 窗口对齐到 pet 窗口正上方，带屏幕边界检测
 fn position_above_pet(app: &AppHandle, bubble: &tauri::WebviewWindow) {
-    let Some(pet) = app.get_webview_window("pet") else {
-        return;
-    };
+    // 优先查找可见的宠物窗口（支持折叠态）
+    let pet = app
+        .get_webview_window("pet")
+        .filter(|w| w.is_visible().unwrap_or(false))
+        .or_else(|| app.get_webview_window("pet-mini"));
+    let Some(pet) = pet else { return; };
     let (Ok(pet_pos), Ok(pet_size)) = (pet.outer_position(), pet.outer_size()) else {
         return;
     };
-    // bubble 中心对齐 pet 中心，bubble 底部贴近 pet 顶部
-    let pet_center_x = pet_pos.x as f64 + pet_size.width as f64 / 2.0;
-    let pet_top = pet_pos.y as f64;
+
+    let Some(monitor) = pet.current_monitor().ok().flatten() else { return; };
+    let monitor_size = monitor.size();
+    let monitor_pos = monitor.position();
 
     let scale = bubble.scale_factor().unwrap_or(1.0);
     let bubble_w_px = BUBBLE_W * scale;
     let bubble_h_px = BUBBLE_H * scale;
 
-    let bubble_x = (pet_center_x - bubble_w_px / 2.0) as i32;
-    let bubble_y = (pet_top - bubble_h_px + 6.0 * scale) as i32; // 三角和精灵略重叠
+    // 默认：水平居中于 pet 上方
+    let pet_center_x = pet_pos.x as f64 + pet_size.width as f64 / 2.0;
+    let pet_top = pet_pos.y as f64;
+    let mut bubble_x = (pet_center_x - bubble_w_px / 2.0) as i32;
+    let mut bubble_y = (pet_top - bubble_h_px + 6.0 * scale) as i32;
+
+    let screen_left = monitor_pos.x;
+    let screen_right = monitor_pos.x + monitor_size.width as i32;
+    let screen_top = monitor_pos.y;
+
+    // 水平 clamp：不超出屏幕左右
+    bubble_x = bubble_x.clamp(screen_left + 4, screen_right - bubble_w_px as i32 - 4);
+
+    // 上方放不下 → 翻到 pet 下方
+    if bubble_y < screen_top + 4 {
+        bubble_y = (pet_top + pet_size.height as f64 + 6.0 * scale) as i32;
+    }
 
     let _ = bubble.set_position(PhysicalPosition::new(bubble_x, bubble_y));
 }

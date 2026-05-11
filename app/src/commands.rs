@@ -26,6 +26,9 @@ pub struct SharedWindowState {
     pub config_reload: AtomicBool,
     /// 最后已知窗口位置：折叠时旧窗口已销毁，展开重建需要坐标
     pub last_position: Mutex<Option<(i32, i32)>>,
+    /// 贴边吸附状态
+    pub is_snapped: Mutex<bool>,
+    pub snap_edge: Mutex<Option<String>>,
 }
 
 impl Default for SharedWindowState {
@@ -35,6 +38,8 @@ impl Default for SharedWindowState {
             always_on_top: AtomicBool::new(true),
             config_reload: AtomicBool::new(false),
             last_position: Mutex::new(None),
+            is_snapped: Mutex::new(false),
+            snap_edge: Mutex::new(None),
         }
     }
 }
