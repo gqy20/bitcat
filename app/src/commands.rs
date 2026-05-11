@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 use ai_pad_core::pet::Pet;
 use ai_pad_core::bridge::PetStateName;
 use serde::{Deserialize, Serialize};
@@ -14,6 +15,23 @@ impl SharedPet {
         Self {
             pet: Mutex::new(Pet::new(64.0, 64.0)),
             bubble: Mutex::new(None),
+        }
+    }
+}
+
+/// 窗口级共享状态（托盘/手柄线程安全并发读写）
+pub struct SharedWindowState {
+    pub collapsed: AtomicBool,
+    pub always_on_top: AtomicBool,
+    pub config_reload: AtomicBool,
+}
+
+impl SharedWindowState {
+    pub fn new() -> Self {
+        Self {
+            collapsed: AtomicBool::new(false),
+            always_on_top: AtomicBool::new(true),
+            config_reload: AtomicBool::new(false),
         }
     }
 }

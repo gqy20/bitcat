@@ -86,29 +86,17 @@
     canvas.classList.add('flash');
   }
 
-  // ========== 右键上下文菜单（原生 Win32 弹出）==========
+  // ========== 右键菜单已统一到系统托盘 ==========
 
   function setupContextMenu() {
-    bodyEl.addEventListener('contextmenu', async (e) => {
+    bodyEl.addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      if (!window.__TAURI__?.core) return;
-      try {
-        const action = await window.__TAURI__.core.invoke('cmd_context_menu', {
-          collapsed, alwaysOnTop,
-        });
-        switch (action) {
-          case 'collapse': toggleCollapse(); break;
-          case 'top': toggleAlwaysOnTop(); break;
-          case 'exit': window.__TAURI__.core.invoke('tauri:exit').catch(() => {}); break;
-        }
-      } catch (_) {}
     });
   }
 
-  // ========== 折叠/展开（Rust 侧销毁重建）==========
+  // ========== 折叠/展开（由 Rust 托盘驱动）==========
 
-  async function toggleCollapse() {
-    collapsed = !collapsed;
+  async function applyCollapse() {
     syncStateClass(pet.state);
 
     const w = collapsed ? 48 : 128;
@@ -116,7 +104,6 @@
     canvas.width = w;
     canvas.height = h;
 
-    // 取当前位置，重建后恢复到同一位置
     const win = getCurrentWin();
     let posX = 0, posY = 0;
     if (win) {
@@ -138,11 +125,10 @@
     }
   }
 
-  async function toggleAlwaysOnTop() {
-    alwaysOnTop = !alwaysOnTop;
+  function applyAlwaysOnTop() {
     const win = getCurrentWin();
     if (win) {
-      try { await win.setAlwaysOnTop(alwaysOnTop); } catch (_) {}
+      try { win.setAlwaysOnTop(alwaysOnTop); } catch (_) {}
     }
   }
 
@@ -152,6 +138,16 @@
     if (window.__TAURI__) {
       window.__TAURI__.event.listen('pet-event', (event) => {
         pet.applyEvent(event.payload);
+      });
+
+      window.__TAURI__.event.listen('pet-toggle-collapse', (event) => {
+        collapsed = event.payload;
+        applyCollapse();
+      });
+
+      window.__TAURI__.event.listen('pet-toggle-top', (event) => {
+        alwaysOnTop = event.payload;
+        applyAlwaysOnTop();
       });
     }
   }

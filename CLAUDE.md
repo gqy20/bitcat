@@ -14,7 +14,7 @@ make clippy         # cargo clippy -- -W clippy::all
 make clean          # cargo clean
 
 # Frontend tests (Vitest + jsdom)
-cd app/frontend && npx vitest run     # 56 tests in 3 files
+cd app/frontend && npx vitest run     # 3 test files
 cd app/frontend && npx vitest         # watch mode
 
 # Run single test
@@ -48,6 +48,11 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
   ├── voice 按住/释放 → voice.rs (generation 防残留) → AI 对话
   ├── panel 导航 → panel.rs (方向键/A/B 独占)
   └── actions.yml 热键/启动 → hotkey.rs SendInput
+
+截图观察线程 → screenshot_loop() [screenshot.rs, 独立线程]
+  ├── BitBlt 截屏 → dHash 去重 → 缩放 → JPEG 编码
+  ├── vision.rs → Vision API 分析 → 描述文本 → bubble 显示
+  └── 存储 ~/.ai-pad/screenshots/YYYY-MM-DD/ (7 天自动清理)
 ```
 
 ### 多窗口模型（4 个 WebView2 窗口）
@@ -69,7 +74,23 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 
 ### AI Agent
 
-配置优先级: 环境变量 > `~/.claude/settings.json` > 默认值。4 个内置 Tool: launch_program / shell / read_file / get_time。max_tokens 固定 256K。
+配置优先级: 环境变量 > `~/.claude/settings.json` > `.env` > 默认值。4 个内置 Tool: launch_program / shell / read_file / get_time。max_tokens 固定 256K。
+
+### 截图观察系统
+
+独立线程定时截图（默认 30s），流程：BitBlt 捕获 → 熄屏检测 (`SM_MONITORISOFF` + 全黑帧采样) → dHash 去重 → 缩放到 max_width → JPEG 编码 → Vision API (Anthropic Messages) 分析 → 结果通过 bubble 显示并保存到 `~/.ai-pad/screenshots/`。支持多显示器水平拼接 + 调试多分辨率对比。配置在 `prompts.yml` 的 `screenshot` 段。
+
+### 记忆系统
+
+`MemoryStore` 维护滚动窗口对话记忆（默认 20 条），持久化到 `~/.ai-pad/memory/chat_summary.json`。每次 AI 对话后记录 user_msg + ai_reply（按字符截断），下次对话时通过 `build_context()` 注入 prompt。配置在 `prompts.yml` 的 `memory` 段。
+
+### Prompts 配置
+
+`prompts.yml` 统一管理三段提示词：`agent.preamble`（AI 人设）、`vision.prompt`/`vision.prompt_multi`（截图分析提示词，强调反幻觉）、`memory`（记忆窗口大小和截断阈值）。所有字段有编译时默认值，YAML 可选覆盖。运行时从 exe 同目录加载，构建时需 cp 到 target/。
+
+### 日志与 .env
+
+日志双写：stderr（带颜色）+ 文件 `~/.ai-pad/logs/`（按日滚动，默认 `ai_pad_app=info,ai_pad_core=debug`）。`.env` 多级加载：exe 同目录 → CWD → 项目根目录（兜底 target/debug 向上两级）。
 
 ## Code Conventions
 
@@ -77,14 +98,20 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 - **测试**: core 用 proptest 属性测试 + 单元测试；app 用纯函数测试 + 可选 feature 的 Tauri MockRuntime IPC 测试；前端用 Vitest (jsdom)
 - **中文处理**: Rust 中字符串切片必须按字符边界（`.chars().take(n)`），不可用字节索引
 - **前端**: 无框架，IIFE 模块，通过 `window.__TAURI__` API 与后端通信
-- **配置**: `actions.yml` 和 `buttons.yml` 运行时从 exe 同目录加载，构建时需 cp 到 target/
+- **配置**: `actions.yml`、`buttons.yml`、`prompts.yml` 运行时从 exe 同目录加载，构建时需 cp 到 target/
 
 ## Key Files
 
-- `app/src/lib.rs` — 主入口，gamepad_loop 全部逻辑（~500 行），state 管理，invoke_handler 注册
+- `app/src/lib.rs` — 主入口，gamepad_loop（~520 行）+ 右键菜单（Win32 TrackPopupMenu）+ .env 加载 + 全局热键注册
+- `app/src/main.rs` — --debug 控制台分配 + 日志双写（stderr + `~/.ai-pad/logs/` 按日滚动）
+- `app/src/screenshot.rs` — 截图观察线程：BitBlt 截屏 + 熄屏检测 + 缩放 JPEG + Vision API 调用 + 存储/清理
 - `core/src/pet.rs` — 宠物状态机（6 状态，帧动画，proptest 属性测试）
 - `core/src/agent.rs` — AI Agent 流式对话 + Tool 定义
 - `core/src/bridge.rs` — 按键→命令映射，PetCommand 序列化
+- `core/src/screenshot.rs` — 截图类型定义、dHash 感知哈希、resize/JPEG 编码、截图存储 + 清理
+- `core/src/vision.rs` — Vision API 请求构建/响应解析（Anthropic Messages 图片分析）
+- `core/src/memory.rs` — 滚动窗口对话记忆，`~/.ai-pad/memory/` 持久化
+- `core/src/prompts.rs` — 统一提示词配置加载（agent/vision/memory），prompts.yml 解析
 - `app/src/voice.rs` — 语音输入窗口 + generation 防残留
 - `app/src/bubble.rs` — 独立气泡窗口 + 流式 chunk 协议
 - `app/frontend/js/app.js` — 宠物窗口主逻辑（拖拽、状态同步、精灵渲染）

@@ -8,7 +8,7 @@ pub mod tray;
 pub mod voice;
 
 use bubble::SharedBubble;
-use commands::SharedPet;
+use commands::{SharedPet, SharedWindowState};
 use voice::SharedVoice;
 use screenshot::SharedScreenshotState;
 use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder, WindowEvent};
@@ -22,6 +22,7 @@ use ai_pad_core::hotkey;
 use joystick::SdlGamepad;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tracing::{info, warn, error, debug, instrument};
+use std::sync::atomic::Ordering;
 
 /// 销毁旧 pet 窗口并用新尺寸重建，恢复到原位置。
 ///
@@ -35,6 +36,9 @@ async fn cmd_recreate_pet_window(
     x: i32,
     y: i32,
 ) -> Result<(), String> {
+    let ws: tauri::State<'_, SharedWindowState> = app.state();
+    let on_top = ws.always_on_top.load(std::sync::atomic::Ordering::SeqCst);
+
     if let Some(old) = app.get_webview_window("pet") {
         old.close().map_err(|e| e.to_string())?;
     }
@@ -51,7 +55,7 @@ async fn cmd_recreate_pet_window(
     .transparent(true)
     .background_color(tauri::webview::Color(0, 0, 0, 0))
     .shadow(false)
-    .always_on_top(true)
+    .always_on_top(on_top)
     .skip_taskbar(true)
     .resizable(false)
     .build()
@@ -63,75 +67,13 @@ async fn cmd_recreate_pet_window(
     Ok(())
 }
 
-/// 在光标位置弹出原生 Win32 右键菜单，返回被点击的菜单项 id
-///
-/// TrackPopupMenu 是模态消息循环函数，必须在 UI 线程执行。
-/// Tauri async command 运行在 tokio 线程池上，需通过 run_on_main_thread 派发。
-#[tauri::command]
-async fn cmd_context_menu(app: tauri::AppHandle, collapsed: bool, always_on_top: bool) -> Result<String, String> {
-    use windows_sys::Win32::UI::WindowsAndMessaging::*;
-    use windows_sys::Win32::Foundation::POINT;
-    use std::ptr;
-
-    let (tx, rx) = std::sync::mpsc::channel();
-    let app_clone = app.clone();
-    app.run_on_main_thread(move || {
-        let result = unsafe {
-            let menu = CreateMenu();
-            if menu.is_null() {
-                let _ = tx.send(Err("CreateMenu 失败".into()));
-                return;
-            }
-
-            let collapse_label = if collapsed { "展开" } else { "折叠" };
-            let top_label = if always_on_top { "取消置顶" } else { "置顶" };
-
-            AppendMenuW(menu, MF_STRING, 1, encode_wide(collapse_label).as_ptr());
-            AppendMenuW(menu, MF_STRING, 2, encode_wide(top_label).as_ptr());
-            AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
-            AppendMenuW(menu, MF_STRING, 3, encode_wide("退出").as_ptr());
-
-            let mut pt = std::mem::zeroed::<POINT>();
-            GetCursorPos(&mut pt);
-
-            let hwnd = app_clone.get_webview_window("pet")
-                .and_then(|w| w.hwnd().ok())
-                .map(|h| h.0 as windows_sys::Win32::Foundation::HWND)
-                .unwrap_or(std::ptr::null_mut());
-            let r = TrackPopupMenu(
-                menu,
-                TPM_RETURNCMD | TPM_RIGHTBUTTON,
-                pt.x,
-                pt.y,
-                0,
-                hwnd,
-                ptr::null(),
-            );
-
-            DestroyMenu(menu);
-
-            match r {
-                1 => Ok("collapse".into()),
-                2 => Ok("top".into()),
-                3 => Ok("exit".into()),
-                _ => Ok("dismissed".into()),
-            }
-        };
-        let _ = tx.send(result);
-    }).map_err(|e| format!("run_on_main_thread 失败: {e}"))?;
-
-    rx.recv().map_err(|_| "主线程通信失败".to_string())?
-}
-
-fn encode_wide(s: &str) -> Vec<u16> {
-    s.encode_utf16().chain(std::iter::once(0)).collect()
-}
 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(SharedPet::new())
+        .manage(SharedWindowState::new())
         .manage(SharedBubble::new())
         .manage(SharedVoice::new())
         .manage(SharedScreenshotState::new())
@@ -150,7 +92,6 @@ pub fn run() {
             voice::cmd_voice_update_text,
             voice::cmd_voice_get_text,
             cmd_recreate_pet_window,
-            cmd_context_menu,
             screenshot::cmd_screenshot_now,
         ])
         .on_window_event(|window, event| {
@@ -310,7 +251,7 @@ fn gamepad_loop(app: &tauri::AppHandle) {
         }).as_ref()
     }
 
-    let action_config = ActionConfig::load("actions.yml").ok();
+    let mut action_config = ActionConfig::load("actions.yml").ok();
     let ac = action_config.as_ref().map(|c| c.actions.len()).unwrap_or(0);
     info!(action_count = ac, "已加载 {ac} 个动作绑定");
 
@@ -325,6 +266,16 @@ fn gamepad_loop(app: &tauri::AppHandle) {
     let mut held_voice = HeldCombo::new();
 
     loop {
+        // 配置热重载：托盘 "重载配置" 设置 flag，此处消费
+        {
+            let ws: tauri::State<'_, SharedWindowState> = app.state();
+            if ws.config_reload.load(Ordering::SeqCst) {
+                ws.config_reload.store(false, Ordering::SeqCst);
+                action_config = ActionConfig::load("actions.yml").ok();
+                info!(actions = action_config.as_ref().map(|c| c.actions.len()).unwrap_or(0), "gamepad_loop 配置已刷新");
+            }
+        }
+
         let panel_visible = app.get_webview_window("panel")
             .and_then(|w| w.is_visible().ok())
             .unwrap_or(false);

@@ -1,33 +1,78 @@
+use std::sync::atomic::Ordering;
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Emitter,
+    AppHandle, Emitter, Manager,
 };
-use crate::gamepad::PetEvent;
+use crate::commands::SharedWindowState;
 
-/// 托盘菜单项 ID
+const MENU_SCREENSHOT: &str = "screenshot";
+const MENU_COLLAPSE: &str = "collapse";
+const MENU_TOP: &str = "top";
 const MENU_RELOAD: &str = "reload";
-const MENU_TOGGLE: &str = "toggle";
 const MENU_EXIT: &str = "exit";
 
 pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let reload_i = MenuItem::with_id(app, MENU_RELOAD, "Reload Config", true, None::<&str>)?;
-    let toggle_i = MenuItem::with_id(app, MENU_TOGGLE, "Toggle Pet", true, None::<&str>)?;
-    let exit_i = MenuItem::with_id(app, MENU_EXIT, "Exit", true, None::<&str>)?;
+    let screenshot_item = MenuItem::with_id(app, MENU_SCREENSHOT, "立即截图", true, None::<&str>)?;
+    let collapse_item = MenuItem::with_id(app, MENU_COLLAPSE, "折叠", true, None::<&str>)?;
+    let top_item = MenuItem::with_id(app, MENU_TOP, "取消置顶", true, None::<&str>)?;
+    let reload_item = MenuItem::with_id(app, MENU_RELOAD, "重载配置", true, None::<&str>)?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let exit_item = MenuItem::with_id(app, MENU_EXIT, "退出", true, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[&reload_i, &toggle_i, &exit_i])?;
+    let menu = Menu::with_items(app, &[
+        &screenshot_item,
+        &collapse_item,
+        &top_item,
+        &reload_item,
+        &separator,
+        &exit_item,
+    ])?;
 
     TrayIconBuilder::new()
         .icon(app.default_window_icon().unwrap().clone())
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            MENU_RELOAD => {
-                // 重载配置（Phase 7 实现）
+        .on_menu_event(move |app, event| match event.id.as_ref() {
+            MENU_SCREENSHOT => {
+                let app_clone = app.clone();
+                std::thread::spawn(move || {
+                    let rt = match tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                    {
+                        Ok(r) => r,
+                        Err(e) => {
+                            tracing::error!(error = %e, "截图线程运行时创建失败");
+                            return;
+                        }
+                    };
+                    if let Err(e) = rt.block_on(crate::screenshot::cmd_screenshot_now(app_clone)) {
+                        tracing::warn!(error = %e, "托盘截图失败");
+                    }
+                });
             }
-            MENU_TOGGLE => {
-                let event = PetEvent::set_state("happy");
-                let _ = app.emit("pet-event", &event);
+            MENU_COLLAPSE => {
+                let ws: tauri::State<'_, SharedWindowState> = app.state();
+                let now_collapsed = !ws.collapsed.load(Ordering::SeqCst);
+                ws.collapsed.store(now_collapsed, Ordering::SeqCst);
+
+                let _ = collapse_item.set_text(if now_collapsed { "展开" } else { "折叠" });
+                let _ = app.emit("pet-toggle-collapse", now_collapsed);
+            }
+            MENU_TOP => {
+                let ws: tauri::State<'_, SharedWindowState> = app.state();
+                let now_top = !ws.always_on_top.load(Ordering::SeqCst);
+                ws.always_on_top.store(now_top, Ordering::SeqCst);
+
+                let _ = top_item.set_text(if now_top { "取消置顶" } else { "置顶" });
+
+                if let Some(win) = app.get_webview_window("pet") {
+                    let _ = win.set_always_on_top(now_top);
+                }
+            }
+            MENU_RELOAD => {
+                ws_reload_config(app);
             }
             MENU_EXIT => {
                 app.exit(0);
@@ -39,6 +84,19 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// 重载 actions.yml + prompts.yml，通知 gamepad_loop 刷新
+fn ws_reload_config(app: &AppHandle) {
+    match ai_pad_core::action::ActionConfig::load("actions.yml") {
+        Ok(cfg) => tracing::info!(actions = cfg.actions.len(), "已重载 actions.yml"),
+        Err(e) => tracing::warn!(error = %e, "重载 actions.yml 失败"),
+    }
+    let _ = ai_pad_core::prompts::PromptsConfig::load();
+    tracing::info!("已重载 prompts.yml");
+
+    let ws: tauri::State<'_, SharedWindowState> = app.state();
+    ws.config_reload.store(true, Ordering::SeqCst);
+}
+
 // ---- 测试 ----
 
 #[cfg(test)]
@@ -47,8 +105,7 @@ mod tests {
 
     #[test]
     fn test_menu_ids_are_unique() {
-        // 确保菜单 ID 不重复
-        let ids = [MENU_RELOAD, MENU_TOGGLE, MENU_EXIT];
+        let ids = [MENU_SCREENSHOT, MENU_COLLAPSE, MENU_TOP, MENU_RELOAD, MENU_EXIT];
         let mut sorted = ids;
         sorted.sort();
         for i in 0..sorted.len() - 1 {
@@ -58,20 +115,18 @@ mod tests {
 
     #[test]
     fn test_menu_ids_are_non_empty() {
+        assert!(!MENU_SCREENSHOT.is_empty());
+        assert!(!MENU_COLLAPSE.is_empty());
+        assert!(!MENU_TOP.is_empty());
         assert!(!MENU_RELOAD.is_empty());
-        assert!(!MENU_TOGGLE.is_empty());
         assert!(!MENU_EXIT.is_empty());
     }
 
     #[test]
-    fn test_toggle_event_is_happy() {
-        let event = PetEvent::set_state("happy");
-        assert_eq!(event.state, Some("happy".to_string()));
-    }
-
-    #[test]
-    fn test_pet_event_for_exit() {
-        let event = PetEvent::set_state("exit");
-        assert_eq!(event.state, Some("exit".to_string()));
+    fn test_window_state_defaults() {
+        let ws = SharedWindowState::new();
+        assert!(!ws.collapsed.load(Ordering::SeqCst));
+        assert!(ws.always_on_top.load(Ordering::SeqCst));
+        assert!(!ws.config_reload.load(Ordering::SeqCst));
     }
 }
