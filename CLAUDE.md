@@ -1,31 +1,31 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+本文件为 Claude Code (claude.ai/code) 提供项目指导。
 
-## Build & Test Commands (via Makefile)
+## 构建与测试命令（通过 Makefile）
 
 ```bash
-make build          # cargo build + copy yml configs to target
-make release        # cargo build --release (opt-level=z, LTO, strip)
-make test           # nextest (fallback cargo test)，copies yml for core tests
+make build          # cargo build + 复制 yml 配置到 target
+make release        # cargo build --release（opt-level=z, LTO, strip）
+make test           # nextest（回退到 cargo test），自动复制 yml 到 core
 make nextest        # cargo nextest run --workspace（需预装 cargo-nextest）
-make read / make ctl # cargo run (debug, same binary: ai-pad-app)
+make read / make ctl # cargo run（debug 模式，同一个二进制：ai-pad-app）
 make check          # cargo check
 make clippy         # cargo clippy -- -W clippy::all
 make clean          # cargo clean
 
-# Frontend tests (Vitest + jsdom)
-cd app/frontend && npx vitest run     # 3 test files
-cd app/frontend && npx vitest         # watch mode
+# 前端测试（Vitest + jsdom）
+cd app/frontend && npx vitest run     # 3 个测试文件
+cd app/frontend && npx vitest         # 监听模式
 
-# Run single test
+# 运行单个测试
 cargo test -p ai-pad-core pet::tests::test_walk_moves   # core 单测
 cargo test -p ai-pad-app voice::tests                    # app 单测
-cargo test -p ai-pad-app --features ipc-tests            # Tauri IPC 集成测试(需 WebView2)
+cargo test -p ai-pad-app --features ipc-tests            # Tauri IPC 集成测试（需 WebView2）
 
-# Insta snapshot workflow
+# Insta 快照工作流
 cargo insta test       # 运行测试，生成 .snap.new（未审查的快照）
-cargo insta review     # 交互式审查，接受/拒绝快照变更
+cargo insta review     # 交互式审查，逐个接受/拒绝快照变更
 cargo insta accept     # 一键接受所有新快照
 ```
 
@@ -34,16 +34,16 @@ cargo insta accept     # 一键接受所有新快照
 $env:CMAKE_POLICY_VERSION_MINIMUM="3.5"; make build
 ```
 
-## Architecture
+## 架构
 
-Rust workspace (`core` + `app`)，Tauri 2.0 多窗口桌面应用。无 npm 打包，前端是纯静态 HTML/JS/CSS。
+Rust workspace（`core` + `app`），Tauri 2.0 多窗口桌面应用。无 npm 打包，前端是纯静态 HTML/JS/CSS。
 
 ### Workspace 结构
 
 | Crate | 职责 | 关键依赖 |
 |-------|------|----------|
-| **core** (`ai-pad-core`) | 纯逻辑，零 UI 依赖，可独立单测 | rig-core(AI), serde_yaml, windows-sys |
-| **app** (`ai-pad-app`) | Tauri 2.0 壳：窗口管理、手柄循环、IPC、托盘 | tauri 2, sdl2(bundled), tokio |
+| **core**（`ai-pad-core`） | 纯逻辑，零 UI 依赖，可独立单测 | rig-core(AI), serde_yaml, windows-sys |
+| **app**（`ai-pad-app`） | Tauri 2.0 壳：窗口管理、手柄循环、IPC、托盘 | tauri 2, sdl2(bundled), tokio |
 
 ### 核心数据流
 
@@ -51,14 +51,14 @@ Rust workspace (`core` + `app`)，Tauri 2.0 多窗口桌面应用。无 npm 打�
 SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
   ├── bridge::handle_button_press() → PetCommand
   │     └── agent.chat_stream() → 流式 AI 回复 → bubble 窗口
-  ├── voice 按住/释放 → voice.rs (generation 防残留) → AI 对话
-  ├── panel 导航 → panel.rs (方向键/A/B 独占)
+  ├── voice 按住/释放 → voice.rs（generation 防残留）→ AI 对话
+  ├── panel 导航 → panel.rs（方向键/A/B 独占）
   └── actions.yml 热键/启动 → hotkey.rs SendInput
 
 截图观察线程 → screenshot_loop() [screenshot.rs, 独立线程]
   ├── BitBlt 截屏 → dHash 去重 → 缩放 → JPEG 编码
   ├── vision.rs → Vision API 分析 → 描述文本 → bubble 显示
-  └── 存储 ~/.ai-pad/screenshots/YYYY-MM-DD/ (7 天自动清理)
+  └── 存储 ~/.ai-pad/screenshots/YYYY-MM-DD/（7 天自动清理）
 ```
 
 ### 多窗口模型（4 个 WebView2 窗口）
@@ -74,17 +74,17 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 
 ### IPC 通信模式
 
-- Rust→JS: `app.emit("event-name", payload)` — JS 用 `window.__TAURI__.event.listen()` 接收
-- JS→Rust: `window.__TAURI__.core.invoke("cmd_xxx", args)` — Rust 用 `#[tauri::command]` 注册
-- 共享状态: `tauri::State<'_, SharedXxx>` + `Mutex<T>` 在命令间传递
+- Rust→JS：`app.emit("event-name", payload)` — JS 用 `window.__TAURI__.event.listen()` 接收
+- JS→Rust：`window.__TAURI__.core.invoke("cmd_xxx", args)` — Rust 用 `#[tauri::command]` 注册
+- 共享状态：`tauri::State<'_, SharedXxx>` + `Mutex<T>` 在命令间传递
 
 ### AI Agent
 
-配置优先级: 环境变量 > `~/.claude/settings.json` > `.env` > 默认值。4 个内置 Tool: launch_program / shell / read_file / get_time。max_tokens 固定 256K。
+配置优先级：环境变量 > `~/.claude/settings.json` > `.env` > 默认值。4 个内置 Tool：launch_program / shell / read_file / get_time。max_tokens 固定 256K。
 
 ### 截图观察系统
 
-独立线程定时截图（默认 30s），流程：BitBlt 捕获 → 熄屏检测 (`SM_MONITORISOFF` + 全黑帧采样) → dHash 去重 → 缩放到 max_width → JPEG 编码 → Vision API (Anthropic Messages) 分析 → 结果通过 bubble 显示并保存到 `~/.ai-pad/screenshots/`。支持多显示器水平拼接 + 调试多分辨率对比。配置在 `prompts.yml` 的 `screenshot` 段。
+独立线程定时截图（默认 30s），流程：BitBlt 捕获 → 熄屏检测（`SM_MONITORISOFF` + 全黑帧采样）→ dHash 去重 → 缩放到 max_width → JPEG 编码 → Vision API（Anthropic Messages）分析 → 结果通过 bubble 显示并保存到 `~/.ai-pad/screenshots/`。支持多显示器水平拼接 + 调试多分辨率对比。配置在 `prompts.yml` 的 `screenshot` 段。
 
 ### 记忆系统
 
@@ -98,20 +98,20 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 
 日志双写：stderr（带颜色）+ 文件 `~/.ai-pad/logs/`（按日滚动，默认 `ai_pad_app=info,ai_pad_core=debug`）。`.env` 多级加载：exe 同目录 → CWD → 项目根目录（兜底 target/debug 向上两级）。
 
-## Code Conventions
+## 编码规范
 
-- **日志**: 统一用 `tracing` crate（info/warn/error/debug），不用 `eprintln!`
-- **中文处理**: Rust 中字符串切片必须按字符边界（`.chars().take(n)`），不可用字节索引
-- **前端**: 无框架，IIFE 模块，通过 `window.__TAURI__` API 与后端通信
-- **配置**: `actions.yml`、`buttons.yml`、`prompts.yml` 运行时从 exe 同目录加载，构建时需 cp 到 target/
+- **日志**：统一用 `tracing` crate（info/warn/error/debug），不用 `eprintln!`
+- **中文处理**：Rust 中字符串切片必须按字符边界（`.chars().take(n)`），不可用字节索引
+- **前端**：无框架，IIFE 模块，通过 `window.__TAURI__` API 与后端通信
+- **配置**：`actions.yml`、`buttons.yml`、`prompts.yml` 运行时从 exe 同目录加载，构建时需 cp 到 target/
 
-## Testing Conventions
+## 测试规范
 
 ### 测试框架
 
-| 框架 | 用途 | dev-dependency |
-|------|------|----------------|
-| `insta` (yaml+redactions) | 快照测试：serde 序列化、API 请求体、配置解析 | core |
+| 框架 | 用途 | 所在 crate |
+|------|------|-----------|
+| `insta`（yaml+redactions） | 快照测试：serde 序列化、API 请求体、配置解析 | core |
 | `rstest` | 参数化测试 + 测试夹具，替代重复的 test 函数 | core |
 | `wiremock` | HTTP mock：模拟 Anthropic API 响应 | core |
 | `mockall` | Trait mock（预留，暂未使用） | core |
@@ -123,11 +123,11 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 
 1. **序列化/反序列化测试用 insta 快照**，不要手写 `assert!(json.contains(...))`。快照自动捕获完整结构，字段增删一目了然。
    ```rust
-   // Good: 快照捕获完整结构
+   // 正确：快照捕获完整结构
    insta::assert_yaml_snapshot!(record);
-   // Good: 动态字段用 redaction 替换
+   // 正确：动态字段用 redaction 替换
    insta::assert_yaml_snapshot!(body, { ".messages[0].content[0].text" => "[prompt]" });
-   // Bad: 手动逐字段断言，新增字段时不会报警
+   // 错误：手动逐字段断言，新增字段时不会报警
    assert_eq!(body["model"], "claude-sonnet-4-20250514");
    ```
 
@@ -147,11 +147,11 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 
 4. **状态机/边界测试用 proptest 属性测试**，已有 `pet::prop_tests` 模块。适用于"对任意合法输入都不 panic"的场景。
 
-5. **insta 快照文件 (`*.snap`) 必须提交到 git**，它们是测试的基线。`.snap.new` 文件不应提交（已在 `.gitignore`）。修改序列化格式后运行 `cargo insta review` 审查变更。
+5. **insta 快照文件（`*.snap`）必须提交到 git**，它们是测试的基线。`.snap.new` 文件不应提交（已在 `.gitignore`）。修改序列化格式后运行 `cargo insta review` 审查变更。
 
-6. **测试内联在源文件底部** (`#[cfg(test)] mod tests`)，不单独建 `tests/` 目录。快照文件在 `core/src/snapshots/`。
+6. **测试内联在源文件底部**（`#[cfg(test)] mod tests`），不单独建 `tests/` 目录。快照文件在 `core/src/snapshots/`。
 
-## Key Files
+## 关键文件
 
 - `app/src/lib.rs` — 主入口，gamepad_loop（~520 行）+ 右键菜单（Win32 TrackPopupMenu）+ .env 加载 + 全局热键注册
 - `app/src/main.rs` — --debug 控制台分配 + 日志双写（stderr + `~/.ai-pad/logs/` 按日滚动）
