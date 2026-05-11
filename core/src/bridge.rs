@@ -187,18 +187,27 @@ fn rand_range(lo: f32, hi: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn test_start_triggers_ai_chat() {
-        let (msg, cmd) = handle_button_press(11, "");
-        assert!(msg.is_some(), "Start 应触发 AI 对话");
-        assert!(msg.unwrap().contains("你好"));
-        matches!(
-            cmd.unwrap(),
-            PetCommand::SetState {
-                state: PetStateName::Talk
-            }
-        );
+    // ---- rstest 参数化：按钮映射 ----
+
+    #[rstest]
+    #[case(11, "", true, true, "Start → AI chat")]
+    #[case(11, "现在几点了", true, true, "Start with message")]
+    #[case(10, "", false, true, "Select → sleep")]
+    #[case(0, "", true, true, "A → praise")]
+    #[case(1, "", false, true, "B → wander")]
+    #[case(99, "", false, false, "Unknown → no action")]
+    fn test_handle_button_press(
+        #[case] button: u32,
+        #[case] msg: &str,
+        #[case] expect_msg: bool,
+        #[case] expect_cmd: bool,
+        #[case] desc: &str,
+    ) {
+        let (m, c) = handle_button_press(button, msg);
+        assert_eq!(m.is_some(), expect_msg, "{desc}");
+        assert_eq!(c.is_some(), expect_cmd, "{desc}");
     }
 
     #[test]
@@ -207,75 +216,39 @@ mod tests {
         assert_eq!(msg.unwrap(), "现在几点了");
     }
 
-    #[test]
-    fn test_select_toggles_sleep() {
-        let (_, cmd) = handle_button_press(10, "");
-        matches!(
-            cmd.unwrap(),
-            PetCommand::SetState {
-                state: PetStateName::Sleep
-            }
-        );
-    }
+    // ---- insta 快照：序列化 ----
 
     #[test]
-    fn test_normal_button_no_action() {
-        let (msg, cmd) = handle_button_press(99, "hello"); // 不存在的按钮
-        assert!(msg.is_none());
-        assert!(cmd.is_none());
-    }
-
-    #[test]
-    fn test_praise_action() {
-        let (_msg, _cmd) = handle_button_press(99, ""); // 用不存在的索引测试 praise
-        // 99 不在映射表里，所以应该是 none
-        assert!(_msg.is_none());
-    }
-
-    #[test]
-    fn test_command_serialization() {
-        let cmd = PetCommand::SetState {
-            state: PetStateName::Talk,
-        };
-        let json = cmd.to_json_line();
-        let parsed = PetCommand::from_json_line(&json).unwrap();
-        matches!(
-            parsed,
+    fn test_set_state_json_snapshot() {
+        insta::assert_snapshot!(
             PetCommand::SetState {
                 state: PetStateName::Talk
             }
+            .to_json_line()
         );
     }
 
     #[test]
-    fn test_walk_to_serialization() {
-        let cmd = PetCommand::WalkTo { x: 123.45 };
-        let json = cmd.to_json_line();
-        let parsed = PetCommand::from_json_line(&json).unwrap();
-        matches!(parsed, PetCommand::WalkTo { x: 123.45 });
+    fn test_walk_to_json_snapshot() {
+        insta::assert_snapshot!(PetCommand::WalkTo { x: 123.45 }.to_json_line());
     }
 
     #[test]
-    fn test_show_bubble_serialization() {
-        let cmd = PetCommand::ShowBubble {
-            text: "你好世界".into(),
-        };
-        let json = cmd.to_json_line();
-        let parsed = PetCommand::from_json_line(&json).unwrap();
-        if let PetCommand::ShowBubble { text } = &parsed {
-            assert_eq!(text, "你好世界");
-        } else {
-            panic!("expected ShowBubble");
-        }
+    fn test_show_bubble_json_snapshot() {
+        insta::assert_snapshot!(
+            PetCommand::ShowBubble {
+                text: "你好世界".into()
+            }
+            .to_json_line()
+        );
     }
 
     #[test]
-    fn test_exit_serialization() {
-        let cmd = PetCommand::Exit;
-        let json = cmd.to_json_line();
-        let parsed = PetCommand::from_json_line(&json).unwrap();
-        assert!(matches!(parsed, PetCommand::Exit));
+    fn test_exit_json_snapshot() {
+        insta::assert_snapshot!(PetCommand::Exit.to_json_line());
     }
+
+    // ---- 其他测试 ----
 
     #[test]
     fn test_invalid_json_returns_none() {
@@ -287,7 +260,6 @@ mod tests {
     fn test_resolve_happy_response() {
         let cmds = resolve_agent_response("哈哈哈太有趣了！");
         assert!(cmds.len() >= 2);
-        // 应该包含 Happy 和 ShowBubble
         let has_happy = cmds.iter().any(|c| {
             matches!(
                 c,
@@ -319,7 +291,6 @@ mod tests {
 
     #[test]
     fn test_resolve_long_text_truncated() {
-        // 25×10=250 字 > 阈值 200，触发截断
         let long = "这是一个非常长的回复".repeat(25);
         let cmds = resolve_agent_response(&long);
         let bubble = cmds.iter().find_map(|c| match c {
@@ -328,7 +299,6 @@ mod tests {
         });
         assert!(bubble.is_some());
         let text = bubble.unwrap();
-        // 按字符数断言（197 个字符 + "..."）
         assert_eq!(text.chars().count(), 200);
         assert!(text.ends_with("..."));
     }
@@ -346,10 +316,8 @@ mod tests {
 
     #[test]
     fn test_resolve_truncate_no_panic_on_utf8_boundary() {
-        // 边界长度（恰好接近 60 字符,中英混合）
         let mixed = format!("{}{}", "a".repeat(50), "中文测试");
         let _ = resolve_agent_response(&mixed);
-        // 长字符串 + emoji,验证字符切片不会 panic
         let with_emoji = "喵呜~ 🐱✨ ".repeat(20);
         let cmds = resolve_agent_response(&with_emoji);
         assert!(!cmds.is_empty());

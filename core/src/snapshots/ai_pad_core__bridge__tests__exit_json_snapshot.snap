@@ -1,0 +1,5 @@
+---
+source: core/src/bridge.rs
+expression: "PetCommand::Exit.to_json_line()"
+---
+{"cmd":"Exit"}

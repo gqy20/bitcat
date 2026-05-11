@@ -47,3 +47,6 @@ core/prompts.yml
 core/buttons.yml
 app/buttons.yml
 app/actions.yml
+
+# insta snapshot pending reviews
+*.snap.new

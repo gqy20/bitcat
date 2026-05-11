@@ -1,0 +1,14 @@
+---
+source: core/src/prompts.rs
+expression: cfg
+---
+agent:
+  preamble: 自定义 agent 提示词
+vision:
+  prompt: 自定义视觉提示词
+  prompt_multi: 多屏提示
+memory:
+  max_entries: 20
+  max_context_chars: 1500
+  max_user_chars: 100
+  max_reply_chars: 200

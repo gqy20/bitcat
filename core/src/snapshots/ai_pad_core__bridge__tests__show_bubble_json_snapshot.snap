@@ -1,0 +1,5 @@
+---
+source: core/src/bridge.rs
+expression: "PetCommand::ShowBubble { text: \"你好世界\".into() }.to_json_line()"
+---
+{"cmd":"ShowBubble","text":"你好世界"}

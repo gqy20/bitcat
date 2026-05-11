@@ -1,0 +1,5 @@
+---
+source: core/src/bridge.rs
+expression: "PetCommand::SetState { state: PetStateName::Talk }.to_json_line()"
+---
+{"cmd":"SetState","state":"Talk"}

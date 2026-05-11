@@ -22,3 +22,7 @@ tempfile = "3"
 
 [dev-dependencies]
 proptest = "1"
+insta = { version = "1", features = ["yaml", "redactions"] }
+rstest = "0.25"
+wiremock = "0.6"
+mockall = "0.13"

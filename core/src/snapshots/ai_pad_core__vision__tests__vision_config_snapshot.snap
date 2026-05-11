@@ -1,0 +1,6 @@
+---
+source: core/src/vision.rs
+expression: cfg
+---
+vision_model: claude-sonnet-4-20250514
+vision_max_tokens: 1024

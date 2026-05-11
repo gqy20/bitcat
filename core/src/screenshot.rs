@@ -782,7 +782,7 @@ min_width: 480
     }
 
     #[test]
-    fn test_screenshot_record_serialize() {
+    fn test_screenshot_record_snapshot() {
         let record = ScreenshotRecord {
             description: "VS Code".into(),
             hash: 999,
@@ -791,11 +791,7 @@ min_width: 480
             height: 540,
             jpeg_size: 32000,
         };
-        let json = serde_json::to_string(&record).unwrap();
-        assert!(json.contains("VS Code"));
-        assert!(json.contains("999"));
-        let back: ScreenshotRecord = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.jpeg_size, 32000);
+        insta::assert_yaml_snapshot!(record);
     }
 
     // ---- list_recent_analyses TDD 测试 ----

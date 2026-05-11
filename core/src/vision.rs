@@ -81,6 +81,45 @@ pub fn build_api_url(config: &AiConfig) -> String {
     format!("{}/v1/messages", base)
 }
 
+/// 发送视觉分析 HTTP 请求并解析响应。
+async fn send_vision_request(
+    client: &reqwest::Client,
+    url: &str,
+    api_key: &str,
+    body: &Value,
+) -> Result<String, String> {
+    let start = std::time::Instant::now();
+    let response = client
+        .post(url)
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type", "application/json")
+        .json(body)
+        .send()
+        .await
+        .map_err(|e| format!("视觉 API 请求失败: {e}"))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        warn!(status = %status, "视觉 API 返回错误");
+        return Err(format!("视觉 API 返回错误 {}: {}", status, text));
+    }
+
+    let json: Value = response
+        .json()
+        .await
+        .map_err(|e| format!("解析视觉 API 响应失败: {e}"))?;
+    let elapsed = start.elapsed();
+    debug!(
+        elapsed_ms = elapsed.as_millis(),
+        chars = json.to_string().chars().count(),
+        "视觉分析完成"
+    );
+
+    parse_vision_response(&json)
+}
+
 /// 发送视觉分析请求。返回 AI 描述文本。
 pub async fn analyze_screenshot(
     config: &AiConfig,
@@ -110,36 +149,7 @@ pub async fn analyze_screenshot(
     debug!(model, url, "视觉分析请求");
 
     let client = reqwest::Client::new();
-    let start = std::time::Instant::now();
-    let response = client
-        .post(&url)
-        .header("x-api-key", &config.api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("视觉 API 请求失败: {e}"))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        warn!(status = %status, "视觉 API 返回错误");
-        return Err(format!("视觉 API 返回错误 {}: {}", status, text));
-    }
-
-    let json: Value = response
-        .json()
-        .await
-        .map_err(|e| format!("解析视觉 API 响应失败: {e}"))?;
-    let elapsed = start.elapsed();
-    debug!(
-        elapsed_ms = elapsed.as_millis(),
-        chars = json.to_string().chars().count(),
-        "视觉分析完成"
-    );
-
-    parse_vision_response(&json)
+    send_vision_request(&client, &url, &config.api_key, &body).await
 }
 
 #[cfg(test)]
@@ -154,65 +164,38 @@ mod tests {
         assert!(def.prompt.contains("编造"));
     }
 
+    // ---- insta 快照测试：请求体结构 ----
+
     #[test]
-    fn test_build_request_body_has_required_fields() {
-        let def = VisionPromptConfig::default();
-        let body = build_vision_request("claude-sonnet-4-20250514", &def.prompt, "dGVzdA==");
-        assert!(body.get("model").is_some());
-        assert!(body.get("messages").is_some());
-        assert!(body.get("max_tokens").is_some());
-        assert_eq!(body["model"], "claude-sonnet-4-20250514");
+    fn test_build_request_body_snapshot() {
+        let body = build_vision_request("claude-sonnet-4-20250514", "test prompt", "AA==");
+        insta::assert_yaml_snapshot!(body, {
+            ".messages[0].content[0].text" => "[prompt]"
+        });
     }
 
     #[test]
-    fn test_request_body_message_structure() {
-        let def = VisionPromptConfig::default();
-        let body = build_vision_request("claude-sonnet-4-20250514", &def.prompt, "AA==");
-        let messages = body["messages"].as_array().unwrap();
-        assert_eq!(messages.len(), 1);
-
-        let content = messages[0]["content"].as_array().unwrap();
-        assert_eq!(content.len(), 2);
-
-        assert_eq!(content[0]["type"], "text");
-        assert!(content[0]["text"].is_string());
-
-        assert_eq!(content[1]["type"], "image");
-        let source = &content[1]["source"];
-        assert_eq!(source["type"], "base64");
-        assert_eq!(source["media_type"], "image/jpeg");
-        assert!(source["data"].is_string());
-    }
-
-    #[test]
-    fn test_request_body_uses_config_model() {
-        let def = VisionPromptConfig::default();
-        let body = build_vision_request("gpt-4o", &def.prompt, "AA==");
-        assert_eq!(body["model"], "gpt-4o");
-    }
-
-    #[test]
-    fn test_build_request_body_multi_monitor() {
+    fn test_build_request_body_multi_snapshot() {
         let def = VisionPromptConfig::default();
         let body = build_vision_request_multi(
             "claude-sonnet-4-20250514",
-            &def.prompt,
+            "test prompt",
             "AA==",
             2,
             &def.prompt_multi,
         );
-        let messages = body["messages"].as_array().unwrap();
-        let text_block = &messages[0]["content"].as_array().unwrap()[0];
-        let prompt_text = text_block["text"].as_str().unwrap();
-        assert!(prompt_text.contains("2"));
+        insta::assert_yaml_snapshot!(body, {
+            ".messages[0].content[0].text" => "[prompt]"
+        });
     }
 
+    // ---- insta 快照测试：配置反序列化 ----
+
     #[test]
-    fn test_vision_config_deserialize() {
+    fn test_vision_config_snapshot() {
         let json = r#"{"vision_model":"claude-sonnet-4-20250514","vision_max_tokens":1024}"#;
         let cfg: VisionConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(cfg.vision_model, Some("claude-sonnet-4-20250514".into()));
-        assert_eq!(cfg.vision_max_tokens, Some(1024));
+        insta::assert_yaml_snapshot!(cfg);
     }
 
     #[test]
@@ -221,6 +204,8 @@ mod tests {
         assert!(cfg.vision_model.is_none());
         assert_eq!(cfg.vision_max_tokens, None);
     }
+
+    // ---- 响应解析 ----
 
     #[test]
     fn test_parse_response_standard_format() {
@@ -261,6 +246,8 @@ mod tests {
         assert_eq!(result, "第一段。第二段。");
     }
 
+    // ---- API URL 构建 ----
+
     #[test]
     fn test_build_api_url_default() {
         let config = AiConfig {
@@ -298,5 +285,57 @@ mod tests {
             build_api_url(&config),
             "https://proxy.example.com/v1/messages"
         );
+    }
+}
+
+// ---- wiremock HTTP mock 测试 ----
+
+#[cfg(test)]
+mod wiremock_tests {
+    use super::*;
+    use wiremock::matchers::{header, method};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn test_client() -> reqwest::Client {
+        reqwest::Client::builder().no_proxy().build().unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_vision_api_success() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(header("x-api-key", "test-key"))
+            .and(header("anthropic-version", "2023-06-01"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "content": [{ "type": "text", "text": "VS Code 编辑器" }]
+            })))
+            .mount(&server)
+            .await;
+
+        let client = test_client();
+        let url = format!("{}/v1/messages", server.uri());
+        let body = build_vision_request("test-model", "prompt", "AA==");
+        let result = send_vision_request(&client, &url, "test-key", &body).await;
+        assert_eq!(result.unwrap(), "VS Code 编辑器");
+    }
+
+    #[tokio::test]
+    async fn test_vision_api_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(429).set_body_json(json!({
+                    "error": { "type": "rate_limit_error", "message": "slow down" }
+                })),
+            )
+            .mount(&server)
+            .await;
+
+        let client = test_client();
+        let url = format!("{}/v1/messages", server.uri());
+        let body = build_vision_request("test-model", "prompt", "AA==");
+        let result = send_vision_request(&client, &url, "key", &body).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("429"));
     }
 }

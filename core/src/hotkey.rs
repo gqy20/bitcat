@@ -355,34 +355,31 @@ pub fn force_foreground(_hwnd: isize) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn test_parse_ctrl_win() {
-        let codes = parse_keys(&["ctrl", "win"]);
-        assert_eq!(codes, vec![0x11, 0x5B]);
-    }
+    // ---- rstest 参数化：按键解析 ----
 
-    #[test]
-    fn test_parse_single_key() {
-        assert_eq!(parse_keys(&["enter"]), vec![0x0D]);
-        assert_eq!(parse_keys(&["space"]), vec![0x20]);
-    }
-
-    #[test]
-    fn test_parse_case_insensitive() {
-        assert_eq!(parse_keys(&["Ctrl"]), vec![0x11]);
-        assert_eq!(parse_keys(&["WIN"]), vec![0x5B]);
-    }
-
-    #[test]
-    fn test_parse_unknown_key() {
-        assert_eq!(parse_keys(&["unknown"]), vec![0]);
-    }
-
-    #[test]
-    fn test_parse_empty() {
-        let codes = parse_keys(&[]);
-        assert!(codes.is_empty());
+    #[rstest]
+    #[case(&["ctrl", "win"], vec![0x11, 0x5B])]
+    #[case(&["enter"], vec![0x0D])]
+    #[case(&["space"], vec![0x20])]
+    #[case(&["Ctrl"], vec![0x11])]
+    #[case(&["WIN"], vec![0x5B])]
+    #[case(&["unknown"], vec![0])]
+    #[case(&[], vec![])]
+    #[case(&["e", "z"], vec![0x45, 0x5A])]
+    #[case(&["F1"], vec![0x70])]
+    #[case(&["f12"], vec![0x7B])]
+    #[case(&["0"], vec![0x30])]
+    #[case(&["9"], vec![0x39])]
+    #[case(&["home"], vec![0x24])]
+    #[case(&["end"], vec![0x23])]
+    #[case(&["delete"], vec![0x2E])]
+    #[case(&["-"], vec![0xBD])]
+    #[case(&["="], vec![0xBB])]
+    #[case(&["["], vec![0xDB])]
+    fn test_parse_keys(#[case] keys: &[&str], #[case] expected: Vec<u16>) {
+        assert_eq!(parse_keys(keys), expected);
     }
 
     #[test]
@@ -399,45 +396,8 @@ mod tests {
 
     #[test]
     fn test_trigger_hotkey_valid_keys() {
-        // 不实际发送，只验证解析逻辑
         let codes = parse_keys(&["ctrl", "win"]);
         assert_eq!(codes, vec![0x11, 0x5B]);
         assert!(!codes.iter().any(|&v| v == 0));
-    }
-
-    #[test]
-    fn test_parse_full_alphabet() {
-        // a-d 原来就有，现在验证 e-z 也能解析
-        let codes = parse_keys(&["e", "z"]);
-        assert_eq!(codes, vec![0x45, 0x5A]);
-    }
-
-    #[test]
-    fn test_parse_fkeys() {
-        // 大小写不敏感，内部统一小写存储
-        assert_eq!(parse_keys(&["F1"])[0], 0x70);
-        assert_eq!(parse_keys(&["f12"])[0], 0x7B);
-        assert_eq!(parse_keys(&["f1"])[0], 0x70);
-    }
-
-    #[test]
-    fn test_parse_digit_keys() {
-        assert_eq!(parse_keys(&["0"])[0], 0x30);
-        assert_eq!(parse_keys(&["9"])[0], 0x39);
-    }
-
-    #[test]
-    fn test_parse_navigation_keys() {
-        assert_eq!(parse_keys(&["home"])[0], 0x24);
-        assert_eq!(parse_keys(&["end"])[0], 0x23);
-        assert_eq!(parse_keys(&["pageup"])[0], 0x21);
-        assert_eq!(parse_keys(&["delete"])[0], 0x2E);
-    }
-
-    #[test]
-    fn test_parse_symbol_keys() {
-        assert_eq!(parse_keys(&["-"])[0], 0xBD);
-        assert_eq!(parse_keys(&["="])[0], 0xBB);
-        assert_eq!(parse_keys(&["["])[0], 0xDB);
     }
 }

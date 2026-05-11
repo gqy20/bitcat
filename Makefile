@@ -10,7 +10,7 @@
 
 export CMAKE_POLICY_VERSION_MINIMUM = 3.5
 
-.PHONY: build test read ctl release check clippy clean \
+.PHONY: build test nextest read ctl release check clippy clean \
         py-read py-ctl py-test all
 
 # ---- Rust ----
@@ -29,7 +29,11 @@ release:
 
 test:
 	cp buttons.yml actions.yml prompts.yml core/ 2>/dev/null || true
-	cargo test
+	cargo nextest run --workspace 2>nul || cargo test --workspace
+
+nextest:
+	cp buttons.yml actions.yml prompts.yml core/ 2>/dev/null || true
+	cargo nextest run --workspace
 
 read:
 	cargo run

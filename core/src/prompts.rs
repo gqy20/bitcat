@@ -125,7 +125,7 @@ mod tests {
     }
 
     #[test]
-    fn test_full_config_deserialize() {
+    fn test_full_config_snapshot() {
         let yaml = r#"
 agent:
   preamble: "自定义 agent 提示词"
@@ -134,9 +134,7 @@ vision:
   prompt_multi: "多屏提示"
 "#;
         let cfg: PromptsConfig = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(cfg.agent.preamble, "自定义 agent 提示词");
-        assert_eq!(cfg.vision.prompt, "自定义视觉提示词");
-        assert_eq!(cfg.vision.prompt_multi, "多屏提示");
+        insta::assert_yaml_snapshot!(cfg);
     }
 
     #[test]

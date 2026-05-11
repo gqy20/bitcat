@@ -1,0 +1,5 @@
+---
+source: core/src/bridge.rs
+expression: "PetCommand::WalkTo { x: 123.45 }.to_json_line()"
+---
+{"cmd":"WalkTo","x":123.45}

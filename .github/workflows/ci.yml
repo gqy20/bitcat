@@ -41,9 +41,14 @@ jobs:
           copy buttons.yml app\
           copy actions.yml app\
 
-      - name: Run tests (cargo test)
+      - name: Install nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - name: Run tests (nextest)
         if: ${{ !cancelled() }}
-        run: cargo test --workspace -- --test-threads=4 2>&1
+        run: cargo nextest run --profile ci --workspace 2>&1
 
       - name: Check formatting
         if: ${{ !cancelled() }}
@@ -52,14 +57,3 @@ jobs:
       - name: Clippy lints
         if: ${{ !cancelled() }}
         run: cargo clippy --workspace -- -D warnings 2>&1
-
-  # 当网络恢复后，取消下面的注释启用 nextest 加速
-  # test-fast:
-  #   name: Fast Tests (nextest)
-  #   runs-on: windows-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: dtolnay/rust-toolchain@stable
-  #     - uses: Swatinem/rust-cache@v2
-  #     - run: copy core\buttons.yml core\ && copy core\actions.yml core\
-  #     - run: cargo nextest run --profile ci --workspace --all-features
