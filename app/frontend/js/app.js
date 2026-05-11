@@ -9,7 +9,7 @@
   let prevState = null;
   let bodyEl;
 
-  // 折叠状态
+  // 折叠状态（默认值，initPullState 会从 Rust 侧拉取真实值）
   let collapsed = false;
   let alwaysOnTop = true;
 
@@ -23,15 +23,46 @@
     }
   }
 
-  function init() {
+  async function init() {
     canvas = document.getElementById('sprite');
     ctx = canvas.getContext('2d');
     bodyEl = document.body;
+
+    // Pull 模式：从 Rust 侧拉取当前窗口状态（替代不可靠的 emit push）
+    await initPullState();
+
     syncStateClass(pet.state);
     requestAnimationFrame(loop);
     setupTauriEvents();
     setupContextMenu();
     setupDrag();
+  }
+
+  // ========== Pull 模式：前端 init 时从 Rust 拉取窗口状态 ==========
+  // 解决 emit 时序问题：build() 返回时 JS 的 __TAURI__ API 还未初始化，
+  // listen() 还没注册，emit 的事件会丢失（Tauri Issue #7835/#9296）
+
+  async function initPullState() {
+    try {
+      if (!window.__TAURI__ || !window.__TAURI__.core) return;
+      const snap = await window.__TAURI__.core.invoke('cmd_get_window_state');
+      console.log('[pet] pull 状态:', snap);
+
+      if (snap.collapsed !== undefined) collapsed = snap.collapsed;
+      if (snap.alwaysOnTop !== undefined) alwaysOnTop = snap.alwaysOnTop;
+
+      // 只调整 canvas 尺寸和 CSS，不调用 cmd_recreate_pet_window（避免无限循环）
+      // 窗口重建只由托盘事件驱动（pet-toggle-collapse）
+      const w = collapsed ? 48 : 128;
+      const h = collapsed ? 48 : 128;
+      canvas.width = w;
+      canvas.height = h;
+      syncStateClass(pet.state);
+    } catch (err) {
+      console.warn('[pet] pull 状态失败，使用默认值:', err);
+      collapsed = false;
+      alwaysOnTop = true;
+    }
   }
 
   // ========== 拖拽：Tauri 原生 startDragging（自动处理 DPI）==========
@@ -94,11 +125,10 @@
     });
   }
 
-  // ========== 折叠/展开（由 Rust 托盘驱动）==========
+  // ========== 折叠/展开（由 Rust 托盘事件驱动 + init pull）==========
 
   async function applyCollapse() {
     console.log('[pet] applyCollapse:', { collapsed, state: pet.state });
-    syncStateClass(pet.state);
 
     const w = collapsed ? 48 : 128;
     const h = collapsed ? 48 : 128;
@@ -137,31 +167,25 @@
   // ========== Tauri 事件 ==========
 
   function setupTauriEvents() {
-    if (window.__TAURI__) {
-      window.__TAURI__.event.listen('pet-event', (event) => {
-        pet.applyEvent(event.payload);
-      });
+    if (!window.__TAURI__) return;
 
-      window.__TAURI__.event.listen('pet-toggle-collapse', (event) => {
-        console.log('[pet] 收到 pet-toggle-collapse:', event.payload);
-        collapsed = event.payload;
-        applyCollapse();
-      });
+    window.__TAURI__.event.listen('pet-event', (event) => {
+      pet.applyEvent(event.payload);
+    });
 
-      window.__TAURI__.event.listen('pet-toggle-top', (event) => {
-        console.log('[pet] 收到 pet-toggle-top:', event.payload);
-        alwaysOnTop = event.payload;
-        applyAlwaysOnTop();
-      });
+    // 托盘实时事件：折叠/展开切换（非 init，是用户主动操作）
+    window.__TAURI__.event.listen('pet-toggle-collapse', (event) => {
+      console.log('[pet] 收到 pet-toggle-collapse:', event.payload);
+      collapsed = event.payload;
+      applyCollapse();
+    });
 
-      // 窗口重建后 Rust 同步当前状态到新 JS 实例（只设变量，不重建）
-      window.__TAURI__.event.listen('pet-sync-state', (event) => {
-        console.log('[pet] 收到 pet-sync-state:', event.payload);
-        collapsed = event.payload[0];
-        alwaysOnTop = event.payload[1];
-        // 主循环下一帧会自动用新 collapsed 值选择 renderSprite/renderMini
-      });
-    }
+    // 托盘实时事件：置顶切换
+    window.__TAURI__.event.listen('pet-toggle-top', (event) => {
+      console.log('[pet] 收到 pet-toggle-top:', event.payload);
+      alwaysOnTop = event.payload;
+      applyAlwaysOnTop();
+    });
   }
 
   document.addEventListener('DOMContentLoaded', init);

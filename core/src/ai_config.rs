@@ -14,12 +14,12 @@ impl AiConfig {
     /// 优先级: 环境变量 > ~/.claude/settings.json > 默认值
     pub fn load() -> Result<Self, String> {
         // 1. 尝试环境变量
-        if let Ok(key) = env_fallback("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN") {
-            if let Ok(url) = std::env::var("ANTHROPIC_BASE_URL") {
-                let model = std::env::var("ANTHROPIC_MODEL")
-                    .unwrap_or_else(|_| "claude-sonnet-4-20250514".into());
-                return Ok(Self { api_key: key, base_url: url, model });
-            }
+        if let Ok(key) = env_fallback("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+            && let Ok(url) = std::env::var("ANTHROPIC_BASE_URL")
+        {
+            let model = std::env::var("ANTHROPIC_MODEL")
+                .unwrap_or_else(|_| "claude-sonnet-4-20250514".into());
+            return Ok(Self { api_key: key, base_url: url, model });
         }
 
         // 2. 回退到 settings.json
@@ -49,10 +49,10 @@ impl AiConfig {
     /// 既保证回复质量又不浪费。
     pub fn max_tokens(&self) -> u64 {
         // 环境变量覆盖
-        if let Ok(v) = std::env::var("ANTHROPIC_MAX_TOKENS") {
-            if let Ok(n) = v.parse() {
-                return n;
-            }
+        if let Ok(v) = std::env::var("ANTHROPIC_MAX_TOKENS")
+            && let Ok(n) = v.parse()
+        {
+            return n;
         }
         model_max_tokens(&self.model)
     }
@@ -90,11 +90,15 @@ struct EnvSection {
 fn env_fallback(a: &str, b: &str) -> Result<String, ()> {
     let a_val = std::env::var(a);
     let b_val = std::env::var(b);
-    if let Ok(v) = a_val {
-        if !v.is_empty() { return Ok(v); }
+    if let Ok(v) = a_val
+        && !v.is_empty()
+    {
+        return Ok(v);
     }
-    if let Ok(v) = b_val {
-        if !v.is_empty() { return Ok(v); }
+    if let Ok(v) = b_val
+        && !v.is_empty()
+    {
+        return Ok(v);
     }
     Err(())
 }

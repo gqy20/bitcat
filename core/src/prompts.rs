@@ -50,7 +50,7 @@ pub struct VisionPromptConfig {
     pub prompt_multi: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct PromptsConfig {
     #[serde(default)]
     pub agent: AgentPromptConfig,
@@ -81,16 +81,6 @@ impl Default for VisionPromptConfig {
         Self {
             prompt: default_vision_prompt(),
             prompt_multi: default_vision_prompt_multi(),
-        }
-    }
-}
-
-impl Default for PromptsConfig {
-    fn default() -> Self {
-        Self {
-            agent: AgentPromptConfig::default(),
-            vision: VisionPromptConfig::default(),
-            memory: MemoryConfig::default(),
         }
     }
 }

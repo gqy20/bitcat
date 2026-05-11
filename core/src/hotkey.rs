@@ -253,7 +253,7 @@ pub fn send_scroll_h(delta: i32) -> Result<(), String> {
 /// 便捷函数：通过按键名触发热键
 pub fn trigger_hotkey(key_names: &[&str], hold: f64) -> Result<(), String> {
     let vk_codes = parse_keys(key_names);
-    if vk_codes.iter().any(|&v| v == 0) {
+    if vk_codes.contains(&0) {
         return Err(format!("包含未知按键: {key_names:?}"));
     }
 

@@ -48,6 +48,16 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 let now_collapsed = !ws.collapsed.load(Ordering::SeqCst);
                 ws.collapsed.store(now_collapsed, Ordering::SeqCst);
 
+                // 折叠前保存当前窗口位置，展开时用此坐标重建
+                if now_collapsed {
+                    if let Some(win) = app.get_webview_window("pet") {
+                        if let Ok(pos) = win.outer_position() {
+                            *ws.last_position.lock().unwrap() = Some((pos.x, pos.y));
+                            info!(x = pos.x, y = pos.y, "保存折叠前位置");
+                        }
+                    }
+                }
+
                 let label = if now_collapsed { "展开" } else { "折叠" };
                 info!(collapsed = now_collapsed, "托盘: {}", label);
                 let _ = collapse_item.set_text(label);

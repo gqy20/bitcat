@@ -66,10 +66,10 @@ pub fn parse_vision_response(response: &Value) -> Result<String, String> {
 
     let mut texts = Vec::new();
     for block in content {
-        if block.get("type").and_then(|t| t.as_str()) == Some("text") {
-            if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
-                texts.push(text.to_string());
-            }
+        if block.get("type").and_then(|t| t.as_str()) == Some("text")
+            && let Some(text) = block.get("text").and_then(|t| t.as_str())
+        {
+            texts.push(text.to_string());
         }
     }
     Ok(texts.join(""))

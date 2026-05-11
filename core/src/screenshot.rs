@@ -2,17 +2,12 @@ use serde::{Deserialize, Serialize};
 
 // ---- 截图目标 ----
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "PascalCase")]
 pub enum ScreenshotTarget {
     Primary,
+    #[default]
     All,
-}
-
-impl Default for ScreenshotTarget {
-    fn default() -> Self {
-        Self::All
-    }
 }
 
 // ---- 截图配置 ----
@@ -314,10 +309,10 @@ pub fn list_recent_analyses(dir: &std::path::Path, count: u32) -> Vec<Screenshot
         if !name.ends_with("_analysis.json") {
             continue;
         }
-        if let Ok(raw) = std::fs::read_to_string(entry.path()) {
-            if let Ok(record) = serde_json::from_str::<ScreenshotRecord>(&raw) {
-                records.push((name, record));
-            }
+        if let Ok(raw) = std::fs::read_to_string(entry.path())
+            && let Ok(record) = serde_json::from_str::<ScreenshotRecord>(&raw)
+        {
+            records.push((name, record));
         }
     }
 
@@ -344,10 +339,10 @@ pub fn cleanup_old_screenshots(keep_days: u64) -> Result<u32, String> {
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
         // 目录名格式 YYYY-MM-DD，字符串比较即可判断新旧
-        if &*name_str < &*cutoff_str {
-            if std::fs::remove_dir_all(entry.path()).is_ok() {
-                removed += 1;
-            }
+        if *name_str < *cutoff_str
+            && std::fs::remove_dir_all(entry.path()).is_ok()
+        {
+            removed += 1;
         }
     }
 

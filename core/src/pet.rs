@@ -1,14 +1,15 @@
-/// 桌宠状态机与动画逻辑
-///
-/// 纯函数设计：状态转换和帧计算不依赖 ggez，方便单元测试。
+//! 桌宠状态机与动画逻辑
+//!
+//! 纯函数设计：状态转换和帧计算不依赖 ggez，方便单元测试。
 
 use serde::{Deserialize, Serialize};
 
 // ---- 状态枚举 ----
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum PetState {
     /// 待机（呼吸动画）
+    #[default]
     Idle,
     /// 走动中
     Walk,
@@ -56,12 +57,6 @@ impl PetState {
             Self::Happy => Some(2000),
             Self::Confused => Some(3000),
         }
-    }
-}
-
-impl Default for PetState {
-    fn default() -> Self {
-        Self::Idle
     }
 }
 
@@ -119,23 +114,21 @@ impl Pet {
         }
 
         // Walk 状态移动
-        if self.state == PetState::Walk {
-            if let Some(tx) = self.target_x {
-                let dx = tx - self.x;
-                if dx.abs() < self.speed * dt_ms as f32 / 1000.0 {
-                    self.x = tx;
-                } else {
-                    self.x += dx.signum() * self.speed * dt_ms as f32 / 1000.0;
-                }
-                self.facing_right = dx > 0.0;
+        if self.state == PetState::Walk && let Some(tx) = self.target_x {
+            let dx = tx - self.x;
+            if dx.abs() < self.speed * dt_ms as f32 / 1000.0 {
+                self.x = tx;
+            } else {
+                self.x += dx.signum() * self.speed * dt_ms as f32 / 1000.0;
             }
+            self.facing_right = dx > 0.0;
         }
 
         // 自动超时回退 Idle
-        if let Some(timeout) = self.state.auto_idle_timeout_ms() {
-            if self.state_time_ms >= timeout {
-                self.set_state(PetState::Idle);
-            }
+        if let Some(timeout) = self.state.auto_idle_timeout_ms()
+            && self.state_time_ms >= timeout
+        {
+            self.set_state(PetState::Idle);
         }
     }
 

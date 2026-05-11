@@ -31,17 +31,17 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: ai-pad-core -> target
           key: ${{ runner.os }}-cargo-${{ matrix.target }}
 
       - name: Copy config files for tests
         run: |
-          copy core\buttons.yml core\
-          copy core\actions.yml core\
+          copy buttons.yml core\
+          copy actions.yml core\
+          copy prompts.yml core\
 
       - name: Run tests (cargo test)
         if: ${{ !cancelled() }}
-        run: cargo test --workspace --all-features -- --test-threads=4 2>&1
+        run: cargo test --workspace -- --test-threads=4 2>&1
 
       - name: Check formatting
         if: ${{ !cancelled() }}

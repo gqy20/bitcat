@@ -11,7 +11,7 @@ use bubble::SharedBubble;
 use commands::{SharedPet, SharedWindowState};
 use voice::SharedVoice;
 use screenshot::SharedScreenshotState;
-use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 use ai_pad_core::action::{ActionConfig, ActionDef};
 use ai_pad_core::bridge::handle_button_press;
@@ -24,10 +24,11 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tracing::{info, warn, error, debug, instrument};
 use std::sync::atomic::Ordering;
 
-/// 销毁旧 pet 窗口并用新尺寸重建，恢复到原位置。
+/// 切换 pet 窗口显示模式：正常(128x128) / 折叠(48x48)。
 ///
-/// Windows 上 decorations:false + transparent:true 的窗口调用 setSize() 会静默失败
-/// (Tauri Issue #11975)，唯一可靠的方式是销毁后重建。
+/// 使用预创建双窗口 + show/hide 模式（参照 bubble.rs），避免 destroy+recreate 的
+/// WebView2 COM 竞态问题（Tauri #9307）和 #11975 的 setSize 静默失败。
+/// 两个窗口在 setup 时预创建并隐藏，此处只做 show/hide + 定位切换。
 #[tauri::command]
 async fn cmd_recreate_pet_window(
     app: tauri::AppHandle,
@@ -37,37 +38,74 @@ async fn cmd_recreate_pet_window(
     y: i32,
 ) -> Result<(), String> {
     let ws: tauri::State<'_, SharedWindowState> = app.state();
-    let on_top = ws.always_on_top.load(std::sync::atomic::Ordering::SeqCst);
+    let on_top = ws.always_on_top.load(Ordering::SeqCst);
+    let collapsed = width == 48 && height == 48;
 
-    if let Some(old) = app.get_webview_window("pet") {
-        old.close().map_err(|e| e.to_string())?;
+    let target_label = if collapsed { "pet-mini" } else { "pet" };
+    let hide_label = if collapsed { "pet" } else { "pet-mini" };
+
+    // 隐藏另一个模式的窗口
+    if let Some(other) = app.get_webview_window(hide_label) {
+        let _ = other.hide();
     }
 
-    let window = WebviewWindowBuilder::new(
-        &app,
-        "pet",
-        WebviewUrl::App("pet.html".into()),
-    )
-    .title("8Bit Cat")
-    .inner_size(width as f64, height as f64)
-    .position(x as f64, y as f64)
-    .decorations(false)
-    .transparent(true)
-    .background_color(tauri::webview::Color(0, 0, 0, 0))
-    .shadow(false)
-    .always_on_top(on_top)
-    .skip_taskbar(true)
-    .resizable(false)
-    .build()
-    .map_err(|e| e.to_string())?;
+    // 显示目标窗口并定位
+    let win = match app.get_webview_window(target_label) {
+        Some(w) => w,
+        None => return Err(format!("预创建窗口 '{}' 不存在", target_label)),
+    };
 
-    let _ = window.set_size(PhysicalSize::new(width, height));
-    let _ = window.set_position(PhysicalPosition::new(x, y));
+    let _ = win.set_position(PhysicalPosition::new(x, y));
+    let _ = win.set_always_on_top(on_top);
+    win.show().map_err(|e| e.to_string())?;
 
-    // 重建后 JS 重新加载，需要将当前 Rust 侧状态同步给新的前端实例
-    let collapsed = ws.collapsed.load(std::sync::atomic::Ordering::SeqCst);
-    info!(width = width, height = height, collapsed = collapsed, always_on_top = on_top, "窗口重建");
-    let _ = app.emit("pet-sync-state", (collapsed, on_top));
+    // 确保透明背景生效（Windows WebView2 需要）
+    let _ = win.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
+
+    *ws.last_position.lock().map_err(|e| e.to_string())? = Some((x, y));
+
+    info!(width = width, height = height, x = x, y = y, collapsed = collapsed, target = target_label, "窗口切换");
+    Ok(())
+}
+
+/// 预创建两个 pet 窗口（正常 + 折叠），启动时隐藏备用。
+/// 避免运行时 destroy+recreate 的 WebView2 竞态（#9307）。
+fn precreate_pet_windows(app: &tauri::AppHandle) -> Result<(), tauri::Error> {
+    // 正常窗口 128x128（主窗口，默认可见）
+    if app.get_webview_window("pet").is_none() {
+        WebviewWindowBuilder::new(app, "pet", WebviewUrl::App("pet.html".into()))
+            .title("8Bit Cat")
+            .inner_size(128.0, 128.0)
+            .decorations(false)
+            .transparent(true)
+            .background_color(tauri::webview::Color(0, 0, 0, 0))
+            .shadow(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .resizable(false)
+            .build()?;
+        info!("预创建 pet 窗口 (128x128)");
+    }
+
+    // 折叠窗口 48x48（启动时隐藏）
+    if app.get_webview_window("pet-mini").is_none() {
+        WebviewWindowBuilder::new(app, "pet-mini", WebviewUrl::App("pet.html".into()))
+            .title("8Bit Cat Mini")
+            .inner_size(48.0, 48.0)
+            .decorations(false)
+            .transparent(true)
+            .background_color(tauri::webview::Color(0, 0, 0, 0))
+            .shadow(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .resizable(false)
+            .visible(false)
+            .build()?;
+        if let Some(w) = app.get_webview_window("pet-mini") {
+            let _ = w.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
+        }
+        info!("预创建 pet-mini 窗口 (48x48, hidden)");
+    }
 
     Ok(())
 }
@@ -88,6 +126,7 @@ pub fn run() {
             commands::cmd_show_bubble,
             commands::cmd_get_status,
             commands::cmd_tick,
+            commands::cmd_get_window_state,
             panel::cmd_show_panel,
             panel::cmd_hide_panel,
             panel::cmd_execute_panel_action,
@@ -140,6 +179,11 @@ pub fn run() {
             }
 
             tray::create_tray(app.handle())?;
+
+            // 预创建 pet 双窗口（正常 + 折叠），避免运行时 destroy+recreate 竞态
+            if let Err(e) = precreate_pet_windows(app.handle()) {
+                warn!(error = %e, "预创建 pet 窗口失败");
+            }
 
             if let Err(e) = voice::precreate_voice_window(app.handle()) {
                 warn!(error = %e, "预创建 voice 窗口失败");
