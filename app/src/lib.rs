@@ -66,6 +66,7 @@ async fn cmd_recreate_pet_window(
 
     // 重建后 JS 重新加载，需要将当前 Rust 侧状态同步给新的前端实例
     let collapsed = ws.collapsed.load(std::sync::atomic::Ordering::SeqCst);
+    info!(width = width, height = height, collapsed = collapsed, always_on_top = on_top, "窗口重建");
     let _ = app.emit("pet-sync-state", (collapsed, on_top));
 
     Ok(())

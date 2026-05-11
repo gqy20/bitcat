@@ -97,12 +97,14 @@
   // ========== 折叠/展开（由 Rust 托盘驱动）==========
 
   async function applyCollapse() {
+    console.log('[pet] applyCollapse:', { collapsed, state: pet.state });
     syncStateClass(pet.state);
 
     const w = collapsed ? 48 : 128;
     const h = collapsed ? 48 : 128;
     canvas.width = w;
     canvas.height = h;
+    console.log('[pet] canvas resize:', w, 'x', h);
 
     const win = getCurrentWin();
     let posX = 0, posY = 0;
@@ -141,21 +143,23 @@
       });
 
       window.__TAURI__.event.listen('pet-toggle-collapse', (event) => {
+        console.log('[pet] 收到 pet-toggle-collapse:', event.payload);
         collapsed = event.payload;
         applyCollapse();
       });
 
       window.__TAURI__.event.listen('pet-toggle-top', (event) => {
+        console.log('[pet] 收到 pet-toggle-top:', event.payload);
         alwaysOnTop = event.payload;
         applyAlwaysOnTop();
       });
 
-      // 窗口重建后 Rust 同步当前状态到新 JS 实例
+      // 窗口重建后 Rust 同步当前状态到新 JS 实例（只设变量，不重建）
       window.__TAURI__.event.listen('pet-sync-state', (event) => {
+        console.log('[pet] 收到 pet-sync-state:', event.payload);
         collapsed = event.payload[0];
         alwaysOnTop = event.payload[1];
-        applyCollapse();
-        applyAlwaysOnTop();
+        // 主循环下一帧会自动用新 collapsed 值选择 renderSprite/renderMini
       });
     }
   }

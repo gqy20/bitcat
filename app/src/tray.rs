@@ -4,6 +4,7 @@ use tauri::{
     tray::TrayIconBuilder,
     AppHandle, Emitter, Manager,
 };
+use tracing::info;
 use crate::commands::SharedWindowState;
 
 const MENU_SCREENSHOT: &str = "screenshot";
@@ -47,7 +48,9 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 let now_collapsed = !ws.collapsed.load(Ordering::SeqCst);
                 ws.collapsed.store(now_collapsed, Ordering::SeqCst);
 
-                let _ = collapse_item.set_text(if now_collapsed { "展开" } else { "折叠" });
+                let label = if now_collapsed { "展开" } else { "折叠" };
+                info!(collapsed = now_collapsed, "托盘: {}", label);
+                let _ = collapse_item.set_text(label);
                 let _ = app.emit("pet-toggle-collapse", now_collapsed);
             }
             MENU_TOP => {
@@ -55,7 +58,9 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 let now_top = !ws.always_on_top.load(Ordering::SeqCst);
                 ws.always_on_top.store(now_top, Ordering::SeqCst);
 
-                let _ = top_item.set_text(if now_top { "取消置顶" } else { "置顶" });
+                let label = if now_top { "取消置顶" } else { "置顶" };
+                info!(always_on_top = now_top, "托盘: {}", label);
+                let _ = top_item.set_text(label);
 
                 if let Some(win) = app.get_webview_window("pet") {
                     let _ = win.set_always_on_top(now_top);
