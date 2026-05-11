@@ -158,11 +158,12 @@ pub fn finalize_bubble(app: &AppHandle) -> Result<(), String> {
 
 /// 把 bubble 窗口对齐到 pet 窗口正上方，带屏幕边界检测
 fn position_above_pet(app: &AppHandle, bubble: &tauri::WebviewWindow) {
-    // 优先查找可见的宠物窗口（支持折叠态）
+    // 优先查找可见的宠物窗口（支持折叠态 + 吸附态）
     let pet = app
         .get_webview_window("pet")
         .filter(|w| w.is_visible().unwrap_or(false))
-        .or_else(|| app.get_webview_window("pet-mini"));
+        .or_else(|| app.get_webview_window("pet-mini").filter(|w| w.is_visible().unwrap_or(false)))
+        .or_else(|| app.get_webview_window("pet-snap").filter(|w| w.is_visible().unwrap_or(false)));
     let Some(pet) = pet else { return; };
     let (Ok(pet_pos), Ok(pet_size)) = (pet.outer_position(), pet.outer_size()) else {
         return;

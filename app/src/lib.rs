@@ -345,7 +345,7 @@ fn precreate_pet_windows(app: &tauri::AppHandle) -> Result<(), tauri::Error> {
 
 const GLOW_W: f64 = 40.0;
 const GLOW_H: f64 = 120.0;
-const SNAP_W: f64 = 14.0;  // 贴边后宠物窗口宽度（竖条，精致细线）
+const SNAP_W: f64 = 8.0;   // 贴边后宠物窗口宽度（精致发光细线）
 const SNAP_H: i32 = 100;   // 贴边后宠物窗口高度（竖条）
 
 /// 预创建侧边亮条窗口（启动时隐藏），避免运行时竞态

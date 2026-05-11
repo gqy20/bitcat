@@ -58,25 +58,36 @@
     setupDrag();
   }
 
-  /// 吸附竖条模式：绘制精致发光条 + 点击恢复宠物
+  /// 吸附竖条模式：精致发光细线 + 脉冲呼吸动画 + 点击恢复
   function setupSnapBar() {
-    const w = canvas.width = 14;
+    const w = canvas.width = 8;
     const h = canvas.height = 100;
+    let edgeReversed = false;
+    let breathPhase = 0;
 
-    function drawGlow(reverse) {
+    function drawGlow() {
       ctx.clearRect(0, 0, w, h);
-      // 渐变：边缘侧亮（核心 4px），快速衰减到透明
-      const x0 = reverse ? w : 0;
-      const x1 = reverse ? 0 : w;
+
+      // 呼吸脉冲：亮度在 0.6~1.0 之间缓慢波动
+      const breath = 0.6 + 0.4 * (0.5 + 0.5 * Math.sin(breathPhase));
+      const alpha = breath;
+
+      // 发光核心：2px 宽的亮线
+      const coreX = edgeReversed ? w - 2 : 0;
+      ctx.fillStyle = `rgba(96, 216, 255, ${(0.95 * alpha).toFixed(2)})`;
+      ctx.fillRect(coreX, 4, 2, h - 8);
+
+      // 外层柔光：渐变扩散
+      const x0 = edgeReversed ? w : 0;
+      const x1 = edgeReversed ? 0 : w;
       const grad = ctx.createLinearGradient(x0, 0, x1, 0);
-      grad.addColorStop(0, 'rgba(96, 216, 255, 0.95)');
-      grad.addColorStop(0.25, 'rgba(96, 216, 255, 0.6)');
-      grad.addColorStop(0.6, 'rgba(96, 216, 255, 0.12)');
+      grad.addColorStop(0, `rgba(96, 216, 255, ${(0.45 * alpha).toFixed(2)})`);
+      grad.addColorStop(0.4, `rgba(96, 216, 255, ${(0.15 * alpha).toFixed(2)})`);
       grad.addColorStop(1, 'rgba(96, 216, 255, 0)');
       ctx.fillStyle = grad;
 
-      // 带圆角的矩形（顶部和底部圆角）
-      const r = 4;
+      // 圆角矩形
+      const r = 3;
       ctx.beginPath();
       ctx.moveTo(0, r);
       ctx.quadraticCurveTo(0, 0, r, 0);
@@ -89,7 +100,14 @@
       ctx.closePath();
       ctx.fill();
     }
-    drawGlow(false);
+
+    // 呼吸动画循环
+    function animateBreath() {
+      breathPhase += 0.03;
+      drawGlow();
+      requestAnimationFrame(animateBreath);
+    }
+    animateBreath();
 
     // 点击恢复宠物
     const root = document.getElementById('pet-root');
@@ -104,9 +122,7 @@
     // 监听 edge 方向（用于翻转渐变方向）
     if (window.__TAURI__ && window.__TAURI__.event) {
       window.__TAURI__.event.listen('snap-edge', (event) => {
-        const edge = event.payload;
-        console.log('[pet-snap] 收到 edge:', edge);
-        drawGlow(edge === 'right');
+        edgeReversed = event.payload === 'right';
       });
     }
   }
