@@ -32,10 +32,18 @@ pub struct MemoryConfig {
     pub max_reply_chars: usize,
 }
 
-fn default_max_entries() -> usize { 20 }
-fn default_max_context_chars() -> usize { 1500 }
-fn default_max_user_chars() -> usize { 100 }
-fn default_max_reply_chars() -> usize { 200 }
+fn default_max_entries() -> usize {
+    20
+}
+fn default_max_context_chars() -> usize {
+    1500
+}
+fn default_max_user_chars() -> usize {
+    100
+}
+fn default_max_reply_chars() -> usize {
+    200
+}
 
 impl Default for MemoryConfig {
     fn default() -> Self {
@@ -51,9 +59,11 @@ impl Default for MemoryConfig {
 // ---- 存储路径 ----
 
 fn memory_file_path() -> Result<PathBuf, String> {
-    let home = dirs::home_dir()
-        .ok_or_else(|| "无法获取 HOME 目录".to_string())?;
-    Ok(home.join(".ai-pad").join("memory").join("chat_summary.json"))
+    let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
+    Ok(home
+        .join(".ai-pad")
+        .join("memory")
+        .join("chat_summary.json"))
 }
 
 // ---- 核心操作 ----
@@ -65,13 +75,17 @@ impl MemoryStore {
             Ok(p) => p,
             Err(e) => {
                 warn!(error = %e, "获取记忆文件路径失败");
-                return Self { entries: Vec::new() };
+                return Self {
+                    entries: Vec::new(),
+                };
             }
         };
 
         if !path.exists() {
             info!("记忆文件不存在，使用空记忆");
-            return Self { entries: Vec::new() };
+            return Self {
+                entries: Vec::new(),
+            };
         }
 
         match fs::read_to_string(&path) {
@@ -82,12 +96,16 @@ impl MemoryStore {
                 }
                 Err(e) => {
                     warn!(error = %e, "解析记忆文件失败，使用空记忆");
-                    Self { entries: Vec::new() }
+                    Self {
+                        entries: Vec::new(),
+                    }
                 }
             },
             Err(e) => {
                 warn!(error = %e, "读取记忆文件失败，使用空记忆");
-                Self { entries: Vec::new() }
+                Self {
+                    entries: Vec::new(),
+                }
             }
         }
     }
@@ -116,7 +134,10 @@ impl MemoryStore {
         // 从最新到最旧收集行，计算预算后反转回时间顺序
         let mut lines: Vec<String> = Vec::new();
         for entry in self.entries.iter().rev() {
-            lines.push(format!("[{}] {} | {}", entry.timestamp, entry.user_msg, entry.ai_reply));
+            lines.push(format!(
+                "[{}] {} | {}",
+                entry.timestamp, entry.user_msg, entry.ai_reply
+            ));
         }
         lines.reverse();
 
@@ -139,11 +160,9 @@ impl MemoryStore {
     pub fn save(&self) -> Result<(), String> {
         let path = memory_file_path()?;
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("创建记忆目录失败: {e}"))?;
+            fs::create_dir_all(parent).map_err(|e| format!("创建记忆目录失败: {e}"))?;
         }
-        let json = serde_json::to_string(self)
-            .map_err(|e| format!("序列化记忆失败: {e}"))?;
+        let json = serde_json::to_string(self).map_err(|e| format!("序列化记忆失败: {e}"))?;
         let mut tmp = tempfile::NamedTempFile::new_in(path.parent().unwrap())
             .map_err(|e| format!("创建临时文件失败: {e}"))?;
         std::io::Write::write_all(&mut tmp, json.as_bytes())
@@ -196,8 +215,13 @@ mod tests {
 
     #[test]
     fn test_record_enforces_max_entries() {
-        let mut store = MemoryStore { entries: Vec::new() };
-        let cfg = MemoryConfig { max_entries: 3, ..Default::default() };
+        let mut store = MemoryStore {
+            entries: Vec::new(),
+        };
+        let cfg = MemoryConfig {
+            max_entries: 3,
+            ..Default::default()
+        };
         for i in 0..5 {
             store.record_conversation(&format!("msg{i}"), &format!("reply{i}"), &cfg);
         }
@@ -208,8 +232,14 @@ mod tests {
 
     #[test]
     fn test_record_truncates_fields() {
-        let mut store = MemoryStore { entries: Vec::new() };
-        let cfg = MemoryConfig { max_user_chars: 5, max_reply_chars: 10, ..Default::default() };
+        let mut store = MemoryStore {
+            entries: Vec::new(),
+        };
+        let cfg = MemoryConfig {
+            max_user_chars: 5,
+            max_reply_chars: 10,
+            ..Default::default()
+        };
         store.record_conversation("abcdefghijklmnopqrstuvwxyz", "1234567890ABCDEFGHIJ", &cfg);
         assert_eq!(store.entries[0].user_msg.chars().count(), 5);
         assert_eq!(store.entries[0].ai_reply.chars().count(), 10);
@@ -217,7 +247,9 @@ mod tests {
 
     #[test]
     fn test_build_context_empty() {
-        let store = MemoryStore { entries: Vec::new() };
+        let store = MemoryStore {
+            entries: Vec::new(),
+        };
         assert!(store.build_context(&MemoryConfig::default()).is_empty());
     }
 
@@ -244,17 +276,22 @@ mod tests {
         // 若用字节计数 max_context_chars=100，只能放 ~1 条（75 < 100）。
         // 若用字符计数，应能放 ~4 条（25*4=100 chars）。
         // 此测试验证用的是字符计数而非字节计数。
-        let mut store = MemoryStore { entries: Vec::new() };
+        let mut store = MemoryStore {
+            entries: Vec::new(),
+        };
         for _ in 0..6 {
             store.entries.push(MemoryEntry {
                 timestamp: "14:00".into(),
-                user_msg: "用户询问今天天气如何".into(),     // 8 中文字
-                ai_reply: "今天是晴天适合出门散步".into(),   // 10 中文字
+                user_msg: "用户询问今天天气如何".into(), // 8 中文字
+                ai_reply: "今天是晴天适合出门散步".into(), // 10 中文字
             });
         }
         // 每条约: "[14:00] 用户询问今天天气如何 | 今天是晴天适合出门散步" ≈ 28 中文字 + 时间戳 ≈ 33 字符
         // 用字节计数时 100 字节只能放不到 2 条；用字符计数应能放 3 条
-        let cfg = MemoryConfig { max_context_chars: 120, ..Default::default() };
+        let cfg = MemoryConfig {
+            max_context_chars: 120,
+            ..Default::default()
+        };
         let ctx = store.build_context(&cfg);
         let char_count = ctx.chars().count();
         // 如果按字节截断，~2 条就超了(2条≈80字节+header≈20=100)，实际字符数只有 ~70
@@ -268,7 +305,9 @@ mod tests {
 
     #[test]
     fn test_build_context_respects_char_limit() {
-        let mut store = MemoryStore { entries: Vec::new() };
+        let mut store = MemoryStore {
+            entries: Vec::new(),
+        };
         for _ in 0..50 {
             store.entries.push(MemoryEntry {
                 timestamp: "14:00".into(),
@@ -276,7 +315,10 @@ mod tests {
                 ai_reply: "这是一条很长的AI回复用于测试字符限制".into(),
             });
         }
-        let cfg = MemoryConfig { max_context_chars: 300, ..Default::default() };
+        let cfg = MemoryConfig {
+            max_context_chars: 300,
+            ..Default::default()
+        };
         let ctx = store.build_context(&cfg);
         assert!(ctx.chars().count() <= 350);
     }
@@ -336,7 +378,9 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join(".ai-pad").join("memory");
 
-        let mut store = MemoryStore { entries: Vec::new() };
+        let mut store = MemoryStore {
+            entries: Vec::new(),
+        };
         let cfg = MemoryConfig::default();
         store.record_conversation("你好", "喵~你好！", &cfg);
 

@@ -7,34 +7,52 @@ fn key_map() -> &'static HashMap<String, u16> {
     MAP.get_or_init(|| {
         let mut m = HashMap::new();
         // 修饰键
-        m.insert("ctrl".into(), 0x11); m.insert("control".into(), 0x11);
-        m.insert("win".into(), 0x5B); m.insert("windows".into(), 0x5B);
+        m.insert("ctrl".into(), 0x11);
+        m.insert("control".into(), 0x11);
+        m.insert("win".into(), 0x5B);
+        m.insert("windows".into(), 0x5B);
         m.insert("alt".into(), 0x12);
         m.insert("shift".into(), 0x10);
         // 功能键
-        m.insert("enter".into(), 0x0D); m.insert("return".into(), 0x0D);
+        m.insert("enter".into(), 0x0D);
+        m.insert("return".into(), 0x0D);
         m.insert("tab".into(), 0x09);
-        m.insert("esc".into(), 0x1B); m.insert("escape".into(), 0x1B);
+        m.insert("esc".into(), 0x1B);
+        m.insert("escape".into(), 0x1B);
         m.insert("space".into(), 0x20);
         m.insert("backspace".into(), 0x08);
-        m.insert("delete".into(), 0x2E); m.insert("del".into(), 0x2E);
+        m.insert("delete".into(), 0x2E);
+        m.insert("del".into(), 0x2E);
         m.insert("insert".into(), 0x2D);
         m.insert("home".into(), 0x24);
         m.insert("end".into(), 0x23);
-        m.insert("pageup".into(), 0x21); m.insert("page_up".into(), 0x21);
-        m.insert("pagedown".into(), 0x22); m.insert("page_down".into(), 0x22);
+        m.insert("pageup".into(), 0x21);
+        m.insert("page_up".into(), 0x21);
+        m.insert("pagedown".into(), 0x22);
+        m.insert("page_down".into(), 0x22);
         // 符号键
-        m.insert("backtick".into(), 0xC0); m.insert("`".into(), 0xC0);
-        m.insert("-".into(), 0xBD); m.insert("_".into(), 0xBD);
-        m.insert("=".into(), 0xBB); m.insert("+".into(), 0xBB);
-        m.insert("[".into(), 0xDB); m.insert("{".into(), 0xDB);
-        m.insert("]".into(), 0xDD); m.insert("}".into(), 0xDD);
-        m.insert("\\".into(), 0xDC); m.insert("|".into(), 0xDC);
-        m.insert(";".into(), 0xBA); m.insert(":".into(), 0xBA);
-        m.insert("'".into(), 0xDE); m.insert("\"".into(), 0xDE);
-        m.insert(",".into(), 0xBC); m.insert("<".into(), 0xBC);
-        m.insert(".".into(), 0xBE); m.insert(">".into(), 0xBE);
-        m.insert("/".into(), 0xBF); m.insert("?".into(), 0xBF);
+        m.insert("backtick".into(), 0xC0);
+        m.insert("`".into(), 0xC0);
+        m.insert("-".into(), 0xBD);
+        m.insert("_".into(), 0xBD);
+        m.insert("=".into(), 0xBB);
+        m.insert("+".into(), 0xBB);
+        m.insert("[".into(), 0xDB);
+        m.insert("{".into(), 0xDB);
+        m.insert("]".into(), 0xDD);
+        m.insert("}".into(), 0xDD);
+        m.insert("\\".into(), 0xDC);
+        m.insert("|".into(), 0xDC);
+        m.insert(";".into(), 0xBA);
+        m.insert(":".into(), 0xBA);
+        m.insert("'".into(), 0xDE);
+        m.insert("\"".into(), 0xDE);
+        m.insert(",".into(), 0xBC);
+        m.insert("<".into(), 0xBC);
+        m.insert(".".into(), 0xBE);
+        m.insert(">".into(), 0xBE);
+        m.insert("/".into(), 0xBF);
+        m.insert("?".into(), 0xBF);
         // 字母 a-z
         for (i, c) in (b'a'..=b'z').enumerate() {
             let s = String::from(char::from(c));
@@ -46,7 +64,9 @@ fn key_map() -> &'static HashMap<String, u16> {
             m.insert(s, 0x30 + i as u16);
         }
         // F1-F12
-        for i in 1u16..=12u16 { m.insert(format!("f{i}"), 0x6F + i); }
+        for i in 1u16..=12u16 {
+            m.insert(format!("f{i}"), 0x6F + i);
+        }
         m
     })
 }
@@ -54,20 +74,19 @@ fn key_map() -> &'static HashMap<String, u16> {
 /// 按键名 → Windows Virtual Key Code
 pub fn parse_keys(keys: &[&str]) -> Vec<u16> {
     let map = key_map();
-    keys.iter().map(|k| {
-        *map.get(&k.to_ascii_lowercase()).unwrap_or(&0)
-    }).collect()
+    keys.iter()
+        .map(|k| *map.get(&k.to_ascii_lowercase()).unwrap_or(&0))
+        .collect()
 }
 
 /// 通过 Windows SendInput API 模拟按键组合
 /// 先按下所有键，等待 hold 秒，再逆序释放
 #[cfg(target_os = "windows")]
 pub fn send_hotkey(vk_codes: &[u16], hold: f64) -> Result<(), String> {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_KEYBOARD,
-        KEYEVENTF_KEYUP,
-    };
     use std::mem::size_of;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        INPUT, INPUT_KEYBOARD, KEYEVENTF_KEYUP, SendInput,
+    };
 
     if vk_codes.is_empty() {
         return Ok(());
@@ -117,23 +136,27 @@ pub fn send_hotkey(vk_codes: &[u16], hold: f64) -> Result<(), String> {
 /// 按下单个按键（不释放）
 #[cfg(target_os = "windows")]
 pub fn key_down(vk: u16) -> Result<(), String> {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT, INPUT_KEYBOARD};
     use std::mem::size_of;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{INPUT, INPUT_KEYBOARD, SendInput};
 
     let mut input: INPUT = unsafe { std::mem::zeroed() };
     input.r#type = INPUT_KEYBOARD;
     input.Anonymous.ki.wVk = vk;
 
     let sent = unsafe { SendInput(1, &input, size_of::<INPUT>() as i32) };
-    if sent == 0 { return Err("key_down failed".into()); }
+    if sent == 0 {
+        return Err("key_down failed".into());
+    }
     Ok(())
 }
 
 /// 释放单个按键
 #[cfg(target_os = "windows")]
 pub fn key_up(vk: u16) -> Result<(), String> {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_KEYUP};
     use std::mem::size_of;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        INPUT, INPUT_KEYBOARD, KEYEVENTF_KEYUP, SendInput,
+    };
 
     let mut input: INPUT = unsafe { std::mem::zeroed() };
     input.r#type = INPUT_KEYBOARD;
@@ -141,7 +164,9 @@ pub fn key_up(vk: u16) -> Result<(), String> {
     input.Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
 
     let sent = unsafe { SendInput(1, &input, size_of::<INPUT>() as i32) };
-    if sent == 0 { return Err("key_up failed".into()); }
+    if sent == 0 {
+        return Err("key_up failed".into());
+    }
     Ok(())
 }
 
@@ -155,7 +180,7 @@ pub fn parse_key(name: &str) -> Option<u16> {
 #[cfg(target_os = "windows")]
 pub fn read_clipboard() -> Option<String> {
     use windows_sys::Win32::System::DataExchange::{
-        OpenClipboard, CloseClipboard, GetClipboardData, IsClipboardFormatAvailable,
+        CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
     };
     use windows_sys::Win32::System::Memory::{GlobalLock, GlobalUnlock};
 
@@ -196,14 +221,16 @@ pub fn read_clipboard() -> Option<String> {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn read_clipboard() -> Option<String> { None }
+pub fn read_clipboard() -> Option<String> {
+    None
+}
 
 /// 模拟鼠标滚轮滚动
 /// delta > 0 向上滚，delta < 0 向下滚，单次典型值 ±120
 #[cfg(target_os = "windows")]
 pub fn send_scroll(delta: i32) -> Result<(), String> {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT};
     use std::mem::size_of;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{INPUT, SendInput};
 
     const INPUT_MOUSE: u32 = 0;
     const MOUSEEVENTF_WHEEL: u32 = 0x0800;
@@ -213,9 +240,7 @@ pub fn send_scroll(delta: i32) -> Result<(), String> {
     input.Anonymous.mi.dwFlags = MOUSEEVENTF_WHEEL;
     input.Anonymous.mi.mouseData = delta as u32;
 
-    let sent = unsafe {
-        SendInput(1, &input, size_of::<INPUT>() as i32)
-    };
+    let sent = unsafe { SendInput(1, &input, size_of::<INPUT>() as i32) };
 
     if sent == 0 {
         return Err("SendInput scroll failed".into());
@@ -228,8 +253,8 @@ pub fn send_scroll(delta: i32) -> Result<(), String> {
 /// delta > 0 向右滚，delta < 0 向左滚
 #[cfg(target_os = "windows")]
 pub fn send_scroll_h(delta: i32) -> Result<(), String> {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT};
     use std::mem::size_of;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{INPUT, SendInput};
 
     const INPUT_MOUSE: u32 = 0;
     const MOUSEEVENTF_HWHEEL: u32 = 0x1000;
@@ -239,9 +264,7 @@ pub fn send_scroll_h(delta: i32) -> Result<(), String> {
     input.Anonymous.mi.dwFlags = MOUSEEVENTF_HWHEEL;
     input.Anonymous.mi.mouseData = delta as u32;
 
-    let sent = unsafe {
-        SendInput(1, &input, size_of::<INPUT>() as i32)
-    };
+    let sent = unsafe { SendInput(1, &input, size_of::<INPUT>() as i32) };
 
     if sent == 0 {
         return Err("SendInput hscroll failed".into());
@@ -279,8 +302,8 @@ pub fn force_foreground(hwnd: isize) -> Result<(), String> {
     use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{SetActiveWindow, SetFocus};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        AllowSetForegroundWindow, BringWindowToTop, GetForegroundWindow,
-        GetWindowThreadProcessId, SetForegroundWindow,
+        AllowSetForegroundWindow, BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId,
+        SetForegroundWindow,
     };
 
     if hwnd == 0 {

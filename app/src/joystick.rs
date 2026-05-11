@@ -25,13 +25,17 @@ impl SdlGamepad {
     }
 
     pub fn list_gamepads(sdl: &Sdl) -> Result<Vec<GamepadInfo>, String> {
-        let subsystem = sdl.joystick().map_err(|e| format!("Joystick 子系统失败: {e}"))?;
+        let subsystem = sdl
+            .joystick()
+            .map_err(|e| format!("Joystick 子系统失败: {e}"))?;
         let mut result = Vec::new();
-        let count = subsystem.num_joysticks().map_err(|e| format!("获取数量失败: {e}"))?;
+        let count = subsystem
+            .num_joysticks()
+            .map_err(|e| format!("获取数量失败: {e}"))?;
         for i in 0..count {
-            if let Ok(joy) = subsystem.open(i as u32) {
+            if let Ok(joy) = subsystem.open(i) {
                 result.push(GamepadInfo {
-                    index: i as u32,
+                    index: i,
                     name: joy.name(),
                     num_buttons: joy.num_buttons(),
                     num_axes: joy.num_axes(),
@@ -43,10 +47,14 @@ impl SdlGamepad {
     }
 
     pub fn open(sdl: &Sdl, index: u32) -> Result<Self, String> {
-        let subsystem = sdl.joystick().map_err(|e| format!("Joystick 子系统失败: {e}"))?;
-        let joystick = subsystem.open(index)
+        let subsystem = sdl
+            .joystick()
+            .map_err(|e| format!("Joystick 子系统失败: {e}"))?;
+        let joystick = subsystem
+            .open(index)
             .map_err(|e| format!("打开手柄 {index} 失败: {e}"))?;
-        let event_pump = sdl.event_pump()
+        let event_pump = sdl
+            .event_pump()
             .map_err(|e| format!("EventPump 初始化失败: {e}"))?;
         let info = GamepadInfo {
             index,
@@ -55,7 +63,12 @@ impl SdlGamepad {
             num_axes: joystick.num_axes(),
             num_hats: joystick.num_hats(),
         };
-        Ok(Self { _sdl: sdl.clone(), event_pump, joystick, info })
+        Ok(Self {
+            _sdl: sdl.clone(),
+            event_pump,
+            joystick,
+            info,
+        })
     }
 
     pub fn info(&self) -> &GamepadInfo {
@@ -100,7 +113,10 @@ mod tests {
         let sdl = SdlGamepad::init().expect("SDL2 初始化");
         let pads = SdlGamepad::list_gamepads(&sdl).expect("列出设备");
         for p in &pads {
-            println!("  [{}] {} ({} btn, {} hat)", p.index, p.name, p.num_buttons, p.num_hats);
+            println!(
+                "  [{}] {} ({} btn, {} hat)",
+                p.index, p.name, p.num_buttons, p.num_hats
+            );
         }
         assert!(SdlGamepad::open(&sdl, 99).is_err());
     }

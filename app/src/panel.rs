@@ -6,7 +6,9 @@ use tracing::{info, warn};
 pub async fn cmd_execute_panel_action(id: String) -> Result<(), String> {
     let config = ai_pad_core::action::ActionConfig::load("actions.yml")
         .map_err(|e| format!("加载 actions.yml 失败: {e}"))?;
-    let action_def = config.actions.get(&id)
+    let action_def = config
+        .actions
+        .get(&id)
         .ok_or_else(|| format!("未知动作: {id}"))?;
 
     match action_def.action_type.as_str() {
@@ -14,7 +16,8 @@ pub async fn cmd_execute_panel_action(id: String) -> Result<(), String> {
             let program = action_def.program.as_deref().ok_or("缺少 program")?;
             let args = action_def.args.as_deref().unwrap_or("");
             ai_pad_core::action::launch_program(
-                program, args,
+                program,
+                args,
                 &action_def.workdir,
                 action_def.terminal,
                 &config.defaults.terminal,
@@ -66,9 +69,15 @@ const GAP: f64 = 10.0;
 
 /// 把 panel 窗口定位到宠物附近（优先右下，超出屏幕则自动换边）
 fn position_near_pet(app: &AppHandle, panel: &tauri::WebviewWindow) {
-    let Some(pet) = app.get_webview_window("pet") else { return };
-    let (Ok(pet_pos), Ok(pet_size)) = (pet.outer_position(), pet.outer_size()) else { return };
-    let Some(monitor) = pet.current_monitor().ok().flatten() else { return };
+    let Some(pet) = app.get_webview_window("pet") else {
+        return;
+    };
+    let (Ok(pet_pos), Ok(pet_size)) = (pet.outer_position(), pet.outer_size()) else {
+        return;
+    };
+    let Some(monitor) = pet.current_monitor().ok().flatten() else {
+        return;
+    };
     let monitor_size = monitor.size();
     let monitor_pos = monitor.position();
 
@@ -80,20 +89,32 @@ fn position_near_pet(app: &AppHandle, panel: &tauri::WebviewWindow) {
     let screen_bottom = monitor_pos.y + monitor_size.height as i32 - ph as i32 - 8;
 
     // 优先放右下
-    let (mut px, mut py) = if pet_pos.x + pet_size.width as i32 + GAP as i32 + pw as i32 <= monitor_pos.x + monitor_size.width as i32 {
-        ((pet_pos.x + pet_size.width as i32 + GAP as i32), (pet_pos.y + pet_size.height as i32 + GAP as i32))
+    let (mut px, mut py) = if pet_pos.x + pet_size.width as i32 + GAP as i32 + pw as i32
+        <= monitor_pos.x + monitor_size.width as i32
+    {
+        (
+            (pet_pos.x + pet_size.width as i32 + GAP as i32),
+            (pet_pos.y + pet_size.height as i32 + GAP as i32),
+        )
     } else {
         // 右边放不下 → 放左边
-        ((pet_pos.x - GAP as i32 - pw as i32), (pet_pos.y + pet_size.height as i32 + GAP as i32))
+        (
+            (pet_pos.x - GAP as i32 - pw as i32),
+            (pet_pos.y + pet_size.height as i32 + GAP as i32),
+        )
     };
 
     // 垂直方向：如果下方超出屏幕就放到上方
     if py > screen_bottom {
-        py = (pet_pos.y as f64 - GAP as f64 - ph) as i32;
+        py = (pet_pos.y as f64 - GAP - ph) as i32;
     }
     // 水平方向：确保不出界
-    if px < monitor_pos.x { px = monitor_pos.x; }
-    if px > screen_right { px = screen_right; }
+    if px < monitor_pos.x {
+        px = monitor_pos.x;
+    }
+    if px > screen_right {
+        px = screen_right;
+    }
 
     let _ = panel.set_position(PhysicalPosition::new(px, py));
 }
@@ -149,21 +170,17 @@ mod tests {
     #[test]
     fn test_load_panel_actions_from_yml() {
         let config = ai_pad_core::action::ActionConfig::load("actions.yml").unwrap();
-        // 面板动作都在 actions.yml 中了
-        assert!(config.actions.contains_key("vscode"));
-        assert!(config.actions.contains_key("browser"));
-        assert!(config.actions.contains_key("explorer"));
-        assert!(config.actions.contains_key("powershell"));
-        assert!(config.actions.contains_key("notepad"));
+        assert!(config.actions.contains_key("Start"));
+        assert!(config.actions.contains_key("Y"));
+        assert!(config.actions.contains_key("L1"));
+        assert!(config.actions.contains_key("R1"));
     }
 
     #[test]
     fn test_panel_actions_are_launch_type() {
         let config = ai_pad_core::action::ActionConfig::load("actions.yml").unwrap();
-        for key in ["vscode", "browser", "notepad"] {
-            let action = config.actions.get(key).unwrap();
-            assert_eq!(action.action_type, "launch", "{key} 应为 launch 类型");
-        }
+        let action = config.actions.get("Start").unwrap();
+        assert_eq!(action.action_type, "launch", "Start 应为 launch 类型");
     }
 
     #[test]

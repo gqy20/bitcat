@@ -78,10 +78,10 @@ pub enum SpecialAction {
 /// 默认按键映射：按钮索引 → 功能
 fn default_button_mapping(button_index: u32) -> Option<SpecialAction> {
     match button_index {
-        11 => Some(SpecialAction::AiChat),       // Start → AI 对话
-        10 => Some(SpecialAction::ToggleSleep),   // Select → 睡觉
-        0 => Some(SpecialAction::Praise),         // A → 开心
-        1 => Some(SpecialAction::Wander),         // B → 随机走动
+        11 => Some(SpecialAction::AiChat),      // Start → AI 对话
+        10 => Some(SpecialAction::ToggleSleep), // Select → 睡觉
+        0 => Some(SpecialAction::Praise),       // A → 开心
+        1 => Some(SpecialAction::Wander),       // B → 随机走动
         _ => None,
     }
 }
@@ -115,15 +115,24 @@ pub fn handle_button_press(
                 } else {
                     user_message.to_string()
                 };
-                (Some(msg), Some(PetCommand::SetState { state: PetStateName::Talk }))
+                (
+                    Some(msg),
+                    Some(PetCommand::SetState {
+                        state: PetStateName::Talk,
+                    }),
+                )
             }
             SpecialAction::ToggleSleep => (
                 None,
-                Some(PetCommand::SetState { state: PetStateName::Sleep }),
+                Some(PetCommand::SetState {
+                    state: PetStateName::Sleep,
+                }),
             ),
             SpecialAction::Praise => (
                 Some("喵~ 谢谢夸奖！".into()),
-                Some(PetCommand::SetState { state: PetStateName::Happy }),
+                Some(PetCommand::SetState {
+                    state: PetStateName::Happy,
+                }),
             ),
             SpecialAction::Wander => {
                 let x = rand_range(50.0, 200.0);
@@ -141,9 +150,13 @@ pub fn resolve_agent_response(reply: &str) -> Vec<PetCommand> {
 
     // 简单关键词检测
     if reply.contains("错误") || reply.contains("失败") || reply.contains("抱歉") {
-        cmds.push(PetCommand::SetState { state: PetStateName::Confused });
+        cmds.push(PetCommand::SetState {
+            state: PetStateName::Confused,
+        });
     } else if reply.contains("哈哈") || reply.contains("😄") || reply.contains("喵") {
-        cmds.push(PetCommand::SetState { state: PetStateName::Happy });
+        cmds.push(PetCommand::SetState {
+            state: PetStateName::Happy,
+        });
     }
 
     // 始终显示对话内容（按字符切片，防止 UTF-8 边界 panic）
@@ -157,7 +170,9 @@ pub fn resolve_agent_response(reply: &str) -> Vec<PetCommand> {
     cmds.push(PetCommand::ShowBubble { text: short });
 
     // 对话结束后回 Idle
-    cmds.push(PetCommand::SetState { state: PetStateName::Idle });
+    cmds.push(PetCommand::SetState {
+        state: PetStateName::Idle,
+    });
 
     cmds
 }
@@ -178,7 +193,12 @@ mod tests {
         let (msg, cmd) = handle_button_press(11, "");
         assert!(msg.is_some(), "Start 应触发 AI 对话");
         assert!(msg.unwrap().contains("你好"));
-        matches!(cmd.unwrap(), PetCommand::SetState { state: PetStateName::Talk });
+        matches!(
+            cmd.unwrap(),
+            PetCommand::SetState {
+                state: PetStateName::Talk
+            }
+        );
     }
 
     #[test]
@@ -190,7 +210,12 @@ mod tests {
     #[test]
     fn test_select_toggles_sleep() {
         let (_, cmd) = handle_button_press(10, "");
-        matches!(cmd.unwrap(), PetCommand::SetState { state: PetStateName::Sleep });
+        matches!(
+            cmd.unwrap(),
+            PetCommand::SetState {
+                state: PetStateName::Sleep
+            }
+        );
     }
 
     #[test]
@@ -209,10 +234,17 @@ mod tests {
 
     #[test]
     fn test_command_serialization() {
-        let cmd = PetCommand::SetState { state: PetStateName::Talk };
+        let cmd = PetCommand::SetState {
+            state: PetStateName::Talk,
+        };
         let json = cmd.to_json_line();
         let parsed = PetCommand::from_json_line(&json).unwrap();
-        matches!(parsed, PetCommand::SetState { state: PetStateName::Talk });
+        matches!(
+            parsed,
+            PetCommand::SetState {
+                state: PetStateName::Talk
+            }
+        );
     }
 
     #[test]
@@ -225,7 +257,9 @@ mod tests {
 
     #[test]
     fn test_show_bubble_serialization() {
-        let cmd = PetCommand::ShowBubble { text: "你好世界".into() };
+        let cmd = PetCommand::ShowBubble {
+            text: "你好世界".into(),
+        };
         let json = cmd.to_json_line();
         let parsed = PetCommand::from_json_line(&json).unwrap();
         if let PetCommand::ShowBubble { text } = &parsed {
@@ -254,8 +288,17 @@ mod tests {
         let cmds = resolve_agent_response("哈哈哈太有趣了！");
         assert!(cmds.len() >= 2);
         // 应该包含 Happy 和 ShowBubble
-        let has_happy = cmds.iter().any(|c| matches!(c, PetCommand::SetState { state: PetStateName::Happy }));
-        let has_bubble = cmds.iter().any(|c| matches!(c, PetCommand::ShowBubble { .. }));
+        let has_happy = cmds.iter().any(|c| {
+            matches!(
+                c,
+                PetCommand::SetState {
+                    state: PetStateName::Happy
+                }
+            )
+        });
+        let has_bubble = cmds
+            .iter()
+            .any(|c| matches!(c, PetCommand::ShowBubble { .. }));
         assert!(has_happy);
         assert!(has_bubble);
     }
@@ -263,7 +306,14 @@ mod tests {
     #[test]
     fn test_resolve_error_response() {
         let cmds = resolve_agent_response("抱歉，操作失败了");
-        let has_confused = cmds.iter().any(|c| matches!(c, PetCommand::SetState { state: PetStateName::Confused }));
+        let has_confused = cmds.iter().any(|c| {
+            matches!(
+                c,
+                PetCommand::SetState {
+                    state: PetStateName::Confused
+                }
+            )
+        });
         assert!(has_confused);
     }
 
@@ -309,15 +359,24 @@ mod tests {
     fn test_resolve_ends_with_idle() {
         let cmds = resolve_agent_response("普通回复");
         let last = cmds.last().unwrap();
-        matches!(last, PetCommand::SetState { state: PetStateName::Idle });
+        matches!(
+            last,
+            PetCommand::SetState {
+                state: PetStateName::Idle
+            }
+        );
     }
 
     #[test]
     fn test_state_name_roundtrip() {
         use crate::pet::PetState;
         for s in [
-            PetState::Idle, PetState::Walk, PetState::Sleep,
-            PetState::Talk, PetState::Happy, PetState::Confused,
+            PetState::Idle,
+            PetState::Walk,
+            PetState::Sleep,
+            PetState::Talk,
+            PetState::Happy,
+            PetState::Confused,
         ] {
             let name = PetStateName::from(s);
             let back: PetState = name.into();

@@ -1,6 +1,6 @@
 fn main() {
-    use tracing_subscriber::prelude::*;
     use tracing_subscriber::fmt;
+    use tracing_subscriber::prelude::*;
 
     // --debug 参数时分配控制台窗口用于查看日志
     let debug = std::env::args().any(|a| a == "--debug");
@@ -29,15 +29,19 @@ fn main() {
 
     // 单次 .init()，两层输出：stderr(带颜色) + 文件(无颜色)
     tracing_subscriber::registry()
-        .with(fmt::layer()
-            .with_writer(std::io::stderr)
-            .with_ansi(true)
-            .with_filter(filter.clone()))
-        .with(fmt::layer()
-            .with_writer(non_blocking)
-            .with_ansi(false)
-            .with_target(true)
-            .with_filter(filter))
+        .with(
+            fmt::layer()
+                .with_writer(std::io::stderr)
+                .with_ansi(true)
+                .with_filter(filter.clone()),
+        )
+        .with(
+            fmt::layer()
+                .with_writer(non_blocking)
+                .with_ansi(false)
+                .with_target(true)
+                .with_filter(filter),
+        )
         .init();
 
     ai_pad_app_lib::run();

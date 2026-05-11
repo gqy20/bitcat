@@ -9,20 +9,20 @@ pub mod voice;
 
 use bubble::SharedBubble;
 use commands::{SharedPet, SharedWindowState};
-use voice::SharedVoice;
 use screenshot::SharedScreenshotState;
 use tauri::{Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use voice::SharedVoice;
 
 use ai_pad_core::action::{ActionConfig, ActionDef};
+use ai_pad_core::agent::PetAgent;
 use ai_pad_core::bridge::handle_button_press;
 use ai_pad_core::device::button_name;
-use ai_pad_core::agent::PetAgent;
-use ai_pad_core::memory::MemoryStore;
 use ai_pad_core::hotkey;
+use ai_pad_core::memory::MemoryStore;
 use joystick::SdlGamepad;
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
-use tracing::{info, warn, error, debug, instrument};
 use std::sync::atomic::Ordering;
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+use tracing::{debug, error, info, instrument, warn};
 
 /// 切换 pet 窗口显示模式：正常(128x128) / 折叠(48x48)。
 ///
@@ -64,7 +64,15 @@ async fn cmd_recreate_pet_window(
 
     *ws.last_position.lock().map_err(|e| e.to_string())? = Some((x, y));
 
-    info!(width = width, height = height, x = x, y = y, collapsed = collapsed, target = target_label, "窗口切换");
+    info!(
+        width = width,
+        height = height,
+        x = x,
+        y = y,
+        collapsed = collapsed,
+        target = target_label,
+        "窗口切换"
+    );
     Ok(())
 }
 
@@ -110,16 +118,15 @@ fn precreate_pet_windows(app: &tauri::AppHandle) -> Result<(), tauri::Error> {
     Ok(())
 }
 
-
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .manage(SharedPet::new())
-        .manage(SharedWindowState::new())
+        .manage(SharedPet::default())
+        .manage(SharedWindowState::default())
         .manage(SharedBubble::new())
         .manage(SharedVoice::new())
-        .manage(SharedScreenshotState::new())
+        .manage(SharedScreenshotState::default())
         .invoke_handler(tauri::generate_handler![
             commands::cmd_set_state,
             commands::cmd_walk_to,
@@ -148,7 +155,12 @@ pub fn run() {
         .setup(|app| {
             // 加载 .env（优先级低于系统环境变量），按顺序尝试多个路径
             let mut env_loaded = false;
-            if let Some(exe_dir) = app.path().resource_dir().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())) {
+            if let Some(exe_dir) = app
+                .path()
+                .resource_dir()
+                .ok()
+                .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            {
                 let env_path = exe_dir.join(".env");
                 if env_path.exists() {
                     dotenvy::from_path(&env_path).ok();
@@ -165,7 +177,11 @@ pub fn run() {
             }
             if !env_loaded {
                 // 兜底：尝试 exe 向上两级（target/debug → 项目根）
-                if let Some(exe_dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())).and_then(|p| p.parent().map(|p| p.to_path_buf())) {
+                if let Some(exe_dir) = std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+                    .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+                {
                     let fallback = exe_dir.join(".env");
                     if fallback.exists() {
                         dotenvy::from_path(&fallback).ok();
@@ -194,14 +210,18 @@ pub fn run() {
             info!(hotkey = %hotkey_str, "准备注册全局热键");
             match hotkey_str.parse::<tauri_plugin_global_shortcut::Shortcut>() {
                 Ok(shortcut) => {
-                    let shortcut_for_handler = shortcut.clone();
+                    let shortcut_for_handler = shortcut;
                     let handler_app = app_handle.clone();
-                    let result = app.global_shortcut().on_shortcut(shortcut, move |_app, sc, evt| {
-                        debug!(state = ? evt.state(), "热键回调触发");
-                        if sc == &shortcut_for_handler && evt.state() == ShortcutState::Pressed {
-                            panel::toggle_panel(&handler_app);
-                        }
-                    });
+                    let result =
+                        app.global_shortcut()
+                            .on_shortcut(shortcut, move |_app, sc, evt| {
+                                debug!(state = ? evt.state(), "热键回调触发");
+                                if sc == &shortcut_for_handler
+                                    && evt.state() == ShortcutState::Pressed
+                                {
+                                    panel::toggle_panel(&handler_app);
+                                }
+                            });
                     match result {
                         Ok(_) => info!(hotkey = %hotkey_str, "✓ 已注册 → 切换面板"),
                         Err(e) => warn!(error = %e, hotkey = %hotkey_str, "✗ 注册失败"),
@@ -282,7 +302,10 @@ fn gamepad_loop(app: &tauri::AppHandle) {
         }
     };
 
-    let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
         Ok(r) => r,
         Err(e) => {
             error!(error = %e, "Tokio 运行时创建失败");
@@ -294,10 +317,18 @@ fn gamepad_loop(app: &tauri::AppHandle) {
 
     /// 懒加载：首次调用时才初始化 PetAgent（避免启动阻塞 2-5s）
     fn get_agent(agent: &std::sync::OnceLock<std::option::Option<PetAgent>>) -> Option<&PetAgent> {
-        agent.get_or_init(|| match PetAgent::new() {
-            Ok(a) => { info!("AI Agent 初始化成功 (8Bit Cat)"); Some(a) }
-            Err(e) => { error!(error = %e, "AI Agent 初始化失败，后续对话将不可用"); None }
-        }).as_ref()
+        agent
+            .get_or_init(|| match PetAgent::new() {
+                Ok(a) => {
+                    info!("AI Agent 初始化成功 (8Bit Cat)");
+                    Some(a)
+                }
+                Err(e) => {
+                    error!(error = %e, "AI Agent 初始化失败，后续对话将不可用");
+                    None
+                }
+            })
+            .as_ref()
     }
 
     let mut action_config = ActionConfig::load("actions.yml").ok();
@@ -310,7 +341,7 @@ fn gamepad_loop(app: &tauri::AppHandle) {
 
     let mut prev_buttons: u32 = 0;
     let mut prev_hat: Option<(i32, i32)> = None;
-    let mut alt_tab = HeldModifier::new(0x12);  // VK_MENU
+    let mut alt_tab = HeldModifier::new(0x12); // VK_MENU
     let mut ctrl_tab = HeldModifier::new(0x11); // VK_CONTROL
     let mut held_voice = HeldCombo::new();
 
@@ -321,11 +352,15 @@ fn gamepad_loop(app: &tauri::AppHandle) {
             if ws.config_reload.load(Ordering::SeqCst) {
                 ws.config_reload.store(false, Ordering::SeqCst);
                 action_config = ActionConfig::load("actions.yml").ok();
-                info!(actions = action_config.as_ref().map(|c| c.actions.len()).unwrap_or(0), "gamepad_loop 配置已刷新");
+                info!(
+                    actions = action_config.as_ref().map(|c| c.actions.len()).unwrap_or(0),
+                    "gamepad_loop 配置已刷新"
+                );
             }
         }
 
-        let panel_visible = app.get_webview_window("panel")
+        let panel_visible = app
+            .get_webview_window("panel")
             .and_then(|w| w.is_visible().ok())
             .unwrap_or(false);
 
@@ -355,8 +390,14 @@ fn gamepad_loop(app: &tauri::AppHandle) {
                     // 面板可见 → 按键转发到面板
                     if panel_visible {
                         match name {
-                            "A" => { info!("→ 面板确认"); let _ = app.emit("panel-confirm", ()); }
-                            "B" => { info!("→ 面板关闭"); let _ = app.emit("panel-close", ()); }
+                            "A" => {
+                                info!("→ 面板确认");
+                                let _ = app.emit("panel-confirm", ());
+                            }
+                            "B" => {
+                                info!("→ 面板关闭");
+                                let _ = app.emit("panel-close", ());
+                            }
                             _ => {}
                         }
                         continue;
@@ -379,7 +420,12 @@ fn gamepad_loop(app: &tauri::AppHandle) {
                     if let Some(ref config) = action_config {
                         if let Some(action_def) = config.actions.get(name) {
                             info!(name = name, action_type = %action_def.action_type, "→ {} ({})", name, action_def.action_type);
-                            execute_action(action_def, &config.defaults, &mut alt_tab, &mut ctrl_tab);
+                            execute_action(
+                                action_def,
+                                &config.defaults,
+                                &mut alt_tab,
+                                &mut ctrl_tab,
+                            );
                         }
                     }
                 }
@@ -430,7 +476,15 @@ fn gamepad_loop(app: &tauri::AppHandle) {
                         info!(text = %text, len = text.chars().count(), "[voice] 识别全文: {text}");
 
                         if let Some(ag) = get_agent(&agent) {
-                            run_ai_chat(&rt, ag, app, &text, "[voice]", &mut memory, &memory_config);
+                            run_ai_chat(
+                                &rt,
+                                ag,
+                                app,
+                                &text,
+                                "[voice]",
+                                &mut memory,
+                                &memory_config,
+                            );
                         } else {
                             warn!("[voice] AI Agent 未初始化");
                         }
@@ -455,10 +509,16 @@ fn gamepad_loop(app: &tauri::AppHandle) {
             alt_tab.release();
             ctrl_tab.release();
             let speed = 3;
-            if dy > 0 { let _ = hotkey::send_scroll(120 * speed); }
-            else if dy < 0 { let _ = hotkey::send_scroll(-120 * speed); }
-            if dx > 0 { let _ = hotkey::send_scroll_h(120 * speed); }
-            else if dx < 0 { let _ = hotkey::send_scroll_h(-120 * speed); }
+            if dy > 0 {
+                let _ = hotkey::send_scroll(120 * speed);
+            } else if dy < 0 {
+                let _ = hotkey::send_scroll(-120 * speed);
+            }
+            if dx > 0 {
+                let _ = hotkey::send_scroll_h(120 * speed);
+            } else if dx < 0 {
+                let _ = hotkey::send_scroll_h(-120 * speed);
+            }
         }
         prev_hat = hat;
 
@@ -536,7 +596,11 @@ fn execute_action(
             };
             let args = action.args.as_deref().unwrap_or("");
             let _ = ai_pad_core::action::launch_program(
-                program, args, &action.workdir, action.terminal, &defaults.terminal,
+                program,
+                args,
+                &action.workdir,
+                action.terminal,
+                &defaults.terminal,
             );
         }
         "voice" => {}
@@ -571,10 +635,15 @@ fn execute_action(
     }
 }
 
-struct HeldModifier { vk: u16, held: bool }
+struct HeldModifier {
+    vk: u16,
+    held: bool,
+}
 
 impl HeldModifier {
-    fn new(vk: u16) -> Self { Self { vk, held: false } }
+    fn new(vk: u16) -> Self {
+        Self { vk, held: false }
+    }
     fn press(&mut self) {
         if !self.held {
             let _ = hotkey::key_down(self.vk);
@@ -598,19 +667,30 @@ struct HeldCombo {
 }
 
 impl HeldCombo {
-    fn new() -> Self { Self { vks: Vec::new(), held: false } }
+    fn new() -> Self {
+        Self {
+            vks: Vec::new(),
+            held: false,
+        }
+    }
 
     fn detect(&mut self, active: bool) -> (bool, bool) {
         match (active, self.held) {
-            (true, false)  => { self.held = true;  (true, false) }
-            (false, true) => { self.held = false; (false, true) }
-            _              => (false, false),
+            (true, false) => {
+                self.held = true;
+                (true, false)
+            }
+            (false, true) => {
+                self.held = false;
+                (false, true)
+            }
+            _ => (false, false),
         }
     }
 
     fn press_keys(&mut self, config: &ai_pad_core::action::ActionConfig) {
         let mut vks = Vec::new();
-        for (_name, action_def) in &config.actions {
+        for action_def in config.actions.values() {
             if action_def.action_type == "voice" {
                 if let Some(voice) = &action_def.voice {
                     let keys: Vec<&str> = voice.trigger.iter().map(|s| s.as_str()).collect();
@@ -635,17 +715,17 @@ impl HeldCombo {
 
 fn name_to_bit(name: &str) -> Option<u32> {
     match name {
-        "A"      => Some(0),
-        "B"      => Some(1),
-        "X"      => Some(3),
-        "Y"      => Some(4),
-        "L1"     => Some(6),
-        "R1"     => Some(7),
-        "L2"     => Some(8),
-        "R2"     => Some(9),
+        "A" => Some(0),
+        "B" => Some(1),
+        "X" => Some(3),
+        "Y" => Some(4),
+        "L1" => Some(6),
+        "R1" => Some(7),
+        "L2" => Some(8),
+        "R2" => Some(9),
         "Select" => Some(10),
-        "Start"  => Some(11),
-        "Home"   => Some(12),
+        "Start" => Some(11),
+        "Home" => Some(12),
         _ => None,
     }
 }

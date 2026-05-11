@@ -61,19 +61,36 @@ impl ButtonConfig {
         let content = fs::read_to_string(path)?;
         let raw: RawButtonConfig = serde_yaml::from_str(&content)?;
 
-        let buttons = raw.buttons.into_iter().filter_map(|(k, v)| {
-            let id: u32 = k.parse().ok()?;
-            Some((id, ButtonInfo {
-                name: v.name,
-                aliases: v.aliases,
-                position: v.position,
-            }))
-        }).collect();
+        let buttons = raw
+            .buttons
+            .into_iter()
+            .filter_map(|(k, v)| {
+                let id: u32 = k.parse().ok()?;
+                Some((
+                    id,
+                    ButtonInfo {
+                        name: v.name,
+                        aliases: v.aliases,
+                        position: v.position,
+                    },
+                ))
+            })
+            .collect();
 
-        let hat = raw.hat.into_iter().filter_map(|(k, v)| {
-            let key = parse_hat_key(&k)?;
-            Some((key, HatDir { arrow: v.arrow, name: v.name }))
-        }).collect();
+        let hat = raw
+            .hat
+            .into_iter()
+            .filter_map(|(k, v)| {
+                let key = parse_hat_key(&k)?;
+                Some((
+                    key,
+                    HatDir {
+                        arrow: v.arrow,
+                        name: v.name,
+                    },
+                ))
+            })
+            .collect();
 
         Ok(ButtonConfig {
             buttons,

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::ai_config::AiConfig;
 use crate::prompts::VisionPromptConfig;
@@ -95,7 +95,13 @@ pub async fn analyze_screenshot(
         .unwrap_or(&config.model);
 
     let body = if monitor_count > 1 {
-        build_vision_request_multi(model, &prompt_config.prompt, base64_jpeg, monitor_count, &prompt_config.prompt_multi)
+        build_vision_request_multi(
+            model,
+            &prompt_config.prompt,
+            base64_jpeg,
+            monitor_count,
+            &prompt_config.prompt_multi,
+        )
     } else {
         build_vision_request(model, &prompt_config.prompt, base64_jpeg)
     };
@@ -127,7 +133,11 @@ pub async fn analyze_screenshot(
         .await
         .map_err(|e| format!("解析视觉 API 响应失败: {e}"))?;
     let elapsed = start.elapsed();
-    debug!(elapsed_ms = elapsed.as_millis(), chars = json.to_string().chars().count(), "视觉分析完成");
+    debug!(
+        elapsed_ms = elapsed.as_millis(),
+        chars = json.to_string().chars().count(),
+        "视觉分析完成"
+    );
 
     parse_vision_response(&json)
 }
@@ -184,7 +194,13 @@ mod tests {
     #[test]
     fn test_build_request_body_multi_monitor() {
         let def = VisionPromptConfig::default();
-        let body = build_vision_request_multi("claude-sonnet-4-20250514", &def.prompt, "AA==", 2, &def.prompt_multi);
+        let body = build_vision_request_multi(
+            "claude-sonnet-4-20250514",
+            &def.prompt,
+            "AA==",
+            2,
+            &def.prompt_multi,
+        );
         let messages = body["messages"].as_array().unwrap();
         let text_block = &messages[0]["content"].as_array().unwrap()[0];
         let prompt_text = text_block["text"].as_str().unwrap();
@@ -252,7 +268,10 @@ mod tests {
             base_url: "https://api.anthropic.com".into(),
             model: "test".into(),
         };
-        assert_eq!(build_api_url(&config), "https://api.anthropic.com/v1/messages");
+        assert_eq!(
+            build_api_url(&config),
+            "https://api.anthropic.com/v1/messages"
+        );
     }
 
     #[test]
@@ -262,7 +281,10 @@ mod tests {
             base_url: "https://proxy.example.com".into(),
             model: "test".into(),
         };
-        assert_eq!(build_api_url(&config), "https://proxy.example.com/v1/messages");
+        assert_eq!(
+            build_api_url(&config),
+            "https://proxy.example.com/v1/messages"
+        );
     }
 
     #[test]
@@ -272,6 +294,9 @@ mod tests {
             base_url: "https://proxy.example.com/".into(),
             model: "test".into(),
         };
-        assert_eq!(build_api_url(&config), "https://proxy.example.com/v1/messages");
+        assert_eq!(
+            build_api_url(&config),
+            "https://proxy.example.com/v1/messages"
+        );
     }
 }

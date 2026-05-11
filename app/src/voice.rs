@@ -14,7 +14,10 @@
 
 use std::sync::Mutex;
 
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, WebviewUrl,
+    WebviewWindowBuilder,
+};
 use tracing::{info, warn};
 
 const VOICE_W: u32 = 280;
@@ -37,14 +40,19 @@ pub struct SharedVoice {
 impl SharedVoice {
     pub fn new() -> Self {
         Self {
-            entry: Mutex::new(VoiceEntry { text: String::new(), generation: 0 }),
+            entry: Mutex::new(VoiceEntry {
+                text: String::new(),
+                generation: 0,
+            }),
             generation: Mutex::new(0),
         }
     }
 }
 
 impl Default for SharedVoice {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// 启动时预创建 voice 窗口,放在屏幕外 (visible:true 才能成为合法焦点目标)
@@ -79,7 +87,10 @@ pub fn open_voice_capture(app: &AppHandle) -> Result<(), String> {
     *gen += 1;
     let new_gen = *gen;
     drop(gen);
-    *state.entry.lock().map_err(|e| e.to_string())? = VoiceEntry { text: String::new(), generation: new_gen };
+    *state.entry.lock().map_err(|e| e.to_string())? = VoiceEntry {
+        text: String::new(),
+        generation: new_gen,
+    };
     info!(generation = new_gen, "[voice] 新语音会话开始");
 
     let window = match app.get_webview_window("voice") {
@@ -172,13 +183,15 @@ pub fn take_voice_text(app: &AppHandle) -> Result<String, String> {
             std::thread::sleep(std::time::Duration::from_millis(300));
             let retry_entry = std::mem::take(&mut *state.entry.lock().map_err(|e| e.to_string())?);
             if !retry_entry.text.is_empty() && retry_entry.generation == current_gen {
-                info!(chars = retry_entry.text.chars().count(), "[voice] 重试取值成功");
+                info!(
+                    chars = retry_entry.text.chars().count(),
+                    "[voice] 重试取值成功"
+                );
                 return Ok(retry_entry.text);
             } else if !retry_entry.text.is_empty() {
                 warn!(
                     entry_gen = retry_entry.generation,
-                    current_gen,
-                    "[voice] 重试取到的也是旧文本，丢弃"
+                    current_gen, "[voice] 重试取到的也是旧文本，丢弃"
                 );
             }
         }
@@ -201,7 +214,8 @@ pub fn take_voice_text(app: &AppHandle) -> Result<String, String> {
 
     // Step 5: 再次确保清空（防止残留）
     if let Some(window) = app.get_webview_window("voice") {
-        let _ = window.eval(r#"if(document.getElementById('vox'))document.getElementById('vox').value=''"#);
+        let _ = window
+            .eval(r#"if(document.getElementById('vox'))document.getElementById('vox').value=''"#);
     }
 
     Ok(text)
@@ -213,7 +227,10 @@ pub async fn cmd_voice_update_text(
     text: String,
 ) -> Result<(), String> {
     let gen = *state.generation.lock().map_err(|e| e.to_string())?;
-    *state.entry.lock().map_err(|e| e.to_string())? = VoiceEntry { text, generation: gen };
+    *state.entry.lock().map_err(|e| e.to_string())? = VoiceEntry {
+        text,
+        generation: gen,
+    };
     Ok(())
 }
 
@@ -237,7 +254,10 @@ mod tests {
     #[test]
     fn test_shared_voice_take_clears() {
         let v = SharedVoice::new();
-        *v.entry.lock().unwrap() = VoiceEntry { text: "你好世界".into(), generation: 1 };
+        *v.entry.lock().unwrap() = VoiceEntry {
+            text: "你好世界".into(),
+            generation: 1,
+        };
         let taken = std::mem::take(&mut *v.entry.lock().unwrap());
         assert_eq!(taken.text, "你好世界");
         assert!(v.entry.lock().unwrap().text.is_empty());
@@ -258,8 +278,14 @@ mod tests {
     fn test_shared_voice_overwrite() {
         let v = SharedVoice::new();
         *v.generation.lock().unwrap() = 1;
-        *v.entry.lock().unwrap() = VoiceEntry { text: "第一次".into(), generation: 1 };
-        *v.entry.lock().unwrap() = VoiceEntry { text: "第二次".into(), generation: 1 };
+        *v.entry.lock().unwrap() = VoiceEntry {
+            text: "第一次".into(),
+            generation: 1,
+        };
+        *v.entry.lock().unwrap() = VoiceEntry {
+            text: "第二次".into(),
+            generation: 1,
+        };
         let taken = std::mem::take(&mut *v.entry.lock().unwrap());
         assert_eq!(taken.text, "第二次");
         assert!(v.entry.lock().unwrap().text.is_empty());
@@ -277,7 +303,10 @@ mod tests {
         // 模拟: gen=1 时写入的旧文本，在 gen=2 时应被拒绝
         let v = SharedVoice::new();
         *v.generation.lock().unwrap() = 1;
-        *v.entry.lock().unwrap() = VoiceEntry { text: "旧文本".into(), generation: 1 };
+        *v.entry.lock().unwrap() = VoiceEntry {
+            text: "旧文本".into(),
+            generation: 1,
+        };
 
         // 模拟新会话开始 (generation 递增)
         *v.generation.lock().unwrap() = 2;
@@ -287,7 +316,11 @@ mod tests {
         assert!(entry.generation != current_gen); // 旧文本 gen=1 ≠ current_gen=2
 
         // 模拟 take_voice_text 的过滤逻辑
-        let accepted = if entry.generation == current_gen { entry.text } else { String::new() };
+        let accepted = if entry.generation == current_gen {
+            entry.text
+        } else {
+            String::new()
+        };
         assert!(accepted.is_empty(), "旧文本应被丢弃");
     }
 
@@ -295,13 +328,20 @@ mod tests {
     fn test_generation_accepts_fresh_text() {
         let v = SharedVoice::new();
         *v.generation.lock().unwrap() = 2;
-        *v.entry.lock().unwrap() = VoiceEntry { text: "新文本".into(), generation: 2 };
+        *v.entry.lock().unwrap() = VoiceEntry {
+            text: "新文本".into(),
+            generation: 2,
+        };
 
         let current_gen = *v.generation.lock().unwrap();
         let entry = std::mem::take(&mut *v.entry.lock().unwrap());
         assert_eq!(entry.generation, current_gen);
 
-        let accepted = if entry.generation == current_gen { entry.text } else { String::new() };
+        let accepted = if entry.generation == current_gen {
+            entry.text
+        } else {
+            String::new()
+        };
         assert_eq!(accepted, "新文本");
     }
 
@@ -316,7 +356,10 @@ mod tests {
         *gen += 1;
         let g1 = *gen;
         drop(gen);
-        *v.entry.lock().unwrap() = VoiceEntry { text: String::new(), generation: g1 };
+        *v.entry.lock().unwrap() = VoiceEntry {
+            text: String::new(),
+            generation: g1,
+        };
         assert_eq!(g1, 1);
 
         // 第二次 open
@@ -324,7 +367,10 @@ mod tests {
         *gen += 1;
         let g2 = *gen;
         drop(gen);
-        *v.entry.lock().unwrap() = VoiceEntry { text: String::new(), generation: g2 };
+        *v.entry.lock().unwrap() = VoiceEntry {
+            text: String::new(),
+            generation: g2,
+        };
         assert_eq!(g2, 2);
         assert!(g2 > g1);
     }

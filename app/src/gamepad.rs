@@ -14,32 +14,50 @@ pub struct PetEvent {
 
 impl PetEvent {
     pub fn set_state(state: &str) -> Self {
-        Self { state: Some(state.to_string()), bubble: None, walk_to: None }
+        Self {
+            state: Some(state.to_string()),
+            bubble: None,
+            walk_to: None,
+        }
     }
 
     pub fn bubble(text: &str) -> Self {
-        Self { state: None, bubble: Some(text.to_string()), walk_to: None }
+        Self {
+            state: None,
+            bubble: Some(text.to_string()),
+            walk_to: None,
+        }
     }
 
     pub fn walk_to(x: f32) -> Self {
-        Self { state: None, bubble: None, walk_to: Some(x) }
+        Self {
+            state: None,
+            bubble: None,
+            walk_to: Some(x),
+        }
     }
 
     pub fn empty() -> Self {
-        Self { state: None, bubble: None, walk_to: None }
+        Self {
+            state: None,
+            bubble: None,
+            walk_to: None,
+        }
     }
 }
 
 /// 从 PetCommand 生成前端事件列表
 pub fn commands_to_events(cmds: &[PetCommand]) -> Vec<PetEvent> {
-    cmds.iter().map(|cmd| match cmd {
-        PetCommand::SetState { state } => {
-            PetEvent::set_state(&format!("{:?}", state).to_lowercase())
-        }
-        PetCommand::WalkTo { x } => PetEvent::walk_to(*x),
-        PetCommand::ShowBubble { text } => PetEvent::bubble(text),
-        PetCommand::Exit => PetEvent::set_state("exit"),
-    }).collect()
+    cmds.iter()
+        .map(|cmd| match cmd {
+            PetCommand::SetState { state } => {
+                PetEvent::set_state(&format!("{:?}", state).to_lowercase())
+            }
+            PetCommand::WalkTo { x } => PetEvent::walk_to(*x),
+            PetCommand::ShowBubble { text } => PetEvent::bubble(text),
+            PetCommand::Exit => PetEvent::set_state("exit"),
+        })
+        .collect()
 }
 
 /// 处理手柄按键，返回要发送给前端的事件
@@ -105,7 +123,9 @@ mod tests {
 
     #[test]
     fn test_commands_to_events_set_state() {
-        let cmds = vec![PetCommand::SetState { state: PetStateName::Talk }];
+        let cmds = vec![PetCommand::SetState {
+            state: PetStateName::Talk,
+        }];
         let events = commands_to_events(&cmds);
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].state, Some("talk".to_string()));
@@ -164,7 +184,9 @@ mod tests {
     #[test]
     fn test_process_agent_response_error() {
         let events = process_agent_response("抱歉，操作失败了");
-        assert!(events.iter().any(|e| e.state == Some("confused".to_string())));
+        assert!(events
+            .iter()
+            .any(|e| e.state == Some("confused".to_string())));
     }
 
     #[test]

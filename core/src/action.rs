@@ -1,5 +1,5 @@
-use std::fs;
 use serde::Deserialize;
+use std::fs;
 
 // ---- 数据结构 ----
 
@@ -11,8 +11,12 @@ pub struct Defaults {
     pub window: String,
 }
 
-fn default_terminal() -> String { "powershell".into() }
-fn default_window() -> String { "maximized".into() }
+fn default_terminal() -> String {
+    "powershell".into()
+}
+fn default_window() -> String {
+    "maximized".into()
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ActionConfig {
@@ -45,7 +49,9 @@ pub struct VoiceConfig {
     pub delay: f64,
 }
 
-fn default_delay() -> f64 { 1.0 }
+fn default_delay() -> f64 {
+    1.0
+}
 
 impl ActionConfig {
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
@@ -56,15 +62,31 @@ impl ActionConfig {
 }
 
 /// 统一程序启动逻辑（tools.rs / panel.rs / lib.rs 共用）
-pub fn launch_program(program: &str, args: &str, workdir: &str, terminal: bool, default_terminal: &str) -> Result<(), String> {
+pub fn launch_program(
+    program: &str,
+    args: &str,
+    workdir: &str,
+    terminal: bool,
+    default_terminal: &str,
+) -> Result<(), String> {
     if terminal {
-        let term = if terminal && default_terminal.is_empty() { "powershell" } else { default_terminal };
+        let term = if terminal && default_terminal.is_empty() {
+            "powershell"
+        } else {
+            default_terminal
+        };
         let is_shell = matches!(program, "powershell" | "pwsh" | "cmd");
         let ps_cmd = if is_shell && args.is_empty() {
             format!("Start-Process {program} -WindowStyle Maximized")
         } else {
-            let cmd = if args.is_empty() { program.to_string() } else { format!("{program} {args}") };
-            format!("Start-Process {term} -ArgumentList '-NoExit','-Command','{cmd}' -WindowStyle Maximized")
+            let cmd = if args.is_empty() {
+                program.to_string()
+            } else {
+                format!("{program} {args}")
+            };
+            format!(
+                "Start-Process {term} -ArgumentList '-NoExit','-Command','{cmd}' -WindowStyle Maximized"
+            )
         };
         std::process::Command::new("powershell")
             .args(["-Command", &ps_cmd])

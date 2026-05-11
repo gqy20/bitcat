@@ -72,11 +72,17 @@ impl PetAgent {
                     on_chunk(&text.text);
                     chunk_count += 1;
                 }
-                Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::ToolCall { .. })) => {
+                Ok(MultiTurnStreamItem::StreamAssistantItem(
+                    StreamedAssistantContent::ToolCall { .. },
+                )) => {
                     tool_call_count += 1;
                 }
                 Ok(MultiTurnStreamItem::FinalResponse(res)) => {
-                    debug!(chars = res.response().len(), tokens = res.usage().total_tokens, "[stream] FinalResponse");
+                    debug!(
+                        chars = res.response().len(),
+                        tokens = res.usage().total_tokens,
+                        "[stream] FinalResponse"
+                    );
                 }
                 Ok(MultiTurnStreamItem::StreamUserItem(_)) => {
                     debug!("[stream] UserItem (工具结果)");
@@ -88,7 +94,8 @@ impl PetAgent {
             }
         }
         info!(
-            chunk_count, tool_call_count,
+            chunk_count,
+            tool_call_count,
             chars = accumulated.chars().count(),
             "[stream] 完成"
         );
@@ -300,7 +307,12 @@ mod tests {
     fn test_tool_call_launch() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let tool = LaunchTool;
-        let args = LaunchArgs { program: "echo".into(), args: "test".into(), workdir: String::new(), terminal: false };
+        let args = LaunchArgs {
+            program: "echo".into(),
+            args: "test".into(),
+            workdir: String::new(),
+            terminal: false,
+        };
         let result = rt.block_on(tool.call(args)).unwrap();
         assert!(result.success);
     }
@@ -309,7 +321,9 @@ mod tests {
     fn test_tool_call_shell() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let tool = ShellTool;
-        let args = ShellArgs { command: "echo hello_test".into() };
+        let args = ShellArgs {
+            command: "echo hello_test".into(),
+        };
         let result = rt.block_on(tool.call(args)).unwrap();
         assert!(result.success);
         assert!(result.output.contains("hello_test"));
@@ -319,7 +333,9 @@ mod tests {
     fn test_tool_call_read_file() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let tool = ReadFileTool;
-        let args = ReadFileArgs { path: "Cargo.toml".into() };
+        let args = ReadFileArgs {
+            path: "Cargo.toml".into(),
+        };
         let result = rt.block_on(tool.call(args)).unwrap();
         assert!(result.success);
     }
@@ -328,7 +344,9 @@ mod tests {
     fn test_tool_call_get_time() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let tool = GetTimeTool;
-        let args = GetTimeArgs { format: "date".into() };
+        let args = GetTimeArgs {
+            format: "date".into(),
+        };
         let result = rt.block_on(tool.call(args)).unwrap();
         assert!(result.success);
         assert!(!result.output.is_empty());

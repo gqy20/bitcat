@@ -98,7 +98,11 @@ impl Default for Pet {
 
 impl Pet {
     pub fn new(x: f32, y: f32) -> Self {
-        Self { x, y, ..Default::default() }
+        Self {
+            x,
+            y,
+            ..Default::default()
+        }
     }
 
     /// 更新状态机，dt 为距上次更新的毫秒数
@@ -114,7 +118,9 @@ impl Pet {
         }
 
         // Walk 状态移动
-        if self.state == PetState::Walk && let Some(tx) = self.target_x {
+        if self.state == PetState::Walk
+            && let Some(tx) = self.target_x
+        {
             let dx = tx - self.x;
             if dx.abs() < self.speed * dt_ms as f32 / 1000.0 {
                 self.x = tx;

@@ -1,3 +1,4 @@
+use crate::commands::SharedWindowState;
 use std::sync::atomic::Ordering;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -5,7 +6,6 @@ use tauri::{
     AppHandle, Emitter, Manager,
 };
 use tracing::info;
-use crate::commands::SharedWindowState;
 
 const MENU_SCREENSHOT: &str = "screenshot";
 const MENU_COLLAPSE: &str = "collapse";
@@ -21,14 +21,17 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let separator = PredefinedMenuItem::separator(app)?;
     let exit_item = MenuItem::with_id(app, MENU_EXIT, "退出", true, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[
-        &screenshot_item,
-        &collapse_item,
-        &top_item,
-        &reload_item,
-        &separator,
-        &exit_item,
-    ])?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &screenshot_item,
+            &collapse_item,
+            &top_item,
+            &reload_item,
+            &separator,
+            &exit_item,
+        ],
+    )?;
 
     TrayIconBuilder::new()
         .icon(app.default_window_icon().unwrap().clone())
@@ -110,7 +113,13 @@ mod tests {
 
     #[test]
     fn test_menu_ids_are_unique() {
-        let ids = [MENU_SCREENSHOT, MENU_COLLAPSE, MENU_TOP, MENU_RELOAD, MENU_EXIT];
+        let ids = [
+            MENU_SCREENSHOT,
+            MENU_COLLAPSE,
+            MENU_TOP,
+            MENU_RELOAD,
+            MENU_EXIT,
+        ];
         let mut sorted = ids;
         sorted.sort();
         for i in 0..sorted.len() - 1 {
@@ -129,7 +138,7 @@ mod tests {
 
     #[test]
     fn test_window_state_defaults() {
-        let ws = SharedWindowState::new();
+        let ws = SharedWindowState::default();
         assert!(!ws.collapsed.load(Ordering::SeqCst));
         assert!(ws.always_on_top.load(Ordering::SeqCst));
         assert!(!ws.config_reload.load(Ordering::SeqCst));

@@ -72,7 +72,9 @@ fn default_vision_prompt_multi() -> String {
 
 impl Default for AgentPromptConfig {
     fn default() -> Self {
-        Self { preamble: default_agent_preamble() }
+        Self {
+            preamble: default_agent_preamble(),
+        }
     }
 }
 

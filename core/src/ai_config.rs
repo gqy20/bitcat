@@ -19,27 +19,40 @@ impl AiConfig {
         {
             let model = std::env::var("ANTHROPIC_MODEL")
                 .unwrap_or_else(|_| "claude-sonnet-4-20250514".into());
-            return Ok(Self { api_key: key, base_url: url, model });
+            return Ok(Self {
+                api_key: key,
+                base_url: url,
+                model,
+            });
         }
 
         // 2. 回退到 settings.json
         let path = settings_path();
-        let raw = fs::read_to_string(&path)
-            .map_err(|e| format!("读取 {:?} 失败: {e}", path))?;
-        let cfg: SettingsFile = serde_json::from_str(&raw)
-            .map_err(|e| format!("解析 settings.json 失败: {e}"))?;
+        let raw = fs::read_to_string(&path).map_err(|e| format!("读取 {:?} 失败: {e}", path))?;
+        let cfg: SettingsFile =
+            serde_json::from_str(&raw).map_err(|e| format!("解析 settings.json 失败: {e}"))?;
 
-        let api_key = cfg.env.ANTHROPIC_AUTH_TOKEN
+        let api_key = cfg
+            .env
+            .ANTHROPIC_AUTH_TOKEN
             .or(cfg.env.ANTHROPIC_API_KEY)
             .ok_or_else(|| String::from("settings.json 中未找到 API key"))?;
 
-        let base_url = cfg.env.ANTHROPIC_BASE_URL
+        let base_url = cfg
+            .env
+            .ANTHROPIC_BASE_URL
             .unwrap_or_else(|| String::from("https://api.anthropic.com"));
 
-        let model = cfg.env.ANTHROPIC_MODEL
+        let model = cfg
+            .env
+            .ANTHROPIC_MODEL
             .unwrap_or_else(|| String::from("claude-sonnet-4-20250514"));
 
-        Ok(Self { api_key, base_url, model })
+        Ok(Self {
+            api_key,
+            base_url,
+            model,
+        })
     }
 
     /// 根据模型名推断合适的 max_tokens
@@ -132,34 +145,46 @@ mod tests {
 
     #[test]
     fn test_parse_settings_with_all_fields() {
-        let cfg: SettingsFile = serde_json::from_str(r#"{
+        let cfg: SettingsFile = serde_json::from_str(
+            r#"{
             "env": {
                 "ANTHROPIC_AUTH_TOKEN": "sk-test",
                 "ANTHROPIC_BASE_URL": "https://proxy.example.com",
                 "ANTHROPIC_MODEL": "glm-5.1"
             }
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
 
         assert_eq!(cfg.env.ANTHROPIC_AUTH_TOKEN, Some("sk-test".into()));
-        assert_eq!(cfg.env.ANTHROPIC_BASE_URL, Some("https://proxy.example.com".into()));
+        assert_eq!(
+            cfg.env.ANTHROPIC_BASE_URL,
+            Some("https://proxy.example.com".into())
+        );
         assert_eq!(cfg.env.ANTHROPIC_MODEL, Some("glm-5.1".into()));
 
-        let cfg2: SettingsFile = serde_json::from_str(r#"{
+        let cfg2: SettingsFile = serde_json::from_str(
+            r#"{
             "env": {
                 "anthropic_auth_token": "sk-test2",
                 "anthropic_base_url": "https://proxy2.example.com"
             }
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
         assert_eq!(cfg2.env.ANTHROPIC_AUTH_TOKEN, Some("sk-test2".into()));
     }
 
     #[test]
     fn test_parse_settings_missing_optional_fields() {
-        let cfg: SettingsFile = serde_json::from_str(r#"{
+        let cfg: SettingsFile = serde_json::from_str(
+            r#"{
             "env": {
                 "ANTHROPIC_AUTH_TOKEN": "sk-only-key"
             }
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
 
         assert_eq!(cfg.env.ANTHROPIC_AUTH_TOKEN, Some("sk-only-key".into()));
         assert_eq!(cfg.env.ANTHROPIC_BASE_URL, None);
@@ -174,15 +199,22 @@ mod tests {
 
     #[test]
     fn test_default_values_when_missing() {
-        let cfg: SettingsFile = serde_json::from_str(r#"{
+        let cfg: SettingsFile = serde_json::from_str(
+            r#"{
             "env": {
                 "ANTHROPIC_AUTH_TOKEN": "sk-key"
             }
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
 
-        let url = cfg.env.ANTHROPIC_BASE_URL
+        let url = cfg
+            .env
+            .ANTHROPIC_BASE_URL
             .unwrap_or_else(|| String::from("https://api.anthropic.com"));
-        let model = cfg.env.ANTHROPIC_MODEL
+        let model = cfg
+            .env
+            .ANTHROPIC_MODEL
             .unwrap_or_else(|| String::from("claude-sonnet-4-20250514"));
 
         assert_eq!(url, "https://api.anthropic.com");

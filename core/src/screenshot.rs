@@ -201,8 +201,8 @@ pub fn resize_bgra(
     }
 
     use image::{ImageBuffer, RgbaImage, imageops};
-    let img: RgbaImage = ImageBuffer::from_raw(w, h, rgba)
-        .ok_or_else(|| "无法创建图像缓冲区".to_string())?;
+    let img: RgbaImage =
+        ImageBuffer::from_raw(w, h, rgba).ok_or_else(|| "无法创建图像缓冲区".to_string())?;
 
     let resized = imageops::resize(&img, out_w, out_h, imageops::FilterType::Triangle);
 
@@ -273,8 +273,7 @@ pub fn save_screenshot(
     let prefix = chrono::Local::now().format("%H%M%S").to_string();
 
     let jpg_path = dir.join(format!("{prefix}.jpg"));
-    std::fs::write(&jpg_path, jpeg_bytes)
-        .map_err(|e| format!("保存截图失败: {e}"))?;
+    std::fs::write(&jpg_path, jpeg_bytes).map_err(|e| format!("保存截图失败: {e}"))?;
 
     save_analysis_json(&dir, &prefix, "", record)?;
 
@@ -290,10 +289,9 @@ pub fn save_analysis_json(
     record: &ScreenshotRecord,
 ) -> Result<(), String> {
     let json_path = dir.join(format!("{prefix}{suffix}_analysis.json"));
-    let json = serde_json::to_string_pretty(record)
-        .map_err(|e| format!("序列化分析结果失败: {e}"))?;
-    std::fs::write(&json_path, json)
-        .map_err(|e| format!("保存分析结果失败: {e}"))?;
+    let json =
+        serde_json::to_string_pretty(record).map_err(|e| format!("序列化分析结果失败: {e}"))?;
+    std::fs::write(&json_path, json).map_err(|e| format!("保存分析结果失败: {e}"))?;
     Ok(())
 }
 
@@ -318,7 +316,11 @@ pub fn list_recent_analyses(dir: &std::path::Path, count: u32) -> Vec<Screenshot
 
     // 按文件名倒序（文件名 HHMMSS 越大越新）
     records.sort_by(|a, b| b.0.cmp(&a.0));
-    records.into_iter().take(count as usize).map(|(_, r)| r).collect()
+    records
+        .into_iter()
+        .take(count as usize)
+        .map(|(_, r)| r)
+        .collect()
 }
 
 /// 清理超过 keep_days 天的截图目录。返回清理的目录数。
@@ -332,16 +334,13 @@ pub fn cleanup_old_screenshots(keep_days: u64) -> Result<u32, String> {
     let cutoff_str = cutoff.format("%Y-%m-%d").to_string();
     let mut removed = 0u32;
 
-    let entries = std::fs::read_dir(&base)
-        .map_err(|e| format!("读取截图目录失败: {e}"))?;
+    let entries = std::fs::read_dir(&base).map_err(|e| format!("读取截图目录失败: {e}"))?;
 
     for entry in entries.flatten() {
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
         // 目录名格式 YYYY-MM-DD，字符串比较即可判断新旧
-        if *name_str < *cutoff_str
-            && std::fs::remove_dir_all(entry.path()).is_ok()
-        {
+        if *name_str < *cutoff_str && std::fs::remove_dir_all(entry.path()).is_ok() {
             removed += 1;
         }
     }
@@ -356,7 +355,11 @@ mod tests {
     #[test]
     fn test_default_debug_resolutions_is_empty() {
         let cfg = ScreenshotConfig::default();
-        assert!(cfg.debug_resolutions.is_empty(), "生产默认不应启用调试多分辨率，当前 {:?}", cfg.debug_resolutions);
+        assert!(
+            cfg.debug_resolutions.is_empty(),
+            "生产默认不应启用调试多分辨率，当前 {:?}",
+            cfg.debug_resolutions
+        );
     }
 
     #[test]
@@ -570,7 +573,12 @@ min_width: 480
         }
         let high = encode_jpeg(&rgb, 200, 200, 95).unwrap();
         let low = encode_jpeg(&rgb, 200, 200, 20).unwrap();
-        assert!(low.len() < high.len(), "low={} < high={}", low.len(), high.len());
+        assert!(
+            low.len() < high.len(),
+            "low={} < high={}",
+            low.len(),
+            high.len()
+        );
     }
 
     // ---- 类型 + 拼接 测试 ----
@@ -816,9 +824,9 @@ min_width: 480
         let results = list_recent_analyses(today.as_path(), 3);
         assert_eq!(results.len(), 3);
         // 应该按时间倒序（最新的在前）
-        assert_eq!(results[0].description, "VS Code");   // 100020
-        assert_eq!(results[1].description, "终端");       // 100010
-        assert_eq!(results[2].description, "浏览器");     // 100000
+        assert_eq!(results[0].description, "VS Code"); // 100020
+        assert_eq!(results[1].description, "终端"); // 100010
+        assert_eq!(results[2].description, "浏览器"); // 100000
     }
 
     #[test]

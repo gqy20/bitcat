@@ -15,7 +15,7 @@ pub fn capture_target(target: &ScreenshotTarget) -> Result<CapturedFrame, String
 fn capture_primary() -> Result<CapturedFrame, String> {
     use windows_sys::Win32::Graphics::Gdi::{
         BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
-        GetDIBits, SelectObject, SRCCOPY, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, BI_RGB,
+        GetDIBits, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, SRCCOPY,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
 
@@ -94,9 +94,9 @@ fn capture_all_screens() -> Result<CapturedFrame, String> {
     use ai_pad_core::screenshot::stitch_horizontal;
     use windows_sys::Win32::Foundation::{LPARAM, RECT};
     use windows_sys::Win32::Graphics::Gdi::{
-        BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
-        GetDIBits, SelectObject, EnumDisplayMonitors, SRCCOPY, BITMAPINFO, BITMAPINFOHEADER,
-        DIB_RGB_COLORS, BI_RGB, HMONITOR, HDC,
+        BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
+        EnumDisplayMonitors, GetDC, GetDIBits, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB,
+        DIB_RGB_COLORS, HDC, HMONITOR, SRCCOPY,
     };
 
     static mut FRAMES_PTR: *const std::sync::Mutex<Vec<CapturedFrame>> = std::ptr::null();
@@ -117,15 +117,7 @@ fn capture_all_screens() -> Result<CapturedFrame, String> {
         let old = SelectObject(hdc_mem, hbitmap);
 
         BitBlt(
-            hdc_mem,
-            0,
-            0,
-            w as i32,
-            h as i32,
-            hdc_screen,
-            rect.left,
-            rect.top,
-            SRCCOPY,
+            hdc_mem, 0, 0, w as i32, h as i32, hdc_screen, rect.left, rect.top, SRCCOPY,
         );
 
         let mut bmi: BITMAPINFO = std::mem::zeroed();
@@ -192,7 +184,7 @@ fn capture_all_screens() -> Result<CapturedFrame, String> {
 #[cfg(target_os = "windows")]
 pub fn enumerate_displays() -> Vec<ScreenInfo> {
     use windows_sys::Win32::Foundation::{LPARAM, RECT};
-    use windows_sys::Win32::Graphics::Gdi::{EnumDisplayMonitors, HMONITOR, HDC};
+    use windows_sys::Win32::Graphics::Gdi::{EnumDisplayMonitors, HDC, HMONITOR};
 
     static mut DISPLAYS_PTR: *const std::sync::Mutex<Vec<ScreenInfo>> = std::ptr::null();
 
@@ -249,8 +241,8 @@ pub struct SharedScreenshotState {
     pub enabled: Mutex<bool>,
 }
 
-impl SharedScreenshotState {
-    pub fn new() -> Self {
+impl Default for SharedScreenshotState {
+    fn default() -> Self {
         Self {
             last_hash: Mutex::new(0),
             enabled: Mutex::new(true),
@@ -260,9 +252,7 @@ impl SharedScreenshotState {
 
 /// 截图观察线程主循环。
 pub fn screenshot_loop(app: &tauri::AppHandle) {
-    use ai_pad_core::screenshot::{
-        encode_jpeg, resize_bgra, ScreenshotConfig,
-    };
+    use ai_pad_core::screenshot::{encode_jpeg, resize_bgra, ScreenshotConfig};
     use ai_pad_core::vision::{self, VisionConfig};
     use base64::Engine;
     use tracing::{error, info, warn};
@@ -327,11 +317,18 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
                 let black_pixels = (0..sample_count)
                     .filter(|&i| {
                         let idx = i * step * 4;
-                        idx + 3 < f.pixels.len() && f.pixels[idx] == 0 && f.pixels[idx + 1] == 0 && f.pixels[idx + 2] == 0
+                        idx + 3 < f.pixels.len()
+                            && f.pixels[idx] == 0
+                            && f.pixels[idx + 1] == 0
+                            && f.pixels[idx + 2] == 0
                     })
                     .count();
                 if black_pixels > sample_count * 95 / 100 {
-                    info!(black = black_pixels, total = sample_count, "检测到全黑帧，跳过");
+                    info!(
+                        black = black_pixels,
+                        total = sample_count,
+                        "检测到全黑帧，跳过"
+                    );
                     continue;
                 }
                 f
@@ -445,14 +442,19 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             if let Err(e) = std::fs::write(&jpg_path, &jpeg) {
                 warn!(error = %e, path = ?jpg_path, "保存 JPEG 失败");
             }
-            if let Err(e) = ai_pad_core::screenshot::save_analysis_json(&dir, &prefix, &suffix, &record) {
+            if let Err(e) =
+                ai_pad_core::screenshot::save_analysis_json(&dir, &prefix, &suffix, &record)
+            {
                 warn!(error = %e, "保存分析结果失败");
             }
 
             // 只在最后一个分辨率显示气泡
             if is_last {
                 if description.is_empty() {
-                    let _ = crate::bubble::show_bubble(app, "喵~ 看不太清屏幕内容，可能需要检查 API 配置");
+                    let _ = crate::bubble::show_bubble(
+                        app,
+                        "喵~ 看不太清屏幕内容，可能需要检查 API 配置",
+                    );
                 } else {
                     let _ = crate::bubble::show_bubble(app, &description);
                 }
@@ -520,7 +522,7 @@ pub async fn cmd_screenshot_now(app: tauri::AppHandle) -> Result<String, String>
 
 #[cfg(test)]
 mod tests {
-    use ai_pad_core::screenshot::{CapturedFrame, ScreenshotConfig, ScreenInfo};
+    use ai_pad_core::screenshot::{CapturedFrame, ScreenInfo, ScreenshotConfig};
 
     #[test]
     fn test_captured_frame_type_compiles() {

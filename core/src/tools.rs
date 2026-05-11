@@ -15,7 +15,9 @@ pub struct LaunchArgs {
     pub terminal: bool,
 }
 
-fn default_terminal() -> bool { true }
+fn default_terminal() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ShellArgs {
@@ -33,7 +35,9 @@ pub struct GetTimeArgs {
     pub format: String,
 }
 
-fn default_format() -> String { "full".into() }
+fn default_format() -> String {
+    "full".into()
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RecentScreenshotsArgs {
@@ -41,7 +45,9 @@ pub struct RecentScreenshotsArgs {
     pub count: Option<u32>,
 }
 
-fn default_screenshot_count() -> Option<u32> { Some(3) }
+fn default_screenshot_count() -> Option<u32> {
+    Some(3)
+}
 
 // ---- Tool 执行结果 ----
 
@@ -53,11 +59,17 @@ pub struct ToolResult {
 
 impl ToolResult {
     pub fn ok(output: impl Into<String>) -> Self {
-        Self { output: output.into(), success: true }
+        Self {
+            output: output.into(),
+            success: true,
+        }
     }
 
     pub fn err(output: impl Into<String>) -> Self {
-        Self { output: output.into(), success: false }
+        Self {
+            output: output.into(),
+            success: false,
+        }
     }
 }
 
@@ -67,7 +79,13 @@ impl ToolResult {
 pub fn execute_launch(args: &LaunchArgs) -> ToolResult {
     let terminal_name = std::env::var("TERMINAL").unwrap_or_else(|_| "powershell".into());
     debug!(program = %args.program, args = %args.args, terminal = args.terminal, "AI 启动程序");
-    match launch_program(&args.program, &args.args, &args.workdir, args.terminal, &terminal_name) {
+    match launch_program(
+        &args.program,
+        &args.args,
+        &args.workdir,
+        args.terminal,
+        &terminal_name,
+    ) {
         Ok(()) => ToolResult::ok(format!("已启动: {} {}", args.program, args.args)),
         Err(e) => ToolResult::err(e),
     }
@@ -85,9 +103,17 @@ pub fn execute_shell(args: &ShellArgs) -> ToolResult {
             let stdout = String::from_utf8_lossy(&o.stdout).trim().to_string();
             let stderr = String::from_utf8_lossy(&o.stderr).trim().to_string();
             if o.status.success() {
-                ToolResult::ok(if stdout.is_empty() { "(无输出)".into() } else { stdout })
+                ToolResult::ok(if stdout.is_empty() {
+                    "(无输出)".into()
+                } else {
+                    stdout
+                })
             } else {
-                ToolResult::err(if stderr.is_empty() { format!("命令失败 (exit code {:?})", o.status.code()) } else { stderr })
+                ToolResult::err(if stderr.is_empty() {
+                    format!("命令失败 (exit code {:?})", o.status.code())
+                } else {
+                    stderr
+                })
             }
         }
         Err(e) => ToolResult::err(format!("执行错误: {e}")),
@@ -150,7 +176,11 @@ pub fn execute_recent_screenshots(
     for (i, r) in records.iter().enumerate() {
         lines.push(format!(
             "  {}. {} ({}x{}, {} bytes)",
-            i + 1, r.description, r.width, r.height, r.jpeg_size
+            i + 1,
+            r.description,
+            r.width,
+            r.height,
+            r.jpeg_size
         ));
     }
     ToolResult::ok(lines.join("\n"))
@@ -204,7 +234,9 @@ mod tests {
 
     #[test]
     fn test_execute_shell_echo() {
-        let args = ShellArgs { command: "echo 'hello_world'".into() };
+        let args = ShellArgs {
+            command: "echo 'hello_world'".into(),
+        };
         let result = execute_shell(&args);
         assert!(result.success);
         assert!(result.output.contains("hello_world") || !result.output.is_empty());
@@ -212,14 +244,18 @@ mod tests {
 
     #[test]
     fn test_execute_shell_invalid_command() {
-        let args = ShellArgs { command: "nonexistent_command_xyz_12345".into() };
+        let args = ShellArgs {
+            command: "nonexistent_command_xyz_12345".into(),
+        };
         let result = execute_shell(&args);
         assert!(!result.success);
     }
 
     #[test]
     fn test_execute_read_file_existing() {
-        let args = ReadFileArgs { path: "Cargo.toml".into() };
+        let args = ReadFileArgs {
+            path: "Cargo.toml".into(),
+        };
         let result = execute_read_file(&args);
         assert!(result.success);
         assert!(result.output.contains("[package]"));
@@ -227,14 +263,18 @@ mod tests {
 
     #[test]
     fn test_execute_read_file_not_found() {
-        let args = ReadFileArgs { path: "/nonexistent/path/file.xyz".into() };
+        let args = ReadFileArgs {
+            path: "/nonexistent/path/file.xyz".into(),
+        };
         let result = execute_read_file(&args);
         assert!(!result.success);
     }
 
     #[test]
     fn test_execute_get_time_full() {
-        let args = GetTimeArgs { format: "full".into() };
+        let args = GetTimeArgs {
+            format: "full".into(),
+        };
         let result = execute_get_time(&args);
         assert!(result.success);
         assert!(result.output.contains(' ') && result.output.len() > 10);
@@ -242,7 +282,9 @@ mod tests {
 
     #[test]
     fn test_execute_get_time_date_only() {
-        let args = GetTimeArgs { format: "date".into() };
+        let args = GetTimeArgs {
+            format: "date".into(),
+        };
         let result = execute_get_time(&args);
         assert!(result.success);
         assert!(!result.output.contains(' ')); // date only, no time part with space
@@ -267,7 +309,9 @@ mod tests {
         let long_content = "x".repeat(10000);
         std::fs::write(&file_path, &long_content).unwrap();
 
-        let args = ReadFileArgs { path: file_path.to_string_lossy().to_string() };
+        let args = ReadFileArgs {
+            path: file_path.to_string_lossy().to_string(),
+        };
         let result = execute_read_file(&args);
         assert!(result.success);
         assert!(result.output.ends_with("字符)"));

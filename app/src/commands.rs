@@ -1,8 +1,8 @@
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
-use ai_pad_core::pet::Pet;
 use ai_pad_core::bridge::PetStateName;
+use ai_pad_core::pet::Pet;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 /// 共享宠物状态
 pub struct SharedPet {
@@ -10,8 +10,8 @@ pub struct SharedPet {
     pub bubble: Mutex<Option<String>>,
 }
 
-impl SharedPet {
-    pub fn new() -> Self {
+impl Default for SharedPet {
+    fn default() -> Self {
         Self {
             pet: Mutex::new(Pet::new(64.0, 64.0)),
             bubble: Mutex::new(None),
@@ -28,8 +28,8 @@ pub struct SharedWindowState {
     pub last_position: Mutex<Option<(i32, i32)>>,
 }
 
-impl SharedWindowState {
-    pub fn new() -> Self {
+impl Default for SharedWindowState {
+    fn default() -> Self {
         Self {
             collapsed: AtomicBool::new(false),
             always_on_top: AtomicBool::new(true),
@@ -91,7 +91,10 @@ fn snapshot(pet: &Pet, bubble: &Option<String>) -> PetStatus {
 // ---- Tauri command 包装 ----
 
 #[tauri::command]
-pub fn cmd_set_state(shared: tauri::State<'_, SharedPet>, state: PetStateName) -> Result<PetStatus, String> {
+pub fn cmd_set_state(
+    shared: tauri::State<'_, SharedPet>,
+    state: PetStateName,
+) -> Result<PetStatus, String> {
     let mut pet = shared.pet.lock().map_err(|e| e.to_string())?;
     Ok(set_state(&mut pet, state))
 }
@@ -103,7 +106,10 @@ pub fn cmd_walk_to(shared: tauri::State<'_, SharedPet>, x: f32) -> Result<PetSta
 }
 
 #[tauri::command]
-pub fn cmd_show_bubble(shared: tauri::State<'_, SharedPet>, text: String) -> Result<PetStatus, String> {
+pub fn cmd_show_bubble(
+    shared: tauri::State<'_, SharedPet>,
+    text: String,
+) -> Result<PetStatus, String> {
     let pet = shared.pet.lock().map_err(|e| e.to_string())?;
     let mut bubble = shared.bubble.lock().map_err(|e| e.to_string())?;
     Ok(show_bubble(&pet, &mut bubble, text))
@@ -141,7 +147,9 @@ pub fn window_state_snapshot(ws: &SharedWindowState) -> WindowStateSnapshot {
 
 /// 前端 init 时 pull 拉取窗口状态（替代不可靠的 emit push 时序）
 #[tauri::command]
-pub fn cmd_get_window_state(state: tauri::State<'_, SharedWindowState>) -> Result<WindowStateSnapshot, String> {
+pub fn cmd_get_window_state(
+    state: tauri::State<'_, SharedWindowState>,
+) -> Result<WindowStateSnapshot, String> {
     Ok(window_state_snapshot(&state))
 }
 
@@ -160,7 +168,7 @@ mod tests {
 
     #[test]
     fn test_window_state_defaults() {
-        let ws = SharedWindowState::new();
+        let ws = SharedWindowState::default();
         assert!(!ws.collapsed.load(Ordering::SeqCst));
         assert!(ws.always_on_top.load(Ordering::SeqCst));
         assert!(!ws.config_reload.load(Ordering::SeqCst));
@@ -168,14 +176,14 @@ mod tests {
 
     #[test]
     fn test_last_position_default_none() {
-        let ws = SharedWindowState::new();
+        let ws = SharedWindowState::default();
         let pos = ws.last_position.lock().unwrap();
         assert!(pos.is_none(), "last_position 应默认为 None");
     }
 
     #[test]
     fn test_set_and_get_last_position() {
-        let ws = SharedWindowState::new();
+        let ws = SharedWindowState::default();
         {
             let mut pos = ws.last_position.lock().unwrap();
             *pos = Some((100, 200));
@@ -186,7 +194,7 @@ mod tests {
 
     #[test]
     fn test_update_last_position_overwrites() {
-        let ws = SharedWindowState::new();
+        let ws = SharedWindowState::default();
         {
             let mut pos = ws.last_position.lock().unwrap();
             *pos = Some((10, 20));
@@ -201,7 +209,7 @@ mod tests {
 
     #[test]
     fn test_collapse_toggle_atomic() {
-        let ws = SharedWindowState::new();
+        let ws = SharedWindowState::default();
         assert!(!ws.collapsed.load(Ordering::SeqCst));
         ws.collapsed.store(true, Ordering::SeqCst);
         assert!(ws.collapsed.load(Ordering::SeqCst));
@@ -211,7 +219,7 @@ mod tests {
 
     #[test]
     fn test_always_on_top_toggle_atomic() {
-        let ws = SharedWindowState::new();
+        let ws = SharedWindowState::default();
         assert!(ws.always_on_top.load(Ordering::SeqCst));
         ws.always_on_top.store(false, Ordering::SeqCst);
         assert!(!ws.always_on_top.load(Ordering::SeqCst));
@@ -221,18 +229,21 @@ mod tests {
 
     #[test]
     fn test_snapshot_default_state() {
-        let ws = SharedWindowState::new();
+        let ws = SharedWindowState::default();
         let snap = window_state_snapshot(&ws);
-        assert_eq!(snap, WindowStateSnapshot {
-            collapsed: false,
-            always_on_top: true,
-            position: None,
-        });
+        assert_eq!(
+            snap,
+            WindowStateSnapshot {
+                collapsed: false,
+                always_on_top: true,
+                position: None,
+            }
+        );
     }
 
     #[test]
     fn test_snapshot_after_collapse() {
-        let ws = SharedWindowState::new();
+        let ws = SharedWindowState::default();
         ws.collapsed.store(true, Ordering::SeqCst);
         let snap = window_state_snapshot(&ws);
         assert!(snap.collapsed);
@@ -241,7 +252,7 @@ mod tests {
 
     #[test]
     fn test_snapshot_with_position() {
-        let ws = SharedWindowState::new();
+        let ws = SharedWindowState::default();
         *ws.last_position.lock().unwrap() = Some((500, 300));
         let snap = window_state_snapshot(&ws);
         assert_eq!(snap.position, Some((500, 300)));
@@ -395,13 +406,15 @@ mod tests {
 #[cfg(all(test, feature = "ipc-tests"))]
 mod ipc_tests {
     use super::*;
-    use tauri::test::{mock_builder, noop_assets, mock_context, assert_ipc_response, get_ipc_response, MockRuntime};
-    use tauri::{WebviewWindowBuilder, ipc::InvokeBody, ipc::CallbackFn, webview::InvokeRequest};
     use serde_json::json;
+    use tauri::test::{
+        assert_ipc_response, get_ipc_response, mock_builder, mock_context, noop_assets, MockRuntime,
+    };
+    use tauri::{ipc::CallbackFn, ipc::InvokeBody, webview::InvokeRequest, WebviewWindowBuilder};
 
     fn build_test_app() -> (tauri::App<MockRuntime>, tauri::WebviewWindow<MockRuntime>) {
         let app = mock_builder()
-            .manage(SharedPet::new())
+            .manage(SharedPet::default())
             .invoke_handler(tauri::generate_handler![
                 cmd_set_state,
                 cmd_walk_to,
@@ -412,9 +425,10 @@ mod ipc_tests {
             .build(mock_context(noop_assets()))
             .expect("failed to build mock app");
 
-        let webview = WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::App("index.html".into()))
-            .build()
-            .expect("failed to build mock webview");
+        let webview =
+            WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::App("index.html".into()))
+                .build()
+                .expect("failed to build mock webview");
 
         (app, webview)
     }
@@ -435,28 +449,36 @@ mod ipc_tests {
     fn ipc_cmd_get_status_returns_initial() {
         let (_app, wv) = build_test_app();
         let req = invoke_request("cmd_get_status", json!({}));
-        assert_ipc_response(&wv, req, Ok(json!({
-            "state": "idle",
-            "x": 64.0,
-            "y": 64.0,
-            "frame": 0,
-            "facing_right": true,
-            "bubble": null,
-        })));
+        assert_ipc_response(
+            &wv,
+            req,
+            Ok(json!({
+                "state": "idle",
+                "x": 64.0,
+                "y": 64.0,
+                "frame": 0,
+                "facing_right": true,
+                "bubble": null,
+            })),
+        );
     }
 
     #[test]
     fn ipc_cmd_set_state_talk() {
         let (_app, wv) = build_test_app();
         let req = invoke_request("cmd_set_state", json!({ "state": "Talk" }));
-        assert_ipc_response(&wv, req, Ok(json!({
-            "state": "talk",
-            "x": 64.0,
-            "y": 64.0,
-            "frame": 0,
-            "facing_right": true,
-            "bubble": null,
-        })));
+        assert_ipc_response(
+            &wv,
+            req,
+            Ok(json!({
+                "state": "talk",
+                "x": 64.0,
+                "y": 64.0,
+                "frame": 0,
+                "facing_right": true,
+                "bubble": null,
+            })),
+        );
     }
 
     #[test]
@@ -473,14 +495,18 @@ mod ipc_tests {
     fn ipc_cmd_show_bubble() {
         let (_app, wv) = build_test_app();
         let req = invoke_request("cmd_show_bubble", json!({ "text": "你好世界" }));
-        assert_ipc_response(&wv, req, Ok(json!({
-            "state": "idle",
-            "x": 64.0,
-            "y": 64.0,
-            "frame": 0,
-            "facing_right": true,
-            "bubble": "你好世界",
-        })));
+        assert_ipc_response(
+            &wv,
+            req,
+            Ok(json!({
+                "state": "idle",
+                "x": 64.0,
+                "y": 64.0,
+                "frame": 0,
+                "facing_right": true,
+                "bubble": "你好世界",
+            })),
+        );
     }
 
     #[test]
@@ -499,10 +525,14 @@ mod ipc_tests {
         get_ipc_response(&wv, req1).expect("show_bubble ok");
 
         let req2 = invoke_request("cmd_get_status", json!({}));
-        assert_ipc_response(&wv, req2, Ok(json!({
-            "state": "idle",
-            "bubble": "persistent",
-        })));
+        assert_ipc_response(
+            &wv,
+            req2,
+            Ok(json!({
+                "state": "idle",
+                "bubble": "persistent",
+            })),
+        );
     }
 
     #[test]
@@ -513,7 +543,8 @@ mod ipc_tests {
             let resp = get_ipc_response(&wv, req).unwrap();
             let status: PetStatus = resp.deserialize().unwrap();
             assert_eq!(
-                status.state, state_name.to_lowercase(),
+                status.state,
+                state_name.to_lowercase(),
                 "state mismatch for {state_name}"
             );
             assert_eq!(status.frame, 0, "frame should reset on state change");
@@ -524,8 +555,12 @@ mod ipc_tests {
     fn ipc_serialization_roundtrip_chinese() {
         let (_app, wv) = build_test_app();
         let req = invoke_request("cmd_show_bubble", json!({ "text": "喵喵喵 🐱" }));
-        assert_ipc_response(&wv, req, Ok(json!({
-            "bubble": "喵喵喵 🐱",
-        })));
+        assert_ipc_response(
+            &wv,
+            req,
+            Ok(json!({
+                "bubble": "喵喵喵 🐱",
+            })),
+        );
     }
 }

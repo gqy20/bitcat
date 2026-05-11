@@ -1,13 +1,13 @@
 use std::sync::Mutex;
 
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindowBuilder,
+};
 
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::UI::WindowsAndMessaging::{
-    FindWindowExW, PostMessageW, WM_MOUSEWHEEL,
-};
-#[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowExW, PostMessageW, WM_MOUSEWHEEL};
 
 const BUBBLE_SUBCLASS_ID: usize = 100;
 
@@ -224,7 +224,12 @@ unsafe extern "system" fn bubble_wheel_subclass_proc(
     _dwrefdata: usize,
 ) -> windows_sys::Win32::Foundation::LRESULT {
     if umsg == WM_MOUSEWHEEL {
-        let webview = FindWindowExW(hwnd, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut());
+        let webview = FindWindowExW(
+            hwnd,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        );
         if !webview.is_null() {
             let _ = PostMessageW(webview, WM_MOUSEWHEEL, wparam, lparam);
         }
@@ -235,9 +240,7 @@ unsafe extern "system" fn bubble_wheel_subclass_proc(
 /// 在 bubble 窗口 HWND 上安装滚轮转发子类。
 /// 必须在窗口创建后调用（WebView2 子窗口已存在）。
 #[cfg(target_os = "windows")]
-unsafe fn install_wheel_subclass(
-    hwnd: windows_sys::Win32::Foundation::HWND,
-) -> bool {
+unsafe fn install_wheel_subclass(hwnd: windows_sys::Win32::Foundation::HWND) -> bool {
     SetWindowSubclass(
         hwnd,
         Some(bubble_wheel_subclass_proc),
