@@ -468,9 +468,8 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
     }
 }
 
-/// 手动触发截图分析的 Tauri 命令。
-#[tauri::command]
-pub async fn cmd_screenshot_now(app: tauri::AppHandle) -> Result<String, String> {
+/// 手动触发截图分析（同步，内部自行创建 tokio runtime）。
+pub fn do_screenshot_now(app: &tauri::AppHandle) -> Result<String, String> {
     use ai_pad_core::screenshot::{encode_jpeg, resize_bgra, ScreenshotConfig};
     use ai_pad_core::vision::{self, VisionConfig};
     use base64::Engine;
@@ -506,12 +505,17 @@ pub async fn cmd_screenshot_now(app: tauri::AppHandle) -> Result<String, String>
         jpeg_size: jpeg.len(),
     };
     if let Err(e) = ai_pad_core::screenshot::save_screenshot(&jpeg, &record) {
-        use tracing::warn;
-        warn!(error = %e, "保存截图失败");
+        tracing::warn!(error = %e, "保存截图失败");
     }
 
-    let _ = crate::bubble::show_bubble(&app, &description);
+    let _ = crate::bubble::show_bubble(app, &description);
     Ok(description)
+}
+
+/// 手动触发截图分析的 Tauri 命令。
+#[tauri::command]
+pub async fn cmd_screenshot_now(app: tauri::AppHandle) -> Result<String, String> {
+    do_screenshot_now(&app)
 }
 
 #[cfg(test)]

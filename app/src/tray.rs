@@ -37,17 +37,7 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             MENU_SCREENSHOT => {
                 let app_clone = app.clone();
                 std::thread::spawn(move || {
-                    let rt = match tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                    {
-                        Ok(r) => r,
-                        Err(e) => {
-                            tracing::error!(error = %e, "截图线程运行时创建失败");
-                            return;
-                        }
-                    };
-                    if let Err(e) = rt.block_on(crate::screenshot::cmd_screenshot_now(app_clone)) {
+                    if let Err(e) = crate::screenshot::do_screenshot_now(&app_clone) {
                         tracing::warn!(error = %e, "托盘截图失败");
                     }
                 });

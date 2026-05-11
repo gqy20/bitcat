@@ -64,6 +64,10 @@ async fn cmd_recreate_pet_window(
     let _ = window.set_size(PhysicalSize::new(width, height));
     let _ = window.set_position(PhysicalPosition::new(x, y));
 
+    // 重建后 JS 重新加载，需要将当前 Rust 侧状态同步给新的前端实例
+    let collapsed = ws.collapsed.load(std::sync::atomic::Ordering::SeqCst);
+    let _ = app.emit("pet-sync-state", (collapsed, on_top));
+
     Ok(())
 }
 

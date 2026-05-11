@@ -149,6 +149,14 @@
         alwaysOnTop = event.payload;
         applyAlwaysOnTop();
       });
+
+      // 窗口重建后 Rust 同步当前状态到新 JS 实例
+      window.__TAURI__.event.listen('pet-sync-state', (event) => {
+        collapsed = event.payload[0];
+        alwaysOnTop = event.payload[1];
+        applyCollapse();
+        applyAlwaysOnTop();
+      });
     }
   }
 

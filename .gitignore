@@ -40,3 +40,8 @@ app/frontend/package-lock.json
 *.log
 *.tmp
 *.bak
+
+# Test artifacts (make test copies yml to core/)
+core/actions.yml
+core/prompts.yml
+core/buttons.yml
