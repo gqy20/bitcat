@@ -7,7 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 make build          # cargo build + copy yml configs to target
 make release        # cargo build --release (opt-level=z, LTO, strip)
-make test           # cargo test (workspace, copies yml for core tests)
+make test           # nextest (fallback cargo test)，copies yml for core tests
+make nextest        # cargo nextest run --workspace（需预装 cargo-nextest）
 make read / make ctl # cargo run (debug, same binary: ai-pad-app)
 make check          # cargo check
 make clippy         # cargo clippy -- -W clippy::all
@@ -21,6 +22,11 @@ cd app/frontend && npx vitest         # watch mode
 cargo test -p ai-pad-core pet::tests::test_walk_moves   # core 单测
 cargo test -p ai-pad-app voice::tests                    # app 单测
 cargo test -p ai-pad-app --features ipc-tests            # Tauri IPC 集成测试(需 WebView2)
+
+# Insta snapshot workflow
+cargo insta test       # 运行测试，生成 .snap.new（未审查的快照）
+cargo insta review     # 交互式审查，接受/拒绝快照变更
+cargo insta accept     # 一键接受所有新快照
 ```
 
 **Windows SDL2 构建必须设置环境变量**（VS2026 + 新 CMake 兼容）：
@@ -95,10 +101,55 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 ## Code Conventions
 
 - **日志**: 统一用 `tracing` crate（info/warn/error/debug），不用 `eprintln!`
-- **测试**: core 用 proptest 属性测试 + 单元测试；app 用纯函数测试 + 可选 feature 的 Tauri MockRuntime IPC 测试；前端用 Vitest (jsdom)
 - **中文处理**: Rust 中字符串切片必须按字符边界（`.chars().take(n)`），不可用字节索引
 - **前端**: 无框架，IIFE 模块，通过 `window.__TAURI__` API 与后端通信
 - **配置**: `actions.yml`、`buttons.yml`、`prompts.yml` 运行时从 exe 同目录加载，构建时需 cp 到 target/
+
+## Testing Conventions
+
+### 测试框架
+
+| 框架 | 用途 | dev-dependency |
+|------|------|----------------|
+| `insta` (yaml+redactions) | 快照测试：serde 序列化、API 请求体、配置解析 | core |
+| `rstest` | 参数化测试 + 测试夹具，替代重复的 test 函数 | core |
+| `wiremock` | HTTP mock：模拟 Anthropic API 响应 | core |
+| `mockall` | Trait mock（预留，暂未使用） | core |
+| `proptest` | 属性测试：状态机、边界条件 | core |
+| `tauri::test` | MockRuntime IPC 测试，需 `ipc-tests` feature | app |
+| `vitest` + `jsdom` | 前端单元测试 | frontend |
+
+### 写测试的规则
+
+1. **序列化/反序列化测试用 insta 快照**，不要手写 `assert!(json.contains(...))`。快照自动捕获完整结构，字段增删一目了然。
+   ```rust
+   // Good: 快照捕获完整结构
+   insta::assert_yaml_snapshot!(record);
+   // Good: 动态字段用 redaction 替换
+   insta::assert_yaml_snapshot!(body, { ".messages[0].content[0].text" => "[prompt]" });
+   // Bad: 手动逐字段断言，新增字段时不会报警
+   assert_eq!(body["model"], "claude-sonnet-4-20250514");
+   ```
+
+2. **同函数多输入的测试用 rstest 参数化**，不要写 N 个 `#[test] fn test_parse_X`。
+   ```rust
+   #[rstest]
+   #[case(&["ctrl", "win"], vec![0x11, 0x5B])]
+   #[case(&["enter"], vec![0x0D])]
+   fn test_parse_keys(#[case] keys: &[&str], #[case] expected: Vec<u16>) { ... }
+   ```
+
+3. **外部 API 调用用 wiremock mock**，不要跳过测试或依赖真实网络。wiremock 测试用 `#[tokio::test]`，client 需加 `.no_proxy()` 避免 Windows 系统代理干扰 localhost。
+   ```rust
+   let server = MockServer::start().await;
+   let client = reqwest::Client::builder().no_proxy().build().unwrap();
+   ```
+
+4. **状态机/边界测试用 proptest 属性测试**，已有 `pet::prop_tests` 模块。适用于"对任意合法输入都不 panic"的场景。
+
+5. **insta 快照文件 (`*.snap`) 必须提交到 git**，它们是测试的基线。`.snap.new` 文件不应提交（已在 `.gitignore`）。修改序列化格式后运行 `cargo insta review` 审查变更。
+
+6. **测试内联在源文件底部** (`#[cfg(test)] mod tests`)，不单独建 `tests/` 目录。快照文件在 `core/src/snapshots/`。
 
 ## Key Files
 

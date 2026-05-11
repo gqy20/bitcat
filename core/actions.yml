@@ -19,45 +19,17 @@ actions:
     workdir: "D:\\C\\Desktop\\ai\\research"
     terminal: true
     voice:
-      trigger: ["ctrl", "win"]
-      delay: 1.0
+      trigger: ["ctrl", "win"]   # 触发系统语音输入法的快捷键
+      delay: 1.0                  # 启动终端后等待时间（秒）
 
   L1:
     type: hotkey
-    trigger: ["alt", "tab"]
+    trigger: ["alt", "tab"]       # 切换窗口
 
   R1:
     type: hotkey
-    trigger: ["alt", "backtick"]
+    trigger: ["alt", "backtick"]  # 打开 uTools
 
   L2:
     type: hotkey
-    trigger: ["ctrl", "tab"]
-
-  # ---- 面板快捷启动 ----
-  vscode:
-    type: launch
-    program: code
-    terminal: false
-
-  browser:
-    type: launch
-    program: explorer
-    args: "https://www.bing.com"
-    terminal: false
-
-  explorer:
-    type: launch
-    program: explorer.exe
-    args: "."
-    terminal: false
-
-  powershell:
-    type: launch
-    program: powershell
-    terminal: true
-
-  notepad:
-    type: launch
-    program: notepad.exe
-    terminal: false
+    trigger: ["ctrl", "tab"]      # 切换浏览器/应用标签页
