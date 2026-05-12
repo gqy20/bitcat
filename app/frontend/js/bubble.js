@@ -225,8 +225,10 @@
     stopPolling();
     userScrolledUp = false; // 新流式开始，重置锁定
     showThinking();         // 显示思考指示器
-    pollTimer = setInterval(pollPending, POLL_INTERVAL_MS);
-    pollPending();
+    pollTimer = setInterval(function() {
+      pollPending().then(onPollResult);
+    }, POLL_INTERVAL_MS);
+    pollPending().then(onPollResult);
   }
 
   function stopPolling() {
@@ -237,16 +239,17 @@
   }
 
   function pollPending() {
-    if (!window.__TAURI__ || !window.__TAURI__.core) return Promise.resolve();
+    if (!window.__TAURI__ || !window.__TAURI__.core) return Promise.resolve('');
     return window.__TAURI__.core.invoke('cmd_consume_bubble_text')
-      .then((result) => {
-        const txt = result || '';
-        if (txt.length > 0) {
-          setText(txt, true);
-          ensureVisible();
-        }
-      })
-      .catch(() => {});
+      .then((result) => result || '')
+      .catch(function() { return ''; });
+  }
+
+  /// 轮询回调：有新文本才渲染（流式模式，带光标）
+  function onPollResult(txt) {
+    if (!txt || txt.length === 0) return;
+    setText(txt, true);
+    ensureVisible();
   }
 
   /// wheel 事件兜底：Tauri 透明窗口的 native scroll 不稳定，
@@ -347,20 +350,11 @@
       stopPolling();
       userScrolledUp = false; // 流结束，解锁滚动
       hideThinking();
-      // 先拉取最后一批文本，再最终渲染（带光标淡出）
-      pollPending().then(function() {
-        var cursor = contentEl && contentEl.querySelector('.typing-cursor');
-        if (cursor) {
-          // CSS 淡出动画 300ms
-          cursor.classList.add('fade-out');
-          setTimeout(function() {
-            if (lastRawText) setText(lastRawText, false);
-            startHideTimer();
-          }, 300);
-        } else {
-          if (lastRawText) setText(lastRawText, false);
-          startHideTimer();
-        }
+      // 拉取最后一批文本（如有），然后直接最终渲染（streaming=false，无光标）
+      pollPending().then(function(finalTxt) {
+        if (finalTxt && finalTxt.length > 0) lastRawText = finalTxt;
+        if (lastRawText) setText(lastRawText, false);
+        startHideTimer();
       });
     });
 
