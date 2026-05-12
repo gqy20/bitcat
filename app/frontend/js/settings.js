@@ -268,17 +268,21 @@ function renderAppearance(a) {
   $("a-collapsed").checked = a.default_collapsed;
   $("a-tts").checked = a.tts_enabled;
   $("a-shortcut").value = a.global_shortcut;
+  $("a-ss-interval").value = a.screenshot_interval_sec ?? 30;
 
   ["a-top","a-collapsed","a-tts"].forEach(id => { $(id).onchange = () => markDirty("appearance"); });
-  $("a-shortcut").oninput = () => markDirty("appearance");
+  ["a-shortcut","a-ss-interval"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
 }
 
 function collectAppearance() {
+  const rawInterval = parseInt($("a-ss-interval").value, 10);
+  const interval = Number.isFinite(rawInterval) ? Math.min(3600, Math.max(5, rawInterval)) : 30;
   return {
     always_on_top: $("a-top").checked,
     default_collapsed: $("a-collapsed").checked,
     tts_enabled: $("a-tts").checked,
     global_shortcut: $("a-shortcut").value.trim() || "CommandOrControl+Alt+Space",
+    screenshot_interval_sec: interval,
   };
 }
 

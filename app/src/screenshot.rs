@@ -279,8 +279,13 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
         }
     };
 
+    // 从 app_settings.json 读取用户可调间隔；每轮循环都会 re-load
+    let initial_interval = ai_pad_core::app_settings::AppSettings::load()
+        .appearance
+        .screenshot_interval_sec
+        .clamp(5, 3600);
     info!(
-        interval_sec = config.interval_sec,
+        interval_sec = initial_interval,
         max_width = config.max_width,
         "截图观察线程启动"
     );
@@ -288,8 +293,13 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
     let mut cycle_count: u32 = 0;
     eprintln!("[SS-DBG] 进入主循环");
     loop {
-        eprintln!("[SS-DBG] 开始 sleep");
-        std::thread::sleep(std::time::Duration::from_secs(config.interval_sec));
+        // 每轮重新读取间隔，用户前端调整后下一轮即生效
+        let interval_sec = ai_pad_core::app_settings::AppSettings::load()
+            .appearance
+            .screenshot_interval_sec
+            .clamp(5, 3600);
+        eprintln!("[SS-DBG] 开始 sleep {}s", interval_sec);
+        std::thread::sleep(std::time::Duration::from_secs(interval_sec));
         cycle_count += 1;
         eprintln!("[SS-DBG] sleep 结束, cycle={}", cycle_count);
 
@@ -403,6 +413,17 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             // Vision API
             let prompt_cfg = ai_pad_core::prompts::PromptsConfig::load().vision;
             let vision_model = ai_config.model.clone();
+
+            // 二次检查 chat_active：截图捕获/缩放期间用户可能刚开始聊天，
+            // 此时不应再发起 Vision API 请求（浪费 token + 可能打断对话）
+            {
+                let bubble: tauri::State<crate::bubble::SharedBubble> = app.state();
+                if bubble.is_chat_active() {
+                    info!("[screenshot] Vision 前发现 chat_active=true，本轮放弃分析");
+                    break;
+                }
+            }
+
             info!(model = %vision_model, "视觉分析: 开始请求");
             let description = match rt.block_on(vision::analyze_screenshot(
                 &ai_config,

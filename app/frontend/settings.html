@@ -128,7 +128,11 @@
             <label>全局快捷键</label>
             <input id="a-shortcut" type="text" placeholder="CommandOrControl+Alt+Space" />
           </div>
-          <p class="hint">全局快捷键的实时切换需要重启应用才完全生效。</p>
+          <div class="row">
+            <label>截屏分析间隔（秒）</label>
+            <input id="a-ss-interval" type="number" min="5" max="3600" step="5" placeholder="30" />
+          </div>
+          <p class="hint">全局快捷键的实时切换需要重启应用才完全生效。截屏间隔 5~3600 秒，对话进行时自动锁定不触发分析。</p>
         </section>
 
         <!-- About -->

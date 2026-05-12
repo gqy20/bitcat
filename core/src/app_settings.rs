@@ -41,6 +41,10 @@ pub struct AppearanceSettings {
     pub tts_enabled: bool,
     #[serde(default = "default_shortcut")]
     pub global_shortcut: String,
+    /// 截屏 Vision 分析间隔（秒），默认 30。
+    /// 值越大越省 API，值越小响应越即时。最小值 5 秒，避免刷屏。
+    #[serde(default = "default_screenshot_interval_sec")]
+    pub screenshot_interval_sec: u64,
 }
 
 fn default_true() -> bool {
@@ -48,6 +52,9 @@ fn default_true() -> bool {
 }
 fn default_shortcut() -> String {
     "CommandOrControl+Alt+Space".to_string()
+}
+fn default_screenshot_interval_sec() -> u64 {
+    30
 }
 
 impl Default for AppearanceSettings {
@@ -57,6 +64,7 @@ impl Default for AppearanceSettings {
             default_collapsed: false,
             tts_enabled: true,
             global_shortcut: default_shortcut(),
+            screenshot_interval_sec: default_screenshot_interval_sec(),
         }
     }
 }
@@ -113,6 +121,7 @@ mod tests {
         assert!(!a.default_collapsed);
         assert!(a.tts_enabled);
         assert_eq!(a.global_shortcut, "CommandOrControl+Alt+Space");
+        assert_eq!(a.screenshot_interval_sec, 30);
     }
 
     #[test]
@@ -129,6 +138,7 @@ mod tests {
                 default_collapsed: true,
                 tts_enabled: false,
                 global_shortcut: "F12".into(),
+                screenshot_interval_sec: 45,
             },
         };
         let json = serde_json::to_string_pretty(&s).unwrap();

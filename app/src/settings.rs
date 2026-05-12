@@ -128,6 +128,12 @@ pub struct AppearanceInput {
     pub default_collapsed: bool,
     pub tts_enabled: bool,
     pub global_shortcut: String,
+    #[serde(default = "default_screenshot_interval_sec")]
+    pub screenshot_interval_sec: u64,
+}
+
+fn default_screenshot_interval_sec() -> u64 {
+    30
 }
 
 // ---- 命令 ----
@@ -317,11 +323,14 @@ pub async fn cmd_settings_save_appearance(
     payload: AppearanceInput,
 ) -> Result<(), String> {
     let mut s = AppSettings::load();
+    // 夹紧范围：不允许 < 5s（防止刷屏 vision API）
+    let interval = payload.screenshot_interval_sec.clamp(5, 3600);
     s.appearance = AppearanceSettings {
         always_on_top: payload.always_on_top,
         default_collapsed: payload.default_collapsed,
         tts_enabled: payload.tts_enabled,
         global_shortcut: payload.global_shortcut,
+        screenshot_interval_sec: interval,
     };
     s.save()?;
 
