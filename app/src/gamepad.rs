@@ -214,6 +214,23 @@ pub async fn cmd_exit_chat(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// 轻量"进入 chat"命令：只置位 chat_active=true，不负责开窗口/展示 UI。
+///
+/// 与 cmd_open_chat 的区别：
+/// - cmd_open_chat 走"点击嘴巴"路径，会创建窗口 + eval showInput
+/// - cmd_enter_chat 给前端用：无论通过哪条路径展开了输入框（bubble-end 自动展开、
+///   稳定检测兜底、双击气泡、用户点击 input），都通知后端立刻锁住截图 / Vision。
+#[tauri::command]
+pub async fn cmd_enter_chat(app: AppHandle) -> Result<(), String> {
+    let state: State<bubble::SharedBubble> = app.state();
+    let was_active = state.is_chat_active();
+    state.set_chat_active(true);
+    if !was_active {
+        info!("[cmd_enter_chat] chat 模式开启（截图已锁定）");
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn cmd_open_chat(app: AppHandle) -> Result<(), String> {
     info!("[cmd_open_chat] 开始");

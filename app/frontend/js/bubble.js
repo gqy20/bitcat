@@ -159,6 +159,17 @@
   var inputIdleTimer = null;
   const INPUT_IDLE_MS = 5000;
 
+  /// 通知 Rust：进入 chat 模式（置位 chat_active=true，锁住截图/Vision）
+  /// 任何展开输入框 / focus 输入框的路径都调此函数，幂等可多次触发
+  function notifyChatEnter(source) {
+    if (!window.__TAURI__ || !window.__TAURI__.core) return;
+    window.__TAURI__.core.invoke('cmd_enter_chat').then(function() {
+      diag('cmd_enter_chat ✓ source=' + (source || 'unknown'));
+    }).catch(function(e) {
+      diag('cmd_enter_chat ✗ source=' + (source || 'unknown') + ' err=' + e);
+    });
+  }
+
   function resetInputIdleTimer() {
     if (inputIdleTimer) clearTimeout(inputIdleTimer);
     inputIdleTimer = setTimeout(function() {
@@ -172,6 +183,9 @@
   function showInput() {
     diag('showInput() called, inputRowEl=' + !!inputRowEl + ' inputEl=' + !!inputEl);
     if (!inputRowEl || !inputEl) { diag('ABORT: 元素不存在'); return; }
+
+    // 第一时间通知后端锁住截图（哪怕 focus/click 尚未触发，也不会被 Vision 打断）
+    notifyChatEnter('showInput');
 
     inputRowEl.style.display = 'flex';
     inputRowEl.classList.remove('hiding');
@@ -467,6 +481,8 @@
       });
       inputEl.addEventListener('focus', function() {
         diag('✓ inputEl focus (获得键盘焦点), docHasFocus=' + document.hasFocus());
+        // 保底：用户 focus 输入框时再通知一次（showInput 已触发过也无妨，幂等）
+        notifyChatEnter('focus');
       });
       inputEl.addEventListener('blur', function() {
         diag('✗ inputEl blur (失去键盘焦点), docHasFocus=' + document.hasFocus() +
@@ -476,6 +492,8 @@
       inputEl.addEventListener('click', function() {
         diag('inputEl click, activeElement==inputEl=' +
              (document.activeElement === inputEl));
+        // 保底：用户点击时也确认锁住
+        notifyChatEnter('click');
       });
     }
     if (sendBtnEl) {

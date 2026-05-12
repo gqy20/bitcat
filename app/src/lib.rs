@@ -51,6 +51,7 @@ pub fn run() {
             screenshot::cmd_screenshot_now,
             gamepad::cmd_submit_chat,
             gamepad::cmd_open_chat,
+            gamepad::cmd_enter_chat,
             gamepad::cmd_exit_chat,
             gamepad::cmd_pet_log,
             settings::cmd_settings_show,
