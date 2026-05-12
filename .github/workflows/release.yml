@@ -78,12 +78,6 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Copy runtime configs
-        run: |
-          copy buttons.yml target/${{ matrix.target }}/release/
-          copy actions.yml target/${{ matrix.target }}/release/
-          copy prompts.yml target/${{ matrix.target }}/release/
-
       # ── 收集产物信息 ──
       - name: Gather artifact info
         id: info
@@ -103,9 +97,6 @@ jobs:
           $dir = "ai-pad-${{ github.ref_name }}-windows-${{ matrix.arch }}"
           New-Item -ItemType Directory -Path $dir | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/ai-pad-app.exe" "$dir/"
-          Copy-Item "buttons.yml" "$dir/"
-          Copy-Item "actions.yml" "$dir/"
-          Copy-Item "prompts.yml" "$dir/"
           Compress-Archive -Path "$dir/*" -DestinationPath "$dir.zip"
 
       # ── 上传 Artifact ──
