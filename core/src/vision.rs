@@ -323,11 +323,9 @@ mod wiremock_tests {
     async fn test_vision_api_error() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .respond_with(
-                ResponseTemplate::new(429).set_body_json(json!({
-                    "error": { "type": "rate_limit_error", "message": "slow down" }
-                })),
-            )
+            .respond_with(ResponseTemplate::new(429).set_body_json(json!({
+                "error": { "type": "rate_limit_error", "message": "slow down" }
+            })))
             .mount(&server)
             .await;
 

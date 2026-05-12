@@ -1,6 +1,6 @@
 use rig::agent::PromptHook;
 use rig::agent::ToolCallHookAction;
-use tracing::warn;
+use tracing::{info, warn};
 
 #[derive(Clone)]
 pub struct PermissionHook;
@@ -23,10 +23,14 @@ impl<M: rig::completion::CompletionModel> PromptHook<M> for PermissionHook {
                             reason: "此命令被安全策略阻止，可能造成数据丢失或系统损坏".into(),
                         }
                     } else {
+                        info!(command = %args, "shell 工具调用通过安全检查");
                         ToolCallHookAction::Continue
                     }
                 }
-                _ => ToolCallHookAction::Continue,
+                _ => {
+                    info!(tool = %tool_name, "非 shell 工具调用放行");
+                    ToolCallHookAction::Continue
+                }
             }
         }
     }
@@ -37,21 +41,30 @@ fn is_dangerous_command(cmd: &str) -> bool {
     let cmd_lower = cmd.to_lowercase();
     let dangerous = [
         // 文件删除
-        "rm -rf", "del /s /q", "remove-item -recurse -force",
+        "rm -rf",
+        "del /s /q",
+        "remove-item -recurse -force",
         // 磁盘格式化
-        "format ", "format-volume",
+        "format ",
+        "format-volume",
         // 关机/重启
-        "shutdown", "restart-computer",
+        "shutdown",
+        "restart-computer",
         // 用户/组管理
-        "net user", "net localgroup",
+        "net user",
+        "net localgroup",
         // 注册表危险操作
-        "reg delete", "remove-itemproperty -path hk",
+        "reg delete",
+        "remove-itemproperty -path hk",
         // 进程终止
-        "taskkill /f", "stop-process -force",
+        "taskkill /f",
+        "stop-process -force",
         // 下载执行（远程代码）
-        "invoke-webrequest -outfile", "iwr -o",
+        "invoke-webrequest -outfile",
+        "iwr -o",
         // 清空磁盘
-        "cipher /w", "sdelete",
+        "cipher /w",
+        "sdelete",
     ];
     dangerous.iter().any(|pattern| cmd_lower.contains(pattern))
 }

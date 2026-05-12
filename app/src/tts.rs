@@ -66,7 +66,9 @@ const SVSF_DEFAULT: u32 = 0;
 const SVSF_PURGE_BEFORE_SPEAK: u32 = 2;
 const S_FALSE: i32 = 1;
 
-fn succeeded(hr: i32) -> bool { hr >= 0 }
+fn succeeded(hr: i32) -> bool {
+    hr >= 0
+}
 
 pub fn speak(text: &str) {
     if text.is_empty() {

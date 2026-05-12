@@ -7,8 +7,8 @@ pub mod screenshot;
 pub mod settings;
 pub mod snap;
 pub mod tray;
-pub mod voice;
 pub mod tts;
+pub mod voice;
 
 use gamepad::SharedPendingChat;
 use tauri::{Emitter, Manager};
@@ -151,7 +151,9 @@ pub fn run() {
             }
 
             let handle = app.handle().clone();
-            std::thread::spawn(move || { gamepad::gamepad_loop(&handle); });
+            std::thread::spawn(move || {
+                gamepad::gamepad_loop(&handle);
+            });
 
             // 气泡跟随独立线程：脱离手柄循环，确保无手柄时也能实时跟随
             bubble::spawn_bubble_follower(app.handle().clone());

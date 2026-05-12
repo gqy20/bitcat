@@ -241,14 +241,23 @@ min_width: 480
         }
         let high = encode_jpeg(&rgb, 200, 200, 95).unwrap();
         let low = encode_jpeg(&rgb, 200, 200, 20).unwrap();
-        assert!(low.len() < high.len(), "low={} < high={}", low.len(), high.len());
+        assert!(
+            low.len() < high.len(),
+            "low={} < high={}",
+            low.len(),
+            high.len()
+        );
     }
 
     // ---- 类型 + 拼接 测试 ----
 
     #[test]
     fn test_captured_frame_construction() {
-        let frame = CapturedFrame { pixels: vec![0u8; 4 * 4 * 4], width: 4, height: 4 };
+        let frame = CapturedFrame {
+            pixels: vec![0u8; 4 * 4 * 4],
+            width: 4,
+            height: 4,
+        };
         assert_eq!(frame.width, 4);
         assert_eq!(frame.height, 4);
         assert_eq!(frame.pixels.len(), 64);
@@ -257,8 +266,18 @@ min_width: 480
     #[test]
     fn test_screen_info_sort_by_left() {
         let mut screens = vec![
-            ScreenInfo { left: 1920, top: 0, width: 1920, height: 1080 },
-            ScreenInfo { left: 0, top: 0, width: 1920, height: 1080 },
+            ScreenInfo {
+                left: 1920,
+                top: 0,
+                width: 1920,
+                height: 1080,
+            },
+            ScreenInfo {
+                left: 0,
+                top: 0,
+                width: 1920,
+                height: 1080,
+            },
         ];
         screens.sort_by_key(|s| s.left);
         assert_eq!(screens[0].left, 0);
@@ -267,8 +286,16 @@ min_width: 480
 
     #[test]
     fn test_stitch_horizontal_two_equal_frames() {
-        let frame_a = CapturedFrame { pixels: vec![255; 4 * 4 * 4], width: 4, height: 4 };
-        let frame_b = CapturedFrame { pixels: vec![0; 4 * 4 * 4], width: 4, height: 4 };
+        let frame_a = CapturedFrame {
+            pixels: vec![255; 4 * 4 * 4],
+            width: 4,
+            height: 4,
+        };
+        let frame_b = CapturedFrame {
+            pixels: vec![0; 4 * 4 * 4],
+            width: 4,
+            height: 4,
+        };
         let stitched = stitch_horizontal(&[&frame_a, &frame_b]);
         assert_eq!(stitched.width, 8);
         assert_eq!(stitched.height, 4);
@@ -285,8 +312,16 @@ min_width: 480
 
     #[test]
     fn test_stitch_horizontal_different_heights_pads() {
-        let frame_a = CapturedFrame { pixels: vec![200; 4 * 2 * 4], width: 4, height: 2 };
-        let frame_b = CapturedFrame { pixels: vec![100; 4 * 4 * 4], width: 4, height: 4 };
+        let frame_a = CapturedFrame {
+            pixels: vec![200; 4 * 2 * 4],
+            width: 4,
+            height: 2,
+        };
+        let frame_b = CapturedFrame {
+            pixels: vec![100; 4 * 4 * 4],
+            width: 4,
+            height: 4,
+        };
         let stitched = stitch_horizontal(&[&frame_a, &frame_b]);
         assert_eq!(stitched.width, 8);
         assert_eq!(stitched.height, 4);
@@ -302,7 +337,11 @@ min_width: 480
 
     #[test]
     fn test_stitch_single_frame() {
-        let frame = CapturedFrame { pixels: vec![128; 10 * 10 * 4], width: 10, height: 10 };
+        let frame = CapturedFrame {
+            pixels: vec![128; 10 * 10 * 4],
+            width: 10,
+            height: 10,
+        };
         let stitched = stitch_horizontal(&[&frame]);
         assert_eq!(stitched.width, 10);
         assert_eq!(stitched.height, 10);
@@ -517,7 +556,9 @@ min_width: 480
         for i in 0..3 {
             let prefix = format!("{:06}", 100000 + i * 10);
             save_analysis_json(
-                &day1, &prefix, "",
+                &day1,
+                &prefix,
+                "",
                 &ScreenshotRecord {
                     description: format!("截图{}", i),
                     hash: i as u64,
@@ -526,7 +567,8 @@ min_width: 480
                     height: 800,
                     jpeg_size: 5000,
                 },
-            ).unwrap();
+            )
+            .unwrap();
         }
 
         let results = list_recent_analyses_multi_day(base.path(), 3);
@@ -544,16 +586,36 @@ min_width: 480
         std::fs::create_dir_all(&day2).unwrap();
 
         save_analysis_json(
-            &day2, "150000", "",
-            &ScreenshotRecord { description: "今天".into(), hash: 1, skipped: false, width: 1280, height: 800, jpeg_size: 5000 },
-        ).unwrap();
+            &day2,
+            "150000",
+            "",
+            &ScreenshotRecord {
+                description: "今天".into(),
+                hash: 1,
+                skipped: false,
+                width: 1280,
+                height: 800,
+                jpeg_size: 5000,
+            },
+        )
+        .unwrap();
 
         for i in 0..3 {
             let prefix = format!("{:06}", 100000 + i * 10);
             save_analysis_json(
-                &day1, &prefix, "",
-                &ScreenshotRecord { description: format!("昨天{}", i), hash: i as u64, skipped: false, width: 1280, height: 800, jpeg_size: 5000 },
-            ).unwrap();
+                &day1,
+                &prefix,
+                "",
+                &ScreenshotRecord {
+                    description: format!("昨天{}", i),
+                    hash: i as u64,
+                    skipped: false,
+                    width: 1280,
+                    height: 800,
+                    jpeg_size: 5000,
+                },
+            )
+            .unwrap();
         }
 
         let results = list_recent_analyses_multi_day(base.path(), 4);
@@ -580,9 +642,19 @@ min_width: 480
         std::fs::create_dir_all(&day).unwrap();
 
         save_analysis_json(
-            &day, "120000", "",
-            &ScreenshotRecord { description: "用户在写代码".into(), hash: 1, skipped: false, width: 1280, height: 800, jpeg_size: 5000 },
-        ).unwrap();
+            &day,
+            "120000",
+            "",
+            &ScreenshotRecord {
+                description: "用户在写代码".into(),
+                hash: 1,
+                skipped: false,
+                width: 1280,
+                height: 800,
+                jpeg_size: 5000,
+            },
+        )
+        .unwrap();
 
         let ctx = build_recent_analyses_context_with_base(10, 1500, base.path());
         assert!(ctx.starts_with("[最近截图观察]\n"));
@@ -606,7 +678,9 @@ min_width: 480
         for i in 0..20 {
             let prefix = format!("{:06}", 100000 + i);
             save_analysis_json(
-                &day, &prefix, "",
+                &day,
+                &prefix,
+                "",
                 &ScreenshotRecord {
                     description: "这是一条很长的截图分析描述用于测试截断功能是否正常工作".into(),
                     hash: i as u64,
@@ -615,11 +689,16 @@ min_width: 480
                     height: 800,
                     jpeg_size: 5000,
                 },
-            ).unwrap();
+            )
+            .unwrap();
         }
 
         let ctx = build_recent_analyses_context_with_base(20, 200, base.path());
-        assert!(ctx.chars().count() <= 250, "应在 {} 字符内", ctx.chars().count());
+        assert!(
+            ctx.chars().count() <= 250,
+            "应在 {} 字符内",
+            ctx.chars().count()
+        );
     }
 
     #[test]
@@ -631,9 +710,19 @@ min_width: 480
         for (i, desc) in ["最早", "中间", "最新"].iter().enumerate() {
             let prefix = format!("{:06}", 100000 + i * 100);
             save_analysis_json(
-                &day, &prefix, "",
-                &ScreenshotRecord { description: (*desc).into(), hash: i as u64, skipped: false, width: 1280, height: 800, jpeg_size: 5000 },
-            ).unwrap();
+                &day,
+                &prefix,
+                "",
+                &ScreenshotRecord {
+                    description: (*desc).into(),
+                    hash: i as u64,
+                    skipped: false,
+                    width: 1280,
+                    height: 800,
+                    jpeg_size: 5000,
+                },
+            )
+            .unwrap();
         }
 
         let ctx = build_recent_analyses_context_with_base(10, 1500, base.path());

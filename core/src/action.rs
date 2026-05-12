@@ -137,7 +137,11 @@ pub fn launch_program(
                 None,
             )
         } else {
-            let cmd_str = if args.is_empty() { program.to_string() } else { format!("{program} {args}") };
+            let cmd_str = if args.is_empty() {
+                program.to_string()
+            } else {
+                format!("{program} {args}")
+            };
             (
                 vec!["-NoExit".to_string(), "-Command".to_string()],
                 Some(cmd_str),

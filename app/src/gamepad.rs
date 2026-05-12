@@ -1,15 +1,15 @@
-use ai_pad_core::action::{ActionConfig, ActionDef};
-use ai_pad_core::agent::PetAgent;
-use ai_pad_core::bridge::{handle_button_press, resolve_agent_response, PetCommand};
-use ai_pad_core::device::button_name;
-use ai_pad_core::hotkey;
-use ai_pad_core::memory::{LongTermMemory, MemoryStore, ProfileStore, should_store};
 use crate::bubble;
 use crate::commands::SharedWindowState;
 use crate::joystick::{self, SdlGamepad};
 use crate::panel;
 use crate::tts;
 use crate::voice;
+use ai_pad_core::action::{ActionConfig, ActionDef};
+use ai_pad_core::agent::PetAgent;
+use ai_pad_core::bridge::{handle_button_press, resolve_agent_response, PetCommand};
+use ai_pad_core::device::button_name;
+use ai_pad_core::hotkey;
+use ai_pad_core::memory::{should_store, LongTermMemory, MemoryStore, ProfileStore};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
@@ -29,23 +29,41 @@ pub struct PetEvent {
 
 impl PetEvent {
     pub fn set_state(state: &str) -> Self {
-        Self { state: Some(state.to_string()), bubble: None, walk_to: None }
+        Self {
+            state: Some(state.to_string()),
+            bubble: None,
+            walk_to: None,
+        }
     }
     pub fn bubble(text: &str) -> Self {
-        Self { state: None, bubble: Some(text.to_string()), walk_to: None }
+        Self {
+            state: None,
+            bubble: Some(text.to_string()),
+            walk_to: None,
+        }
     }
     pub fn walk_to(x: f32) -> Self {
-        Self { state: None, bubble: None, walk_to: Some(x) }
+        Self {
+            state: None,
+            bubble: None,
+            walk_to: Some(x),
+        }
     }
     pub fn empty() -> Self {
-        Self { state: None, bubble: None, walk_to: None }
+        Self {
+            state: None,
+            bubble: None,
+            walk_to: None,
+        }
     }
 }
 
 pub fn commands_to_events(cmds: &[PetCommand]) -> Vec<PetEvent> {
     cmds.iter()
         .map(|cmd| match cmd {
-            PetCommand::SetState { state } => PetEvent::set_state(&format!("{:?}", state).to_lowercase()),
+            PetCommand::SetState { state } => {
+                PetEvent::set_state(&format!("{:?}", state).to_lowercase())
+            }
             PetCommand::WalkTo { x } => PetEvent::walk_to(*x),
             PetCommand::ShowBubble { text } => PetEvent::bubble(text),
             PetCommand::Exit => PetEvent::set_state("exit"),
@@ -76,7 +94,9 @@ pub struct SharedPendingChat {
 
 impl SharedPendingChat {
     pub fn new() -> Self {
-        Self { pending: Mutex::new(None) }
+        Self {
+            pending: Mutex::new(None),
+        }
     }
 }
 
@@ -163,8 +183,15 @@ fn choose_gamepad(pads: &[joystick::GamepadInfo]) -> Option<&joystick::GamepadIn
     let is_preferred = |name: &str| {
         let n = name.to_lowercase();
         [
-            "controller", "gamepad", "8bitdo", "xbox", "dualshock",
-            "dualsense", "joy-con", "joycon", "pro controller",
+            "controller",
+            "gamepad",
+            "8bitdo",
+            "xbox",
+            "dualshock",
+            "dualsense",
+            "joy-con",
+            "joycon",
+            "pro controller",
         ]
         .iter()
         .any(|kw| n.contains(kw))
@@ -193,7 +220,10 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
         }
     };
 
-    let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
         Ok(r) => r,
         Err(e) => {
             error!(error = %e, "Tokio 运行时创建失败");
@@ -206,8 +236,14 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
     fn get_agent(agent: &std::sync::OnceLock<std::option::Option<PetAgent>>) -> Option<&PetAgent> {
         agent
             .get_or_init(|| match PetAgent::new() {
-                Ok(a) => { info!("AI Agent 初始化成功 (8Bit Cat)"); Some(a) }
-                Err(e) => { error!(error = %e, "AI Agent 初始化失败，后续对话将不可用"); None }
+                Ok(a) => {
+                    info!("AI Agent 初始化成功 (8Bit Cat)");
+                    Some(a)
+                }
+                Err(e) => {
+                    error!(error = %e, "AI Agent 初始化失败，后续对话将不可用");
+                    None
+                }
             })
             .as_ref()
     }
@@ -231,7 +267,10 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
     );
 
     let summary_store = ai_pad_core::screen_summary::ScreenSummaryStore::load();
-    info!(entries = summary_store.entries.len(), "屏幕活动摘要系统已初始化");
+    info!(
+        entries = summary_store.entries.len(),
+        "屏幕活动摘要系统已初始化"
+    );
 
     let mut alt_tab = HeldModifier::new(0x12);
     let mut ctrl_tab = HeldModifier::new(0x11);
@@ -347,8 +386,14 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
 
                         if panel_visible {
                             match name {
-                                "A" => { info!("→ 面板确认"); let _ = app.emit("panel-confirm", ()); }
-                                "B" => { info!("→ 面板关闭"); let _ = app.emit("panel-close", ()); }
+                                "A" => {
+                                    info!("→ 面板确认");
+                                    let _ = app.emit("panel-confirm", ());
+                                }
+                                "B" => {
+                                    info!("→ 面板关闭");
+                                    let _ = app.emit("panel-close", ());
+                                }
                                 _ => {}
                             }
                             continue;
@@ -363,13 +408,28 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
 
                         if let (Some(msg), Some(ag)) = (&agent_msg, get_agent(&agent)) {
                             info!(msg = %msg, "→ AI: {msg}");
-                            run_ai_chat(&rt, ag, app, msg, "", &mut memory, &memory_config, &mut long_term, &mut profile);
+                            run_ai_chat(
+                                &rt,
+                                ag,
+                                app,
+                                msg,
+                                "",
+                                &mut memory,
+                                &memory_config,
+                                &mut long_term,
+                                &mut profile,
+                            );
                         }
 
                         if let Some(ref config) = action_config {
                             if let Some(action_def) = config.actions.get(name) {
                                 info!(name = name, action_type = %action_def.action_type, "→ {} ({})", name, action_def.action_type);
-                                execute_action(action_def, &config.defaults, &mut alt_tab, &mut ctrl_tab);
+                                execute_action(
+                                    action_def,
+                                    &config.defaults,
+                                    &mut alt_tab,
+                                    &mut ctrl_tab,
+                                );
                             }
                         }
                     }
@@ -417,7 +477,17 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                         } else {
                             info!(text = %text, len = text.chars().count(), "[voice] 识别全文: {text}");
                             if let Some(ag) = get_agent(&agent) {
-                                run_ai_chat(&rt, ag, app, &text, "[voice]", &mut memory, &memory_config, &mut long_term, &mut profile);
+                                run_ai_chat(
+                                    &rt,
+                                    ag,
+                                    app,
+                                    &text,
+                                    "[voice]",
+                                    &mut memory,
+                                    &memory_config,
+                                    &mut long_term,
+                                    &mut profile,
+                                );
                             } else {
                                 warn!("[voice] AI Agent 未初始化");
                             }
@@ -436,7 +506,17 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
             } {
                 if let Some(ag) = get_agent(&agent) {
                     info!(msg = %chat_msg, "[chat] → AI 对话 (bubble 输入)");
-                    run_ai_chat(&rt, ag, app, &chat_msg, "[chat]", &mut memory, &memory_config, &mut long_term, &mut profile);
+                    run_ai_chat(
+                        &rt,
+                        ag,
+                        app,
+                        &chat_msg,
+                        "[chat]",
+                        &mut memory,
+                        &memory_config,
+                        &mut long_term,
+                        &mut profile,
+                    );
                 }
             }
 
@@ -453,10 +533,16 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                 alt_tab.release();
                 ctrl_tab.release();
                 let speed = 3;
-                if dy > 0 { let _ = hotkey::send_scroll(120 * speed); }
-                else if dy < 0 { let _ = hotkey::send_scroll(-120 * speed); }
-                if dx > 0 { let _ = hotkey::send_scroll_h(120 * speed); }
-                else if dx < 0 { let _ = hotkey::send_scroll_h(-120 * speed); }
+                if dy > 0 {
+                    let _ = hotkey::send_scroll(120 * speed);
+                } else if dy < 0 {
+                    let _ = hotkey::send_scroll(-120 * speed);
+                }
+                if dx > 0 {
+                    let _ = hotkey::send_scroll_h(120 * speed);
+                } else if dx < 0 {
+                    let _ = hotkey::send_scroll_h(-120 * speed);
+                }
             }
             prev_hat = hat;
 
@@ -467,7 +553,8 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                 );
                 let unagg_count = long_term.unaggregated_entries().len();
                 let should_aggregate = unagg_count >= 20
-                    || (!profile.profile_text.is_empty() && last_aggregation.elapsed() >= agg_interval);
+                    || (!profile.profile_text.is_empty()
+                        && last_aggregation.elapsed() >= agg_interval);
 
                 if should_aggregate && unagg_count > 0 {
                     let ai_cfg = ai_pad_core::ai_config::AiConfig::load();
@@ -532,11 +619,17 @@ pub fn run_ai_chat(
     let summary_config = ai_pad_core::prompts::PromptsConfig::load().screen_summary;
     let summary_ctx = summary_store.build_context(&summary_config);
     let recent_ctx = ai_pad_core::screenshot::build_recent_analyses_context(10, 1500);
-    let context_parts: Vec<&str> = [&profile_ctx, &long_term_ctx, &ctx, &recent_ctx, &summary_ctx]
-        .into_iter()
-        .filter(|s| !s.is_empty())
-        .map(|s| s.as_str())
-        .collect();
+    let context_parts: Vec<&str> = [
+        &profile_ctx,
+        &long_term_ctx,
+        &ctx,
+        &recent_ctx,
+        &summary_ctx,
+    ]
+    .into_iter()
+    .filter(|s| !s.is_empty())
+    .map(|s| s.as_str())
+    .collect();
     let enriched_msg = if context_parts.is_empty() {
         msg.to_string()
     } else {
@@ -574,7 +667,9 @@ pub fn run_ai_chat(
                 info!(model = %agent.config.model, chars = reply.chars().count(), reply = %reply, "{prefix} AI 回复全文 ({reply})");
             }
             let reply_for_tts = reply.clone();
-            std::thread::spawn(move || { tts::speak(&reply_for_tts); });
+            std::thread::spawn(move || {
+                tts::speak(&reply_for_tts);
+            });
 
             let ai_events = process_agent_response(&reply);
             for evt in &ai_events {
@@ -599,13 +694,19 @@ pub(self) fn execute_action(
             };
             let args = action.args.as_deref().unwrap_or("");
             let _ = ai_pad_core::action::launch_program(
-                program, args, &action.workdir, action.terminal, &defaults.terminal,
+                program,
+                args,
+                &action.workdir,
+                action.terminal,
+                &defaults.terminal,
             );
         }
         "voice" => {}
         "script" => {
             if let Some(cmd) = &action.command {
-                let _ = std::process::Command::new("powershell").args(["-Command", cmd]).spawn();
+                let _ = std::process::Command::new("powershell")
+                    .args(["-Command", cmd])
+                    .spawn();
             }
         }
         "hotkey" => {
@@ -626,7 +727,9 @@ pub(self) fn execute_action(
                 }
             }
         }
-        other => { warn!(action_type = other, "未知动作类型"); }
+        other => {
+            warn!(action_type = other, "未知动作类型");
+        }
     }
 }
 
@@ -638,7 +741,9 @@ pub(crate) struct HeldModifier {
 }
 
 impl HeldModifier {
-    fn new(vk: u16) -> Self { Self { vk, held: false } }
+    fn new(vk: u16) -> Self {
+        Self { vk, held: false }
+    }
     fn press(&mut self) {
         if !self.held {
             let _ = hotkey::key_down(self.vk);
@@ -661,12 +766,23 @@ pub struct HeldCombo {
 }
 
 impl HeldCombo {
-    pub fn new() -> Self { Self { vks: Vec::new(), held: false } }
+    pub fn new() -> Self {
+        Self {
+            vks: Vec::new(),
+            held: false,
+        }
+    }
 
     pub fn detect(&mut self, active: bool) -> (bool, bool) {
         match (active, self.held) {
-            (true, false) => { self.held = true; (true, false) }
-            (false, true) => { self.held = false; (false, true) }
+            (true, false) => {
+                self.held = true;
+                (true, false)
+            }
+            (false, true) => {
+                self.held = false;
+                (false, true)
+            }
             _ => (false, false),
         }
     }
@@ -698,9 +814,17 @@ impl HeldCombo {
 
 fn name_to_bit(name: &str) -> Option<u32> {
     match name {
-        "A" => Some(0), "B" => Some(1), "X" => Some(3), "Y" => Some(4),
-        "L1" => Some(6), "R1" => Some(7), "L2" => Some(8), "R2" => Some(9),
-        "Select" => Some(10), "Start" => Some(11), "Home" => Some(12),
+        "A" => Some(0),
+        "B" => Some(1),
+        "X" => Some(3),
+        "Y" => Some(4),
+        "L1" => Some(6),
+        "R1" => Some(7),
+        "L2" => Some(8),
+        "R2" => Some(9),
+        "Select" => Some(10),
+        "Start" => Some(11),
+        "Home" => Some(12),
         _ => None,
     }
 }
@@ -788,7 +912,10 @@ mod tests {
         let pc = SharedPendingChat::new();
         *pc.pending.lock().unwrap() = Some("第一条".into());
         *pc.pending.lock().unwrap() = Some("第二条".into());
-        assert_eq!(pc.pending.lock().unwrap().take(), Some("第二条".to_string()));
+        assert_eq!(
+            pc.pending.lock().unwrap().take(),
+            Some("第二条".to_string())
+        );
     }
 
     #[test]
