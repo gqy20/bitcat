@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+use tracing::info;
 
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindowBuilder,
@@ -18,12 +19,28 @@ const BUBBLE_H: f64 = 140.0;
 /// 因此把文本存这里，前端 init 时主动 invoke 拉一次。
 pub struct SharedBubble {
     pub pending_text: Mutex<Option<String>>,
+    /// chat 模式标记：输入框展开或正在流式回复时为 true
+    /// 截图线程检查此标记，跳过 show_bubble 避免覆盖
+    pub chat_active: Mutex<bool>,
 }
 
 impl SharedBubble {
     pub fn new() -> Self {
         Self {
             pending_text: Mutex::new(None),
+            chat_active: Mutex::new(false),
+        }
+    }
+
+    /// 检查是否处于 chat 模式（供截图线程查询）
+    pub fn is_chat_active(&self) -> bool {
+        self.chat_active.lock().map_or(false, |g| *g)
+    }
+
+    /// 进入 chat 模式（chat 输入 / 流式回复开始）
+    pub fn set_chat_active(&self, active: bool) {
+        if let Ok(mut g) = self.chat_active.lock() {
+            *g = active;
         }
     }
 }
@@ -45,9 +62,22 @@ struct BubbleChunkPayload {
 }
 
 /// 显示气泡：按需创建窗口、定位到 pet 上方、写入待消费文本 + emit
+/// 优先级：chat_active 时跳过（不覆盖正在进行的聊天/输入）
 pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
-    // 写入 pending text
     let state: State<SharedBubble> = app.state();
+
+    // chat 模式优先级：截图摘要不覆盖聊天内容
+    if state.is_chat_active() {
+        info!(
+            text_len = text.chars().count(),
+            "[show_bubble] 跳过（chat_active=true，截图不覆盖聊天）"
+        );
+        // 只更新 pending 文本，不显示/不 emit（等 chat 结束后自然消费）
+        *state.pending_text.lock().map_err(|e| e.to_string())? = Some(text.to_string());
+        return Ok(());
+    }
+
+    // 写入 pending text
     *state.pending_text.lock().map_err(|e| e.to_string())? = Some(text.to_string());
 
     // 取或创建窗口
@@ -117,6 +147,7 @@ pub fn precreate_bubble_window(app: &AppHandle) -> Result<(), tauri::Error> {
 pub fn start_streaming_bubble(app: &AppHandle) -> Result<(), String> {
     let state: State<SharedBubble> = app.state();
     *state.pending_text.lock().map_err(|e| e.to_string())? = Some(String::new());
+    state.set_chat_active(true); // 流式回复中，截图不应覆盖
 
     let window = match app.get_webview_window("bubble") {
         Some(w) => w,
@@ -149,10 +180,11 @@ pub fn append_bubble_chunk(app: &AppHandle, chunk: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// 流式结束: emit "bubble-end" → 前端启动自动隐藏定时器
+/// 流式结束: emit "bubble-end" → 前端启动自动隐藏定时器 + 退出 chat 模式
 pub fn finalize_bubble(app: &AppHandle) -> Result<(), String> {
+    let state: State<SharedBubble> = app.state();
+    state.set_chat_active(false); // 回复截图写 bubble
     let _ = app.emit_to("bubble", "bubble-end", ());
-    // 流结束后不再需要 pending 累积,但保留内容供迟到的 invoke 拉取
     Ok(())
 }
 
@@ -333,6 +365,41 @@ mod tests {
         let json = serde_json::to_string(&p).unwrap();
         assert!(json.contains("chunk"));
         assert!(json.contains("片段") || json.contains("\\u"));
+    }
+
+    // ---- chat_active 状态 ----
+
+    #[test]
+    fn test_chat_active_default_false() {
+        let b = SharedBubble::new();
+        assert!(!b.is_chat_active());
+    }
+
+    #[test]
+    fn test_set_chat_active_true() {
+        let b = SharedBubble::new();
+        b.set_chat_active(true);
+        assert!(b.is_chat_active());
+    }
+
+    #[test]
+    fn test_set_chat_active_false() {
+        let b = SharedBubble::new();
+        b.set_chat_active(true);
+        b.set_chat_active(false);
+        assert!(!b.is_chat_active());
+    }
+
+    #[test]
+    fn test_chat_active_isolated() {
+        let b = SharedBubble::new();
+        b.set_chat_active(true);
+        // pending_text 不受影响
+        *b.pending_text.lock().unwrap() = Some("test".into());
+        assert!(b.is_chat_active());
+        b.set_chat_active(false);
+        assert!(!b.is_chat_active());
+        assert_eq!(b.pending_text.lock().unwrap().as_deref(), Some("test"));
     }
 
     #[test]

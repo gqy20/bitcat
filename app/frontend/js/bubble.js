@@ -102,6 +102,18 @@
 
   // ---- 聊天输入框 ----
 
+  var inputIdleTimer = null;
+  const INPUT_IDLE_MS = 5000;
+
+  function resetInputIdleTimer() {
+    if (inputIdleTimer) clearTimeout(inputIdleTimer);
+    inputIdleTimer = setTimeout(function() {
+      if (inputRowEl && inputRowEl.style.display !== 'none') {
+        hideInput();
+      }
+    }, INPUT_IDLE_MS);
+  }
+
   function showInput() {
     var diag = function(msg) {
       if (window.__TAURI__ && window.__TAURI__.core) {
@@ -119,12 +131,9 @@
     requestAnimationFrame(function() {
       if (inputEl) inputEl.focus();
     });
+    resetInputIdleTimer();
     autoResize();
-
-    diag('showInput 完成, display=' + inputRowEl.style.display +
-      ' visible=' + inputRowEl.classList.contains('visible') +
-      ' body.hidden=' + document.body.classList.contains('hidden') +
-      ' body.show=' + document.body.classList.contains('show'));
+    diag('showInput 完成');
   }
 
   function hideInput() {
@@ -132,7 +141,12 @@
     inputRowEl.style.display = 'none';
     inputRowEl.classList.remove('visible');
     inputEl.value = '';
+    if (inputIdleTimer) { clearTimeout(inputIdleTimer); inputIdleTimer = null; }
     autoResize();
+    // 通知 Rust 退出 chat 模式
+    if (window.__TAURI__ && window.__TAURI__.core) {
+      window.__TAURI__.core.invoke('cmd_exit_chat').catch(function() {});
+    }
   }
 
   function toggleInput() {
@@ -148,7 +162,8 @@
     var text = inputEl.value.trim();
     if (!text) return;
     inputEl.value = '';
-    hideInput();
+    // 不隐藏输入框，等流式回复开始后自然覆盖 content 区
+    resetInputIdleTimer();
     window.__TAURI__.core.invoke('cmd_submit_chat', { text: text })
       .catch(function(e) { console.error('[chat] submit failed:', e); });
   }
@@ -259,6 +274,8 @@
       inputEl.addEventListener('keydown', onInputKeyDown);
       inputEl.addEventListener('compositionstart', onCompositionStart);
       inputEl.addEventListener('compositionend', onCompositionEnd);
+      // 任何输入活动重置空闲定时器
+      inputEl.addEventListener('input', function() { resetInputIdleTimer(); });
     }
     if (sendBtnEl) {
       sendBtnEl.addEventListener('click', submitChat);

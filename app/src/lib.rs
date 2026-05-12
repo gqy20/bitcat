@@ -527,6 +527,15 @@ async fn cmd_pet_log(msg: String) -> Result<(), String> {
     Ok(())
 }
 
+/// 前端退出 chat 模式（输入框收起/超时隐藏时调用）
+#[tauri::command]
+async fn cmd_exit_chat(app: AppHandle) -> Result<(), String> {
+    let state: State<bubble::SharedBubble> = app.state();
+    state.set_chat_active(false);
+    info!("[cmd_exit_chat] chat 模式结束，截图恢复写 bubble");
+    Ok(())
+}
+
 /// 点击宠物嘴巴 → 打开聊天输入框：
 /// 显示 bubble 窗口 + eval 直接调用 showInput()（不走事件系统，
 /// 因为 hidden 预创建窗口的 JS listen 可能未就绪导致 emit 丢失）
@@ -540,9 +549,10 @@ async fn cmd_open_chat(app: AppHandle) -> Result<(), String> {
         None => bubble::create_bubble_window(&app).map_err(|e| e.to_string())?,
     };
 
-    // 写入空 pending
+    // 写入空 pending + 进入 chat 模式（截图不覆盖）
     let state: State<bubble::SharedBubble> = app.state();
     *state.pending_text.lock().map_err(|e| e.to_string())? = Some(String::new());
+    state.set_chat_active(true);
 
     // 定位 + 显示
     bubble::position_above_pet(&app, &window);
@@ -558,7 +568,7 @@ async fn cmd_open_chat(app: AppHandle) -> Result<(), String> {
             info!(attempt = attempt, "[cmd_open_chat] ✓ eval showInput 成功");
             return Ok(());
         }
-        debug!(attempt = attempt, "[cmd_open_chat] eval 重试中...");
+        info!(attempt = attempt, "[cmd_open_chat] eval 重试中...");
     }
 
     warn!("[cmd_open_chat] eval showInput 失败（10 次重试均未成功）");
@@ -638,6 +648,7 @@ pub fn run() {
             screenshot::cmd_screenshot_now,
             cmd_submit_chat,
             cmd_open_chat,
+            cmd_exit_chat,
             cmd_pet_log,
         ])
         .on_window_event(|window, event| {
