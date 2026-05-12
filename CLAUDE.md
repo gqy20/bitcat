@@ -32,6 +32,12 @@ cargo insta accept     # 一键接受所有新快照
 
 **nextest 配置**：见 [.config/nextest.toml](.config/nextest.toml)。`default` profile 用于本地（安静输出 + slow-timeout 保护），`ci` profile 用于 GitHub Actions（JUnit 输出 + fail-fast）。`PROPTEST_CASES` 环境变量可覆盖 proptest 用例数（默认 256，CI 用 64）。
 
+**Git hooks（cargo-husky）**：首次 `cargo test` 或 `make install-hooks` 会自动把 [.cargo-husky/hooks/](.cargo-husky/hooks/) 里的脚本写入 `.git/hooks/`：
+- **pre-commit**：`cargo fmt --all -- --check`（仅当暂存区有 `.rs` 变更时跑，秒级）
+- **pre-push**：fmt + `cargo clippy --workspace -- -D warnings` + `make test-fast`（约 30s-1min）
+
+跳过单次：`git commit --no-verify` / `git push --no-verify`。完全禁用安装：`CARGO_HUSKY_DONT_INSTALL_HOOKS=true cargo test`。
+
 **Windows SDL2 构建必须设置环境变量**（VS2026 + 新 CMake 兼容）：
 ```powershell
 $env:CMAKE_POLICY_VERSION_MINIMUM="3.5"; make build

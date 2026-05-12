@@ -27,3 +27,10 @@ insta = { version = "1", features = ["yaml", "redactions"] }
 rstest = "0.25"
 wiremock = "0.6"
 mockall = "0.13"
+
+# Git hooks: cargo test 时自动写入 .git/hooks/pre-commit 和 pre-push
+# 脚本源在 workspace 根的 .cargo-husky/hooks/。跳过安装可设 CARGO_HUSKY_DONT_INSTALL_HOOKS=true
+[dev-dependencies.cargo-husky]
+version = "1"
+default-features = false
+features = ["user-hooks"]
