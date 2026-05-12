@@ -139,6 +139,9 @@ pub struct WindowStateSnapshot {
     pub collapsed: bool,
     pub always_on_top: bool,
     pub position: Option<(i32, i32)>,
+    /// 吸附方向: "left" / "right" / None（未吸附）
+    /// 前端 init 时 pull 读取此字段决定 edgeReversed（替代 eval 注入 __setSnapEdge）
+    pub snap_edge: Option<String>,
 }
 
 /// 从 SharedWindowState 读取当前快照（纯函数，可单测）
@@ -147,6 +150,7 @@ pub fn window_state_snapshot(ws: &SharedWindowState) -> WindowStateSnapshot {
         collapsed: ws.collapsed.load(Ordering::SeqCst),
         always_on_top: ws.always_on_top.load(Ordering::SeqCst),
         position: *ws.last_position.lock().unwrap(),
+        snap_edge: ws.snap_edge.lock().ok().and_then(|g| g.clone()),
     }
 }
 
@@ -156,6 +160,70 @@ pub fn cmd_get_window_state(
     state: tauri::State<'_, SharedWindowState>,
 ) -> Result<WindowStateSnapshot, String> {
     Ok(window_state_snapshot(&state))
+}
+
+// ========================================================================
+// Task 5: 磁性预告（Snap Preview）
+//
+// 当宠物被拖拽靠近屏幕左右边缘时，应显示一个"预告条"提示松手会吸附到此。
+// 本模块只负责判定逻辑（纯函数 + Tauri command 包装），UI 侧的预告窗口
+// 由前端结合 cmd_snap_transform 复用。
+// ========================================================================
+
+/// 磁性预告结果
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SnapPreview {
+    pub edge: String, // "left" | "right" | "none"
+    pub x: i32,       // 预告条左上角 X（物理像素）
+    pub y: i32,       // 预告条左上角 Y（物理像素）
+    pub visible: bool,
+}
+
+/// 计算磁性预告条的位置。
+///
+/// - `cursor_x`  : 当前宠物窗口左上角 X（物理像素）
+/// - `work_left` / `work_right` : 工作区左右边界
+/// - `work_bottom` : 工作区底部（预告条贴底显示）
+/// - `pet_w` : 当前宠物窗口物理宽度
+/// - `snap_w` / `snap_h` : 预告条尺寸
+/// - `threshold` : 触发阈值（物理像素）
+///
+/// 返回 `SnapPreview { visible:false, edge:"none" }` 表示当前无需预告。
+pub fn calc_snap_preview(
+    cursor_x: i32,
+    work_left: i32,
+    work_right: i32,
+    work_bottom: i32,
+    pet_w: i32,
+    snap_w: i32,
+    snap_h: i32,
+    threshold: i32,
+) -> SnapPreview {
+    let left_dist = (cursor_x - work_left).max(0);
+    let right_dist = (work_right - pet_w - cursor_x).max(0);
+
+    if left_dist <= right_dist && left_dist <= threshold {
+        SnapPreview {
+            edge: "left".to_string(),
+            x: work_left,
+            y: work_bottom - snap_h,
+            visible: true,
+        }
+    } else if right_dist <= threshold {
+        SnapPreview {
+            edge: "right".to_string(),
+            x: work_right - snap_w,
+            y: work_bottom - snap_h,
+            visible: true,
+        }
+    } else {
+        SnapPreview {
+            edge: "none".to_string(),
+            x: cursor_x,
+            y: work_bottom,
+            visible: false,
+        }
+    }
 }
 
 // ---- 测试（TDD：先写测试，上面是实现） ----
@@ -242,6 +310,7 @@ mod tests {
                 collapsed: false,
                 always_on_top: true,
                 position: None,
+                snap_edge: None,
             }
         );
     }
@@ -269,6 +338,7 @@ mod tests {
             collapsed: true,
             always_on_top: false,
             position: Some((1920, 1080)),
+            snap_edge: None,
         };
         let json = serde_json::to_string(&snap).unwrap();
         let restored: WindowStateSnapshot = serde_json::from_str(&json).unwrap();
@@ -281,10 +351,192 @@ mod tests {
             collapsed: false,
             always_on_top: true,
             position: None,
+            snap_edge: None,
         };
         let json = serde_json::to_string(&snap).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(v["position"].is_null());
+    }
+
+    // ===== snap_edge Pull 模式测试（Task 2）=====
+
+    #[test]
+    fn test_snap_edge_default_none() {
+        let ws = SharedWindowState::default();
+        let edge = ws.snap_edge.lock().unwrap();
+        assert!(edge.is_none(), "snap_edge 默认应为 None");
+    }
+
+    #[test]
+    fn test_set_snap_edge_left_then_right() {
+        let ws = SharedWindowState::default();
+        *ws.snap_edge.lock().unwrap() = Some("left".to_string());
+        assert_eq!(ws.snap_edge.lock().unwrap().as_deref(), Some("left"));
+        *ws.snap_edge.lock().unwrap() = Some("right".to_string());
+        assert_eq!(ws.snap_edge.lock().unwrap().as_deref(), Some("right"));
+    }
+
+    #[test]
+    fn test_snapshot_includes_snap_edge_default_none() {
+        let ws = SharedWindowState::default();
+        let snap = window_state_snapshot(&ws);
+        assert_eq!(snap.snap_edge, None, "默认快照 snap_edge 应为 None");
+    }
+
+    #[test]
+    fn test_snapshot_includes_snap_edge_left() {
+        let ws = SharedWindowState::default();
+        *ws.snap_edge.lock().unwrap() = Some("left".to_string());
+        let snap = window_state_snapshot(&ws);
+        assert_eq!(snap.snap_edge.as_deref(), Some("left"));
+    }
+
+    #[test]
+    fn test_snapshot_includes_snap_edge_right() {
+        let ws = SharedWindowState::default();
+        *ws.snap_edge.lock().unwrap() = Some("right".to_string());
+        let snap = window_state_snapshot(&ws);
+        assert_eq!(snap.snap_edge.as_deref(), Some("right"));
+    }
+
+    #[test]
+    fn test_snapshot_unsnap_clears_snap_edge() {
+        let ws = SharedWindowState::default();
+        *ws.snap_edge.lock().unwrap() = Some("left".to_string());
+        // 模拟 unsnap
+        *ws.snap_edge.lock().unwrap() = None;
+        let snap = window_state_snapshot(&ws);
+        assert_eq!(snap.snap_edge, None);
+    }
+
+    #[test]
+    fn test_snapshot_serialization_includes_snap_edge() {
+        let snap = WindowStateSnapshot {
+            collapsed: false,
+            always_on_top: true,
+            position: None,
+            snap_edge: Some("right".to_string()),
+        };
+        let json = serde_json::to_string(&snap).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["snap_edge"], serde_json::json!("right"));
+    }
+
+    #[test]
+    fn test_snapshot_serialization_null_snap_edge() {
+        let snap = WindowStateSnapshot {
+            collapsed: false,
+            always_on_top: true,
+            position: None,
+            snap_edge: None,
+        };
+        let json = serde_json::to_string(&snap).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(v["snap_edge"].is_null());
+    }
+
+    #[test]
+    fn test_snapshot_roundtrip_with_snap_edge() {
+        let snap = WindowStateSnapshot {
+            collapsed: true,
+            always_on_top: false,
+            position: Some((100, 200)),
+            snap_edge: Some("left".to_string()),
+        };
+        let json = serde_json::to_string(&snap).unwrap();
+        let restored: WindowStateSnapshot = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, snap);
+    }
+
+    // ===== 磁性预告 calc_snap_preview（Task 5）=====
+
+    fn preview_at(x: i32) -> SnapPreview {
+        // 典型工作区 1920x1080，宠物 128x128，阈值 80，snap 24x100
+        calc_snap_preview(x, 0, 1920, 1040, 128, 24, 100, 80)
+    }
+
+    #[test]
+    fn test_preview_left_edge_triggers() {
+        let p = preview_at(10);
+        assert_eq!(p.edge, "left");
+        assert!(p.visible);
+        assert_eq!(p.x, 0);
+        assert_eq!(p.y, 1040 - 100);
+    }
+
+    #[test]
+    fn test_preview_right_edge_triggers() {
+        // 1920 - 128 - 10 = 1782，距右 10px
+        let p = preview_at(1782);
+        assert_eq!(p.edge, "right");
+        assert!(p.visible);
+        assert_eq!(p.x, 1920 - 24);
+    }
+
+    #[test]
+    fn test_preview_center_no_trigger() {
+        let p = preview_at(900);
+        assert_eq!(p.edge, "none");
+        assert!(!p.visible);
+    }
+
+    #[test]
+    fn test_preview_left_boundary_exact_threshold() {
+        // x=80 → left_dist=80，等于阈值 → 应触发
+        let p = preview_at(80);
+        assert_eq!(p.edge, "left");
+        assert!(p.visible);
+    }
+
+    #[test]
+    fn test_preview_left_boundary_just_outside_threshold() {
+        // x=81 → left_dist=81 > 80 → 不触发（若 right 也远则 none）
+        let p = preview_at(81);
+        assert_eq!(p.edge, "none");
+        assert!(!p.visible);
+    }
+
+    #[test]
+    fn test_preview_prefers_closer_edge() {
+        // 距左 60px、距右 (1920-128-60)=1732 → 偏左
+        let p = preview_at(60);
+        assert_eq!(p.edge, "left");
+    }
+
+    #[test]
+    fn test_preview_right_when_left_far() {
+        // x=1790 → left_dist=1790, right_dist=1920-128-1790=2
+        let p = preview_at(1790);
+        assert_eq!(p.edge, "right");
+    }
+
+    #[test]
+    fn test_preview_negative_cursor_clamped() {
+        // x 越界到负值（窗口被拖出屏幕外）：left_dist 被 max(0) 钳制为 0，应触发 left
+        let p = preview_at(-50);
+        assert_eq!(p.edge, "left");
+        assert!(p.visible);
+    }
+
+    #[test]
+    fn test_preview_cursor_beyond_right_clamped() {
+        // x=2000 超过工作区：right_dist=(1920-128-2000).max(0)=0，触发 right
+        let p = preview_at(2000);
+        assert_eq!(p.edge, "right");
+        assert!(p.visible);
+    }
+
+    #[test]
+    fn test_preview_preview_serialization() {
+        let p = SnapPreview {
+            edge: "left".to_string(),
+            x: 0,
+            y: 940,
+            visible: true,
+        };
+        let json = serde_json::to_string(&p).unwrap();
+        let restored: SnapPreview = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, p);
     }
 
     // ===== Pet 状态机测试（原有） =====

@@ -173,3 +173,162 @@ body.collapsed .shadow,
 body.collapsed .particles {
   display: none;
 }
+
+/* ==========================================================================
+   吸附竖条（Task 3：Canvas → DOM + CSS）
+   - 窗口尺寸固定 24×100（Rust 侧 SNAP_W/SNAP_H）
+   - 三层渐变（outer / mid / core）+ 一个 hover 指示点（dot）
+   - 呼吸 / hover 展宽 / 方向均由 CSS 动画与 class 驱动
+   ========================================================================== */
+
+#snap-bar {
+  position: absolute;
+  inset: 0;
+  width: 24px;
+  height: 100px;
+  pointer-events: auto;
+  cursor: pointer;
+  --bar-width: 2px;      /* 核心条宽度，hover 时展宽到 6px */
+  --mid-width: 8px;      /* 中层辉光宽度 */
+  --outer-width: 12px;   /* 外层柔光宽度 */
+  /* 当 snap-bar 启用时主精灵/阴影需隐藏；pet-snap 窗口由 app.js 设置 body.snap-mode */
+  transition: filter 0.18s ease;
+}
+
+#snap-bar > * {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  pointer-events: none;
+  border-radius: 3px;
+}
+
+/* ---- 第一层：外层柔光（最宽最淡） ---- */
+#snap-bar .snap-layer-outer {
+  width: var(--outer-width);
+  animation: snap-breath-outer 3.5s ease-in-out infinite;
+}
+
+/* ---- 第二层：中层辉光 ---- */
+#snap-bar .snap-layer-mid {
+  width: var(--mid-width);
+  animation: snap-breath-mid 2.4s ease-in-out infinite;
+}
+
+/* ---- 第三层：核心亮条 ---- */
+#snap-bar .snap-core {
+  width: var(--bar-width);
+  background: linear-gradient(180deg,
+    rgba(165, 180, 252, 0.85) 0%,
+    rgba(139, 92, 246, 0.95) 50%,
+    rgba(165, 180, 252, 0.85) 100%);
+  transition: width 0.18s ease, box-shadow 0.18s ease;
+  box-shadow:
+    0 0 4px rgba(139, 92, 246, 0.6),
+    0 0 8px rgba(99, 102, 241, 0.35);
+}
+
+/* ---- 第四层：hover 指示点（默认隐藏） ---- */
+#snap-bar .snap-dot {
+  top: 50%;
+  width: 3px;
+  height: 3px;
+  margin-top: -1.5px;
+  border-radius: 50%;
+  background: rgba(200, 210, 255, 0.85);
+  opacity: 0;
+  transform: translateY(0);
+  transition: opacity 0.18s ease;
+  animation: snap-dot-bob 1.4s ease-in-out infinite;
+  animation-play-state: paused;
+}
+
+/* ---- 方向：左吸附 —— 所有层贴左 ---- */
+#snap-bar.direction-left .snap-layer-outer,
+#snap-bar.direction-left .snap-layer-mid,
+#snap-bar.direction-left .snap-core { left: 0; }
+#snap-bar.direction-left .snap-layer-outer {
+  background: linear-gradient(90deg,
+    rgba(99, 102, 241, 0.35) 0%,
+    rgba(99, 102, 241, 0.14) 50%,
+    rgba(99, 102, 241, 0) 100%);
+}
+#snap-bar.direction-left .snap-layer-mid {
+  background: linear-gradient(90deg,
+    rgba(139, 92, 246, 0.55) 0%,
+    rgba(139, 92, 246, 0.18) 60%,
+    rgba(139, 92, 246, 0) 100%);
+}
+#snap-bar.direction-left .snap-dot {
+  left: calc(var(--bar-width) + 4px);
+}
+
+/* ---- 方向：右吸附 —— 镜像 ---- */
+#snap-bar.direction-right .snap-layer-outer,
+#snap-bar.direction-right .snap-layer-mid,
+#snap-bar.direction-right .snap-core { right: 0; }
+#snap-bar.direction-right .snap-layer-outer {
+  background: linear-gradient(270deg,
+    rgba(99, 102, 241, 0.35) 0%,
+    rgba(99, 102, 241, 0.14) 50%,
+    rgba(99, 102, 241, 0) 100%);
+}
+#snap-bar.direction-right .snap-layer-mid {
+  background: linear-gradient(270deg,
+    rgba(139, 92, 246, 0.55) 0%,
+    rgba(139, 92, 246, 0.18) 60%,
+    rgba(139, 92, 246, 0) 100%);
+}
+#snap-bar.direction-right .snap-dot {
+  right: calc(var(--bar-width) + 4px);
+}
+
+/* ---- hover：核心展宽 + 指示点浮现 + 整体提亮 ---- */
+#snap-bar.hovered {
+  filter: brightness(1.18);
+}
+#snap-bar.hovered .snap-core {
+  width: 6px;
+  box-shadow:
+    0 0 8px rgba(139, 92, 246, 0.8),
+    0 0 14px rgba(99, 102, 241, 0.5);
+}
+#snap-bar.hovered .snap-dot {
+  opacity: 1;
+  animation-play-state: running;
+}
+
+/* ---- 呼吸动画 ---- */
+@keyframes snap-breath-outer {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 0.9;  }
+}
+@keyframes snap-breath-mid {
+  0%, 100% { opacity: 0.65; }
+  50%      { opacity: 1;    }
+}
+@keyframes snap-dot-bob {
+  0%, 100% { transform: translateY(-8px); }
+  50%      { transform: translateY(8px);  }
+}
+
+/* ---- snap-mode：pet-snap 窗口激活时隐藏主精灵相关元素 ---- */
+body.snap-mode #sprite,
+body.snap-mode .shadow,
+body.snap-mode .particles { display: none; }
+body.snap-mode { width: 24px !important; height: 100px !important; }
+
+/* ==========================================================================
+   Crossfade（Task 4）：双窗口切换时消除双闪
+   - body 默认 opacity: 1，不影响首次显示
+   - pre-fade   初始强制 opacity:0（show 后一帧移除以触发 fade-in）
+   - fading-in  目标 opacity:1，带 150ms transition
+   - fading-out 目标 opacity:0，带 150ms transition
+   ========================================================================== */
+body {
+  transition: opacity 0.15s ease;
+  opacity: 1;
+}
+body.pre-fade   { opacity: 0; transition: none; }
+body.fading-in  { opacity: 1; }
+body.fading-out { opacity: 0; }

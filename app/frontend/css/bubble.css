@@ -253,30 +253,30 @@ body.show .content {
 /* 中英文混排间距 (Chrome 114+) */
 .content { text-autospace: ideograph-alpha ideograph-num; }
 
-/* ========== CSS 动画光标 ========== */
+/* ========== CSS 动画光标（class 驱动 / DOM 常驻 / 自动淡出） ========== */
 
+/* 光标节点始终存在于 DOM，默认不可见；由 .content.streaming 激活 */
 .typing-cursor {
   display: inline-block;
-  width: 2px;
+  width: 0;
   height: 1.1em;
   background: #6366f1;
   margin-left: 1px;
   vertical-align: text-bottom;
   border-radius: 1px;
-  animation: cursor-blink 1s step-end infinite;
+  opacity: 0;
+  transition: opacity 0.25s ease, width 0.25s ease;
 }
 
-.typing-cursor.fade-out {
-  animation: cursor-fade-out 0.3s ease-out forwards;
+.content.streaming .typing-cursor {
+  width: 2px;
+  opacity: 1;
+  animation: cursor-blink 1s step-end infinite;
 }
 
 @keyframes cursor-blink {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0; }
-}
-
-@keyframes cursor-fade-out {
-  to { opacity: 0; width: 0; }
 }
 
 /* ========== 思考中三点脉冲指示器 ========== */

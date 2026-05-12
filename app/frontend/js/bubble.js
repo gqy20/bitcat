@@ -20,6 +20,8 @@
 
   let hideTimer = null;
   let contentEl = null;
+  let bodyEl = null;           // #contentBody：唯一被 innerHTML 覆盖的节点
+  let cursorEl = null;         // #typingCursor：常驻 DOM，仅通过 content 的 streaming class 控制
   let pollTimer = null;
   let currentWinH = MIN_H;
   let lastRawText = '';       // 记录最近一次原始文本，用于最终渲染去光标
@@ -81,8 +83,21 @@
     return contentEl.scrollHeight - contentEl.scrollTop - contentEl.clientHeight < 40;
   }
 
-  function setText(text, streaming) {
+  /// 切换光标的可见性：唯一真相源，与 setText / bubble-end 事件解耦
+  /// DOM 常驻节点 + class 切换，不依赖 lastRawText 是否为空
+  function setStreamingClass(on) {
     if (!contentEl) return;
+    if (on) {
+      contentEl.classList.add('streaming');
+      contentEl.classList.remove('idle');
+    } else {
+      contentEl.classList.add('idle');
+      contentEl.classList.remove('streaming');
+    }
+  }
+
+  function setText(text) {
+    if (!bodyEl) return;
     var wasAtBottom = isNearBottom();
     lastRawText = text || '';
 
@@ -92,11 +107,12 @@
     var html = typeof marked !== 'undefined'
       ? marked.parse(lastRawText) : lastRawText;
 
-    if (streaming) {
-      html += '<span class="typing-cursor"></span>';
-    }
+    // 仅写正文，光标完全由 CSS + class 驱动，永不拼接到 HTML 字符串里
+    bodyEl.innerHTML = html;
 
-    contentEl.innerHTML = html;
+    // 兜底：如果没有正在轮询，强制 idle（即便 bubble-end 事件丢失也能收回光标）
+    if (!pollTimer) setStreamingClass(false);
+
     // 仅当用户未手动上滚 + 原本在底部时才跟底
     if (!userScrolledUp && wasAtBottom) {
       contentEl.scrollTop = contentEl.scrollHeight;
@@ -182,7 +198,7 @@
   function showThinking() {
     if (!thinkingEl) return;
     thinkingEl.style.display = 'flex';
-    contentEl.innerHTML = ''; // 清空内容区
+    if (bodyEl) bodyEl.innerHTML = ''; // 清空正文区（光标由 class 控制，不必碰）
     autoResize();
   }
 
@@ -253,6 +269,7 @@
     stopPolling();
     streaming = true;       // 标记流式开始
     userScrolledUp = false; // 新流式开始，重置锁定
+    setStreamingClass(true); // 激活光标（DOM 常驻，class 切换）
     showThinking();         // 显示思考指示器
     pollTimer = setInterval(function() {
       pollPending().then(onPollResult);
@@ -265,6 +282,7 @@
       clearInterval(pollTimer);
       pollTimer = null;
     }
+    setStreamingClass(false); // 任何 stopPolling 路径都收回光标
   }
 
   function pollPending() {
@@ -274,11 +292,11 @@
       .catch(function() { return ''; });
   }
 
-  /// 轮询回调：有新文本才渲染（流式模式，带光标）
+  /// 轮询回调：有新文本才渲染（流式模式）
   function onPollResult(txt) {
     // 流已结束 → 丢弃迟到的轮询结果（clearInterval 无法取消已在途的 IPC）
     if (!streaming || !txt || txt.length === 0) return;
-    setText(txt, true);
+    setText(txt);
     ensureVisible();
   }
 
@@ -318,6 +336,8 @@
 
   function init() {
     contentEl = document.getElementById('content');
+    bodyEl = document.getElementById('contentBody');
+    cursorEl = document.getElementById('typingCursor');
     inputRowEl = document.getElementById('inputRow');
     inputEl = document.getElementById('chatInput');
     sendBtnEl = document.getElementById('chatSend');
@@ -381,8 +401,9 @@
       streaming = false;     // 立即标记结束，拦截后续迟到的 onPollResult
       userScrolledUp = false; // 流结束，解锁滚动
       hideThinking();
+      setStreamingClass(false); // 显式收回光标（stopPolling 里已做，这里双保险）
       // lastRawText 已是最新（每次 setText 都更新了），直接同步最终渲染
-      if (lastRawText) setText(lastRawText, false);
+      if (lastRawText) setText(lastRawText);
       startHideTimer();
       showInput();
     });
@@ -390,9 +411,10 @@
     listen('bubble-update', (event) => {
       stopPolling();
       streaming = false;     // 截图摘要非流式，标记结束
+      setStreamingClass(false);
       var payload = event.payload || {};
       var text = typeof payload === 'string' ? payload : (payload.text || '');
-      setText(text, false);
+      setText(text);
       ensureVisible();
       startHideTimer();
     });

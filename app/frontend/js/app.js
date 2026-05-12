@@ -38,6 +38,33 @@
     }
   }
 
+  // ========== Crossfade 工具（Task 4） ==========
+  // 由 Rust 侧 cmd_snap_transform / cmd_unsnap_transform 通过 eval 调用，
+  // 与 CSS body.fading-in/out/pre-fade 配合实现双窗口平滑切换。
+  const FADE_MS = 150;
+  window.__fadeOut = function() {
+    return new Promise((resolve) => {
+      document.body.classList.remove('fading-in', 'pre-fade');
+      document.body.classList.add('fading-out');
+      setTimeout(resolve, FADE_MS);
+    });
+  };
+  window.__fadeIn = function() {
+    return new Promise((resolve) => {
+      document.body.classList.remove('fading-out');
+      document.body.classList.add('pre-fade');
+      // 下一个微任务/帧移除 pre-fade 触发 transition
+      setTimeout(() => {
+        document.body.classList.remove('pre-fade');
+        document.body.classList.add('fading-in');
+        setTimeout(resolve, FADE_MS);
+      }, 0);
+    });
+  };
+  window.__fadeReset = function() {
+    document.body.classList.remove('fading-in', 'fading-out', 'pre-fade');
+  };
+
   async function init() {
     canvas = document.getElementById('sprite');
     ctx = canvas.getContext('2d');
@@ -52,7 +79,18 @@
 
     if (isSnapWindow) {
       // 吸附竖条模式：不启动宠物渲染循环，只显示发光条 + 监听点击
-      setupSnapBar();
+      // Pull 模式：init 时先从 Rust 拉取吸附方向，替代脆弱的 eval 注入
+      var initialEdge = null;
+      try {
+        if (window.__TAURI__ && window.__TAURI__.core) {
+          var snap = await window.__TAURI__.core.invoke('cmd_get_window_state');
+          if (snap && snap.snap_edge) initialEdge = snap.snap_edge;
+          console.log('[pet-snap] pull 初始方向:', initialEdge);
+        }
+      } catch (err) {
+        console.warn('[pet-snap] pull snap_edge 失败，默认 left:', err);
+      }
+      setupSnapBar(initialEdge);
       return;
     }
 
@@ -66,122 +104,47 @@
     setupDrag();
   }
 
-  /// 吸附竖条模式：多层发光 + hover 展宽 + 物理呼吸 + 点击恢复
-  function setupSnapBar() {
-    const w = canvas.width = 24;   // 更宽的热区（视觉上只画边缘 2px）
-    const h = canvas.height = 100;
-
-    let edgeReversed = false;     // right=true 时画在右侧
-    let hovered = false;          // 鼠标悬停状态
-    let breathPhase = 0;          // 呼吸相位
-    let lastTime = performance.now();
-
-    // ---- 绘制 ----
-    function drawGlow() {
-      ctx.clearRect(0, 0, w, h);
-
-      // 基于时间差的物理呼吸（不依赖帧率）
-      const now = performance.now();
-      const dt = (now - lastTime) / 1000;
-      lastTime = now;
-      breathPhase += dt * 1.8; // 约 3.5s 一个完整周期
-
-      // 双层呼吸：核心快 + 外层慢（相位差营造层次感）
-      const coreBreath = 0.65 + 0.35 * (0.5 + 0.5 * Math.sin(breathPhase));
-      const outerBreath = 0.55 + 0.30 * (0.5 + 0.5 * Math.sin(breathPhase * 0.7));
-
-      // hover 时整体提亮
-      const hoverBoost = hovered ? 0.25 : 0;
-
-      // 视觉宽度：默认 2px，hover 时展宽到 6px
-      const visualW = hovered ? 6 : 2;
-      const coreX = edgeReversed ? w - visualW : 0;
-
-      // ===== 第一层：外层柔光（宽范围低透明度）=====
-      const glowW = Math.min(w, hovered ? 20 : 12); // hover 时柔光更广
-      const gx0 = edgeReversed ? w - glowW : 0;
-      const gx1 = edgeReversed ? w : glowW;
-      const outerGrad = ctx.createLinearGradient(gx0, 0, gx1, 0);
-      const oa = (outerBreath + hoverBoost) * 0.35;
-      outerGrad.addColorStop(0, `rgba(99, 102, 241, ${oa.toFixed(2)})`);
-      outerGrad.addColorStop(0.5, `rgba(99, 102, 241, ${(oa * 0.4).toFixed(2)})`);
-      outerGrad.addColorStop(1, 'rgba(99, 102, 241, 0)');
-      ctx.fillStyle = outerGrad;
-      roundRect(ctx, 0, 0, w, h, 4);
-      ctx.fill();
-
-      // ===== 第二层：中层辉光（窄范围中透明度）=====
-      const midW = Math.min(w, hovered ? 14 : 8);
-      const mx0 = edgeReversed ? w - midW : 0;
-      const mx1 = edgeReversed ? w : midW;
-      const midGrad = ctx.createLinearGradient(mx0, 0, mx1, 0);
-      const ma = (coreBreath + hoverBoost) * 0.55;
-      midGrad.addColorStop(0, `rgba(139, 92, 246, ${ma.toFixed(2)})`);
-      midGrad.addColorStop(0.6, `rgba(139, 92, 246, ${(ma * 0.35).toFixed(2)})`);
-      midGrad.addColorStop(1, 'rgba(139, 92, 246, 0)');
-      ctx.fillStyle = midGrad;
-      roundRect(ctx, 0, 0, w, h, 3);
-      ctx.fill();
-
-      // ===== 第三层：高亮核心（最细最亮）=====
-      const ca = (coreBreath + hoverBoost) * 0.95;
-      ctx.fillStyle = `rgba(165, 180, 252, ${ca.toFixed(2)})`;
-      ctx.fillRect(coreX, 4, visualW, h - 8);
-
-      // hover 时在核心旁画一个微小的"点击提示"亮点
-      if (hovered) {
-        const dotY = h / 2 + Math.sin(breathPhase * 2) * 8;
-        const dotX = edgeReversed ? w - visualW - 4 : visualW + 4;
-        ctx.fillStyle = `rgba(200, 210, 255, ${(0.6 * coreBreath).toFixed(2)})`;
-        ctx.beginPath();
-        ctx.arc(dotX, dotY, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
+  /// 吸附竖条模式：DOM + CSS 驱动（Task 3）
+  /// - 不再使用 canvas + requestAnimationFrame，视觉效果全部交给 CSS animation/transition
+  /// - class 切换：direction-left/right（方向）、hovered（展宽）
+  /// - initialEdge 来自 Rust pull 模式；window.__setSnapEdge 作为运行时兜底
+  function setupSnapBar(initialEdge) {
+    const bar = document.getElementById('snap-bar');
+    if (!bar) {
+      console.error('[pet-snap] #snap-bar 节点缺失');
+      return;
     }
 
-    /// 圆角矩形辅助函数
-    function roundRect(c, x, y, rw, rh, r) {
-      c.beginPath();
-      c.moveTo(x + r, y);
-      c.lineTo(x + rw - r, y);
-      c.quadraticCurveTo(x + rw, y, x + rw, y + r);
-      c.lineTo(x + rw, y + rh - r);
-      c.quadraticCurveTo(x + rw, y + rh, x + rw - r, y + rh);
-      c.lineTo(x + r, y + rh);
-      c.quadraticCurveTo(x, y + rh, x, y + rh - r);
-      c.lineTo(x, y + r);
-      c.quadraticCurveTo(x, y, x + r, y);
-      c.closePath();
+    // 进入 snap 模式：body 标记用于隐藏主精灵/阴影/粒子
+    document.body.classList.add('snap-mode');
+
+    // 主 canvas 在 snap 窗口中不再绘制任何东西
+    if (canvas) {
+      canvas.width = 24;
+      canvas.height = 100;
+      canvas.style.display = 'none';
     }
 
-    // 动画循环
-    function animateBreath() {
-      drawGlow();
-      requestAnimationFrame(animateBreath);
+    function setEdge(edge) {
+      bar.classList.remove('direction-left', 'direction-right');
+      bar.classList.add(edge === 'right' ? 'direction-right' : 'direction-left');
     }
-    animateBreath();
+    setEdge(initialEdge || 'left');
+    bar.hidden = false;
 
-    // ---- 交互：hover 检测 ----
-    // Tauri 透明窗口的整个区域都可接收鼠标事件
-    canvas.addEventListener('mouseenter', () => { hovered = true; });
-    canvas.addEventListener('mouseleave', () => { hovered = false; });
-    // 设置 cursor 样式
-    canvas.style.cursor = 'pointer';
+    // hover 交互（CSS 负责视觉展宽/指示点）
+    bar.addEventListener('mouseenter', () => { bar.classList.add('hovered'); });
+    bar.addEventListener('mouseleave', () => { bar.classList.remove('hovered'); });
 
-    // ---- 点击恢复宠物 ----
-    canvas.addEventListener('mousedown', async (e) => {
+    // 点击恢复宠物
+    bar.addEventListener('mousedown', async (e) => {
       if (e.button !== 0) return;
-      // 点击反馈：短暂变亮后执行恢复
-      hovered = true;
-      drawGlow(); // 立即重绘一次 hover 态
+      bar.classList.add('hovered'); // 点击瞬间保持高亮反馈
       await cmdUnsnapTransform();
     });
 
-    // ---- 方向同步（通过 eval 直接调用，无需事件）----
-    // Rust 侧通过 window.eval 调用此函数设置方向
-    window.__setSnapEdge = function(edge) {
-      edgeReversed = edge === 'right';
-    };
+    // 运行时方向切换兜底（lib.rs cmd_snap_transform 通过 eval 调用）
+    window.__setSnapEdge = function(edge) { setEdge(edge); };
   }
 
   // ========== Pull 模式：前端 init 时从 Rust 拉取窗口状态 ==========

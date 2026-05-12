@@ -146,6 +146,42 @@ async fn cmd_snap_pet(app: tauri::AppHandle, x: i32, _y: i32) -> Result<SnapResu
     Ok(SnapResult { edge: edge.to_string(), x: target_x, y: target_y })
 }
 
+/// Task 5: 拖拽过程中查询磁性预告。
+/// 前端以约 60fps 的节流频率调用；返回预告条应显示的位置，或 visible=false。
+#[tauri::command]
+async fn cmd_get_snap_preview(
+    app: tauri::AppHandle,
+    x: i32,
+    _y: i32,
+) -> Result<commands::SnapPreview, String> {
+    // 复用拖拽中宠物窗口（pet / pet-mini）的工作区 + 缩放
+    let win = app
+        .get_webview_window("pet")
+        .filter(|w| w.is_visible().unwrap_or(false))
+        .or_else(|| app.get_webview_window("pet-mini"))
+        .ok_or("no visible pet window")?;
+
+    let pet_size = win.outer_size().map_err(|e| e.to_string())?;
+    let pw = pet_size.width as i32;
+    let scale = win.scale_factor().unwrap_or(1.0);
+    let snap_h_px = (SNAP_H as f64 * scale) as i32;
+    let snap_w_px = (SNAP_W * scale) as i32;
+    let threshold = (80.0 * scale) as i32;
+
+    let work = get_work_area_for_window(&win);
+
+    Ok(commands::calc_snap_preview(
+        x,
+        work.left,
+        work.right,
+        work.bottom,
+        pw,
+        snap_w_px,
+        snap_h_px,
+        threshold,
+    ))
+}
+
 #[derive(serde::Serialize)]
 struct SnapResult {
     edge: String,
@@ -159,10 +195,24 @@ async fn cmd_snap_transform(app: tauri::AppHandle, edge: String, x: i32, y: i32)
     let ws: tauri::State<'_, SharedWindowState> = app.state();
     let on_top = ws.always_on_top.load(Ordering::SeqCst);
 
-    // 隐藏当前宠物窗口
+    // 先写入共享状态（让 pet-snap 窗口 show 后 initPullState 能读到正确方向）
+    // 这样替代原先通过 eval(__setSnapEdge) 注入方向的脆弱做法
+    *ws.is_snapped.lock().map_err(|e| e.to_string())? = true;
+    *ws.snap_edge.lock().map_err(|e| e.to_string())? = Some(edge.clone());
+
+    // Task 4 Crossfade：触发旧窗口淡出（CSS transition 150ms）
+    for label in ["pet", "pet-mini"] {
+        if let Some(w) = app.get_webview_window(label) {
+            let _ = w.eval("if(typeof __fadeOut==='function')__fadeOut();");
+        }
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+    // 隐藏旧窗口并重置其 fade class（下次 show 才能正常 fade-in）
     for label in ["pet", "pet-mini"] {
         if let Some(w) = app.get_webview_window(label) {
             let _ = w.hide();
+            let _ = w.eval("if(typeof __fadeReset==='function')__fadeReset();");
         }
     }
 
@@ -174,17 +224,17 @@ async fn cmd_snap_transform(app: tauri::AppHandle, edge: String, x: i32, y: i32)
     let _ = snap_win.set_always_on_top(on_top);
     snap_win.show().map_err(|e| e.to_string())?;
 
-    // 通过 eval 直接调用 __setSnapEdge 设置方向（无需延迟，eval 等价于同步）
+    // 通过 eval 主动通知方向变更（pull 模式已写 ws.snap_edge 作为事实源；
+    // eval 仅作兜底，让已加载的窗口无需重新 pull 就能立即切方向）
     let edge_for_eval = edge.clone();
     if let Ok(_) = snap_win.eval(
         &format!("if(typeof __setSnapEdge==='function'){{__setSnapEdge('{edge_for_eval}');'ok'}}else{{'no-fn'}}")
     ) {
-        info!(edge = %edge, "[cmd_snap_snap] ✓ eval setSnapEdge 成功");
+        info!(edge = %edge, "[cmd_snap_snap] ✓ eval setSnapEdge 成功（兜底通知）");
     }
 
-    // 记录吸附状态
-    *ws.is_snapped.lock().map_err(|e| e.to_string())? = true;
-    *ws.snap_edge.lock().map_err(|e| e.to_string())? = Some(edge.clone());
+    // Task 4 Crossfade：新窗口淡入
+    let _ = snap_win.eval("if(typeof __fadeIn==='function')__fadeIn();");
 
     info!(snap_transform = true, edge = %edge, x = x, y = y, "吸附态切换成功");
     Ok(())
@@ -196,9 +246,20 @@ async fn cmd_unsnap_transform(app: tauri::AppHandle) -> Result<(), String> {
     let ws: tauri::State<'_, SharedWindowState> = app.state();
     let on_top = ws.always_on_top.load(Ordering::SeqCst);
 
-    // 隐藏吸附态窗口
-    if let Some(w) = app.get_webview_window("pet-snap") {
+    // Task 4 Crossfade：pet-snap 淡出
+    let snap_win_opt = app.get_webview_window("pet-snap");
+    if let Some(w) = &snap_win_opt {
+        let _ = w.eval("if(typeof __fadeOut==='function')__fadeOut();");
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+    // 计算恢复位置（在 hide 之前读取当前位置）
+    let snap_pos = snap_win_opt.as_ref().and_then(|w| w.outer_position().ok());
+
+    // 隐藏吸附态窗口 + 重置 fade
+    if let Some(w) = &snap_win_opt {
         let _ = w.hide();
+        let _ = w.eval("if(typeof __fadeReset==='function')__fadeReset();");
     }
 
     // 显示正常宠物窗口
@@ -208,21 +269,19 @@ async fn cmd_unsnap_transform(app: tauri::AppHandle) -> Result<(), String> {
     let win = app.get_webview_window(target)
         .ok_or(format!("window '{}' not found", target))?;
 
-    // 从吸附态窗口获取当前位置
-    if let Some(snap_win) = app.get_webview_window("pet-snap") {
-        if let Ok(pos) = snap_win.outer_position() {
-            // 恢复时往屏幕内移动一点（40px），避免还在边缘
-            let offset = if ws.snap_edge.lock().ok().and_then(|e| e.clone()).as_deref() == Some("left") {
-                80 // 从左边吸附态出来，往右移 80px
-            } else {
-                -80 // 从右边吸附态出来，往左移 80px
-            };
-            let _ = win.set_position(PhysicalPosition::new(pos.x + offset, pos.y));
-        }
+    // 从吸附态窗口位置恢复（往屏幕内移 80px 避免还在边缘）
+    if let Some(pos) = snap_pos {
+        let offset = if ws.snap_edge.lock().ok().and_then(|e| e.clone()).as_deref() == Some("left") {
+            80
+        } else {
+            -80
+        };
+        let _ = win.set_position(PhysicalPosition::new(pos.x + offset, pos.y));
     }
 
     let _ = win.set_always_on_top(on_top);
     win.show().map_err(|e| e.to_string())?;
+    let _ = win.eval("if(typeof __fadeIn==='function')__fadeIn();");
 
     // 清除吸附状态
     *ws.is_snapped.lock().map_err(|e| e.to_string())? = false;
@@ -519,6 +578,7 @@ pub fn run() {
             cmd_snap_pet,
             cmd_snap_transform,
             cmd_unsnap_transform,
+            cmd_get_snap_preview,
             screenshot::cmd_screenshot_now,
             cmd_submit_chat,
             cmd_open_chat,

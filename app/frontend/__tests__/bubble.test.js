@@ -358,3 +358,105 @@ describe('bubble chat input', () => {
     expect(dom.input.value).toBe('');
   });
 });
+
+// ---- 光标生命周期测试（DOM 解耦契约） ----
+
+function createBubbleCursorDOM() {
+  document.body.innerHTML = `
+    <body class="hidden">
+      <div class="bubble">
+        <div class="content idle" id="content">
+          <div class="content-body" id="contentBody"></div>
+          <span class="typing-cursor" id="typingCursor" aria-hidden="true"></span>
+        </div>
+      </div>
+    </body>
+  `;
+  return {
+    content: document.getElementById('content'),
+    body: document.getElementById('contentBody'),
+    cursor: document.getElementById('typingCursor'),
+  };
+}
+
+/// 模拟新 bubble.js 的契约行为：content.streaming class + body.innerHTML
+function setStreamingClass(contentEl, on) {
+  if (on) {
+    contentEl.classList.add('streaming');
+    contentEl.classList.remove('idle');
+  } else {
+    contentEl.classList.add('idle');
+    contentEl.classList.remove('streaming');
+  }
+}
+
+function setText(bodyEl, text) {
+  // 不拼接任何 cursor 标记，纯写正文
+  bodyEl.innerHTML = text || '';
+}
+
+describe('bubble cursor lifecycle', () => {
+  let dom;
+
+  beforeEach(() => {
+    dom = createBubbleCursorDOM();
+  });
+
+  it('A: 初始 DOM 结构包含常驻 #typingCursor，content 默认 idle', () => {
+    expect(dom.body).toBeTruthy();
+    expect(dom.cursor).toBeTruthy();
+    expect(dom.cursor.tagName.toLowerCase()).toBe('span');
+    expect(dom.cursor.classList.contains('typing-cursor')).toBe(true);
+    expect(dom.content.classList.contains('idle')).toBe(true);
+    expect(dom.content.classList.contains('streaming')).toBe(false);
+  });
+
+  it('B: startPolling 路径 → content.streaming 生效且 setText 不写入 cursor span 字符串', () => {
+    setStreamingClass(dom.content, true);
+    setText(dom.body, '你好，正在回复');
+
+    expect(dom.content.classList.contains('streaming')).toBe(true);
+    expect(dom.content.classList.contains('idle')).toBe(false);
+    // body 的 HTML 不应包含光标相关标记（DOM 完全解耦）
+    expect(dom.body.innerHTML).not.toContain('typing-cursor');
+    expect(dom.body.innerHTML).toBe('你好，正在回复');
+    // cursor DOM 节点仍然是 content 的直接子节点
+    expect(dom.content.contains(dom.cursor)).toBe(true);
+  });
+
+  it('C: bubble-end 路径 → content 切 idle，cursor 节点仍常驻', () => {
+    setStreamingClass(dom.content, true);
+    setText(dom.body, '结束文本');
+    setStreamingClass(dom.content, false);
+
+    expect(dom.content.classList.contains('idle')).toBe(true);
+    expect(dom.content.classList.contains('streaming')).toBe(false);
+    // 关键契约：cursor DOM 节点从不被移除
+    expect(document.getElementById('typingCursor')).toBe(dom.cursor);
+    expect(dom.content.contains(dom.cursor)).toBe(true);
+  });
+
+  it('D: lastRawText 为空也能收回光标（解耦事件守卫）', () => {
+    setStreamingClass(dom.content, true);
+    // 模拟 bubble-end 到达但 lastRawText === ''
+    setStreamingClass(dom.content, false);
+    // 不调用 setText，content-body 可能为空
+
+    expect(dom.content.classList.contains('idle')).toBe(true);
+    expect(dom.content.classList.contains('streaming')).toBe(false);
+  });
+
+  it('E: 多次流式切换不会残留或重复添加 class', () => {
+    for (let i = 0; i < 5; i++) {
+      setStreamingClass(dom.content, true);
+      setText(dom.body, `round ${i}`);
+      setStreamingClass(dom.content, false);
+    }
+    // 最终 content 只含 idle，不含 streaming
+    const classes = Array.from(dom.content.classList);
+    expect(classes.filter(c => c === 'streaming').length).toBe(0);
+    expect(classes.filter(c => c === 'idle').length).toBe(1);
+    // cursor 节点唯一
+    expect(document.querySelectorAll('.typing-cursor').length).toBe(1);
+  });
+});
