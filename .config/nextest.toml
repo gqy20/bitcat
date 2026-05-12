@@ -1,16 +1,40 @@
 # nextest configuration for 8Bit Cat
+# 文档: https://nexte.st/book/configuration.html
 
 [profile.default]
-# 慢速测试（需要真实硬件/外部 API 的）放这里
-slow = []
+# 任何测试超过 30s 打印警告，超过 60s 强制终止（防止死锁/真实 I/O 阻塞卡住 CI）
+slow-timeout = { period = "30s", terminate-after = 2 }
 
-# 最终输出格式
-final-status-level = "skip"
+# 默认不重试；仅对显式标记为 flaky 的测试重试
+retries = 0
+
+# 输出策略：最终只汇总失败/慢测试；成功测试不打印每条进度
+final-status-level = "fail"
 failure-output = "immediate-final"
-success-output = "immediate"
+success-output = "never"
+status-level = "fail"
 
+# ---- 串行组：共享全局资源（如环境变量、全局文件）的测试放这里 ----
+# 使用方式：在 nextest.toml 下面用 filter-set 指定哪些测试进这个组
+[test-groups]
+serial-env = { max-threads = 1 }
+
+# 操作 std::env::set_var / remove_var 的截图测试必须串行，否则会互相覆盖
+[[profile.default.overrides]]
+filter = 'test(/from_env/) + test(/env_overrides/)'
+test-group = 'serial-env'
+
+# ---- CI profile ----
 [profile.ci]
-# CI 环境用这个 profile
-slow = []
 fail-fast = true
-retries = { backoff = "fixed", delay = "0.1", times = 2 }
+# 精细化：只对匹配 flaky_ 的测试重试 2 次
+retries = 0
+slow-timeout = { period = "60s", terminate-after = 2 }
+
+# JUnit 输出给 GitHub Actions test report
+[profile.ci.junit]
+path = "junit.xml"
+
+[[profile.ci.overrides]]
+filter = 'test(/flaky_/)'
+retries = { backoff = "fixed", delay = "100ms", count = 2 }

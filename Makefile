@@ -10,7 +10,7 @@
 #
 # 环境要求: cmake, $env:CMAKE_POLICY_VERSION_MINIMUM="3.5"（SDL2 编译）
 
-.PHONY: build release dist dist-upx test nextest run read check clippy clean \
+.PHONY: build release dist dist-upx test test-core test-app test-fast nextest run read check clippy clean \
         py-read py-ctl py-test all
 
 export CMAKE_POLICY_VERSION_MINIMUM = 3.5
@@ -57,11 +57,27 @@ dist-upx:
 #  测试 & 检查
 # ══════════════════════════════════════
 
-test:
-	cp buttons.yml actions.yml prompts.yml core/ && cargo nextest run --workspace || cargo test --workspace
+# 拷贝配置文件到 core/（测试需要这些 yml）
+_copy-fixtures:
+	@cp buttons.yml actions.yml prompts.yml core/
 
-nextest:
-	cp buttons.yml actions.yml prompts.yml core/ && cargo nextest run --workspace
+# 完整测试：整个 workspace（core + app）。app crate 依赖 SDL2/Tauri，编译较慢。
+test: _copy-fixtures
+	cargo nextest run --workspace
+
+# 日常快速反馈：只跑 core（~20s），跳过 SDL2/Tauri 编译
+test-core: _copy-fixtures
+	cargo nextest run -p ai-pad-core
+
+# 只跑 app 测试
+test-app: _copy-fixtures
+	cargo nextest run -p ai-pad-app
+
+# 最快反馈：core + 跳过 proptest（proptest 默认每块 256 cases）
+test-fast: _copy-fixtures
+	PROPTEST_CASES=32 cargo nextest run -p ai-pad-core -E 'not test(/prop_/)'
+
+nextest: test
 
 check:
 	cargo check

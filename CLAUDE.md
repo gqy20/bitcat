@@ -7,27 +7,30 @@
 ```bash
 make build          # cargo build + 复制 yml 配置到 target
 make release        # cargo build --release（opt-level=z, LTO, strip）
-make test           # nextest（回退到 cargo test），自动复制 yml 到 core
-make nextest        # cargo nextest run --workspace（需预装 cargo-nextest）
-make read / make ctl # cargo run（debug 模式，同一个二进制：ai-pad-app）
-make check          # cargo check
-make clippy         # cargo clippy -- -W clippy::all
-make clean          # cargo clean
+
+# ───── 测试（nextest 必装：cargo install cargo-nextest --locked）─────
+make test-fast      # 最快反馈：core + 跳过 proptest（PROPTEST_CASES=32）
+make test-core      # 只跑 core crate（跳过 SDL2/Tauri 编译，~20s）
+make test-app       # 只跑 app crate
+make test           # 完整 workspace（core + app，app 首次编译较慢）
+make nextest        # 同 make test
 
 # 前端测试（Vitest + jsdom）
 cd app/frontend && npx vitest run     # 3 个测试文件
 cd app/frontend && npx vitest         # 监听模式
 
-# 运行单个测试
-cargo test -p ai-pad-core pet::tests::test_walk_moves   # core 单测
-cargo test -p ai-pad-app voice::tests                    # app 单测
-cargo test -p ai-pad-app --features ipc-tests            # Tauri IPC 集成测试（需 WebView2）
+# 运行单个测试 / 模块
+cargo nextest run -p ai-pad-core -E 'test(~pet::)'        # 按名字过滤
+cargo nextest run -p ai-pad-core -E 'test(/test_walk_/)'  # 按正则过滤
+cargo test -p ai-pad-app --features ipc-tests             # Tauri IPC 集成测试（需 WebView2）
 
 # Insta 快照工作流
 cargo insta test       # 运行测试，生成 .snap.new（未审查的快照）
 cargo insta review     # 交互式审查，逐个接受/拒绝快照变更
 cargo insta accept     # 一键接受所有新快照
 ```
+
+**nextest 配置**：见 [.config/nextest.toml](.config/nextest.toml)。`default` profile 用于本地（安静输出 + slow-timeout 保护），`ci` profile 用于 GitHub Actions（JUnit 输出 + fail-fast）。`PROPTEST_CASES` 环境变量可覆盖 proptest 用例数（默认 256，CI 用 64）。
 
 **Windows SDL2 构建必须设置环境变量**（VS2026 + 新 CMake 兼容）：
 ```powershell
@@ -150,6 +153,15 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 5. **insta 快照文件（`*.snap`）必须提交到 git**，它们是测试的基线。`.snap.new` 文件不应提交（已在 `.gitignore`）。修改序列化格式后运行 `cargo insta review` 审查变更。
 
 6. **测试内联在源文件底部**（`#[cfg(test)] mod tests`），不单独建 `tests/` 目录。快照文件在 `core/src/snapshots/`。
+
+### 测试性能最佳实践
+
+1. **日常只跑 core**：`make test-core`（~20s），app crate 依赖 SDL2/Tauri 编译慢，提交前再跑 `make test`。
+2. **async 测试用 `#[tokio::test]`**，不要手动 `Runtime::new().unwrap().block_on(...)`——每个测试新建 runtime 有额外开销，代码也更冗长。
+3. **nextest fail-fast 默认开启**：本地调试失败时加 `--no-fail-fast` 看全部失败，别误以为"只有一个测试失败"。
+4. **proptest 用例数可配**：本地 `PROPTEST_CASES=32 make test-fast`，CI 默认 64，完整回归 256（默认）。
+5. **改了 `wiremock` 相关测试记得 `.no_proxy()`**：Windows 系统代理会劫持 `localhost`，不加会 hang。
+6. **环境变量相关测试自动进串行组**：[.config/nextest.toml](.config/nextest.toml) 的 `serial-env` test-group 已经把 `*from_env*` / `*env_overrides*` 的测试串行化，新增此类测试会自动受益，无需手动加 `#[serial]`。
 
 ## 关键文件
 

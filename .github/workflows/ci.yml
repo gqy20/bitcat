@@ -8,32 +8,58 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # CI 上降低 proptest 用例数，日常足够发现回归，又不拖慢 pipeline
+  PROPTEST_CASES: "64"
 
 jobs:
-  test:
-    name: Test (Windows ${{ matrix.target }})
+  # ───── 秒级任务：fmt + clippy 独立并行，不被测试阻塞 ─────
+  fmt:
+    name: Rustfmt
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-pc-windows-msvc
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: clippy
+      - name: Copy fixture configs
+        run: |
+          copy buttons.yml core\
+          copy actions.yml core\
+          copy prompts.yml core\
+          copy buttons.yml app\
+          copy actions.yml app\
+      - run: cargo clippy --workspace -- -D warnings
+
+  # ───── 测试任务 ─────
+  test:
+    name: Test (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ runner.os }}-cargo-${{ matrix.target }}
+          key: test
 
-      - name: Copy config files for tests
+      - name: Copy fixture configs
         run: |
           copy buttons.yml core\
           copy actions.yml core\
@@ -47,13 +73,12 @@ jobs:
           tool: cargo-nextest
 
       - name: Run tests (nextest)
-        if: ${{ !cancelled() }}
-        run: cargo nextest run --profile ci --workspace 2>&1
+        run: cargo nextest run --profile ci --workspace
 
-      - name: Check formatting
-        if: ${{ !cancelled() }}
-        run: cargo fmt --all -- --check 2>&1
-
-      - name: Clippy lints
-        if: ${{ !cancelled() }}
-        run: cargo clippy --workspace -- -D warnings 2>&1
+      - name: Upload JUnit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-report
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore

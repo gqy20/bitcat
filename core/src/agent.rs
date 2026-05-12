@@ -304,10 +304,9 @@ mod tests {
         assert!(cfg.agent.preamble.contains("猫"));
     }
 
-    #[test]
-    fn test_launch_tool_definition() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let def = rt.block_on(LaunchTool.definition(String::new()));
+    #[tokio::test]
+    async fn test_launch_tool_definition() {
+        let def = LaunchTool.definition(String::new()).await;
         assert_eq!(def.name, "launch_program");
         assert!(!def.description.is_empty());
         let params = def.parameters.as_object().unwrap();
@@ -315,25 +314,22 @@ mod tests {
         assert!(params.get("required").is_some());
     }
 
-    #[test]
-    fn test_shell_tool_definition() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let def = rt.block_on(ShellTool.definition(String::new()));
+    #[tokio::test]
+    async fn test_shell_tool_definition() {
+        let def = ShellTool.definition(String::new()).await;
         assert_eq!(def.name, "shell");
         assert!(def.description.contains("PowerShell"));
     }
 
-    #[test]
-    fn test_read_file_tool_definition() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let def = rt.block_on(ReadFileTool.definition(String::new()));
+    #[tokio::test]
+    async fn test_read_file_tool_definition() {
+        let def = ReadFileTool.definition(String::new()).await;
         assert_eq!(def.name, "read_file");
     }
 
-    #[test]
-    fn test_get_time_tool_definition() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let def = rt.block_on(GetTimeTool.definition(String::new()));
+    #[tokio::test]
+    async fn test_get_time_tool_definition() {
+        let def = GetTimeTool.definition(String::new()).await;
         assert_eq!(def.name, "get_time");
         let params = def.parameters.as_object().unwrap();
         let props = params.get("properties").unwrap().as_object().unwrap();
@@ -342,25 +338,22 @@ mod tests {
         assert_eq!(enum_vals.len(), 3);
     }
 
-    #[test]
-    fn test_hotkey_tool_definition() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let def = rt.block_on(HotkeyTool.definition(String::new()));
+    #[tokio::test]
+    async fn test_hotkey_tool_definition() {
+        let def = HotkeyTool.definition(String::new()).await;
         assert_eq!(def.name, "send_hotkey");
         assert!(def.description.contains("快捷键"));
     }
 
-    #[test]
-    fn test_clipboard_tool_definition() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let def = rt.block_on(ClipboardTool.definition(String::new()));
+    #[tokio::test]
+    async fn test_clipboard_tool_definition() {
+        let def = ClipboardTool.definition(String::new()).await;
         assert_eq!(def.name, "read_clipboard");
     }
 
-    #[test]
-    fn test_foreground_tool_definition() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let def = rt.block_on(ForegroundTool.definition(String::new()));
+    #[tokio::test]
+    async fn test_foreground_tool_definition() {
+        let def = ForegroundTool.definition(String::new()).await;
         assert_eq!(def.name, "force_foreground");
     }
 
