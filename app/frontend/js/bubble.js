@@ -37,6 +37,14 @@
   let lastPollLen = -1;         // 上一次 poll 到的文本长度（用于稳定检测）
   let stableTicks = 0;          // 连续无变化的 tick 计数
 
+  // ---- 诊断日志（通过 Rust cmd_pet_log 输出到后端 tracing） ----
+  function diag(msg) {
+    if (window.__TAURI__ && window.__TAURI__.core) {
+      window.__TAURI__.core.invoke('cmd_pet_log', { msg: '[bubble] ' + msg })
+        .catch(function() {});
+    }
+  }
+
   function ensureVisible() {
     document.body.classList.remove('hidden');
     void document.body.offsetWidth;
@@ -131,7 +139,7 @@
 
   function hide() {
     stopPolling();
-    hideInput(); // 隐藏时一并收起输入框
+    hideInput('hide-bubble'); // 隐藏时一并收起输入框
     // 隐藏前恢复默认高度
     if (currentWinH !== MIN_H && window.__TAURI__ && window.__TAURI__.window) {
       window.__TAURI__.window.getCurrentWindow()
@@ -155,18 +163,13 @@
     if (inputIdleTimer) clearTimeout(inputIdleTimer);
     inputIdleTimer = setTimeout(function() {
       if (inputRowEl && inputRowEl.style.display !== 'none') {
-        hideInput();
+        diag('⏰ idle timeout 触发 → hideInput (INPUT_IDLE_MS=' + INPUT_IDLE_MS + ')');
+        hideInput('idle-timeout');
       }
     }, INPUT_IDLE_MS);
   }
 
   function showInput() {
-    var diag = function(msg) {
-      if (window.__TAURI__ && window.__TAURI__.core) {
-        window.__TAURI__.core.invoke('cmd_pet_log', { msg: '[bubble] ' + msg }).catch(function() {});
-      }
-    };
-
     diag('showInput() called, inputRowEl=' + !!inputRowEl + ' inputEl=' + !!inputEl);
     if (!inputRowEl || !inputEl) { diag('ABORT: 元素不存在'); return; }
 
@@ -176,14 +179,26 @@
     clearHideTimer();
     ensureVisible();
     requestAnimationFrame(function() {
-      if (inputEl) inputEl.focus();
+      if (inputEl) {
+        inputEl.focus();
+        // 检查 focus 是否真的生效（DOM 层面）
+        var hasFocus = (document.activeElement === inputEl);
+        var hasWinFocus = document.hasFocus();
+        diag('focus 尝试: activeElement==inputEl=' + hasFocus +
+             ' document.hasFocus=' + hasWinFocus +
+             ' display=' + inputEl.style.display +
+             ' readOnly=' + inputEl.readOnly +
+             ' disabled=' + inputEl.disabled);
+      }
     });
     resetInputIdleTimer();
     autoResize();
     diag('showInput 完成');
   }
 
-  function hideInput() {
+  function hideInput(source) {
+    diag('hideInput() called, source=' + (source || 'unknown') +
+         ' curValueLen=' + (inputEl ? inputEl.value.length : -1));
     if (!inputRowEl || !inputEl) return;
     inputRowEl.style.display = 'none';
     inputRowEl.classList.remove('visible');
@@ -213,26 +228,34 @@
   }
 
   function toggleInput() {
-    if (inputRowEl && inputRowEl.style.display === 'none') {
+    var willShow = inputRowEl && inputRowEl.style.display === 'none';
+    diag('toggleInput(): willShow=' + willShow);
+    if (willShow) {
       showInput();
     } else {
-      hideInput();
+      hideInput('toggleInput');
     }
   }
 
   function submitChat() {
-    if (!inputEl || !window.__TAURI__ || !window.__TAURI__.core) return;
+    if (!inputEl || !window.__TAURI__ || !window.__TAURI__.core) {
+      diag('submitChat ABORT: inputEl=' + !!inputEl + ' tauri=' + !!window.__TAURI__);
+      return;
+    }
     var text = inputEl.value.trim();
-    if (!text) return;
+    diag('submitChat(): rawLen=' + inputEl.value.length + ' trimmedLen=' + text.length);
+    if (!text) { diag('submitChat ABORT: 空文本'); return; }
     inputEl.value = '';
     // 发送后平滑收起输入框，流式结束后自动重新展开
     if (inputIdleTimer) { clearTimeout(inputIdleTimer); inputIdleTimer = null; }
     window.__TAURI__.core.invoke('cmd_submit_chat', { text: text })
       .then(function() {
+        diag('submitChat ✓ cmd_submit_chat 成功，len=' + text.length);
         hideInputSmooth();       // 发送成功后优雅收起
         startPolling();          // 启动轮询等待 AI 流式回复
       })
       .catch(function(e) {
+        diag('submitChat ✗ cmd_submit_chat 失败: ' + (e && e.toString ? e.toString() : e));
         console.error('[chat] submit failed:', e);
       });
   }
@@ -240,6 +263,7 @@
   /// 平滑收起输入框（CSS 过渡动画 → 再 display:none）
   function hideInputSmooth() {
     if (!inputRowEl) return;
+    diag('hideInputSmooth() called');
     inputRowEl.classList.remove('visible');
     inputRowEl.classList.add('hiding');
     if (inputIdleTimer) { clearTimeout(inputIdleTimer); inputIdleTimer = null; }
@@ -258,17 +282,26 @@
   }
 
   function onInputKeyDown(e) {
+    diag('keydown key=' + e.key + ' code=' + e.code +
+         ' composing=' + isComposing +
+         ' valueLen=' + (inputEl ? inputEl.value.length : -1));
     switch (e.key) {
       case 'Enter':
         if (!isComposing) { e.preventDefault(); submitChat(); }
         break;
       case 'Escape':
-        e.preventDefault(); hideInput(); startHideTimer(); break;
+        e.preventDefault(); hideInput('escape-key'); startHideTimer(); break;
     }
   }
 
-  function onCompositionStart() { isComposing = true; }
-  function onCompositionEnd() { isComposing = false; }
+  function onCompositionStart() {
+    isComposing = true;
+    diag('compositionstart (IME 开始)');
+  }
+  function onCompositionEnd() {
+    isComposing = false;
+    diag('compositionend (IME 结束), valueLen=' + (inputEl ? inputEl.value.length : -1));
+  }
 
   function startPolling() {
     stopPolling();
@@ -411,6 +444,7 @@
         // 双击输入框本身不触发 toggle
         if (e.target === inputEl || e.target === sendBtnEl ||
             inputEl && inputEl.contains(e.target)) return;
+        diag('bubbleEl dblclick → toggleInput');
         toggleInput();
       });
     }
@@ -425,10 +459,30 @@
       inputEl.addEventListener('compositionstart', onCompositionStart);
       inputEl.addEventListener('compositionend', onCompositionEnd);
       // 任何输入活动重置空闲定时器
-      inputEl.addEventListener('input', function() { resetInputIdleTimer(); });
+      inputEl.addEventListener('input', function(e) {
+        diag('input 事件: valueLen=' + inputEl.value.length +
+             ' inputType=' + (e.inputType || 'n/a') +
+             ' isComposing=' + isComposing);
+        resetInputIdleTimer();
+      });
+      inputEl.addEventListener('focus', function() {
+        diag('✓ inputEl focus (获得键盘焦点), docHasFocus=' + document.hasFocus());
+      });
+      inputEl.addEventListener('blur', function() {
+        diag('✗ inputEl blur (失去键盘焦点), docHasFocus=' + document.hasFocus() +
+             ' newActive=' + (document.activeElement && document.activeElement.tagName));
+      });
+      // 点击输入框也记录一下（用于区分"鼠标点进去后能否输入"）
+      inputEl.addEventListener('click', function() {
+        diag('inputEl click, activeElement==inputEl=' +
+             (document.activeElement === inputEl));
+      });
     }
     if (sendBtnEl) {
-      sendBtnEl.addEventListener('click', submitChat);
+      sendBtnEl.addEventListener('click', function() {
+        diag('sendBtn click');
+        submitChat();
+      });
     }
 
     if (!window.__TAURI__) return;
@@ -460,9 +514,7 @@
 
     // 双击宠物 / cmd_open_chat → 展开输入框
     listen('chat-open', () => {
-      if (window.__TAURI__ && window.__TAURI__.core) {
-        window.__TAURI__.core.invoke('cmd_pet_log', { msg: '[bubble] ✓ 收到 chat-open 事件' }).catch(function() {});
-      }
+      diag('✓ 收到 chat-open 事件');
       showInput();
     });
 

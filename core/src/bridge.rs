@@ -22,6 +22,8 @@ pub enum PetCommand {
     ShowBubble { text: String },
     /// 退出
     Exit,
+    /// 播放舞蹈
+    PlayDance { name: String },
 }
 
 /// 宠物状态名称（IPC 安全，不含帧数据）
@@ -74,6 +76,8 @@ pub enum SpecialAction {
     Praise,
     /// 随机移动
     Wander,
+    /// 播放舞蹈
+    PlayDance,
 }
 
 /// 默认按键映射：按钮索引 → 功能
@@ -83,6 +87,7 @@ fn default_button_mapping(button_index: u32) -> Option<SpecialAction> {
         10 => Some(SpecialAction::ToggleSleep), // Select → 睡觉
         0 => Some(SpecialAction::Praise),       // A → 开心
         1 => Some(SpecialAction::Wander),       // B → 随机走动
+        4 => Some(SpecialAction::PlayDance),    // Y → 跳舞
         _ => None,
     }
 }
@@ -144,6 +149,12 @@ pub fn handle_button_press(
                 let x = rand_range(50.0, 200.0);
                 (None, Some(PetCommand::WalkTo { x }))
             }
+            SpecialAction::PlayDance => (
+                None,
+                Some(PetCommand::PlayDance {
+                    name: "happy_twist".into(),
+                }),
+            ),
         }
     } else {
         (None, None)
@@ -205,6 +216,7 @@ mod tests {
     #[case(10, "", false, true, "Select → sleep")]
     #[case(0, "", true, true, "A → praise")]
     #[case(1, "", false, true, "B → wander")]
+    #[case(4, "", false, true, "Y → dance")]
     #[case(99, "", false, false, "Unknown → no action")]
     fn test_handle_button_press(
         #[case] button: u32,

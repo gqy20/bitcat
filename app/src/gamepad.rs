@@ -60,13 +60,14 @@ impl PetEvent {
 
 pub fn commands_to_events(cmds: &[PetCommand]) -> Vec<PetEvent> {
     cmds.iter()
-        .map(|cmd| match cmd {
+        .filter_map(|cmd| match cmd {
             PetCommand::SetState { state } => {
-                PetEvent::set_state(&format!("{:?}", state).to_lowercase())
+                Some(PetEvent::set_state(&format!("{:?}", state).to_lowercase()))
             }
-            PetCommand::WalkTo { x } => PetEvent::walk_to(*x),
-            PetCommand::ShowBubble { text } => PetEvent::bubble(text),
-            PetCommand::Exit => PetEvent::set_state("exit"),
+            PetCommand::WalkTo { x } => Some(PetEvent::walk_to(*x)),
+            PetCommand::ShowBubble { text } => Some(PetEvent::bubble(text)),
+            PetCommand::Exit => Some(PetEvent::set_state("exit")),
+            PetCommand::PlayDance { .. } => None,
         })
         .collect()
 }
@@ -399,7 +400,30 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                             continue;
                         }
 
-                        let (agent_msg, _pet_cmd) = handle_button_press(idx, "");
+                        let (agent_msg, pet_cmd) = handle_button_press(idx, "");
+
+                        // 舞蹈命令：直接走播放管线，不走事件系统
+                        if let Some(PetCommand::PlayDance { name }) = &pet_cmd {
+                            info!(dance = %name, "[gamepad] Y 键 → 播放舞蹈");
+                            if let Ok(def) = ai_pad_core::dance::load_dance(name) {
+                                let payload =
+                                    serde_json::to_value(&def).expect("DanceDef 可序列化");
+                                let _ = app.emit("play-dance", &payload);
+                            } else {
+                                // 首次使用时自动创建默认舞蹈
+                                info!(dance = %name, "[gamepad] 舞蹈不存在，自动创建");
+                                let steps = ai_pad_core::dance::choreograph("happy");
+                                let def = ai_pad_core::dance::DanceDef {
+                                    name: name.clone(),
+                                    loop_: true,
+                                    steps,
+                                };
+                                let _ = ai_pad_core::dance::save_dance(&def);
+                                let payload =
+                                    serde_json::to_value(&def).expect("DanceDef 可序列化");
+                                let _ = app.emit("play-dance", &payload);
+                            }
+                        }
 
                         let events = process_button(idx);
                         for evt in &events {

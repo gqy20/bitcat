@@ -5,7 +5,7 @@ const ACTIONS = [
   { id: 'explorer',   icon: '📁', label: '资源管理器' },
   { id: 'powershell', icon: '⚡', label: 'PowerShell' },
   { id: 'notepad',    icon: '📝', label: '记事本' },
-  { id: 'ai',         icon: '🤖', label: '问 AI' },
+  { id: 'dance',      icon: '💃', label: '跳舞' },
 ];
 
 const COLS = 3;
@@ -21,7 +21,7 @@ function render() {
   grid.innerHTML = '';
   ACTIONS.forEach((a, i) => {
     const cell = document.createElement('div');
-    cell.className = a.id === 'ai' ? 'cell disabled' : 'cell';
+    cell.className = 'cell';
     cell.dataset.index = i;
     cell.innerHTML = `
       <div class="icon">${a.icon}</div>
@@ -59,15 +59,18 @@ function moveSelection(dx, dy) {
 
 async function activateSelected() {
   const a = ACTIONS[selectedIndex];
-  if (!a || a.id === 'ai') {
-    console.log('AI 入口待 Phase D 实现');
-    return;
-  }
+  if (!a) return;
   if (!invoke) {
     console.error('Tauri invoke 不可用');
     return;
   }
   try {
+    if (a.id === 'dance') {
+      console.log('[panel] 💃 触发舞蹈播放');
+      await invoke('cmd_play_dance', { danceName: 'happy_twist' });
+      await invoke('cmd_hide_panel');
+      return;
+    }
     await invoke('cmd_execute_panel_action', { id: a.id });
     await invoke('cmd_hide_panel');
   } catch (e) {
