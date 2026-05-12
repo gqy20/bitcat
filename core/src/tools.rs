@@ -2,7 +2,7 @@ use crate::action::launch_program;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use thiserror::Error;
-use tracing::debug;
+use tracing::{debug, info};
 
 #[derive(Debug, Error)]
 pub enum ToolError {
@@ -155,6 +155,7 @@ pub async fn execute_shell(args: &ShellArgs) -> Result<ToolResult, ToolError> {
 
 /// 读取文件内容
 pub fn execute_read_file(args: &ReadFileArgs) -> ToolResult {
+    info!(path = %args.path, "tool: read_file");
     match std::fs::read_to_string(&args.path) {
         Ok(content) => {
             // 截断过长的文件，避免 token 浪费
@@ -170,6 +171,7 @@ pub fn execute_read_file(args: &ReadFileArgs) -> ToolResult {
 
 /// 获取当前时间
 pub fn execute_get_time(args: &GetTimeArgs) -> ToolResult {
+    info!(format = %args.format, "tool: get_time");
     let now = chrono::Local::now();
     match args.format.as_str() {
         "date" => ToolResult::ok(now.format("%Y-%m-%d").to_string()),
@@ -188,6 +190,7 @@ pub fn execute_recent_screenshots(
     use crate::screenshot::{ensure_today_dir, list_recent_analyses};
 
     let count = args.count.unwrap_or(3);
+    info!(count, "tool: recent_screenshots");
 
     let dir = match override_dir {
         Some(d) => d.to_path_buf(),
@@ -241,6 +244,7 @@ pub struct ClipboardArgs {}
 
 /// 读取剪贴板文本
 pub fn execute_clipboard(_args: &ClipboardArgs) -> ToolResult {
+    info!("tool: read_clipboard");
     match crate::hotkey::read_clipboard() {
         Some(text) => {
             let truncated = truncate_chars(&text, MAX_OUTPUT_CHARS);
@@ -257,6 +261,7 @@ pub struct ForegroundArgs {
 
 /// 将指定窗口提到前台
 pub fn execute_foreground(args: &ForegroundArgs) -> ToolResult {
+    info!(hwnd = args.hwnd, "tool: force_foreground");
     match crate::hotkey::force_foreground(args.hwnd) {
         Ok(()) => ToolResult::ok("窗口已置顶"),
         Err(e) => ToolResult::err(e),

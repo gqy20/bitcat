@@ -6,6 +6,7 @@
 //! 3. 解析 Agent 回复，决定宠物状态变化
 
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 // ---- IPC 命令协议 ----
 
@@ -107,6 +108,11 @@ pub fn handle_button_press(
     button_index: u32,
     user_message: &str,
 ) -> (Option<String>, Option<PetCommand>) {
+    debug!(
+        button_index,
+        has_msg = !user_message.is_empty(),
+        "handle_button_press"
+    );
     if let Some(action) = default_button_mapping(button_index) {
         match action {
             SpecialAction::AiChat => {
@@ -146,6 +152,7 @@ pub fn handle_button_press(
 
 /// 根据 Agent 回复结果决定宠物状态
 pub fn resolve_agent_response(reply: &str) -> Vec<PetCommand> {
+    debug!(chars = reply.chars().count(), "resolve_agent_response");
     let mut cmds = Vec::new();
 
     // 简单关键词检测
@@ -174,6 +181,7 @@ pub fn resolve_agent_response(reply: &str) -> Vec<PetCommand> {
         state: PetStateName::Idle,
     });
 
+    debug!(cmd_count = cmds.len(), "resolve_agent_response done");
     cmds
 }
 

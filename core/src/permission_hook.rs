@@ -1,6 +1,6 @@
 use rig::agent::PromptHook;
 use rig::agent::ToolCallHookAction;
-use tracing::warn;
+use tracing::{info, warn};
 
 #[derive(Clone)]
 pub struct PermissionHook;
@@ -23,10 +23,14 @@ impl<M: rig::completion::CompletionModel> PromptHook<M> for PermissionHook {
                             reason: "此命令被安全策略阻止，可能造成数据丢失或系统损坏".into(),
                         }
                     } else {
+                        info!(command = %args, "shell 工具调用通过安全检查");
                         ToolCallHookAction::Continue
                     }
                 }
-                _ => ToolCallHookAction::Continue,
+                _ => {
+                    info!(tool = %tool_name, "非 shell 工具调用放行");
+                    ToolCallHookAction::Continue
+                }
             }
         }
     }

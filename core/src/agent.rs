@@ -14,7 +14,7 @@ use rig::providers::anthropic;
 use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
 use rig::tool::Tool;
 use serde_json::json;
-use tracing::{debug, info};
+use tracing::{debug, info, instrument};
 
 /// 桌宠 AI Agent
 pub struct PetAgent {
@@ -63,6 +63,7 @@ impl PetAgent {
     }
 
     /// 流式对话: 每收到文本块通过 on_chunk 回调发出, 返回累积的完整回复
+    #[instrument(skip(self, on_chunk), fields(msg_len = message.chars().count()))]
     pub async fn chat_stream<F>(&self, message: &str, mut on_chunk: F) -> Result<String, String>
     where
         F: FnMut(&str),
@@ -80,26 +81,28 @@ impl PetAgent {
                     accumulated.push_str(&text.text);
                     on_chunk(&text.text);
                     chunk_count += 1;
+                    debug!(len = text.text.len(), "text chunk");
                 }
                 Ok(MultiTurnStreamItem::StreamAssistantItem(
                     StreamedAssistantContent::ToolCall { tool_call, .. },
                 )) => {
                     tool_call_count += 1;
+                    info!(tool = %tool_call.function.name, "tool call");
                     // 通知用户 AI 正在调用工具
                     on_chunk(&format!("[正在执行: {}...]", tool_call.function.name));
                 }
                 Ok(MultiTurnStreamItem::FinalResponse(res)) => {
-                    debug!(
+                    info!(
                         chars = res.response().len(),
                         tokens = res.usage().total_tokens,
-                        "[stream] FinalResponse"
+                        "final response"
                     );
                 }
                 Ok(MultiTurnStreamItem::StreamUserItem(_)) => {
-                    debug!("[stream] UserItem (工具结果)");
+                    debug!("user item (工具结果)");
                 }
                 Ok(other) => {
-                    debug!(item = ?other, "[stream] 其他项");
+                    debug!(item = ?other, "其他 stream item");
                 }
                 Err(e) => return Err(format!("AI 流错误: {e}")),
             }
@@ -108,7 +111,7 @@ impl PetAgent {
             chunk_count,
             tool_call_count,
             chars = accumulated.chars().count(),
-            "[stream] 完成"
+            "stream complete"
         );
         Ok(accumulated)
     }
