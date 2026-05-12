@@ -16,6 +16,14 @@ use rig::tool::Tool;
 use serde_json::json;
 use tracing::{debug, info, instrument};
 
+/// AI Agent 多轮工具调用的最大回合数。
+///
+/// 每次"模型输出 → 工具执行 → 模型再读结果"算一个 turn。设 0 时 rig 会立刻
+/// 抛 `MaxTurnError`（这也是 rig 默认值触发过的坑）。给个宽裕的上限覆盖：
+/// create_dance → play_dance → 再总结 ≈ 6 turn，带搜索记忆/读文件的链路可达 10+。
+/// 16 留足余量又不会让异常循环无限跑（每轮至少数秒，满轮约等于几分钟超时兜底）。
+const MAX_AGENT_TURNS: usize = 16;
+
 /// 桌宠 AI Agent
 pub struct PetAgent {
     pub agent: Agent<anthropic::completion::CompletionModel, PermissionHook>,
@@ -59,6 +67,7 @@ impl PetAgent {
     pub async fn chat(&self, message: &str) -> Result<String, String> {
         self.agent
             .prompt(message)
+            .max_turns(MAX_AGENT_TURNS)
             .await
             .map_err(|e| format!("AI 对话失败: {e}"))
     }
@@ -69,7 +78,11 @@ impl PetAgent {
     where
         F: FnMut(&str),
     {
-        let mut stream = self.agent.stream_prompt(message.to_string()).await;
+        let mut stream = self
+            .agent
+            .stream_prompt(message.to_string())
+            .multi_turn(MAX_AGENT_TURNS)
+            .await;
 
         let mut accumulated = String::new();
         let mut chunk_count = 0u32;
