@@ -3,7 +3,7 @@ use ai_pad_core::agent::PetAgent;
 use ai_pad_core::bridge::{handle_button_press, resolve_agent_response, PetCommand};
 use ai_pad_core::device::button_name;
 use ai_pad_core::hotkey;
-use ai_pad_core::memory::MemoryStore;
+use ai_pad_core::memory::{LongTermMemory, MemoryStore, ProfileStore, should_store};
 use crate::bubble;
 use crate::commands::SharedWindowState;
 use crate::joystick::{self, SdlGamepad};
@@ -219,6 +219,17 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
     let mut memory = MemoryStore::load();
     let memory_config = ai_pad_core::prompts::PromptsConfig::load().memory;
     info!(entries = memory.entries.len(), "对话记忆系统已初始化");
+
+    let mut long_term = LongTermMemory::load();
+    let mut profile = ProfileStore::load();
+    let mut last_aggregation = std::time::Instant::now();
+    let prompts_cfg = ai_pad_core::prompts::PromptsConfig::load();
+    info!(
+        long_term = long_term.entries.len(),
+        profile = !profile.profile_text.is_empty(),
+        "长期记忆系统已初始化"
+    );
+
     let summary_store = ai_pad_core::screen_summary::ScreenSummaryStore::load();
     info!(entries = summary_store.entries.len(), "屏幕活动摘要系统已初始化");
 
@@ -352,7 +363,7 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
 
                         if let (Some(msg), Some(ag)) = (&agent_msg, get_agent(&agent)) {
                             info!(msg = %msg, "→ AI: {msg}");
-                            run_ai_chat(&rt, ag, app, msg, "", &mut memory, &memory_config);
+                            run_ai_chat(&rt, ag, app, msg, "", &mut memory, &memory_config, &mut long_term, &mut profile);
                         }
 
                         if let Some(ref config) = action_config {
@@ -406,7 +417,7 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                         } else {
                             info!(text = %text, len = text.chars().count(), "[voice] 识别全文: {text}");
                             if let Some(ag) = get_agent(&agent) {
-                                run_ai_chat(&rt, ag, app, &text, "[voice]", &mut memory, &memory_config);
+                                run_ai_chat(&rt, ag, app, &text, "[voice]", &mut memory, &memory_config, &mut long_term, &mut profile);
                             } else {
                                 warn!("[voice] AI Agent 未初始化");
                             }
@@ -425,7 +436,7 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
             } {
                 if let Some(ag) = get_agent(&agent) {
                     info!(msg = %chat_msg, "[chat] → AI 对话 (bubble 输入)");
-                    run_ai_chat(&rt, ag, app, &chat_msg, "[chat]", &mut memory, &memory_config);
+                    run_ai_chat(&rt, ag, app, &chat_msg, "[chat]", &mut memory, &memory_config, &mut long_term, &mut profile);
                 }
             }
 
@@ -449,6 +460,45 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
             }
             prev_hat = hat;
 
+            // 定时聚合：每 30 分钟 或 累积 ≥20 条未聚合记录时触发
+            {
+                let agg_interval = std::time::Duration::from_secs(
+                    (prompts_cfg.memory_v2.aggregation_interval_min as u64) * 60,
+                );
+                let unagg_count = long_term.unaggregated_entries().len();
+                let should_aggregate = unagg_count >= 20
+                    || (!profile.profile_text.is_empty() && last_aggregation.elapsed() >= agg_interval);
+
+                if should_aggregate && unagg_count > 0 {
+                    let ai_cfg = ai_pad_core::ai_config::AiConfig::load();
+                    match ai_cfg {
+                        Ok(cfg) => {
+                            let unagg = long_term.unaggregated_entries();
+                            info!(count = unagg_count, "开始聚合长期记忆 → 用户画像");
+                            match rt.block_on(ai_pad_core::memory::aggregate_profile(
+                                &unagg,
+                                &profile.profile_text,
+                                &cfg,
+                            )) {
+                                Ok(new_profile) => {
+                                    profile.update(&new_profile);
+                                    long_term.mark_all_aggregated();
+                                    let _ = profile.save();
+                                    let _ = long_term.save();
+                                    last_aggregation = std::time::Instant::now();
+                                    info!(
+                                        profile_len = profile.profile_text.chars().count(),
+                                        "用户画像已更新"
+                                    );
+                                }
+                                Err(e) => warn!(error = %e, "记忆聚合失败，下次重试"),
+                            }
+                        }
+                        Err(e) => warn!(error = %e, "AI 配置加载失败，跳过聚合"),
+                    }
+                }
+            }
+
             std::thread::sleep(std::time::Duration::from_millis(80));
         }
         std::thread::sleep(std::time::Duration::from_millis(500));
@@ -464,6 +514,8 @@ pub fn run_ai_chat(
     log_prefix: &str,
     memory: &mut MemoryStore,
     memory_config: &ai_pad_core::memory::MemoryConfig,
+    long_term: &mut LongTermMemory,
+    profile: &mut ProfileStore,
 ) {
     let tag = if log_prefix.is_empty() { "" } else { " " };
     info!(model = %agent.config.model, msg = %msg, "{log_prefix}→ AI 对话开始");
@@ -472,13 +524,15 @@ pub fn run_ai_chat(
         return;
     }
 
+    // 构建上下文：短期记忆 + 用户画像 + 相关长期记忆 + 截图观察 + 屏幕摘要
     let ctx = memory.build_context(memory_config);
+    let profile_ctx = profile.build_context();
+    let long_term_ctx = long_term.retrieve(msg, 800);
     let summary_store = ai_pad_core::screen_summary::ScreenSummaryStore::load();
     let summary_config = ai_pad_core::prompts::PromptsConfig::load().screen_summary;
-    info!(entries = summary_store.entries.len(), "屏幕活动摘要已加载");
     let summary_ctx = summary_store.build_context(&summary_config);
     let recent_ctx = ai_pad_core::screenshot::build_recent_analyses_context(10, 1500);
-    let context_parts: Vec<&str> = [&ctx, &recent_ctx, &summary_ctx]
+    let context_parts: Vec<&str> = [&profile_ctx, &long_term_ctx, &ctx, &recent_ctx, &summary_ctx]
         .into_iter()
         .filter(|s| !s.is_empty())
         .map(|s| s.as_str())
@@ -499,9 +553,18 @@ pub fn run_ai_chat(
     let _ = bubble::finalize_bubble(app);
     match stream_result {
         Ok(reply) => {
+            // 短期记忆（现有逻辑）
             memory.record_conversation(msg, &reply, memory_config);
             if let Err(e) = memory.save() {
                 warn!(error = %e, "保存对话记忆失败");
+            }
+
+            // 长期记忆：判断是否值得存，存入原始记录
+            if should_store(msg, &reply) {
+                long_term.record(msg, &reply, 200);
+                if let Err(e) = long_term.save() {
+                    warn!(error = %e, "保存长期记忆失败");
+                }
             }
 
             if prefix.is_empty() {
@@ -518,7 +581,7 @@ pub fn run_ai_chat(
                 let _ = app.emit("pet-event", evt);
             }
         }
-        Err(e) => warn!(model = %agent.config.model, error = %e, "{prefix} AI 错误"),
+        Err(e) => warn!(model = %agent.config.model, error = %e, "{log_prefix} AI 错误"),
     }
 }
 

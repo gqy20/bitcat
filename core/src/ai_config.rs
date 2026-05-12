@@ -106,6 +106,7 @@ fn load_claude_env() -> Option<EnvSection> {
     Some(cfg.env)
 }
 
+#[allow(dead_code)]
 fn env_fallback(a: &str, b: &str) -> Result<String, ()> {
     let a_val = std::env::var(a);
     let b_val = std::env::var(b);

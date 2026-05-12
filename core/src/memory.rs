@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::fs;
 use std::path::PathBuf;
 use tracing::{debug, info, warn};
+
+use crate::ai_config::AiConfig;
 
 // ---- 数据结构 ----
 
@@ -402,7 +405,7 @@ impl ProfileStore {
 /// 纯本地判断，零 API 成本
 pub fn should_store(user_msg: &str, ai_reply: &str) -> bool {
     let total_len = user_msg.chars().count() + ai_reply.chars().count();
-    if total_len < 20 {
+    if total_len < 8 {
         return false;
     }
 
@@ -434,11 +437,122 @@ fn relevance_score(text: &str, query: &str) -> f32 {
     count as f32 / query_words.len() as f32
 }
 
+// ---- AI 聚合：从原始记录生成画像摘要 ----
+
+const DEFAULT_AGGREGATION_PROMPT: &str = r#"你是 8Bit 的记忆整理模块。
+
+以下是你和主人的最近对话记录（按时间顺序）。请把它们整理成一份"关于主人"的记忆摘要。
+
+要求：
+1. 提取关键事实：名字、职业、项目、偏好、习惯、承诺/待办、禁忌
+2. 合并重复信息（同一件事提到多次 → 写一次 + 标注提及频率）
+3. 去掉闲聊废话，只留有价值的信息
+4. 用自然语言写成连贯的段落，不要列表不要 JSON
+5. 控制在 400 字以内
+6. 如果之前已有记忆摘要，在其基础上增量更新（新增的加上去，变化的改过来）"#;
+
+/// 调用 AI 将未聚合的长期记忆条目聚合为用户画像摘要。
+pub async fn aggregate_profile(
+    unaggregated: &[&LongTermEntry],
+    existing_profile: &str,
+    ai_config: &AiConfig,
+) -> Result<String, String> {
+    if unaggregated.is_empty() {
+        return Err("没有需要聚合的新记录".to_string());
+    }
+
+    let entries_text: String = unaggregated
+        .iter()
+        .map(|e| format!("[{}] {} | {}", e.timestamp, e.user_msg, e.ai_reply))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let user_content = if existing_profile.is_empty() {
+        format!("以下是新的对话记录：\n{entries_text}")
+    } else {
+        format!(
+            "以下是之前的记忆摘要：\n{existing_profile}\n\n以下是新增的对话记录：\n{entries_text}"
+        )
+    };
+
+    let body = json!({
+        "model": ai_config.model,
+        "max_tokens": 1024,
+        "messages": [
+            {
+                "role": "user",
+                "content": format!("{DEFAULT_AGGREGATION_PROMPT}\n\n{user_content}")
+            }
+        ]
+    });
+
+    let url = format!("{}/v1/messages", ai_config.base_url.trim_end_matches('/'));
+    debug!(model = %ai_config.model, url = %url, "开始聚合用户画像");
+
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
+    let start = std::time::Instant::now();
+    let response = client
+        .post(&url)
+        .header("x-api-key", &ai_config.api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("聚合 API 请求失败: {e}"))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        warn!(status = %status, "聚合 API 返回错误");
+        return Err(format!("聚合 API 返回错误 {}: {}", status, text));
+    }
+
+    let json: Value = response
+        .json()
+        .await
+        .map_err(|e| format!("解析聚合 API 响应失败: {e}"))?;
+
+    let elapsed = start.elapsed();
+    debug!(elapsed_ms = elapsed.as_millis(), "用户画像聚合完成");
+
+    parse_aggregation_response(&json)
+}
+
+fn parse_aggregation_response(response: &Value) -> Result<String, String> {
+    let content = response
+        .get("content")
+        .ok_or_else(|| "响应缺少 content 字段".to_string())?
+        .as_array()
+        .ok_or_else(|| "content 不是数组".to_string())?;
+
+    let texts: Vec<String> = content
+        .iter()
+        .filter_map(|block| {
+            if block.get("type").and_then(|t| t.as_str()) == Some("text") {
+                block.get("text").and_then(|t| t.as_str()).map(String::from)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if texts.is_empty() {
+        return Err("响应中没有文本内容".to_string());
+    }
+    Ok(texts.join(""))
+}
+
 // ---- 测试 ----
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiremock::matchers::{header, method};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[test]
     fn test_truncate_short_unchanged() {
@@ -689,12 +803,12 @@ mod tests {
         }
         store.entries[0].aggregated = true;
         store.entries[1].aggregated = true;
+        // 5 条 + 1 条新 = 6，max=5，淘汰 1 条（优先已聚合的 entry 0）
         store.record("new_msg", "new_reply", 5);
         assert_eq!(store.entries.len(), 5);
-        // 已聚合的条目 0 和 1 应该被优先淘汰
         assert!(!store.entries.iter().any(|e| e.user_msg == "msg0"));
-        assert!(!store.entries.iter().any(|e| e.user_msg == "msg1"));
-        assert!(store.entries.iter().any(|e| e.user_msg == "msg2"));
+        // msg1 是已聚合但没被淘汰（只需淘汰 1 条）
+        assert!(store.entries.iter().any(|e| e.user_msg == "msg1"));
     }
 
     #[test]
@@ -854,5 +968,111 @@ mod tests {
     #[test]
     fn test_relevance_score_empty_query() {
         assert_eq!(relevance_score("anything", ""), 0.0);
+    }
+
+    // ---- aggregate_profile 测试 ----
+
+    #[tokio::test]
+    async fn test_aggregate_profile_success() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(header("x-api-key", "test-key"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "content": [{ "type": "text", "text": "主人叫小明，程序员，正在做 8Bit Cat 项目。" }]
+            })))
+            .mount(&server)
+            .await;
+
+        let entries = vec![LongTermEntry {
+            timestamp: "05-12 14:23".into(),
+            user_msg: "我叫小明".into(),
+            ai_reply: "你好小明！".into(),
+            aggregated: false,
+        }];
+        let refs: Vec<&LongTermEntry> = entries.iter().collect();
+
+        let ai_config = AiConfig {
+            api_key: "test-key".into(),
+            base_url: server.uri(),
+            model: "test-model".into(),
+        };
+
+        let result = aggregate_profile(&refs, "", &ai_config).await;
+        assert!(result.is_ok());
+        let profile = result.unwrap();
+        assert!(profile.contains("小明"));
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_profile_with_existing() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({
+                    "content": [{ "type": "text", "text": "主人叫小明，程序员。正在做 8Bit Cat 项目（Rust）。" }]
+                })),
+            )
+            .mount(&server)
+            .await;
+
+        let entries = vec![LongTermEntry {
+            timestamp: "05-12 15:00".into(),
+            user_msg: "我在做 Rust 项目".into(),
+            ai_reply: "什么项目？".into(),
+            aggregated: false,
+        }];
+        let refs: Vec<&LongTermEntry> = entries.iter().collect();
+
+        let ai_config = AiConfig {
+            api_key: "test-key".into(),
+            base_url: server.uri(),
+            model: "test-model".into(),
+        };
+
+        let result = aggregate_profile(&refs, "主人叫小明，程序员", &ai_config).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_profile_empty_entries_err() {
+        let ai_config = AiConfig {
+            api_key: "test".into(),
+            base_url: "https://api.anthropic.com".into(),
+            model: "test".into(),
+        };
+        let result = aggregate_profile(&[], "", &ai_config).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("没有需要聚合"));
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_profile_api_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(500).set_body_json(json!({
+                    "error": { "type": "server_error", "message": "internal error" }
+                })),
+            )
+            .mount(&server)
+            .await;
+
+        let entries = vec![LongTermEntry {
+            timestamp: "05-12 14:23".into(),
+            user_msg: "我叫小明".into(),
+            ai_reply: "你好".into(),
+            aggregated: false,
+        }];
+        let refs: Vec<&LongTermEntry> = entries.iter().collect();
+
+        let ai_config = AiConfig {
+            api_key: "test-key".into(),
+            base_url: server.uri(),
+            model: "test-model".into(),
+        };
+
+        let result = aggregate_profile(&refs, "", &ai_config).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("错误"));
     }
 }

@@ -51,6 +51,30 @@ pub struct VisionPromptConfig {
     pub prompt_multi: String,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct MemoryV2Config {
+    #[serde(default = "default_long_term_max")]
+    pub long_term_max_entries: usize,
+    #[serde(default = "default_retrieve_budget")]
+    pub retrieve_budget_chars: usize,
+    #[serde(default = "default_aggregation_interval")]
+    pub aggregation_interval_min: u32,
+}
+
+fn default_long_term_max() -> usize { 200 }
+fn default_retrieve_budget() -> usize { 800 }
+fn default_aggregation_interval() -> u32 { 24 }
+
+impl Default for MemoryV2Config {
+    fn default() -> Self {
+        Self {
+            long_term_max_entries: default_long_term_max(),
+            retrieve_budget_chars: default_retrieve_budget(),
+            aggregation_interval_min: default_aggregation_interval(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct PromptsConfig {
     #[serde(default)]
@@ -59,6 +83,8 @@ pub struct PromptsConfig {
     pub vision: VisionPromptConfig,
     #[serde(default)]
     pub memory: MemoryConfig,
+    #[serde(default)]
+    pub memory_v2: MemoryV2Config,
     #[serde(default)]
     pub screen_summary: ScreenSummaryConfig,
 }
