@@ -98,7 +98,10 @@ pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
     let _ = window.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
     let _ = window.show();
     info!("[show_bubble] window.show() 已调用");
-    // emit 兜底：窗口已存在时 listener 已注册，立刻刷新
+    // eval 直接触发 JS 拉取 pending_text：emit_to 对 hide→show 窗口不可靠
+    let _ = window.eval("if(window.__bubble_onShow)window.__bubble_onShow();");
+    info!("[show_bubble] eval __bubble_onShow 已调用");
+    // emit 兜底：窗口首次创建或未被 hide 过时可能仍有效
     let _ = app.emit_to(
         "bubble",
         "bubble-update",

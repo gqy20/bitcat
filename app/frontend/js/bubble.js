@@ -11,7 +11,7 @@
 (function() {
   'use strict';
 
-  const HIDE_AFTER_MS = 5500;
+  const HIDE_AFTER_MS = 15000;
   const POLL_INTERVAL_MS = 120;
   const MIN_H = 140;
   const MAX_H = 340;
@@ -481,7 +481,17 @@
 
   document.addEventListener('DOMContentLoaded', init);
 
-  // 暴露给 Rust eval 调用（cmd_open_chat 通过 window.eval 触发）
+  // 暴露给 Rust eval 调用
   window.__bubble_showInput = showInput;
   window.__bubble_hideInput = hideInput;
+  // emit_to 对 hide→show 窗口不可靠，Rust 端通过 eval 直接触发此函数拉取 pending_text
+  window.__bubble_onShow = function() {
+    pollPending().then(function(txt) {
+      if (txt && txt.length > 0) {
+        setText(txt);
+        ensureVisible();
+        startHideTimer();
+      }
+    });
+  };
 })();
