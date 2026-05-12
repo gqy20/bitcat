@@ -454,13 +454,20 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             // 只在最后一个分辨率显示气泡
             if is_last {
                 if description.is_empty() {
+                    info!("[screenshot] 描述为空，显示兜底提示");
                     let _ = crate::bubble::show_bubble(
                         app,
                         "喵~ 看不太清屏幕内容，可能需要检查 API 配置",
                     );
                 } else {
-                    let _ = crate::bubble::show_bubble(app, &description);
+                    info!(chars = description.chars().count(), "[screenshot] 调用 show_bubble");
+                    match crate::bubble::show_bubble(app, &description) {
+                        Ok(()) => info!("[screenshot] show_bubble 成功"),
+                        Err(e) => warn!(error = %e, "[screenshot] show_bubble 失败"),
+                    }
                 }
+            } else {
+                info!(i, total = resolutions.len(), "[screenshot] 非最后一个分辨率，跳过气泡");
             }
         }
 

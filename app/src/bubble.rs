@@ -82,8 +82,14 @@ pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
 
     // 取或创建窗口
     let window = match app.get_webview_window("bubble") {
-        Some(w) => w,
-        None => create_bubble_window(app).map_err(|e| e.to_string())?,
+        Some(w) => {
+            info!("[show_bubble] 复用已有窗口");
+            w
+        }
+        None => {
+            info!("[show_bubble] 窗口不存在，创建新窗口");
+            create_bubble_window(app).map_err(|e| e.to_string())?
+        }
     };
 
     // 定位到 pet 上方
@@ -91,6 +97,7 @@ pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
 
     let _ = window.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
     let _ = window.show();
+    info!("[show_bubble] window.show() 已调用");
     // emit 兜底：窗口已存在时 listener 已注册，立刻刷新
     let _ = app.emit_to(
         "bubble",
@@ -99,6 +106,7 @@ pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
             text: text.to_string(),
         },
     );
+    info!(text_len = text.chars().count(), "[show_bubble] emit bubble-update 完成");
 
     Ok(())
 }
