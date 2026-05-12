@@ -309,6 +309,15 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             }
         }
 
+        // 对话优先级：用户正在聊天时跳过截图+Vision API（避免打断对话、浪费 token）
+        {
+            let bubble: tauri::State<crate::bubble::SharedBubble> = app.state();
+            if bubble.is_chat_active() {
+                info!("[screenshot] 对话进行中，跳过本轮截图（chat_active=true)");
+                continue;
+            }
+        }
+
         // 截图
         eprintln!("[SS-DBG] 开始捕获");
         let frame = match capture_target(&config.target) {

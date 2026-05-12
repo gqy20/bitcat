@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::Emitter;
+use tracing::{debug, info};
 
 /// 共享宠物状态
 pub struct SharedPet {
@@ -141,8 +142,17 @@ pub async fn cmd_play_dance(
     dance_name: String,
     app: tauri::AppHandle,
 ) -> Result<PetStatus, String> {
+    info!(dance = %dance_name, "[cmd] 播放舞蹈请求");
+
     let def =
         ai_pad_core::dance::load_dance(&dance_name).map_err(|e| format!("加载舞蹈失败: {e}"))?;
+
+    debug!(
+        steps = def.steps.len(),
+        total_ms = def.total_duration_ms(),
+        loop_ = def.loop_,
+        "[cmd] 舞蹈定义已加载，转发给前端"
+    );
 
     // 将 DanceDef 转发给 pet 前端窗口（通过 play-dance 事件）
     let payload = serde_json::to_value(&def).expect("DanceDef 可序列化");

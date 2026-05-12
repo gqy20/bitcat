@@ -365,11 +365,14 @@
     if (dancePlayer.time >= step.duration_ms) {
       dancePlayer.time = 0;
       dancePlayer.index++;
+      console.log('[dance] 切换到步骤', dancePlayer.index, '/', dancePlayer.steps.length);
       if (dancePlayer.index >= dancePlayer.steps.length) {
         if (dancePlayer.loop_) {
           dancePlayer.index = 0;
+          console.log('[dance] 循环，从头开始');
         } else {
           // 舞蹈结束，交还控制权给状态机
+          console.log('[dance] 舞蹈播放完毕');
           dancePlayer = null;
           return;
         }
@@ -466,14 +469,15 @@
 
     // 舞蹈播放事件（Rust 侧 cmd_play_dance 发出）
     window.__TAURI__.event.listen('play-dance', (event) => {
-      console.log('[pet] 收到 play-dance:', event.payload);
       var payload = event.payload;
+      console.log('[dance] 收到播放指令:', payload.name, '-', payload.steps.length, '步, loop=', payload.loop_);
       dancePlayer = {
         steps: payload.steps,
         index: 0,
         time: 0,
         loop_: payload.loop_ !== false,
       };
+      console.log('[dance] ▶ 舞蹈播放器启动');
     });
   }
 
