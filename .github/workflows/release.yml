@@ -158,7 +158,12 @@ jobs:
             ${{ steps.changelog.outputs.changelog }}
 
             ### 安装
-            解压后将 `ai-pad-app.exe`、`buttons.yml`、`actions.yml`、`prompts.yml` 放在同一目录运行。
+            双击 `ai-pad-app.exe` 即可运行。
+
+            附带的 `.yml` 文件为示例配置，修改后放到 exe 同目录即可覆盖默认值：
+            - `actions.yml` — 按键→动作绑定（热键、启动程序）
+            - `buttons.yml` — 按钮名映射
+            - `prompts.yml` — AI 提示词
 
             > 需要 [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)（Win10/11 通常已预装）
           draft: false
