@@ -335,6 +335,89 @@ pub fn list_recent_analyses(dir: &std::path::Path, count: u32) -> Vec<Screenshot
         .collect()
 }
 
+/// 跨天扫描截图分析记录。
+///
+/// 从 `base_dir` 下的日期子目录（YYYY-MM-DD）中按日期倒序读取，
+/// 每个日期目录内按文件名倒序（最新在前），收集够 `count` 条即停。
+#[allow(dead_code)]
+pub fn list_recent_analyses_multi_day(
+    base_dir: &std::path::Path,
+    count: usize,
+) -> Vec<(String, ScreenshotRecord)> {
+    let Ok(entries) = std::fs::read_dir(base_dir) else {
+        return Vec::new();
+    };
+
+    // 收集日期子目录名，倒序排列
+    let mut day_names: Vec<String> = entries
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            if e.path().is_dir() && name.len() == 10 && name.contains('-') {
+                Some(name)
+            } else {
+                None
+            }
+        })
+        .collect();
+    day_names.sort_by(|a, b| b.cmp(a));
+
+    let mut results = Vec::new();
+    for day in &day_names {
+        if results.len() >= count {
+            break;
+        }
+        let day_dir = base_dir.join(day);
+        let needed = count - results.len();
+        let records = list_recent_analyses(&day_dir, needed as u32);
+        for record in records {
+            results.push((day.clone(), record));
+        }
+    }
+    results
+}
+
+/// 构建注入 prompt 的最近截图观察上下文文本。
+///
+/// 读取最近 `count` 条截图分析，格式化为 `[最近截图观察]...[/最近截图观察]`。
+/// 空结果返回空字符串。按字符预算 `max_chars` 截断。
+#[allow(dead_code)]
+pub fn build_recent_analyses_context(count: usize, max_chars: usize) -> String {
+    let base = match screenshot_base_dir() {
+        Ok(b) => b,
+        Err(_) => return String::new(),
+    };
+    build_recent_analyses_context_with_base(count, max_chars, &base)
+}
+
+/// 测试用变体：接受自定义 base 目录。
+pub fn build_recent_analyses_context_with_base(
+    count: usize,
+    max_chars: usize,
+    base_dir: &std::path::Path,
+) -> String {
+    let records = list_recent_analyses_multi_day(base_dir, count);
+    if records.is_empty() {
+        return String::new();
+    }
+
+    let header = "[最近截图观察]\n";
+    let footer = "[/最近截图观察]\n";
+    let footer_chars = footer.chars().count();
+    let mut result = String::from(header);
+
+    // records 是倒序的（最新在前），需要反转为时间顺序输出
+    for (i, (_day, record)) in records.iter().rev().enumerate() {
+        let line = format!("{}. {}\n", i + 1, record.description);
+        if result.chars().count() + line.chars().count() + footer_chars > max_chars {
+            break;
+        }
+        result.push_str(&line);
+    }
+    result.push_str(footer);
+    result
+}
+
 /// 清理超过 keep_days 天的截图目录。返回清理的目录数。
 pub fn cleanup_old_screenshots(keep_days: u64) -> Result<u32, String> {
     let base = screenshot_base_dir()?;
@@ -915,5 +998,192 @@ min_width: 480
         let results = list_recent_analyses(today.as_path(), 10);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].description, "有效");
+    }
+
+    // ---- list_recent_analyses_multi_day TDD 测试 ----
+
+    #[test]
+    fn test_list_recent_multi_day_single_dir() {
+        let base = tempfile::tempdir().unwrap();
+        let day1 = base.path().join("2026-05-11");
+        std::fs::create_dir_all(&day1).unwrap();
+
+        for i in 0..3 {
+            let prefix = format!("{:06}", 100000 + i * 10);
+            save_analysis_json(
+                &day1,
+                &prefix,
+                "",
+                &ScreenshotRecord {
+                    description: format!("截图{}", i),
+                    hash: i as u64,
+                    skipped: false,
+                    width: 1280,
+                    height: 800,
+                    jpeg_size: 5000,
+                },
+            )
+            .unwrap();
+        }
+
+        let results = list_recent_analyses_multi_day(base.path(), 3);
+        assert_eq!(results.len(), 3);
+        // 倒序：最新在前
+        assert_eq!(results[0].1.description, "截图2");
+        assert_eq!(results[2].1.description, "截图0");
+    }
+
+    #[test]
+    fn test_list_recent_multi_day_cross_day() {
+        let base = tempfile::tempdir().unwrap();
+        let day1 = base.path().join("2026-05-10");
+        let day2 = base.path().join("2026-05-11");
+        std::fs::create_dir_all(&day1).unwrap();
+        std::fs::create_dir_all(&day2).unwrap();
+
+        // day2 只有 1 条
+        save_analysis_json(
+            &day2,
+            "150000",
+            "",
+            &ScreenshotRecord {
+                description: "今天".into(),
+                hash: 1,
+                skipped: false,
+                width: 1280,
+                height: 800,
+                jpeg_size: 5000,
+            },
+        )
+        .unwrap();
+
+        // day1 有 3 条
+        for i in 0..3 {
+            let prefix = format!("{:06}", 100000 + i * 10);
+            save_analysis_json(
+                &day1,
+                &prefix,
+                "",
+                &ScreenshotRecord {
+                    description: format!("昨天{}", i),
+                    hash: i as u64,
+                    skipped: false,
+                    width: 1280,
+                    height: 800,
+                    jpeg_size: 5000,
+                },
+            )
+            .unwrap();
+        }
+
+        let results = list_recent_analyses_multi_day(base.path(), 4);
+        assert_eq!(results.len(), 4);
+        // day2 的在前，然后 day1 倒序
+        assert_eq!(results[0].1.description, "今天");
+        assert_eq!(results[1].1.description, "昨天2");
+        assert_eq!(results[2].1.description, "昨天1");
+        assert_eq!(results[3].1.description, "昨天0");
+    }
+
+    #[test]
+    fn test_list_recent_multi_day_empty_base() {
+        let base = tempfile::tempdir().unwrap();
+        let results = list_recent_analyses_multi_day(base.path(), 10);
+        assert!(results.is_empty());
+    }
+
+    // ---- build_recent_analyses_context TDD 测试 ----
+
+    #[test]
+    fn test_build_recent_context_format() {
+        let base = tempfile::tempdir().unwrap();
+        let day = base.path().join("2026-05-11");
+        std::fs::create_dir_all(&day).unwrap();
+
+        save_analysis_json(
+            &day,
+            "120000",
+            "",
+            &ScreenshotRecord {
+                description: "用户在写代码".into(),
+                hash: 1,
+                skipped: false,
+                width: 1280,
+                height: 800,
+                jpeg_size: 5000,
+            },
+        )
+        .unwrap();
+
+        let ctx = build_recent_analyses_context_with_base(10, 1500, base.path());
+        assert!(ctx.starts_with("[最近截图观察]\n"));
+        assert!(ctx.contains("用户在写代码"));
+        assert!(ctx.ends_with("[/最近截图观察]\n"));
+    }
+
+    #[test]
+    fn test_build_recent_context_empty() {
+        let base = tempfile::tempdir().unwrap();
+        let ctx = build_recent_analyses_context_with_base(10, 1500, base.path());
+        assert!(ctx.is_empty());
+    }
+
+    #[test]
+    fn test_build_recent_context_truncation() {
+        let base = tempfile::tempdir().unwrap();
+        let day = base.path().join("2026-05-11");
+        std::fs::create_dir_all(&day).unwrap();
+
+        for i in 0..20 {
+            let prefix = format!("{:06}", 100000 + i);
+            save_analysis_json(
+                &day,
+                &prefix,
+                "",
+                &ScreenshotRecord {
+                    description: "这是一条很长的截图分析描述用于测试截断功能是否正常工作".into(),
+                    hash: i as u64,
+                    skipped: false,
+                    width: 1280,
+                    height: 800,
+                    jpeg_size: 5000,
+                },
+            )
+            .unwrap();
+        }
+
+        let ctx = build_recent_analyses_context_with_base(20, 200, base.path());
+        assert!(ctx.chars().count() <= 250, "应在 {} 字符内", ctx.chars().count());
+    }
+
+    #[test]
+    fn test_build_recent_context_order_old_to_new() {
+        let base = tempfile::tempdir().unwrap();
+        let day = base.path().join("2026-05-11");
+        std::fs::create_dir_all(&day).unwrap();
+
+        for (i, desc) in ["最早", "中间", "最新"].iter().enumerate() {
+            let prefix = format!("{:06}", 100000 + i * 100);
+            save_analysis_json(
+                &day,
+                &prefix,
+                "",
+                &ScreenshotRecord {
+                    description: (*desc).into(),
+                    hash: i as u64,
+                    skipped: false,
+                    width: 1280,
+                    height: 800,
+                    jpeg_size: 5000,
+                },
+            )
+            .unwrap();
+        }
+
+        let ctx = build_recent_analyses_context_with_base(10, 1500, base.path());
+        let earliest = ctx.find("最早").unwrap();
+        let middle = ctx.find("中间").unwrap();
+        let latest = ctx.find("最新").unwrap();
+        assert!(earliest < middle && middle < latest, "应从旧到新排列");
     }
 }

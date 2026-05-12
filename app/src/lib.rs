@@ -1140,17 +1140,22 @@ fn run_ai_chat(
         return;
     }
 
-    // 注入记忆上下文 + 屏幕活动摘要
+    // 注入记忆上下文 + 屏幕活动摘要 + 最近截图观察
     let ctx = memory.build_context(memory_config);
     let summary_store = ai_pad_core::screen_summary::ScreenSummaryStore::load();
     let summary_config = ai_pad_core::prompts::PromptsConfig::load().screen_summary;
     info!(entries = summary_store.entries.len(), "屏幕活动摘要已加载");
     let summary_ctx = summary_store.build_context(&summary_config);
-    let enriched_msg = match (ctx.is_empty(), summary_ctx.is_empty()) {
-        (true, true) => msg.to_string(),
-        (false, true) => format!("{ctx}\n用户说: {msg}"),
-        (true, false) => format!("{summary_ctx}\n用户说: {msg}"),
-        (false, false) => format!("{ctx}\n{summary_ctx}\n用户说: {msg}"),
+    let recent_ctx = ai_pad_core::screenshot::build_recent_analyses_context(10, 1500);
+    let context_parts: Vec<&str> = [&ctx, &recent_ctx, &summary_ctx]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.as_str())
+        .collect();
+    let enriched_msg = if context_parts.is_empty() {
+        msg.to_string()
+    } else {
+        format!("{}\n用户说: {msg}", context_parts.join("\n"))
     };
 
     let app_for_chunks = app.clone();
