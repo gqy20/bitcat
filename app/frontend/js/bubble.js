@@ -97,6 +97,11 @@
     }
 
     contentEl.innerHTML = html;
+    // 防御性清扫：非流式模式确保不留任何光标残留
+    if (!streaming) {
+      var c = contentEl.querySelector('.typing-cursor');
+      if (c) c.remove();
+    }
     // 仅当用户未手动上滚 + 原本在底部时才跟底
     if (!userScrolledUp && wasAtBottom) {
       contentEl.scrollTop = contentEl.scrollHeight;
