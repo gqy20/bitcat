@@ -204,7 +204,11 @@ mod tests {
     }
 
     #[test]
-    fn test_load_missing_file() {
-        assert!(ActionConfig::load("nonexistent.yml").is_err());
+    fn test_load_missing_file_falls_back_to_default() {
+        // 文件不存在时，load_config_content 会退化到内置 DEFAULT_YML。
+        // 因此 load 不报错，且能拿到默认配置（terminal=powershell）。
+        let config = ActionConfig::load("definitely_does_not_exist_123abc.yml")
+            .expect("load 不应失败，应回退到内置默认");
+        assert_eq!(config.defaults.terminal, "powershell");
     }
 }

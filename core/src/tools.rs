@@ -471,9 +471,10 @@ mod tests {
     #[test]
     fn test_truncate_chars_chinese_safe() {
         // 中文字符每个占 3 字节，但 chars().count() 正确计数
+        // 输入共 8 个字符，截断到 4 个字符 + 后缀提示原始长度
         let s = "你好世界测试截断";
         let result = truncate_chars(s, 4);
-        assert_eq!(result, "你好世界...(截断，共 6 字符)");
+        assert_eq!(result, "你好世界...(截断，共 8 字符)");
     }
 
     // ---- Hotkey / Clipboard / Foreground 参数测试 ----

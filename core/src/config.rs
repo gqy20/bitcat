@@ -165,8 +165,11 @@ mod tests {
     }
 
     #[test]
-    fn test_load_missing_file() {
-        assert!(ButtonConfig::load("nonexistent.yml").is_err());
+    fn test_load_missing_file_falls_back_to_default() {
+        // 文件不存在时，load 会退化到内置 DEFAULT_YML（buttons.yml）。
+        let config = ButtonConfig::load("definitely_does_not_exist_123abc.yml")
+            .expect("load 不应失败，应回退到内置默认");
+        assert!(!config.buttons.is_empty(), "默认 buttons 不应为空");
     }
 
     #[test]
