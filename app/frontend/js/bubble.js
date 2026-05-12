@@ -15,8 +15,8 @@
   const POLL_INTERVAL_MS = 120;
   const MIN_H = 140;
   const MAX_H = 340;
-  const PADDING_TOTAL = 48;   // body top(6) + bubble padding(20) + body bottom(22)
-  const INPUT_ROW_H = 40;     // input-row 额外高度
+  const PADDING_TOTAL = 60;   // body top(6) + bubble padding-top(14) + padding-bottom(14) + body bottom(22) + 余量(4)
+  const INPUT_ROW_H = 42;     // input-row 额外高度（含 padding-top:8）
 
   let hideTimer = null;
   let contentEl = null;
@@ -84,9 +84,18 @@
     if (!contentEl) return;
     var wasAtBottom = isNearBottom();
     lastRawText = text || '';
-    var src = streaming ? lastRawText + '█' : lastRawText;
-    contentEl.innerHTML = typeof marked !== 'undefined'
-      ? marked.parse(src) : src;
+
+    // 隐藏思考指示器（有内容了）
+    hideThinking();
+
+    var html = typeof marked !== 'undefined'
+      ? marked.parse(lastRawText) : lastRawText;
+
+    if (streaming) {
+      html += '<span class="typing-cursor"></span>';
+    }
+
+    contentEl.innerHTML = html;
     // 仅当用户未手动上滚 + 原本在底部时才跟底
     if (!userScrolledUp && wasAtBottom) {
       contentEl.scrollTop = contentEl.scrollHeight;
@@ -164,6 +173,22 @@
     }
   }
 
+  // ---- 思考指示器 ----
+
+  var thinkingEl = null;
+
+  function showThinking() {
+    if (!thinkingEl) return;
+    thinkingEl.style.display = 'flex';
+    contentEl.innerHTML = ''; // 清空内容区
+    autoResize();
+  }
+
+  function hideThinking() {
+    if (!thinkingEl) return;
+    thinkingEl.style.display = 'none';
+  }
+
   function toggleInput() {
     if (inputRowEl && inputRowEl.style.display === 'none') {
       showInput();
@@ -199,6 +224,7 @@
   function startPolling() {
     stopPolling();
     userScrolledUp = false; // 新流式开始，重置锁定
+    showThinking();         // 显示思考指示器
     pollTimer = setInterval(pollPending, POLL_INTERVAL_MS);
     pollPending();
   }
@@ -262,6 +288,17 @@
     inputRowEl = document.getElementById('inputRow');
     inputEl = document.getElementById('chatInput');
     sendBtnEl = document.getElementById('chatSend');
+    thinkingEl = document.getElementById('thinking');
+
+    // marked.js 配置：窄栏必须 breaks:true
+    if (typeof marked !== 'undefined') {
+      marked.setOptions({
+        breaks: true,
+        gfm: true,
+        headerIds: false,
+        mangle: false,
+      });
+    }
 
     // 诊断：确认 DOM 元素存在
     if (window.__TAURI__ && window.__TAURI__.core) {
@@ -309,10 +346,21 @@
     listen('bubble-end', () => {
       stopPolling();
       userScrolledUp = false; // 流结束，解锁滚动
-      // 先拉取最后一批文本（同步等待），再最终渲染去光标
+      hideThinking();
+      // 先拉取最后一批文本，再最终渲染（带光标淡出）
       pollPending().then(function() {
-        if (lastRawText) setText(lastRawText, false);
-        startHideTimer();
+        var cursor = contentEl && contentEl.querySelector('.typing-cursor');
+        if (cursor) {
+          // CSS 淡出动画 300ms
+          cursor.classList.add('fade-out');
+          setTimeout(function() {
+            if (lastRawText) setText(lastRawText, false);
+            startHideTimer();
+          }, 300);
+        } else {
+          if (lastRawText) setText(lastRawText, false);
+          startHideTimer();
+        }
       });
     });
 
