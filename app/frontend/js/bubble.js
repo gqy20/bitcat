@@ -27,6 +27,7 @@
   let inputEl = null;
   let sendBtnEl = null;
   let isComposing = false;    // IME 组合状态标记
+  let userScrolledUp = false;  // 用户是否手动向上滚动了（锁定自动跟底）
 
   function ensureVisible() {
     document.body.classList.remove('hidden');
@@ -73,13 +74,27 @@
     }
   }
 
+  /// 检测是否已在底部（阈值 40px，避免浮点抖动）
+  function isNearBottom() {
+    if (!contentEl) return true;
+    return contentEl.scrollHeight - contentEl.scrollTop - contentEl.clientHeight < 40;
+  }
+
   function setText(text, streaming) {
     if (!contentEl) return;
+    var wasAtBottom = isNearBottom();
     lastRawText = text || '';
     var src = streaming ? lastRawText + '█' : lastRawText;
     contentEl.innerHTML = typeof marked !== 'undefined'
       ? marked.parse(src) : src;
-    contentEl.scrollTop = contentEl.scrollHeight;
+    // 仅当用户未手动上滚 + 原本在底部时才跟底
+    if (!userScrolledUp && wasAtBottom) {
+      contentEl.scrollTop = contentEl.scrollHeight;
+    }
+    // 用户滚回底部 → 解锁
+    if (isNearBottom()) {
+      userScrolledUp = false;
+    }
     autoResize();
   }
 
@@ -183,6 +198,7 @@
 
   function startPolling() {
     stopPolling();
+    userScrolledUp = false; // 新流式开始，重置锁定
     pollTimer = setInterval(pollPending, POLL_INTERVAL_MS);
     pollPending();
   }
@@ -213,6 +229,10 @@
     if (!contentEl) return;
     e.preventDefault();
     contentEl.scrollTop += e.deltaY;
+    // 用户向上滚动（看历史内容）→ 锁定跟底
+    if (e.deltaY < 0) userScrolledUp = true;
+    // 滚回底部附近 → 解锁
+    else if (isNearBottom()) userScrolledUp = false;
   }
 
   /// 键盘滚动兜底：方向键/PageDown/PageUp/Home/End 控制滚动
@@ -223,16 +243,18 @@
       case 'ArrowDown':
         contentEl.scrollTop += step; e.preventDefault(); break;
       case 'ArrowUp':
-        contentEl.scrollTop -= step; e.preventDefault(); break;
+        contentEl.scrollTop -= step; userScrolledUp = true; e.preventDefault(); break;
       case 'PageDown':
         contentEl.scrollTop += contentEl.clientHeight; e.preventDefault(); break;
       case 'PageUp':
-        contentEl.scrollTop -= contentEl.clientHeight; e.preventDefault(); break;
+        contentEl.scrollTop -= contentEl.clientHeight; userScrolledUp = true; e.preventDefault(); break;
       case 'Home':
-        contentEl.scrollTop = 0; e.preventDefault(); break;
+        contentEl.scrollTop = 0; userScrolledUp = true; e.preventDefault(); break;
       case 'End':
-        contentEl.scrollTop = contentEl.scrollHeight; e.preventDefault(); break;
+        contentEl.scrollTop = contentEl.scrollHeight; userScrolledUp = false; e.preventDefault(); break;
     }
+    // 下翻后检测是否到底
+    if (isNearBottom()) userScrolledUp = false;
   }
 
   function init() {
