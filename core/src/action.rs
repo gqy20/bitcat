@@ -53,9 +53,22 @@ fn default_delay() -> f64 {
     1.0
 }
 
+const DEFAULT_YML: &str = include_str!("../../actions.yml");
+
+/// 配置文件查找：exe 同目录 → 传入路径（CWD）→ 嵌入默认值
+fn load_config_content(path: &str, default: &str) -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join(path)))
+        .filter(|p| p.exists())
+        .and_then(|p| fs::read_to_string(p).ok())
+        .or_else(|| fs::read_to_string(path).ok())
+        .unwrap_or_else(|| default.to_string())
+}
+
 impl ActionConfig {
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let content = fs::read_to_string(path)?;
+        let content = load_config_content(path, DEFAULT_YML);
         let config: ActionConfig = serde_yaml::from_str(&content)?;
         Ok(config)
     }

@@ -1,7 +1,7 @@
 use crate::memory::MemoryConfig;
 use crate::screen_summary::ScreenSummaryConfig;
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path};
+use std::fs;
 
 // ---- 默认值 ----
 
@@ -91,18 +91,22 @@ impl Default for VisionPromptConfig {
 }
 
 impl PromptsConfig {
-    /// 从当前目录加载 prompts.yml，失败则返回默认值
+    /// 加载 prompts.yml：exe 同目录 → CWD → 编译时嵌入的默认值
     pub fn load() -> Self {
-        let path = Path::new("prompts.yml");
-        match fs::read_to_string(path) {
-            Ok(content) => match serde_yaml::from_str::<PromptsConfig>(&content) {
-                Ok(cfg) => cfg,
-                Err(e) => {
-                    tracing::warn!(error = %e, "解析 prompts.yml 失败，使用默认提示词");
-                    Self::default()
-                }
-            },
-            Err(_) => Self::default(),
+        const DEFAULT_YML: &str = include_str!("../../prompts.yml");
+        let content = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|dir| dir.join("prompts.yml")))
+            .filter(|p| p.exists())
+            .and_then(|p| fs::read_to_string(p).ok())
+            .or_else(|| fs::read_to_string("prompts.yml").ok())
+            .unwrap_or_else(|| DEFAULT_YML.to_string());
+        match serde_yaml::from_str::<PromptsConfig>(&content) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                tracing::warn!(error = %e, "解析 prompts.yml 失败，使用默认提示词");
+                Self::default()
+            }
         }
     }
 }

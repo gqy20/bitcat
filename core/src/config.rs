@@ -58,7 +58,14 @@ fn parse_hat_key(s: &str) -> Option<(i32, i32)> {
 
 impl ButtonConfig {
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let content = fs::read_to_string(path)?;
+        const DEFAULT_YML: &str = include_str!("../../buttons.yml");
+        let content = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|dir| dir.join(path)))
+            .filter(|p| p.exists())
+            .and_then(|p| fs::read_to_string(p).ok())
+            .or_else(|| fs::read_to_string(path).ok())
+            .unwrap_or_else(|| DEFAULT_YML.to_string());
         let raw: RawButtonConfig = serde_yaml::from_str(&content)?;
 
         let buttons = raw
