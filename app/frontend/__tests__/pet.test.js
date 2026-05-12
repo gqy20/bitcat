@@ -227,3 +227,91 @@ describe('PetStateMachine', () => {
     });
   });
 });
+
+// ---- 嘴巴热区判定（纯函数，从 app.js 的 window.PetApp 引入）----
+
+// 从 app.js IIFE 暴露的纯函数
+function isMouthHotzone(x, y, canvasSize) {
+  if (typeof window !== 'undefined' && window.PetApp && window.PetApp.isMouthHotzone) {
+    return window.PetApp.isMouthHotzone(x, y, canvasSize);
+  }
+  // fallback（vitest 环境中 window.PetApp 可能未加载）
+  var ratio = canvasSize / 128;
+  return x >= 32 * ratio && x <= 96 * ratio && y >= 56 * ratio && y <= 96 * ratio;
+}
+
+describe('嘴巴热区判定 isMouthHotzone', () => {
+  describe('正常态 128×128', () => {
+    it('嘴巴正中心 (64, 76) 在热区内', () => {
+      expect(isMouthHotzone(64, 76, 128)).toBe(true);
+    });
+
+    it('左腮红点 (40, 64) 在热区内', () => {
+      expect(isMouthHotzone(40, 64, 128)).toBe(true);
+    });
+
+    it('右腮红点 (88, 64) 在热区内', () => {
+      expect(isMouthHotzone(88, 64, 128)).toBe(true);
+    });
+
+    it('talk 大嘴底部 (64, 80) 在热区内', () => {
+      expect(isMouthHotzone(64, 80, 128)).toBe(true);
+    });
+
+    it('眼睛位置 (40, 48) 不在热区', () => {
+      expect(isMouthHotzone(40, 48, 128)).toBe(false);
+    });
+
+    it('头顶 (64, 16) 不在热区', () => {
+      expect(isMouthHotzone(64, 16, 128)).toBe(false);
+    });
+
+    it('左边缘外侧 (20, 76) 不在热区', () => {
+      expect(isMouthHotzone(20, 76, 128)).toBe(false);
+    });
+
+    it('右边缘外侧 (108, 76) 不在热区', () => {
+      expect(isMouthHotzone(108, 76, 128)).toBe(false);
+    });
+
+    it('热区上边界 (64, 56) 在热区内（含边界）', () => {
+      expect(isMouthHotzone(64, 56, 128)).toBe(true);
+    });
+
+    it('热区下边界 (64, 96) 在热区内（含边界）', () => {
+      expect(isMouthHotzone(64, 96, 128)).toBe(true);
+    });
+
+    it('热区刚好上方 (64, 55) 不在热区', () => {
+      expect(isMouthHotzone(64, 55, 128)).toBe(false);
+    });
+  });
+
+  describe('折叠态 48×48（按比例缩放）', () => {
+    it('嘴巴中心 (24, 29) 在热区内', () => {
+      expect(isMouthHotzone(24, 29, 48)).toBe(true);
+    });
+
+    it('眼睛位置 (15, 18) 不在热区', () => {
+      expect(isMouthHotzone(15, 18, 48)).toBe(false);
+    });
+
+    it('热区左边界 (12, 36) 在热区内', () => {
+      expect(isMouthHotzone(12, 36, 48)).toBe(true);
+    });
+
+    it('左边界外 (11, 30) 不在热区', () => {
+      expect(isMouthHotzone(11, 30, 48)).toBe(false);
+    });
+  });
+
+  describe('边界安全', () => {
+    it('坐标为 0 不在热区', () => {
+      expect(isMouthHotzone(0, 0, 128)).toBe(false);
+    });
+
+    it('canvasSize 为 0 时全部不在热区（ratio=0）', () => {
+      expect(isMouthHotzone(50, 50, 0)).toBe(false);
+    });
+  });
+});

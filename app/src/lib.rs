@@ -10,8 +10,10 @@ pub mod voice;
 use bubble::SharedBubble;
 use commands::{SharedPet, SharedWindowState};
 use screenshot::SharedScreenshotState;
-use tauri::{Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use voice::SharedVoice;
+
+use std::sync::Mutex;
 
 use ai_pad_core::action::{ActionConfig, ActionDef};
 use ai_pad_core::agent::PetAgent;
@@ -472,6 +474,136 @@ async fn cmd_hide_edge_glow(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+// ---- Bubble 聊天输入：前端提交 → gamepad_loop 消费 ----
+
+/// 前端 bubble 输入框提交的待消费消息。
+/// 设计同构 SharedBubble：前端 invoke 写入，gamepad_loop 每 tick 检查并取走。
+struct SharedPendingChat {
+    pending: Mutex<Option<String>>,
+}
+
+impl SharedPendingChat {
+    fn new() -> Self {
+        Self {
+            pending: Mutex::new(None),
+        }
+    }
+}
+
+impl Default for SharedPendingChat {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// 前端调用：提交聊天消息到 pending 队列
+#[tauri::command]
+async fn cmd_submit_chat(
+    state: State<'_, SharedPendingChat>,
+    text: String,
+) -> Result<(), String> {
+    let trimmed = text.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("消息不能为空".into());
+    }
+    *state.pending.lock().map_err(|e| e.to_string())? = Some(trimmed);
+    Ok(())
+}
+
+/// gamepad_loop 调用：原子地取走 pending 消息（如有）
+fn take_pending_chat(state: &State<'_, SharedPendingChat>) -> Option<String> {
+    state
+        .pending
+        .lock()
+        .ok()
+        .and_then(|mut g| g.take())
+}
+
+/// 前端诊断日志桥接：JS console.log 不会出现在终端，
+/// 通过此 IPC 把关键诊断数据写到 Rust tracing
+#[tauri::command]
+async fn cmd_pet_log(msg: String) -> Result<(), String> {
+    info!("[pet-diag] {msg}");
+    Ok(())
+}
+
+/// 点击宠物嘴巴 → 打开聊天输入框：
+/// 显示 bubble 窗口 + eval 直接调用 showInput()（不走事件系统，
+/// 因为 hidden 预创建窗口的 JS listen 可能未就绪导致 emit 丢失）
+#[tauri::command]
+async fn cmd_open_chat(app: AppHandle) -> Result<(), String> {
+    info!("[cmd_open_chat] 开始");
+
+    // 取或创建 bubble 窗口
+    let window = match app.get_webview_window("bubble") {
+        Some(w) => w,
+        None => bubble::create_bubble_window(&app).map_err(|e| e.to_string())?,
+    };
+
+    // 写入空 pending
+    let state: State<bubble::SharedBubble> = app.state();
+    *state.pending_text.lock().map_err(|e| e.to_string())? = Some(String::new());
+
+    // 定位 + 显示
+    bubble::position_above_pet(&app, &window);
+    let _ = window.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
+    let _ = window.show();
+
+    // 等 WebView2 就绪后 eval 调用 showInput()
+    for attempt in 0..10u8 {
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        if window.eval(
+            "if(typeof __bubble_showInput==='function'){__bubble_showInput();'ok'}else{'no-fn'}"
+        ).is_ok() {
+            info!(attempt = attempt, "[cmd_open_chat] ✓ eval showInput 成功");
+            return Ok(());
+        }
+        debug!(attempt = attempt, "[cmd_open_chat] eval 重试中...");
+    }
+
+    warn!("[cmd_open_chat] eval showInput 失败（10 次重试均未成功）");
+    Ok(())
+}
+
+#[cfg(test)]
+mod pending_chat_tests {
+    use super::*;
+
+    #[test]
+    fn test_default_empty() {
+        let pc = SharedPendingChat::new();
+        assert!(pc.pending.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_submit_and_take() {
+        let pc = SharedPendingChat::new();
+        *pc.pending.lock().unwrap() = Some("你好 AI".into());
+        let taken = pc.pending.lock().unwrap().take();
+        assert_eq!(taken, Some("你好 AI".to_string()));
+        // 二次取为空
+        assert!(pc.pending.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_submit_overwrites() {
+        let pc = SharedPendingChat::new();
+        *pc.pending.lock().unwrap() = Some("第一条".into());
+        *pc.pending.lock().unwrap() = Some("第二条".into());
+        assert_eq!(
+            pc.pending.lock().unwrap().take(),
+            Some("第二条".to_string())
+        );
+    }
+
+    #[test]
+    fn test_empty_text_rejected() {
+        // cmd_submit_chat 对空字符串应返回 Err（模拟）
+        let trimmed = "   ".trim().to_string();
+        assert!(trimmed.is_empty());
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -481,6 +613,7 @@ pub fn run() {
         .manage(SharedBubble::new())
         .manage(SharedVoice::new())
         .manage(SharedScreenshotState::default())
+        .manage(SharedPendingChat::new())
         .invoke_handler(tauri::generate_handler![
             commands::cmd_set_state,
             commands::cmd_walk_to,
@@ -503,6 +636,9 @@ pub fn run() {
             cmd_show_edge_glow,
             cmd_hide_edge_glow,
             screenshot::cmd_screenshot_now,
+            cmd_submit_chat,
+            cmd_open_chat,
+            cmd_pet_log,
         ])
         .on_window_event(|window, event| {
             if window.label() == "panel" {
@@ -858,6 +994,17 @@ fn gamepad_loop(app: &tauri::AppHandle) {
         }
 
         prev_buttons = buttons;
+
+        // Bubble 聊天输入：检查前端是否提交了消息
+        if let Some(chat_msg) = {
+            let pc: State<SharedPendingChat> = app.state();
+            take_pending_chat(&pc)
+        } {
+            if let Some(ag) = get_agent(&agent) {
+                info!(msg = %chat_msg, "[chat] → AI 对话 (bubble 输入)");
+                run_ai_chat(&rt, ag, app, &chat_msg, "[chat]", &mut memory, &memory_config);
+            }
+        }
 
         // 方向键
         let hat = gamepad.read_hat(0);

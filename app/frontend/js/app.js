@@ -3,6 +3,14 @@
 (function() {
   'use strict';
 
+  // ---- 嘴巴热区判定（纯函数，可独立测试）----
+  // 热区覆盖精灵嘴巴/腮红区域：正常态 x[32,96] y[56,96] (canvas 坐标)
+  // 折叠态按 canvasSize 比例缩放
+  function isMouthHotzone(x, y, canvasSize) {
+    var ratio = canvasSize / 128;
+    return x >= 32 * ratio && x <= 96 * ratio && y >= 56 * ratio && y <= 96 * ratio;
+  }
+
   const pet = new PetState.PetStateMachine();
   let lastTime = performance.now();
   let canvas, ctx;
@@ -157,17 +165,61 @@
   // ========== 拖拽：原生 startDragging + 松手贴边吸附 ==========
 
   function setupDrag() {
-    const root = document.getElementById('pet-root');
+    var root = document.getElementById('pet-root');
     if (!root) return;
 
-    root.addEventListener('mousedown', async (e) => {
+    // 坐标分区：嘴巴区域 → 聊天，其余 → 拖拽
+    root.addEventListener('mousedown', async function(e) {
       if (e.button !== 0) return;
-      const win = getCurrentWin();
+      var win = getCurrentWin();
       if (!win) return;
 
-      // 原生拖拽必须在 mousedown 里同步调用
-      try { await win.startDragging(); } catch (_) {}
-      startSnapPoll(win);
+      // 用 offsetX/offsetY（相对于事件目标元素），再映射到 canvas 坐标系
+      // fallback 到 clientX - rect.left（兼容性兜底）
+      var rawX = e.offsetX !== undefined ? e.offsetX : (e.clientX - canvas.getBoundingClientRect().left);
+      var rawY = e.offsetY !== undefined ? e.offsetY : (e.clientY - canvas.getBoundingClientRect().top);
+
+      // 关键修正：将 CSS 像素坐标映射到 canvas 逻辑像素坐标系
+      // canvas.width 是逻辑像素(128)，但 DOM 尺寸受 DPI 缩放影响
+      var rect = canvas.getBoundingClientRect();
+      var cssW = rect.width;   // canvas 的 CSS 渲染宽度（可能 ≠ 128）
+      var cssH = rect.height;
+      var logicW = canvas.width; // 逻辑像素（始终 128 或 48）
+      var scale = cssW / logicW; // DPI 缩放比（如 1.5 / 2.0）
+
+      // 将 CSS 坐标 → 逻辑坐标（与精灵像素对齐）
+      var cx = rawX / scale;
+      var cy = rawY / scale;
+
+      var diag = JSON.stringify({
+        raw: { x: Math.round(rawX), y: Math.round(rawY), target: e.target.id || e.target.className },
+        cssSize: { w: Math.round(cssW), h: Math.round(cssH) },
+        logicSize: logicW,
+        scale: scale.toFixed(2),
+        logicCoord: { x: Math.round(cx), y: Math.round(cy) },
+        hotzone: isMouthHotzone(cx, cy, logicW) ? 'MOUTH' : 'DRAG',
+      });
+      if (window.__TAURI__ && window.__TAURI__.core) {
+        window.__TAURI__.core.invoke('cmd_pet_log', { msg: 'mousedown 坐标诊断 ' + diag }).catch(function() {});
+      }
+
+      if (isMouthHotzone(cx, cy, logicW)) {
+        if (window.__TAURI__ && window.__TAURI__.core) {
+          window.__TAURI__.core.invoke('cmd_pet_log', { msg: '✓ 嘴巴热区命中 → cmd_open_chat' }).catch(function() {});
+        }
+        try { await window.__TAURI__.core.invoke('cmd_open_chat'); }
+        catch (err) {
+          if (window.__TAURI__ && window.__TAURI__.core) {
+            window.__TAURI__.core.invoke('cmd_pet_log', { msg: 'cmd_open_chat 失败: ' + err }).catch(function() {});
+          }
+        }
+      } else {
+        if (window.__TAURI__ && window.__TAURI__.core) {
+          window.__TAURI__.core.invoke('cmd_pet_log', { msg: '→ 拖拽模式' }).catch(function() {});
+        }
+        try { await win.startDragging(); } catch (_) {}
+        startSnapPoll(win);
+      }
     });
   }
 
@@ -373,4 +425,7 @@
   }
 
   document.addEventListener('DOMContentLoaded', init);
+
+  // 暴露纯函数供测试访问
+  window.PetApp = { isMouthHotzone: isMouthHotzone };
 })();

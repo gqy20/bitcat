@@ -157,7 +157,7 @@ pub fn finalize_bubble(app: &AppHandle) -> Result<(), String> {
 }
 
 /// 把 bubble 窗口对齐到 pet 窗口正上方，带屏幕边界检测
-fn position_above_pet(app: &AppHandle, bubble: &tauri::WebviewWindow) {
+pub fn position_above_pet(app: &AppHandle, bubble: &tauri::WebviewWindow) {
     // 优先查找可见的宠物窗口（支持折叠态 + 吸附态）
     let pet = app
         .get_webview_window("pet")
@@ -198,7 +198,7 @@ fn position_above_pet(app: &AppHandle, bubble: &tauri::WebviewWindow) {
     let _ = bubble.set_position(PhysicalPosition::new(bubble_x, bubble_y));
 }
 
-fn create_bubble_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
+pub fn create_bubble_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
     WebviewWindowBuilder::new(app, "bubble", WebviewUrl::App("bubble.html".into()))
         .title("8Bit Bubble")
         .inner_size(BUBBLE_W, BUBBLE_H)

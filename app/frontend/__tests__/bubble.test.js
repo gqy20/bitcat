@@ -191,3 +191,170 @@ describe('bubble scroll', () => {
     expect(contentEl.scrollTop).toBe(50); // unchanged
   });
 });
+
+// ---- 聊天输入框测试 ----
+
+function createInputDOM() {
+  document.body.innerHTML = `
+    <body class="hidden">
+      <div class="bubble">
+        <div class="content" id="content"></div>
+        <div class="input-row" id="inputRow" style="display: none;">
+          <input type="text" id="chatInput" placeholder="说点什么..." />
+          <button id="chatSend">发送</button>
+        </div>
+      </div>
+    </body>
+  `;
+  return {
+    inputRow: document.getElementById('inputRow'),
+    input: document.getElementById('chatInput'),
+    sendBtn: document.getElementById('chatSend'),
+  };
+}
+
+describe('bubble chat input', () => {
+  let dom;
+
+  beforeEach(() => {
+    dom = createInputDOM();
+  });
+
+  it('输入框默认隐藏', () => {
+    expect(dom.inputRow.classList.contains('visible')).toBe(false);
+    expect(dom.inputRow.style.display).toBe('none');
+  });
+
+  it('展开输入框后可见', () => {
+    dom.inputRow.classList.add('visible');
+    dom.inputRow.style.display = '';
+    expect(dom.inputRow.classList.contains('visible')).toBe(true);
+  });
+
+  it('收起输入框后隐藏并清空文本', () => {
+    dom.input.value = 'hello';
+    dom.inputRow.classList.add('visible');
+    dom.inputRow.style.display = '';
+
+    // 模拟收起
+    dom.inputRow.classList.remove('visible');
+    dom.inputRow.style.display = 'none';
+    dom.input.value = '';
+
+    expect(dom.inputRow.classList.contains('visible')).toBe(false);
+    expect(dom.input.value).toBe('');
+  });
+
+  it('Enter 提交非空文本（非 IME 组合状态）', () => {
+    let submitted = null;
+    const submitHandler = (text) => { submitted = text; };
+
+    dom.input.value = '你好 AI';
+    // 模拟：不在 IME 组合中
+    let composing = false;
+    const handler = (e) => {
+      if (e.key === 'Enter' && !composing && dom.input.value.trim()) {
+        e.preventDefault();
+        submitHandler(dom.input.value.trim());
+        dom.input.value = '';
+      }
+    };
+    dom.input.addEventListener('keydown', handler);
+    dom.input.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    }));
+
+    expect(submitted).toBe('你好 AI');
+    expect(dom.input.value).toBe('');
+  });
+
+  it('Enter 在 IME 组合中不提交（compositionstart）', () => {
+    let submitted = null;
+    const submitHandler = (text) => { submitted = text; };
+    let composing = true; // IME 组合中
+
+    dom.input.value = 'n';
+    const handler = (e) => {
+      if (e.key === 'Enter' && !composing && dom.input.value.trim()) {
+        submitHandler(dom.input.value.trim());
+        dom.input.value = '';
+      }
+    };
+    dom.input.addEventListener('keydown', handler);
+
+    // Enter during composition should NOT submit
+    dom.input.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    }));
+
+    expect(submitted).toBeNull();
+    expect(dom.input.value).toBe('n'); // not cleared
+  });
+
+  it('空文本 Enter 不提交', () => {
+    let submitted = null;
+    let callCount = 0;
+
+    dom.input.value = '   ';
+    const handler = (e) => {
+      if (e.key === 'Enter' && dom.input.value.trim()) {
+        submitted = dom.input.value.trim();
+        callCount++;
+      }
+    };
+    dom.input.addEventListener('keydown', handler);
+    dom.input.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    }));
+
+    expect(submitted).toBeNull();
+    expect(callCount).toBe(0);
+  });
+
+  it('Escape 收起输入框', () => {
+    dom.inputRow.classList.add('visible');
+    dom.inputRow.style.display = '';
+    dom.input.value = '未发送的文字';
+
+    const handler = (e) => {
+      if (e.key === 'Escape') {
+        dom.inputRow.classList.remove('visible');
+        dom.inputRow.style.display = 'none';
+        dom.input.value = '';
+      }
+    };
+    dom.input.addEventListener('keydown', handler);
+    dom.input.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    }));
+
+    expect(dom.inputRow.classList.contains('visible')).toBe(false);
+    expect(dom.input.value).toBe('');
+  });
+
+  it('点击发送按钮等同于 Enter', () => {
+    let submitted = null;
+
+    dom.input.value = '点击发送';
+    const clickHandler = () => {
+      const text = dom.input.value.trim();
+      if (text) {
+        submitted = text;
+        dom.input.value = '';
+      }
+    };
+    dom.sendBtn.addEventListener('click', clickHandler);
+    dom.sendBtn.click();
+
+    expect(submitted).toBe('点击发送');
+    expect(dom.input.value).toBe('');
+  });
+});

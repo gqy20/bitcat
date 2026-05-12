@@ -16,12 +16,17 @@
   const MIN_H = 140;
   const MAX_H = 340;
   const PADDING_TOTAL = 48;   // body top(6) + bubble padding(20) + body bottom(22)
+  const INPUT_ROW_H = 40;     // input-row 额外高度
 
   let hideTimer = null;
   let contentEl = null;
   let pollTimer = null;
   let currentWinH = MIN_H;
   let lastRawText = '';       // 记录最近一次原始文本，用于最终渲染去光标
+  let inputRowEl = null;
+  let inputEl = null;
+  let sendBtnEl = null;
+  let isComposing = false;    // IME 组合状态标记
 
   function ensureVisible() {
     document.body.classList.remove('hidden');
@@ -45,7 +50,8 @@
   function autoResize() {
     if (!contentEl) return;
     var contentH = contentEl.scrollHeight;
-    var neededH = Math.min(MAX_H, Math.max(MIN_H, contentH + PADDING_TOTAL));
+    var inputExtra = (inputRowEl && inputRowEl.style.display !== 'none') ? INPUT_ROW_H : 0;
+    var neededH = Math.min(MAX_H, Math.max(MIN_H, contentH + PADDING_TOTAL + inputExtra));
     var newH = Math.round(neededH);
 
     if (newH !== currentWinH && window.__TAURI__ && window.__TAURI__.window) {
@@ -79,6 +85,7 @@
 
   function hide() {
     stopPolling();
+    hideInput(); // 隐藏时一并收起输入框
     // 隐藏前恢复默认高度
     if (currentWinH !== MIN_H && window.__TAURI__ && window.__TAURI__.window) {
       window.__TAURI__.window.getCurrentWindow()
@@ -92,6 +99,72 @@
       window.__TAURI__.core.invoke('cmd_hide_bubble').catch(() => {});
     }
   }
+
+  // ---- 聊天输入框 ----
+
+  function showInput() {
+    var diag = function(msg) {
+      if (window.__TAURI__ && window.__TAURI__.core) {
+        window.__TAURI__.core.invoke('cmd_pet_log', { msg: '[bubble] ' + msg }).catch(function() {});
+      }
+    };
+
+    diag('showInput() called, inputRowEl=' + !!inputRowEl + ' inputEl=' + !!inputEl);
+    if (!inputRowEl || !inputEl) { diag('ABORT: 元素不存在'); return; }
+
+    inputRowEl.style.display = 'flex';
+    inputRowEl.classList.add('visible');
+    clearHideTimer();
+    ensureVisible();
+    requestAnimationFrame(function() {
+      if (inputEl) inputEl.focus();
+    });
+    autoResize();
+
+    diag('showInput 完成, display=' + inputRowEl.style.display +
+      ' visible=' + inputRowEl.classList.contains('visible') +
+      ' body.hidden=' + document.body.classList.contains('hidden') +
+      ' body.show=' + document.body.classList.contains('show'));
+  }
+
+  function hideInput() {
+    if (!inputRowEl || !inputEl) return;
+    inputRowEl.style.display = 'none';
+    inputRowEl.classList.remove('visible');
+    inputEl.value = '';
+    autoResize();
+  }
+
+  function toggleInput() {
+    if (inputRowEl && inputRowEl.style.display === 'none') {
+      showInput();
+    } else {
+      hideInput();
+    }
+  }
+
+  function submitChat() {
+    if (!inputEl || !window.__TAURI__ || !window.__TAURI__.core) return;
+    var text = inputEl.value.trim();
+    if (!text) return;
+    inputEl.value = '';
+    hideInput();
+    window.__TAURI__.core.invoke('cmd_submit_chat', { text: text })
+      .catch(function(e) { console.error('[chat] submit failed:', e); });
+  }
+
+  function onInputKeyDown(e) {
+    switch (e.key) {
+      case 'Enter':
+        if (!isComposing) { e.preventDefault(); submitChat(); }
+        break;
+      case 'Escape':
+        e.preventDefault(); hideInput(); startHideTimer(); break;
+    }
+  }
+
+  function onCompositionStart() { isComposing = true; }
+  function onCompositionEnd() { isComposing = false; }
 
   function startPolling() {
     stopPolling();
@@ -149,6 +222,18 @@
 
   function init() {
     contentEl = document.getElementById('content');
+    inputRowEl = document.getElementById('inputRow');
+    inputEl = document.getElementById('chatInput');
+    sendBtnEl = document.getElementById('chatSend');
+
+    // 诊断：确认 DOM 元素存在
+    if (window.__TAURI__ && window.__TAURI__.core) {
+      window.__TAURI__.core.invoke('cmd_pet_log', {
+        msg: '[bubble] init: content=' + !!contentEl +
+          ' inputRow=' + !!inputRowEl + ' input=' + !!inputEl + ' sendBtn=' + !!sendBtnEl
+      }).catch(function() {});
+    }
+
     if (!contentEl) return;
 
     // 滚轮兜底：监听 content 和 bubble 容器的 wheel 事件
@@ -156,11 +241,28 @@
     var bubbleEl = contentEl.closest('.bubble');
     if (bubbleEl) {
       bubbleEl.addEventListener('wheel', onWheel, { passive: false });
+      // 双击气泡展开输入框
+      bubbleEl.addEventListener('dblclick', function(e) {
+        // 双击输入框本身不触发 toggle
+        if (e.target === inputEl || e.target === sendBtnEl ||
+            inputEl && inputEl.contains(e.target)) return;
+        toggleInput();
+      });
     }
 
     // 键盘滚动：使 content 可聚焦，监听方向键/Page/Home/End
     contentEl.setAttribute('tabindex', '0');
     contentEl.addEventListener('keydown', onKeyDown);
+
+    // 输入框事件绑定
+    if (inputEl) {
+      inputEl.addEventListener('keydown', onInputKeyDown);
+      inputEl.addEventListener('compositionstart', onCompositionStart);
+      inputEl.addEventListener('compositionend', onCompositionEnd);
+    }
+    if (sendBtnEl) {
+      sendBtnEl.addEventListener('click', submitChat);
+    }
 
     if (!window.__TAURI__) return;
     var listen = window.__TAURI__.event.listen;
@@ -182,8 +284,20 @@
       startHideTimer();
     });
 
+    // 双击宠物 / cmd_open_chat → 展开输入框
+    listen('chat-open', () => {
+      if (window.__TAURI__ && window.__TAURI__.core) {
+        window.__TAURI__.core.invoke('cmd_pet_log', { msg: '[bubble] ✓ 收到 chat-open 事件' }).catch(function() {});
+      }
+      showInput();
+    });
+
     startPolling();
   }
 
   document.addEventListener('DOMContentLoaded', init);
+
+  // 暴露给 Rust eval 调用（cmd_open_chat 通过 window.eval 触发）
+  window.__bubble_showInput = showInput;
+  window.__bubble_hideInput = hideInput;
 })();
