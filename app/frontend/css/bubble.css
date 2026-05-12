@@ -316,10 +316,24 @@ body.show .content {
   padding-top: 8px;
   gap: 6px;
   align-items: center;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.25s ease, opacity 0.2s ease, padding-top 0.2s ease;
 }
 
 .input-row.visible {
   display: flex;
+  max-height: 46px;
+  opacity: 1;
+  padding-top: 8px;
+}
+
+/* 发送后平滑收起 */
+.input-row.hiding {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
 }
 
 .input-row input {

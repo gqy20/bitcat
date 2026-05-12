@@ -149,6 +149,7 @@
     if (!inputRowEl || !inputEl) { diag('ABORT: 元素不存在'); return; }
 
     inputRowEl.style.display = 'flex';
+    inputRowEl.classList.remove('hiding');
     inputRowEl.classList.add('visible');
     clearHideTimer();
     ensureVisible();
@@ -202,10 +203,35 @@
     var text = inputEl.value.trim();
     if (!text) return;
     inputEl.value = '';
-    // 不隐藏输入框，等流式回复开始后自然覆盖 content 区
-    resetInputIdleTimer();
+    // 发送后平滑收起输入框，流式结束后自动重新展开
+    if (inputIdleTimer) { clearTimeout(inputIdleTimer); inputIdleTimer = null; }
     window.__TAURI__.core.invoke('cmd_submit_chat', { text: text })
-      .catch(function(e) { console.error('[chat] submit failed:', e); });
+      .then(function() {
+        hideInputSmooth(); // 发送成功后优雅收起
+      })
+      .catch(function(e) {
+        console.error('[chat] submit failed:', e);
+      });
+  }
+
+  /// 平滑收起输入框（CSS 过渡动画 → 再 display:none）
+  function hideInputSmooth() {
+    if (!inputRowEl) return;
+    inputRowEl.classList.remove('visible');
+    inputRowEl.classList.add('hiding');
+    if (inputIdleTimer) { clearTimeout(inputIdleTimer); inputIdleTimer = null; }
+    autoResize();
+    // 等 CSS 过渡完成后再彻底隐藏
+    setTimeout(function() {
+      if (inputRowEl) {
+        inputRowEl.style.display = 'none';
+        inputRowEl.classList.remove('hiding');
+      }
+      // 通知 Rust 退出 chat 模式（让截图可以覆盖）
+      if (window.__TAURI__ && window.__TAURI__.core) {
+        window.__TAURI__.core.invoke('cmd_exit_chat').catch(function() {});
+      }
+    }, 280);
   }
 
   function onInputKeyDown(e) {
@@ -355,6 +381,8 @@
         if (finalTxt && finalTxt.length > 0) lastRawText = finalTxt;
         if (lastRawText) setText(lastRawText, false);
         startHideTimer();
+        // 流式结束后重新展开输入框，方便继续对话
+        showInput();
       });
     });
 
