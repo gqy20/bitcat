@@ -530,7 +530,10 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             let prompts_cfg = ai_pad_core::prompts::PromptsConfig::load();
             let summary_cfg = &prompts_cfg.screen_summary;
             let summary_cycles = (summary_cfg.interval_min as u64 * 60) / config.interval_sec;
-            if summary_cycles > 0 && cycle_count % summary_cycles as u32 == 0 && cycle_count > 0 {
+            if summary_cycles > 0
+                && (cycle_count as u64).is_multiple_of(summary_cycles)
+                && cycle_count > 0
+            {
                 let now = chrono::Local::now();
                 let end_time = now.format("%H:%M").to_string();
                 let start_time = (now - chrono::Duration::minutes(summary_cfg.interval_min as i64))

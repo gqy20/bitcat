@@ -117,7 +117,7 @@ fn do_speak(text: &str) -> Result<(), String> {
 
         // IUnknown::Release (vtable index 2)
         let release_fn: unsafe extern "system" fn(this: *mut ISpVoice) -> u32 =
-            std::mem::transmute((*(*voice_ptr).lp_vtbl).release);
+            (*(*voice_ptr).lp_vtbl).release;
         release_fn(voice_ptr);
         CoUninitialize();
 

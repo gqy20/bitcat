@@ -122,7 +122,7 @@ pub fn list_dances() -> Vec<String> {
         Err(_) => return vec![],
     }
     .filter_map(|e| e.ok())
-    .filter(|e| e.path().extension().map_or(false, |ext| ext == "yaml"))
+    .filter(|e| e.path().extension().is_some_and(|ext| ext == "yaml"))
     .filter_map(|e| {
         e.file_name()
             .to_str()

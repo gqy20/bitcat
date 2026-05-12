@@ -224,6 +224,7 @@ pub struct SnapPreview {
 /// - `threshold` : 触发阈值（物理像素）
 ///
 /// 返回 `SnapPreview { visible:false, edge:"none" }` 表示当前无需预告。
+#[allow(clippy::too_many_arguments)]
 pub fn calc_snap_preview(
     cursor_x: i32,
     work_left: i32,

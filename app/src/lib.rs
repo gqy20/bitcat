@@ -96,11 +96,9 @@ pub fn run() {
                     env_loaded = true;
                 }
             }
-            if !env_loaded {
-                if dotenvy::dotenv().is_ok() {
-                    info!("已加载 .env (CWD)");
-                    env_loaded = true;
-                }
+            if !env_loaded && dotenvy::dotenv().is_ok() {
+                info!("已加载 .env (CWD)");
+                env_loaded = true;
             }
             if !env_loaded {
                 if let Some(exe_dir) = std::env::current_exe()

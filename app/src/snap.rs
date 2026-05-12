@@ -100,7 +100,7 @@ pub async fn cmd_snap_pet(app: tauri::AppHandle, x: i32, _y: i32) -> Result<Snap
     } else {
         return Ok(SnapResult {
             edge: "none".to_string(),
-            x: x,
+            x,
             y: work.bottom - ph,
         });
     };
@@ -196,9 +196,12 @@ pub async fn cmd_snap_transform(
     snap_win.show().map_err(|e| e.to_string())?;
 
     let edge_for_eval = edge.clone();
-    if let Ok(_) = snap_win.eval(
-        &format!("if(typeof __setSnapEdge==='function'){{__setSnapEdge('{edge_for_eval}');'ok'}}else{{'no-fn'}}")
-    ) {
+    if snap_win
+        .eval(format!(
+            "if(typeof __setSnapEdge==='function'){{__setSnapEdge('{edge_for_eval}');'ok'}}else{{'no-fn'}}"
+        ))
+        .is_ok()
+    {
         info!(edge = %edge, "[cmd_snap_snap] ✓ eval setSnapEdge 成功（兜底通知）");
     }
 

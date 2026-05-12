@@ -77,10 +77,10 @@ impl UserProfile {
     /// 格式与 ProfileStore.build_context() 一致：`[关于主人]...[/关于主人]`
     pub fn build_context(&self) -> String {
         let parts: Vec<&str> = vec![
-            (!self.name.is_empty()).then(|| self.name.as_str()),
-            (!self.role.is_empty()).then(|| self.role.as_str()),
-            (!self.context.is_empty()).then(|| self.context.as_str()),
-            (!self.language.is_empty()).then(|| self.role.as_str()),
+            (!self.name.is_empty()).then_some(self.name.as_str()),
+            (!self.role.is_empty()).then_some(self.role.as_str()),
+            (!self.context.is_empty()).then_some(self.context.as_str()),
+            (!self.language.is_empty()).then_some(self.role.as_str()),
         ]
         .into_iter()
         .flatten()

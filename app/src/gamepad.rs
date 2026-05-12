@@ -358,7 +358,7 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
         let target = match choose_gamepad(&pads) {
             Some(t) => t.clone(),
             None => {
-                if last_warn.map_or(true, |t| t.elapsed() > std::time::Duration::from_secs(10)) {
+                if last_warn.is_none_or(|t| t.elapsed() > std::time::Duration::from_secs(10)) {
                     warn!(
                         enumerated = pads.len(),
                         "未检测到真正的游戏手柄（已自动跳过键鼠接收器等），每秒重试中..."
@@ -910,7 +910,7 @@ pub fn run_ai_chat(
     }
 }
 
-pub(self) fn execute_action(
+fn execute_action(
     action: &ActionDef,
     defaults: &ai_pad_core::action::Defaults,
     alt_tab: &mut HeldModifier,
@@ -993,6 +993,12 @@ impl HeldModifier {
 pub struct HeldCombo {
     vks: Vec<u16>,
     held: bool,
+}
+
+impl Default for HeldCombo {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl HeldCombo {

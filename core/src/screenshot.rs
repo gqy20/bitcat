@@ -72,10 +72,10 @@ impl Default for ScreenshotConfig {
 impl ScreenshotConfig {
     pub fn from_env() -> Self {
         let mut cfg = Self::default();
-        if let Ok(v) = std::env::var("SCREENSHOT_MAX_WIDTH") {
-            if let Ok(w) = v.parse::<u32>() {
-                cfg.max_width = w;
-            }
+        if let Ok(v) = std::env::var("SCREENSHOT_MAX_WIDTH")
+            && let Ok(w) = v.parse::<u32>()
+        {
+            cfg.max_width = w;
         }
         cfg
     }

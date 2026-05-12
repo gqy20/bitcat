@@ -34,7 +34,7 @@ impl SharedBubble {
 
     /// 检查是否处于 chat 模式（供截图线程查询）
     pub fn is_chat_active(&self) -> bool {
-        self.chat_active.lock().map_or(false, |g| *g)
+        self.chat_active.lock().is_ok_and(|g| *g)
     }
 
     /// 进入 chat 模式（chat 输入 / 流式回复开始）
