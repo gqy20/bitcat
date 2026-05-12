@@ -255,22 +255,19 @@ body.show .content {
 
 /* ========== CSS 动画光标（class 驱动 / DOM 常驻 / 自动淡出） ========== */
 
-/* 光标节点始终存在于 DOM，默认不可见；由 .content.streaming 激活 */
+/* 光标节点始终存在于 DOM，默认彻底脱离文档流（避免 block 后孤行残留竖条） */
 .typing-cursor {
-  display: inline-block;
-  width: 0;
+  display: none;
+  width: 2px;
   height: 1.1em;
   background: #6366f1;
   margin-left: 1px;
   vertical-align: text-bottom;
   border-radius: 1px;
-  opacity: 0;
-  transition: opacity 0.25s ease, width 0.25s ease;
 }
 
 .content.streaming .typing-cursor {
-  width: 2px;
-  opacity: 1;
+  display: inline-block;
   animation: cursor-blink 1s step-end infinite;
 }
 

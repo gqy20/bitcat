@@ -17,6 +17,9 @@
   const MAX_H = 340;
   const PADDING_TOTAL = 60;   // body top(6) + bubble padding-top(14) + padding-bottom(14) + body bottom(22) + 余量(4)
   const INPUT_ROW_H = 42;     // input-row 额外高度（含 padding-top:8）
+  // 防御性清理：连续 N 次 poll 文本长度无变化 → 视为流结束（兜底 Tauri bubble-end 事件丢失）
+  // 8 * 120ms ≈ 960ms，略大于正常 LLM token 间隔
+  const STABLE_TICKS_THRESHOLD = 8;
 
   let hideTimer = null;
   let contentEl = null;
@@ -31,6 +34,8 @@
   let isComposing = false;    // IME 组合状态标记
   let userScrolledUp = false;  // 用户是否手动向上滚动了（锁定自动跟底）
   let streaming = false;        // 是否处于流式输出中（bubble-end 后为 false 拦截迟到的轮询）
+  let lastPollLen = -1;         // 上一次 poll 到的文本长度（用于稳定检测）
+  let stableTicks = 0;          // 连续无变化的 tick 计数
 
   function ensureVisible() {
     document.body.classList.remove('hidden');
@@ -269,8 +274,11 @@
     stopPolling();
     streaming = true;       // 标记流式开始
     userScrolledUp = false; // 新流式开始，重置锁定
-    setStreamingClass(true); // 激活光标（DOM 常驻，class 切换）
+    // 🔧 不立即激活光标：等真正拉到非空文本再切 streaming，
+    //    避免 bubble-end 事件丢失时光标常驻
     showThinking();         // 显示思考指示器
+    lastPollLen = -1;
+    stableTicks = 0;
     pollTimer = setInterval(function() {
       pollPending().then(onPollResult);
     }, POLL_INTERVAL_MS);
@@ -283,6 +291,8 @@
       pollTimer = null;
     }
     setStreamingClass(false); // 任何 stopPolling 路径都收回光标
+    lastPollLen = -1;
+    stableTicks = 0;
   }
 
   function pollPending() {
@@ -293,11 +303,39 @@
   }
 
   /// 轮询回调：有新文本才渲染（流式模式）
+  /// 同时做稳定检测：连续 STABLE_TICKS_THRESHOLD 次长度无变化 → 视为流式结束
+  /// （兜底 Tauri bubble-end 事件丢失导致光标永不熄灭）
   function onPollResult(txt) {
     // 流已结束 → 丢弃迟到的轮询结果（clearInterval 无法取消已在途的 IPC）
-    if (!streaming || !txt || txt.length === 0) return;
+    if (!streaming) return;
+
+    const len = (txt || '').length;
+
+    // 稳定检测：文本长度与上一次一致（且已有内容）→ 累加
+    if (len === lastPollLen && len > 0) {
+      stableTicks++;
+      if (stableTicks >= STABLE_TICKS_THRESHOLD) {
+        // 视为流式已结束（可能 bubble-end 丢了）→ 主动熄灭光标
+        streaming = false;
+        stopPolling();
+        hideThinking();
+        startHideTimer();
+        showInput();
+        return;
+      }
+    } else {
+      stableTicks = 0;
+      lastPollLen = len;
+    }
+
+    if (len === 0) return;
+
     setText(txt);
     ensureVisible();
+    // 🔧 拉到首个非空文本后才激活光标（避免 init 即残留）
+    if (contentEl && !contentEl.classList.contains('streaming')) {
+      setStreamingClass(true);
+    }
   }
 
   /// wheel 事件兜底：Tauri 透明窗口的 native scroll 不稳定，
