@@ -38,6 +38,11 @@ body.state-idle #sprite {
   animation: breath 2.4s ease-in-out infinite;
 }
 
+/* 跳舞时禁用呼吸动画，避免与窗口动画冲突 */
+body.dancing #sprite {
+  animation: none !important;
+}
+
 /* sleep 状态下的更慢更深的呼吸 */
 body.state-sleep #sprite {
   animation: breath-deep 3.2s ease-in-out infinite;

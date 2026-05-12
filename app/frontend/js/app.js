@@ -305,6 +305,34 @@
     return 1 - Math.pow(1 - t, 3);
   }
 
+  /// 弹性缓动：跳跃落地时的弹跳感
+  function easeOutBounce(t) {
+    var n1 = 7.5625, d1 = 2.75;
+    if (t < 1 / d1) return n1 * t * t;
+    if (t < 2 / d1) { t -= 1.5 / d1; return n1 * t * t + 0.75; }
+    if (t < 2.5 / d1) { t -= 2.25 / d1; return n1 * t * t + 0.9375; }
+    t -= 2.625 / d1; return n1 * t * t + 0.984375;
+  }
+
+  /// 获取当前显示器物理尺寸 + 窗口位置（用于舞蹈幅度计算）
+  async function getDanceScreenMetrics(win) {
+    try {
+      var monitor = await win.currentMonitor();
+      var pos = await win.outerPosition();
+      var size = monitor ? monitor.size : await win.monitorSize();
+      return {
+        baseX: pos.x,
+        baseY: pos.y,
+        screenW: size.width,
+        screenH: size.height,
+      };
+    } catch (e) {
+      console.warn('[dance] 获取屏幕信息失败，使用默认值:', e);
+      // 兜底：假设 1080p
+      return { baseX: 0, baseY: 0, screenW: 1920, screenH: 1080 };
+    }
+  }
+
   /// 从当前位置动画滑到吸附目标
   async function animateSnap(win, fromX, fromY, toX, toY) {
     console.log('[pet] animateSnap 开始:', { fromX, fromY, toX, toY, scale: win.scaleFactor });
@@ -366,7 +394,7 @@
     // 硬上限：总累计时长超过 max_duration_ms 则停止，即便 loop_ 为 true
     if (dancePlayer.maxDurationMs != null && dancePlayer.elapsed >= dancePlayer.maxDurationMs) {
       console.log('[dance] 达到 max_duration_ms=' + dancePlayer.maxDurationMs + '，停止');
-      dancePlayer = null;
+      resetDancePosition();
       return;
     }
 
@@ -381,7 +409,7 @@
           console.log('[dance] 循环，从头开始');
         } else {
           console.log('[dance] 舞蹈播放完毕');
-          dancePlayer = null;
+          resetDancePosition();
           return;
         }
       }
@@ -391,29 +419,108 @@
     var progress = dancePlayer.time / step.duration_ms;  // 0..1 当前步骤内进度
     var opts = {};
 
-    // 每个动作的渲染层动画
+    // 窗口级大幅度动画（基于屏幕百分比）
+    applyDanceWindowMove(currentAction, progress, dancePlayer.time);
+
+    // 精灵内小幅补充动画（叠加在窗口移动之上）
     switch (currentAction) {
       case 'jump':
-        // 抛物线上移：0→顶→0，最高点在 progress=0.5
-        var jumpH = -Math.sin(progress * Math.PI) * 20;
+        var jumpH = -Math.sin(progress * Math.PI) * 12;
         opts.offsetY = jumpH;
         break;
       case 'spin':
-        // 快速翻转 facingRight（每 80ms 切一次）
-        var flipCount = Math.floor(dancePlayer.time / 80);
+        var flipCount = Math.floor(dancePlayer.time / 60);
         pet.facingRight = flipCount % 2 === 0;
         break;
       case 'wave':
-        // 轻微上下浮动模拟挥手节奏
-        opts.offsetY = -Math.abs(Math.sin(progress * Math.PI * 4)) * 4;
+        opts.offsetY = -Math.abs(Math.sin(progress * Math.PI * 4)) * 6;
         break;
       case 'shake':
-        // 高频左右抖动
-        opts.offsetX = Math.sin(dancePlayer.time * 0.04) * 5;
+        opts.offsetX = Math.sin(dancePlayer.time * 0.06) * 6;
         break;
     }
 
     SpriteRenderer.renderSprite(ctx, currentAction, 0, pet.facingRight, 8, opts);
+  }
+
+  /// 基于屏幕百分比计算窗口偏移并移动窗口
+  function applyDanceWindowMove(action, progress, time) {
+    var m = dancePlayer.metrics;
+    if (!m) return;
+
+    var win = getCurrentWin();
+    if (!win) return;
+
+    var Pos = window.__TAURI__.window.PhysicalPosition;
+    var ox = 0, oy = 0;
+
+    switch (action) {
+      case 'jump': {
+        // 弹性跳跃：窗口上移屏幕高度的 12~15%，带弹跳缓动
+        var jumpRange = m.screenH * 0.14;
+        oy = -easeOutBounce(progress) * jumpRange;
+        // 跳跃时轻微 X 轴摇摆增加动感
+        ox = Math.sin(time * 0.008) * (m.screenW * 0.008);
+        break;
+      }
+      case 'spin': {
+        // 旋转时窗口原地小幅度快速抖动（模拟旋转离心力）
+        ox = Math.sin(time * 0.03) * (m.screenW * 0.02);
+        oy = Math.cos(time * 0.025) * (m.screenH * 0.015);
+        break;
+      }
+      case 'wave': {
+        // 挥手节奏：上下浮动屏幕高度 3~5%
+        oy = -Math.abs(Math.sin(progress * Math.PI * 4)) * (m.screenH * 0.04);
+        break;
+      }
+      case 'shake': {
+        // 大幅左右抖动：屏幕宽度 3~5%
+        ox = Math.sin(time * 0.05) * (m.screenW * 0.04);
+        // 轻微 Y 轴抖动增加不稳定感
+        oy = Math.sin(time * 0.07) * (m.screenH * 0.01);
+        break;
+      }
+    }
+
+    try {
+      win.setPosition(new Pos(
+        Math.round(m.baseX + ox),
+        Math.round(m.baseY + oy)
+      ));
+    } catch (_) {}
+  }
+
+  /// 舞舞结束：平滑归位到基准位置
+  async function resetDancePosition() {
+    var m = dancePlayer ? dancePlayer.metrics : null;
+    dancePlayer = null;
+    bodyEl.classList.remove('dancing');
+
+    if (!m) return;
+
+    var win = getCurrentWin();
+    if (!win) return;
+
+    // 获取当前实际位置作为起点（舞蹈过程中可能已漂移）
+    try { var curPos = await win.outerPosition(); } catch (_) { return; }
+
+    var Pos = window.__TAURI__.window.PhysicalPosition;
+    var duration = 250;
+    var start = performance.now();
+    var fromX = curPos.x, fromY = curPos.y;
+    var toX = m.baseX, toY = m.baseY;
+
+    function frame(now) {
+      var t = Math.min((now - start) / duration, 1);
+      var e = easeOutCubic(t);
+      win.setPosition(new Pos(
+        Math.round(fromX + (toX - fromX) * e),
+        Math.round(fromY + (toY - fromY) * e)
+      ));
+      if (t < 1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
   }
 
   function syncStateClass(state) {
@@ -502,9 +609,13 @@
     });
 
     // 舞蹈播放事件（Rust 侧 cmd_play_dance 发出）
-    window.__TAURI__.event.listen('play-dance', (event) => {
+    window.__TAURI__.event.listen('play-dance', async (event) => {
       var payload = event.payload;
       console.log('[dance] 收到播放指令:', payload.name, '-', payload.steps.length, '步, loop=', payload.loop_, 'max_ms=', payload.max_duration_ms);
+
+      var win = getCurrentWin();
+      var metrics = win ? await getDanceScreenMetrics(win) : null;
+
       dancePlayer = {
         steps: payload.steps,
         index: 0,
@@ -512,8 +623,10 @@
         elapsed: 0,
         maxDurationMs: typeof payload.max_duration_ms === 'number' ? payload.max_duration_ms : null,
         loop_: payload.loop_ !== false,
+        metrics: metrics,
       };
-      console.log('[dance] ▶ 舞蹈播放器启动');
+      bodyEl.classList.add('dancing');
+      console.log('[dance] ▶ 舞蹈播放器启动, 屏幕:', metrics ? metrics.screenW + 'x' + metrics.screenH : '未知');
     });
   }
 
