@@ -2,7 +2,7 @@
 //!
 //! 设计要点（见 plan `Settings_UI_Design_Plan`）：
 //! - `~/.claude/settings.json` 仅读，**永不写入**；AI 覆盖写入 `app_settings.json`
-//! - actions.yml / prompts.yml 就地写回（注释会被覆盖，保存前自动备份 `.bak`）
+//! - config/actions.yml / config/prompts.yml 就地写回（注释会被覆盖，保存前自动备份 `.bak`）
 //! - 保存后仅 set 原子 flag，由 gamepad_loop 下 tick 自动 reload（复用现有机制）
 
 use crate::commands::SharedWindowState;
@@ -73,20 +73,20 @@ pub struct SettingsSnapshot {
     pub prompts: PromptsConfig,
     pub appearance: AppearanceSettings,
     pub about: AboutInfo,
-    /// 按 buttons.yml 列出的所有可配置按键（有序，index 升序）
+    /// 按 config/buttons.yml 列出的所有可配置按键（有序，index 升序）
     pub button_catalog: Vec<ButtonCatalogItem>,
 }
 
 /// 按键元数据：用于设置界面展示"全部支持的按键 + 中文说明"。
 #[derive(Debug, Serialize)]
 pub struct ButtonCatalogItem {
-    /// 按键主名，如 "Start"（同 actions.yml 里的 key）
+    /// 按键主名，如 "Start"（同 config/actions.yml 里的 key）
     pub name: String,
-    /// 中文别名，例如 "开始"；取 buttons.yml aliases 中第一个中文别名
+    /// 中文别名，例如 "开始"；取 config/buttons.yml aliases 中第一个中文别名
     pub label: String,
     /// 硬件位置描述，例如 "中间偏右"
     pub position: String,
-    /// 显示顺序（对应 buttons.yml 中的 button index）
+    /// 显示顺序（对应 config/buttons.yml 中的 button index）
     pub order: u32,
 }
 
@@ -197,8 +197,8 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
     };
 
     // actions / prompts：失败回退到内置默认
-    let action_cfg = ActionConfig::load("actions.yml").unwrap_or_else(|e| {
-        warn!(error = %e, "加载 actions.yml 失败，使用内置默认");
+    let action_cfg = ActionConfig::load("config/actions.yml").unwrap_or_else(|e| {
+        warn!(error = %e, "加载 config/actions.yml 失败，使用内置默认");
         ActionConfig::default_builtin()
     });
     let prompts_cfg = PromptsConfig::load();
@@ -208,7 +208,7 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
         .unwrap_or_else(|| "<unknown>".into());
 
     // 读取 buttons.yml 提供可配置按键全集
-    let button_catalog = match ai_pad_core::config::ButtonConfig::load("buttons.yml") {
+    let button_catalog = match ai_pad_core::config::ButtonConfig::load("config/buttons.yml") {
         Ok(btn_cfg) => {
             let mut items: Vec<ButtonCatalogItem> = btn_cfg
                 .buttons
@@ -224,7 +224,7 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
             items
         }
         Err(e) => {
-            warn!(error = %e, "加载 buttons.yml 失败，按键列表为空");
+            warn!(error = %e, "加载 config/buttons.yml 失败，按键列表为空");
             Vec::new()
         }
     };
@@ -244,8 +244,8 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
         about: AboutInfo {
             version: env!("CARGO_PKG_VERSION").to_string(),
             app_settings_path,
-            actions_yml_hint: "actions.yml（exe 同目录 或 CWD）".into(),
-            prompts_yml_hint: "prompts.yml（exe 同目录 或 CWD）".into(),
+            actions_yml_hint: "config/actions.yml（exe 同目录/config/ 或 CWD/config/）".into(),
+            prompts_yml_hint: "config/prompts.yml（exe 同目录/config/ 或 CWD/config/）".into(),
         },
         button_catalog,
     })
@@ -297,13 +297,13 @@ pub async fn cmd_settings_save_actions(app: AppHandle, payload: ActionsView) -> 
         defaults: payload.defaults,
         actions: payload.actions,
     };
-    cfg.save("actions.yml")?;
+    cfg.save("config/actions.yml")?;
     // 触发 gamepad_loop 热重载
     let ws: tauri::State<'_, SharedWindowState> = app.state();
     ws.config_reload.store(true, Ordering::SeqCst);
     info!(
         actions = cfg.actions.len(),
-        "[settings] actions.yml 已保存并触发 reload"
+        "[settings] config/actions.yml 已保存并触发 reload"
     );
     Ok(())
 }
@@ -312,7 +312,7 @@ pub async fn cmd_settings_save_actions(app: AppHandle, payload: ActionsView) -> 
 #[tauri::command]
 pub async fn cmd_settings_save_prompts(payload: PromptsConfig) -> Result<(), String> {
     payload.save()?;
-    info!("[settings] prompts.yml 已保存");
+    info!("[settings] config/prompts.yml 已保存");
     Ok(())
 }
 
@@ -352,7 +352,7 @@ pub async fn cmd_settings_save_appearance(
 pub async fn cmd_settings_reset(category: String) -> Result<(), String> {
     match category.as_str() {
         "actions" => {
-            ActionConfig::default_builtin().save("actions.yml")?;
+            ActionConfig::default_builtin().save("config/actions.yml")?;
         }
         "prompts" => {
             PromptsConfig::default_builtin().save()?;

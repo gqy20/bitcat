@@ -98,14 +98,14 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// 重载 actions.yml + prompts.yml，通知 gamepad_loop 刷新
+/// 重载 config/actions.yml + config/prompts.yml，通知 gamepad_loop 刷新
 fn ws_reload_config(app: &AppHandle) {
-    match ai_pad_core::action::ActionConfig::load("actions.yml") {
-        Ok(cfg) => tracing::info!(actions = cfg.actions.len(), "已重载 actions.yml"),
-        Err(e) => tracing::warn!(error = %e, "重载 actions.yml 失败"),
+    match ai_pad_core::action::ActionConfig::load("config/actions.yml") {
+        Ok(cfg) => tracing::info!(actions = cfg.actions.len(), "已重载 config/actions.yml"),
+        Err(e) => tracing::warn!(error = %e, "重载 config/actions.yml 失败"),
     }
     let _ = ai_pad_core::prompts::PromptsConfig::load();
-    tracing::info!("已重载 prompts.yml");
+    tracing::info!("已重载 config/prompts.yml");
 
     let ws: tauri::State<'_, SharedWindowState> = app.state();
     ws.config_reload.store(true, Ordering::SeqCst);

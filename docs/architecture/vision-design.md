@@ -136,7 +136,7 @@ pub fn encode_jpeg(pixels: &[u8], width: u32, height: u32, quality: u8) -> Resul
 /// 计算感知哈希（用于变化检测，跳过相似帧）
 pub fn perceptual_hash(pixels: &[u8], width: u32, height: u32) -> u64;
 
-/// 从文件加载配置（screenshot.yml 或 actions.yml [screenshot] 段）
+/// 从文件加载配置（screenshot.yml 或 config/actions.yml [screenshot] 段）
 pub fn load_config() -> Result<ScreenshotConfig, String>;
 ```
 
@@ -232,10 +232,10 @@ pub fn capture_target(target: &ScreenshotTarget) -> Result<CapturedFrame, String
 
 #### 用户配置
 
-在 `actions.yml` 或独立 `screenshot.yml` 中配置：
+在 `config/actions.yml` 或独立 `config/screenshot.yml` 中配置：
 
 ```yaml
-# screenshot.yml（或嵌入 actions.yml 的 [screenshot] 段）
+# screenshot.yml（或嵌入 config/actions.yml 的 [screenshot] 段）
 screenshot:
   # 截图目标: primary / secondary / all
   target: "all"
@@ -580,7 +580,7 @@ memory 系统 ──→ 用户偏好设置 ──→ 决定截图策略/频率  
 
 | 措施 | 实现 |
 |------|------|
-| **默认关闭** | 功能需用户在 actions.yml 或面板中手动开启 |
+| **默认关闭** | 功能需用户在 config/actions.yml 或面板中手动开启 |
 | **可视化指示** | 截图时托盘图标变色 / pet 状态微变（如眨眼动画） |
 | **排除列表** | 可配置不捕获的窗口（密码管理器、银行 App、无痕浏览器） |
 | **本地优先** | 截图和分析默认本地完成，不上传云端 |

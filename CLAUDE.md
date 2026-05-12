@@ -62,7 +62,7 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
   │     └── agent.chat_stream() → 流式 AI 回复 → bubble 窗口
   ├── voice 按住/释放 → voice.rs（generation 防残留）→ AI 对话
   ├── panel 导航 → panel.rs（方向键/A/B 独占）
-  └── actions.yml 热键/启动 → hotkey.rs SendInput
+  └── config/actions.yml 热键/启动 → hotkey.rs SendInput
 
 截图观察线程 → screenshot_loop() [screenshot.rs, 独立线程]
   ├── BitBlt 截屏 → dHash 去重 → 缩放 → JPEG 编码
@@ -93,15 +93,15 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 
 ### 截图观察系统
 
-独立线程定时截图（默认 30s），流程：BitBlt 捕获 → 熄屏检测（`SM_MONITORISOFF` + 全黑帧采样）→ dHash 去重 → 缩放到 max_width → JPEG 编码 → Vision API（Anthropic Messages）分析 → 结果通过 bubble 显示并保存到 `~/.ai-pad/screenshots/`。支持多显示器水平拼接 + 调试多分辨率对比。配置在 `prompts.yml` 的 `screenshot` 段。
+独立线程定时截图（默认 30s），流程：BitBlt 捕获 → 熄屏检测（`SM_MONITORISOFF` + 全黑帧采样）→ dHash 去重 → 缩放到 max_width → JPEG 编码 → Vision API（Anthropic Messages）分析 → 结果通过 bubble 显示并保存到 `~/.ai-pad/screenshots/`。支持多显示器水平拼接 + 调试多分辨率对比。配置在 `config/prompts.yml` 的 `screen_summary` 段。
 
 ### 记忆系统
 
-`MemoryStore` 维护滚动窗口对话记忆（默认 20 条），持久化到 `~/.ai-pad/memory/chat_summary.json`。每次 AI 对话后记录 user_msg + ai_reply（按字符截断），下次对话时通过 `build_context()` 注入 prompt。配置在 `prompts.yml` 的 `memory` 段。
+`MemoryStore` 维护滚动窗口对话记忆（默认 20 条），持久化到 `~/.ai-pad/memory/chat_summary.json`。每次 AI 对话后记录 user_msg + ai_reply（按字符截断），下次对话时通过 `build_context()` 注入 prompt。配置在 `config/prompts.yml` 的 `memory` 段。
 
 ### Prompts 配置
 
-`prompts.yml` 统一管理三段提示词：`agent.preamble`（AI 人设）、`vision.prompt`/`vision.prompt_multi`（截图分析提示词，强调反幻觉）、`memory`（记忆窗口大小和截断阈值）。所有字段有编译时默认值，YAML 可选覆盖。运行时从 exe 同目录加载，构建时需 cp 到 target/。
+`config/prompts.yml` 统一管理四段提示词：`agent.preamble`（AI 人设）、`vision.prompt`/`vision.prompt_multi`（截图分析提示词，强调反幻觉）、`memory`（记忆窗口大小和截断阈值）、`screen_summary`（截图摘要注入配置）。所有字段有编译时默认值，YAML 可选覆盖。运行时从 exe 同目录/config/ 加载，构建时需 cp 到 target/config/。
 
 ### 日志与 .env
 
@@ -112,7 +112,7 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 - **日志**：统一用 `tracing` crate（info/warn/error/debug），不用 `eprintln!`
 - **中文处理**：Rust 中字符串切片必须按字符边界（`.chars().take(n)`），不可用字节索引
 - **前端**：无框架，IIFE 模块，通过 `window.__TAURI__` API 与后端通信
-- **配置**：`actions.yml`、`buttons.yml`、`prompts.yml` 运行时从 exe 同目录加载，构建时需 cp 到 target/
+- **配置**：`config/actions.yml`、`config/buttons.yml`、`config/prompts.yml` 运行时从 exe 同目录/config/ 加载，构建时需 cp 到 target/config/
 
 ## 测试规范
 

@@ -36,11 +36,13 @@ jobs:
           key: clippy
       - name: Copy fixture configs
         run: |
-          copy buttons.yml core\
-          copy actions.yml core\
-          copy prompts.yml core\
-          copy buttons.yml app\
-          copy actions.yml app\
+          mkdir core\config
+          copy config\buttons.yml core\config\
+          copy config\actions.yml core\config\
+          copy config\prompts.yml core\config\
+          mkdir app\config
+          copy config\buttons.yml app\config\
+          copy config\actions.yml app\config\
       - run: cargo clippy --workspace -- -D warnings
 
   # ───── 测试任务 ─────
@@ -61,11 +63,13 @@ jobs:
 
       - name: Copy fixture configs
         run: |
-          copy buttons.yml core\
-          copy actions.yml core\
-          copy prompts.yml core\
-          copy buttons.yml app\
-          copy actions.yml app\
+          mkdir core\config
+          copy config\buttons.yml core\config\
+          copy config\actions.yml core\config\
+          copy config\prompts.yml core\config\
+          mkdir app\config
+          copy config\buttons.yml app\config\
+          copy config\actions.yml app\config\
 
       - name: Install nextest
         uses: taiki-e/install-action@v2

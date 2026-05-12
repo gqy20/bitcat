@@ -315,21 +315,66 @@
   }
 
   /// 获取当前显示器物理尺寸 + 窗口位置（用于舞蹈幅度计算）
+  /// 多屏安全：通过 availableMonitors 匹配窗口所在屏幕，避免 fallback 到主屏原点
   async function getDanceScreenMetrics(win) {
+    var pos;
+    try { pos = await win.outerPosition(); } catch (e) {
+      console.error('[dance] outerPosition 失败:', e);
+      return null;
+    }
+
+    // 策略 1：currentMonitor（最直接）
     try {
       var monitor = await win.currentMonitor();
-      var pos = await win.outerPosition();
-      var size = monitor ? monitor.size : await win.monitorSize();
-      return {
-        baseX: pos.x,
-        baseY: pos.y,
-        screenW: size.width,
-        screenH: size.height,
-      };
+      if (monitor && monitor.size && monitor.size.width > 0) {
+        var m = {
+          baseX: pos.x, baseY: pos.y,
+          screenW: monitor.size.width, screenH: monitor.size.height,
+        };
+        console.log('[dance] metrics(currentMonitor):', JSON.stringify(m));
+        return m;
+      }
     } catch (e) {
-      console.warn('[dance] 获取屏幕信息失败，使用默认值:', e);
-      // 兜底：假设 1080p
-      return { baseX: 0, baseY: 0, screenW: 1920, screenH: 1080 };
+      console.warn('[dance] currentMonitor 失败，尝试 availableMonitors:', e.message || e);
+    }
+
+    // 策略 2：遍历所有显示器，找窗口所在的那个（多屏兼容）
+    try {
+      var monitors = await win.availableMonitors();
+      for (var i = 0; i < monitors.length; i++) {
+        var mon = monitors[i];
+        // 检查窗口位置是否在该显示器的范围内（用 position + size 判定矩形包含）
+        var mx = mon.position ? mon.position.x : (mon.positionX || 0);
+        var my = mon.position ? mon.position.y : (mon.positionY || 0);
+        var mw = mon.size.width;
+        var mh = mon.size.height;
+        if (pos.x >= mx && pos.x < mx + mw && pos.y >= my && pos.y < my + mh) {
+          var m2 = {
+            baseX: pos.x, baseY: pos.y,
+            screenW: mw, screenH: mh,
+          };
+          console.log('[dance] metrics(availableMonitors[' + i + ']):', JSON.stringify(m2),
+            'monitor@(' + mx + ',' + my + ') ' + mw + 'x' + mh);
+          return m2;
+        }
+      }
+    } catch (e) {
+      console.warn('[dance] availableMonitors 也失败:', e.message || e);
+    }
+
+    // 策略 3：至少保留真实窗口位置，只用 monitorSize 兜底尺寸
+    try {
+      var sz = await win.monitorSize();
+      var m3 = {
+        baseX: pos.x, baseY: pos.y,
+        screenW: sz.width, screenH: sz.height,
+      };
+      console.log('[dance] metrics(monitorSize fallback):', JSON.stringify(m3));
+      return m3;
+    } catch (e) {
+      console.error('[dance] 所有策略都失败:', e.message || e);
+      // 最后兜底：保留真实位置，不用 (0,0)
+      return { baseX: pos.x, baseY: pos.y, screenW: 1920, screenH: 1080 };
     }
   }
 

@@ -103,8 +103,10 @@ create_dance(name, mood) → ToolResult
 ├── screenshots/               # 已有
 ├── memory/                    # 已有
 ├── logs/                      # 已有
-├── actions.yml                # 已有
-└── prompts.yml                # 已有
+├── config/                    # 运行时配置（actions/buttons/prompts .yml）
+│   ├── actions.yml
+│   ├── buttons.yml
+│   └── prompts.yml
 ```
 
 ### 内置预设（可选）
@@ -339,7 +341,7 @@ Valve 要求区分：
 
 - `core/src/pet.rs` — 状态机不变，舞蹈是前端渲染层劫持
 - `core/src/bridge.rs` — 按键映射不变
-- `core/src/prompts.rs` / `prompts.yml` — 可能微调 prompt（加舞蹈/游戏能力说明）
+- `core/src/prompts.rs` / `config/prompts.yml` — 可能微调 prompt（加舞蹈/游戏能力说明）
 - `app/src/bubble.rs` — 对话气泡不变
 - `app/src/screenshot.rs` — 截图系统不变
 - `app/frontend/js/pet.js` — 前端状态机不变

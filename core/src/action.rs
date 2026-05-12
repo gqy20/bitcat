@@ -62,7 +62,7 @@ fn default_delay() -> f64 {
     1.0
 }
 
-const DEFAULT_YML: &str = include_str!("../../actions.yml");
+const DEFAULT_YML: &str = include_str!("../../config/actions.yml");
 
 /// 配置文件查找：exe 同目录 → 传入路径（CWD）→ 嵌入默认值
 fn load_config_content(path: &str, default: &str) -> String {
@@ -95,7 +95,7 @@ impl ActionConfig {
         Ok(config)
     }
 
-    /// 序列化写回 actions.yml（会覆盖注释，保存前自动备份 `.bak`）。
+    /// 序列化写回 config/actions.yml（会覆盖注释，保存前自动备份 `.bak`）。
     pub fn save(&self, path: &str) -> Result<(), String> {
         let target = resolve_save_path(path);
         if let Ok(old) = fs::read_to_string(&target) {
@@ -110,7 +110,7 @@ impl ActionConfig {
 
     /// 返回内置默认 yml 解析后的 `ActionConfig`（用于"重置为默认"）。
     pub fn default_builtin() -> Self {
-        serde_yaml::from_str(DEFAULT_YML).expect("内置 actions.yml 损坏")
+        serde_yaml::from_str(DEFAULT_YML).expect("内置 config/actions.yml 损坏")
     }
 }
 
@@ -177,14 +177,14 @@ mod tests {
 
     #[test]
     fn test_load_actions_yml() {
-        let config = ActionConfig::load("actions.yml").unwrap();
+        let config = ActionConfig::load("config/actions.yml").unwrap();
         assert!(config.actions.contains_key("Start"));
         assert!(config.actions.contains_key("Y"));
     }
 
     #[test]
     fn test_load_launch_action() {
-        let config = ActionConfig::load("actions.yml").unwrap();
+        let config = ActionConfig::load("config/actions.yml").unwrap();
         let start = config.actions.get("Start").unwrap();
         assert_eq!(start.action_type, "launch");
         assert_eq!(start.program.as_deref(), Some("claude"));
@@ -193,7 +193,7 @@ mod tests {
 
     #[test]
     fn test_load_voice_action() {
-        let config = ActionConfig::load("actions.yml").unwrap();
+        let config = ActionConfig::load("config/actions.yml").unwrap();
         let y = config.actions.get("Y").unwrap();
         assert_eq!(y.action_type, "voice");
         let voice = y.voice.as_ref().unwrap();
@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn test_load_defaults() {
-        let config = ActionConfig::load("actions.yml").unwrap();
+        let config = ActionConfig::load("config/actions.yml").unwrap();
         assert_eq!(config.defaults.terminal, "powershell");
         assert_eq!(config.defaults.window, "maximized");
     }
@@ -211,7 +211,7 @@ mod tests {
     fn test_load_missing_file_falls_back_to_default() {
         // 文件不存在时，load_config_content 会退化到内置 DEFAULT_YML。
         // 因此 load 不报错，且能拿到默认配置（terminal=powershell）。
-        let config = ActionConfig::load("definitely_does_not_exist_123abc.yml")
+        let config = ActionConfig::load("config/definitely_does_not_exist_123abc.yml")
             .expect("load 不应失败，应回退到内置默认");
         assert_eq!(config.defaults.terminal, "powershell");
     }

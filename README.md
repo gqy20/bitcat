@@ -2,7 +2,7 @@
 
 蓝牙手柄驱动的桌面工具：8 位像素桌宠 + AI 对话（流式）+ Quicker 风格弹出面板 + 语音输入 + TTS 朗读 + 截图视觉分析 + 贴边吸附。
 
-基于 Tauri 2.0 + SDL2，单 exe，无 Node.js 依赖。共 **216 个测试**（Rust workspace + Vitest 前端）。
+基于 Tauri 2.0 + SDL2，单 exe，无 Node.js 依赖。共 **250+ 个测试**（Rust workspace + Vitest 前端），接入 cargo-husky（pre-commit fmt / pre-push clippy+test）。
 
 ## 快速开始
 
@@ -30,12 +30,14 @@ make dist
 | 手柄 B / Esc | 关闭面板（弹出时）；随机走动（隐藏时） |
 | 手柄 Select | 切换睡眠/唤醒 |
 | 手柄 Y（按住） | 语音输入 → 显示录音条 → 识别文字 → 送 AI |
-| 手柄 L1/R1/L2 | 按 `actions.yml` 绑定执行（hotkey/launch/voice/script） |
+| 手柄 Y（短按）/ 面板按钮 | 触发舞蹈播放（AI 编排或已保存舞步） |
+| 手柄 L1/R1/L2 | 按 `config/actions.yml` 绑定执行（hotkey/launch/voice/script） |
 | 拖拽宠物到边缘 | 贴边吸附，变精致发光竖条（弹簧缓动动画） |
 | 点击猫咪嘴巴 | 打开聊天输入框，键盘输入文字送 AI |
 | AI 回复后 | 自动 TTS 朗读 |
-| 系统托盘右键 | 截图/折叠/置顶/重载配置/退出 |
+| 系统托盘右键 | 截图/折叠/置顶/**设置窗口**/重载配置/退出 |
 | 后台（每 30s） | 截图 + Vision API 分析 + 屏幕活动摘要 |
+| AI 对话中 | 自动暂停截图管线（避免浪费 Vision API 调用） |
 
 ## 弹出面板
 
@@ -60,7 +62,7 @@ make dist
 
 ## 语音输入
 
-按住 Y 键（或 actions.yml 中配置的 voice 类型按键）：
+按住 Y 键（或 config/actions.yml 中配置的 voice 类型按键）：
 
 1. 显示录音条窗口（280×40），移到屏幕中下方，强制前台化（`AttachThreadInput`）
 2. 模拟用户配置的输入法语音热键（如 Ctrl+Win）
@@ -71,13 +73,35 @@ make dist
 
 ## 截图观察
 
-独立后台线程定时截图（默认 30s），流程：
+独立后台线程定时截图（默认 30s，可配置），流程：
 
 1. BitBlt 捕获屏幕 + dHash 感知哈希去重 + 熄屏检测（`SM_MONITORISOFF` + 全黑帧采样）
 2. 缩放 → JPEG 编码 → Vision API（Anthropic Messages）分析
 3. 结果通过气泡显示，并保存到 `~/.ai-pad/screenshots/`（7 天自动清理）
-4. 屏幕活动摘要定时总结，注入 AI 上下文
-5. 支持多显示器水平拼接
+4. 屏幕活动摘要定时总结，**最近 10 条截图原始分析记录注入 AI prompt**
+5. **聊天输入聚焦时自动暂停截图**（避免浪费 Vision API 调用）
+6. 舞蹈播放期间同样暂停截图
+7. 支持多显示器水平拼接
+
+## 舞蹈系统
+
+AI 可通过 Tool 调用生成舞蹈编排，前端实时播放像素动画 + 窗口级大幅度位移。
+
+### 编排（AI 侧）
+
+1. AI 调用 `create_dance` Tool，输入 mood（如"开心"、"慵懒"）
+2. 后端根据 mood 生成 `DanceDef`（步序列：jump/spin/wave/shake + 时长），YAML 持久化到 `~/.ai-pad/dances/`
+3. 支持参数：`duration`（总时长）、自动计算步数和节奏
+
+### 播放（前端）
+
+1. AI 调用 `play_dance` 或手柄 Y 短按/面板按钮触发 → 后端发送 `play-dance` 事件
+2. 前端舞蹈播放器逐帧渲染：
+   - **精灵内动画**：jump 抛物线上移、spin 快速翻转、wave 浮动、shake 抖动
+   - **窗口级移动**：基于屏幕百分比计算偏移量（跳跃上移 ~14% 屏幕高度，弹性缓动；旋转离心抖动等）
+   - **结束归位**：250ms 平滑缓动回到基准位置
+3. 支持 `loop_`（循环播放）和 `max_duration_ms`（硬上限）
+4. 舞蹈期间自动暂停截图管线
 
 ## 贴边吸附
 
@@ -88,6 +112,38 @@ make dist
 3. 点击竖条恢复宠物形态
 4. 气泡自动跟随吸附态定位
 5. 双窗口 Crossfade 过渡（150ms CSS 动画）
+
+## 记忆系统（两层存储 + AI 画像）
+
+### 第一层：短期对话记忆
+
+- 滚动窗口（默认 20 条），每次 AI 对话后记录 user_msg + ai_reply（按字符截断）
+- 持久化到 `~/.ai-pad/memory/chat_summary.json`
+- 每次对话注入 prompt：`[最近对话记录]...[/最近对话记录]`
+
+### 第二层：长期记忆
+
+- 通过启发式规则（关键词匹配 + 长度阈值）筛选值得长期保存的对话
+- 支持按关键词相关性评分检索
+- 持久化到 `~/.ai-pad/memory/long_term.json`
+
+### AI 聚合画像
+
+- 定期调用 Anthropic API 将未聚合的长期记忆条目浓缩为用户画像
+- 最大 400 字符，注入 prompt：`[关于主人]...[/关于主人]`
+- 存储到 `~/.ai-pad/memory/profile.json`
+- 所有持久化使用原子写入（tempfile + rename）
+
+## 设置窗口
+
+系统托盘右键可打开独立设置窗口（720×520），覆盖层配置机制：
+
+- **AI 覆盖**：api_key / base_url / model / max_tokens → `app_settings.json`
+- **动作绑定**：编辑 config/actions.yml 并实时重载
+- **提示词配置**：编辑 config/prompts.yml 并实时重载
+- **外观设置**：always_on_top / default_collapsed / tts_enabled / global_shortcut / screenshot_interval_sec
+- 设计原则：`~/.claude/settings.json` 只读，所有用户修改通过覆盖层
+- 支持按分类重置为默认值
 
 ## 手柄配对
 
@@ -105,60 +161,65 @@ make dist
 ```
 8bit/
 ├── Cargo.toml              # workspace: members = ["core", "app"], release LTO+strip
-├── actions.yml             # 按键动作绑定（示例配置，已嵌入 exe）
-├── buttons.yml             # 硬件按键映射（示例配置，已嵌入 exe）
-├── prompts.yml             # AI 提示词（示例配置，已嵌入 exe）
+├── config/                 # 运行时配置目录（编译时嵌入 exe，exe 同目录可覆盖）
+│   ├── actions.yml         # 按键动作绑定
+│   ├── buttons.yml         # 硬件按键映射
+│   └── prompts.yml         # AI 提示词配置
 ├── core/                   # 纯逻辑库（无 UI 依赖）
 │   └── src/
 │       ├── lib.rs          # 模块入口
-│       ├── agent.rs        # AI Agent (rig-core + Anthropic SDK), 5 个 Tool, 流式 chat_stream
+│       ├── agent.rs        # AI Agent (rig-core + Anthropic SDK), 8+ Tool, 流式 chat_stream, tracing span
 │       ├── bridge.rs       # 手柄→AI→宠物桥接层, PetCommand IPC 协议, 按键映射
 │       ├── ai_config.rs    # 从 ~/.claude/settings.json 或环境变量读取 API 配置
 │       ├── action.rs       # 动作定义与加载（hotkey/launch/voice/script），配置嵌入 + 多路径查找
+│       ├── app_settings.rs # 设置覆盖层存储（app_settings.json），只读→可写桥接
 │       ├── config.rs       # YAML 配置加载（buttons.yml），配置嵌入 + 多路径查找
+│       ├── dance.rs        # 舞蹈编排生成：mood→DanceDef（步序列+时长），YAML 持久化
 │       ├── prompts.rs      # AI 提示词配置（agent/vision/memory/screen_summary），配置嵌入
 │       ├── device.rs       # SDL2 按键编号 → 名称映射
 │       ├── hotkey.rs       # Win32 SendInput 键鼠模拟 + force_foreground
-│       ├── pet.rs          # 桌宠状态机（Idle/Walk/Sleep/Talk/Happy/Confused）
-│       ├── memory.rs       # 对话记忆滚动窗口，JSON 持久化
+│       ├── pet.rs          # 桌宠状态机（Idle/Walk/Sleep/Talk/Happy/Confused/Dance）
+│       ├── memory.rs       # 两层记忆系统：短期滚动窗口 + 长期关键词检索 + AI 聚合画像
 │       ├── vision.rs       # Vision API 请求构建/响应解析
 │       ├── screenshot.rs   # 截图类型定义、dHash、resize/JPEG、存储 + 7天清理
-│       ├── screen_summary.rs # 屏幕活动摘要存储 + AI 上下文构建
-│       └── tools.rs        # AI Tool 实现（launch/shell/read_file/get_time/recent_screenshots）
+│       ├── screen_summary.rs # 屏幕活动摘要存储 + 最近 N 条截图注入 prompt
+│       └── tools.rs        # AI Tool 实现（8+ 工具：launch/shell/read_file/get_time/recent_screenshots/hotkey/clipboard/foreground/create_dance/play_dance）
 └── app/                    # Tauri 2.0 应用
     ├── tauri.conf.json     # 窗口、权限、withGlobalTauri
     ├── capabilities/
     ├── src/
     │   ├── main.rs         # 入口（--debug 控制台），日志双写初始化
-    │   ├── lib.rs          # Tauri Builder + gamepad_loop（热插拔外层循环）
-    │   ├── gamepad.rs      # PetEvent 序列化, PetCommand→前端事件转换
-    │   ├── commands.rs     # 共享状态 + Tauri command（snap_preview/crossfade 等）
-    │   ├── bubble.rs       # 独立气泡窗口, 流式 start/chunk/end 协议
+    │   ├── lib.rs          # Tauri Builder + gamepad_loop + chat_loop(独立线程) + bubble_follower(独立线程)
+    │   ├── gamepad.rs      # PetEvent 序列化, PetCommand→前端事件转换, chat_loop 解耦
+    │   ├── commands.rs     # 共享状态 + Tauri command（snap_preview/crossfade/play_dance 等）
+    │   ├── bubble.rs       # 独立气泡窗口, 流式 start/chunk/end 协议, bubble_follower 线程
     │   ├── voice.rs        # 语音输入窗口, 强制前台化, generation 防残留
-    │   ├── panel.rs        # 弹出面板（方向键导航, 动作执行）
-    │   ├── screenshot.rs   # 截图线程（BitBlt + 熄屏检测 + Vision API）
+    │   ├── panel.rs        # 弹出面板（方向键导航, 动作执行, 舞蹈按钮）
+    │   ├── settings.rs     # 设置窗口后端命令（读/写 app_settings + yml 重载）
+    │   ├── screenshot.rs   # 截图线程（BitBlt + 熄屏检测 + Vision API + 聊天/舞蹈暂停）
     │   ├── joystick.rs     # SDL2 手柄封装 + is_attached 热插拔检测
     │   ├── tts.rs          # Windows SAPI TTS 语音合成
-    │   └── tray.rs         # 系统托盘（右键菜单 + 重载配置）
+    │   └── tray.rs         # 系统托盘（右键菜单 + 设置入口 + 重载配置）
     └── frontend/           # 静态 HTML/JS/CSS + Vitest 前端测试
-        ├── pet.html        # 宠物窗口（128×128 透明, Canvas 像素精灵 + 粒子）
+        ├── pet.html        # 宠物窗口（128×128 透明, Canvas 像素精灵 + 粒子 + 舞蹈播放器）
         ├── bubble.html     # 气泡窗口（流式文本 + Markdown + 毛玻璃）
-        ├── panel.html      # 面板窗口（480×320 玻璃风, 方向键导航）
+        ├── panel.html      # 面板窗口（480×320 玻璃风, 方向键导航, 舞蹈触发按钮）
         ├── voice.html      # 语音输入条（280×40, textarea 接收输入法注入）
         ├── glow.html       # 吸附竖条（发光动画）
-        ├── css/            # pet.css / bubble.css / panel.css / glow.css
-        ├── js/             # app.js / bubble.js / panel.js / voice.js / glow.js / particles.js / sprite.js / pet.js
+        ├── settings.html   # 设置窗口（720×520, 分类 Tab, 实时预览）
+        ├── css/            # pet.css / bubble.css / panel.css / glow.css / settings.css
+        ├── js/             # app.js / bubble.js / panel.js / voice.js / glow.js / settings.js / particles.js / sprite.js / pet.js
         ├── __tests__/      # Vitest 单元测试（6 个测试文件）
         └── vitest.config.ts
 ```
 
 ## 配置说明
 
-所有配置编译时通过 `include_str!` 嵌入 exe，单文件即可运行。用户放 yml 到 exe 同目录可覆盖默认配置。
+所有配置编译时通过 `include_str!` 嵌入 exe，单文件即可运行。用户在 exe 同目录创建 `config/` 文件夹放入 yml 可覆盖默认配置。
 
-查找顺序：**exe 同目录 → CWD → 内置默认值**
+查找顺序：**exe 同目录/config/ → CWD/config/ → 内置默认值**
 
-### actions.yml — 按键动作
+### config/actions.yml — 按键动作
 
 支持四种动作类型：
 
@@ -202,16 +263,17 @@ actions:
 
 注意：当面板可见时，A / B / dpad 由面板独占，不再触发 actions.yml 绑定。
 
-### buttons.yml — 硬件映射
+### config/buttons.yml — 硬件映射
 
 按键编号到名称的映射，每种手柄不同。8BitDo Micro D-Input 已实测填好；换手柄需要校准。
 
-### prompts.yml — AI 提示词
+### config/prompts.yml — AI 提示词
 
-包含三段配置：
+包含四段配置：
 - `agent.preamble` — AI 人设（默认：8Bit 像素猫）
 - `vision.prompt` / `vision.prompt_multi` — 截图分析提示词（强调反幻觉）
-- `memory` — 记忆窗口大小和截断阈值
+- `memory` — 短期记忆窗口大小和截断阈值
+- `screen_summary` — 截图摘要注入条数（默认 10 条）
 
 ### 方向键（面板隐藏时）
 
@@ -236,9 +298,25 @@ actions:
 
 - max_tokens 统一 **256K**，可用 `ANTHROPIC_MAX_TOKENS` 环境变量覆盖
 - Agent 人设："8Bit" — 一只住在屏幕上的像素风小猫助手，活泼好奇，用中文交流
-- 内置 5 个 Tool：`launch_program` / `shell` / `read_file` / `get_time` / `recent_screenshots`
-- 按 Start 键触发对话，AI 回复关键词驱动桌宠状态切换（"哈哈"/"喵"→Happy, "错误"/"失败"→Confused）
-- 对话记忆滚动窗口（默认 20 条），持久化到 `~/.ai-pad/memory/`
+- 内置 **8+ 个 Tool**：
+
+| Tool | 功能 |
+|------|------|
+| `launch_program` | 启动外部程序（可选终端） |
+| `shell` | 执行 Shell 命令 |
+| `read_file` | 读取文件内容 |
+| `get_time` | 获取当前时间（支持格式/时区） |
+| `recent_screenshots` | 获取最近 N 条截图分析记录 |
+| `hotkey` | 发送键盘组合键（SendInput） |
+| `clipboard` | 读取剪贴板文本 |
+| `foreground` | 按标题聚焦窗口 |
+| `create_dance` | AI 编排舞蹈（mood → DanceDef YAML） |
+| `play_dance` | 播放已保存的舞蹈 |
+
+- 按 Start 键触发对话，AI 回复关键词驱动桌宠状态切换（"哈哈"/"喵"→Happy, "错误"/"失败"→Confused, 舞蹈相关→Dance）
+- 对话记忆**两层存储**：短期滚动窗口（默认 20 条）+ 长期关键词检索 + AI 聚合画像
+- 所有持久化到 `~/.ai-pad/memory/`
+- Agent 方法带 `#[instrument]` tracing span，完整记录工具调用链路
 
 ## 通信架构
 
@@ -253,11 +331,24 @@ emit "bubble-end"         ──────►  bubble.js 启动自动隐藏（
 emit "panel-nav"          ──────►  panel.js 方向键导航
 emit "panel-confirm"      ──────►  panel.js 确认
 emit "panel-close"        ──────►  panel.js 关闭
+emit "play-dance"          ──────►  app.js 舞蹈播放器（窗口移动+精灵动画）
 emit "voice-clear"        ──────►  voice.js 清空 textarea（voice.rs）
 emit "voice-flush"        ──────►  voice.js 同步 textarea（voice.rs）
                               ◄───  invoke cmd_consume_bubble_text
                               ◄───  invoke cmd_voice_update_text
+                              ◄───  invoke cmd_play_dance / cmd_settings_*
                               ◄───  emit "voice-ready" (mpsc 握手完成)
+```
+
+### 线程模型（解耦后）
+
+```
+主线程: Tauri event loop + window management
+  ├── gamepad_loop (OS thread)     — SDL2 轮询 80ms tick, 按键→PetCommand
+  ├── chat_loop (OS thread)       — 气泡输入消费 + 长期记忆聚合（独立于手柄）
+  ├── screenshot_loop (OS thread) — 定时截图 + Vision API（聊天/舞蹈时暂停）
+  ├── bubble_follower (OS thread) — 气泡跟随宠物窗口定位
+  └── dance_bridge (async task)   — mpsc channel 消费 play_dance 指令
 ```
 
 Voice 同步采用 **mpsc channel 握手**：后端发 flush → 前端 invoke 写入 SharedVoice → 前端发 ready → 后端 channel 收到继续（3s 超时兜底）。
@@ -273,14 +364,16 @@ AI_PAD_DEBUG=1 cargo run -p ai-pad-app -- --debug
 
 ## 技术栈
 
-- **Tauri 2.0** — WebView 多窗口（pet/bubble/panel/voice/glow），全局热键，托盘
+- **Tauri 2.0** — WebView 多窗口（pet/bubble/panel/voice/glow/settings），全局热键，托盘
 - **SDL2 (bundled)** — 手柄输入读取（DirectInput），热插拔检测
-- **rig-core** — AI Agent 抽象层（Anthropic SDK 兼容，streaming prompt）
-- **tokio + futures** — 异步运行时 + 流式处理
+- **rig-core** — AI Agent 抽象层（Anthropic SDK 兼容，streaming prompt + Tool 定义）
+- **tokio + futures** — 异步运行时 + 流式处理 + 多线程解耦
+- **tracing** — 结构化日志 + `#[instrument]` span 可观测性
 - **windows-sys** — SendInput 键鼠模拟 + BitBlt 截图 + SAPI TTS + AttachThreadInput
 - **serde + serde_yaml** — 配置加载（嵌入 + 外部覆盖）
+- **cargo-husky** — Git hooks：pre-commit fmt / pre-push clippy+test
 - **Vitest + jsdom** — 前端单元测试（6 个测试文件）
-- **Canvas + 粒子效果** — 像素精灵绘制，无打包工具
+- **Canvas + 粒子效果** — 像素精灵绘制 + 舞蹈窗口级动画，无打包工具
 
 ## License
 

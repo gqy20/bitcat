@@ -325,7 +325,7 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
         }
     };
 
-    let mut action_config = ActionConfig::load("actions.yml").ok();
+    let mut action_config = ActionConfig::load("config/actions.yml").ok();
     let ac = action_config.as_ref().map(|c| c.actions.len()).unwrap_or(0);
     info!(action_count = ac, "已加载 {ac} 个动作绑定");
 
@@ -397,7 +397,7 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                 let ws: tauri::State<'_, SharedWindowState> = app.state();
                 if ws.config_reload.load(Ordering::SeqCst) {
                     ws.config_reload.store(false, Ordering::SeqCst);
-                    action_config = ActionConfig::load("actions.yml").ok();
+                    action_config = ActionConfig::load("config/actions.yml").ok();
                     info!(
                         actions = action_config.as_ref().map(|c| c.actions.len()).unwrap_or(0),
                         "gamepad_loop 配置已刷新"

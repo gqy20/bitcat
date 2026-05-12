@@ -508,7 +508,7 @@ async fn generate_with_retry(agent: &PetAgent, prompt: &str) -> Result<DanceDef,
 |------|-----------|------|
 | **PermissionHook** | 自动生效 | 同一个 Agent 实例，hook 拦截危险工具调用。但设置了 `output_schema` 后 LLM 倾向于直接输出 JSON 而非调工具，实际触发概率低 |
 | **MemoryStore** | 需手动注入 | `prompt_typed` 不自动携带上下文记忆。需在构造 prompt 时手动拼接 `memory.build_context()` |
-| **prompts.yml (preamble)** | 自动生效 | Agent 的 preamble 作为系统提示词发送，AI 知道自己是 8Bit Cat |
+| **config/prompts.yml (preamble)** | 自动生效 | Agent 的 preamble 作为系统提示词发送，AI 知道自己是 8Bit Cat |
 | **create_dance Tool** | 降级/移除 | 方案 B 下不再需要通过 Tool Call 创建舞蹈。可保留给简单模式（只传 mood 走查表），或完全替换 |
 | **choreograph() 查表** | 降级为兜底 | 从主路径降级为 `prompt_typed` 失败时的 fallback |
 | **前端 dancePlayer** | 不变 | 无论 DanceDef 来源（AI 生成 or 查表），前端播放机制相同 |

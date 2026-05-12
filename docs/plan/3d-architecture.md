@@ -809,7 +809,7 @@ interface VoxelEvent extends DanceEvent {
 
 ### 5.3 Prompt 工程建议
 
-在 `prompts.yml` 的 `agent.preamble` 中追加 voxel 输出规范：
+在 `config/prompts.yml` 的 `agent.preamble` 中追加 voxel 输出规范：
 
 ```yaml
 agent:
@@ -968,7 +968,7 @@ Canvas 2D fallback 用画家算法 + 等距投影公式绘制伪 3D，保证功�
 | AI 输出的 voxel 数据质量不稳定 | 游戏内容不可玩 | 中 | Phase 3 先做模板库 + 参数化变形，AI 只调参数 |
 | InstancedMesh 不支持单 voxel 显隐（只能变透明色） | 动画受限 | 低 | 用颜色索引 0（透明材质）模拟隐藏；或改用普通 Mesh（性能仍足够） |
 | **部位接缝处露缝或重叠** | **变身/动画时视觉瑕疵** | **中** | **部位间保留 1px 重叠区；枢轴点精确对齐；Three.js 中用轻微 Z-offset 避免深度冲突** |
-| **变身动画时长/节奏不佳** | **体验不自然** | **中** | **timeline 参数可配置（写入 actions.yml 或 prompts.yml）；提供调试面板微调** |
+| **变身动画时长/节奏不佳** | **体验不自然** | **中** | **timeline 参数可配置（写入 config/actions.yml 或 config/prompts.yml）；提供调试面板微调** |
 | **6 个部位的帧数据量大** | **初始开发周期长** | **高** | **先只做 idle + walk 两个状态验证完整管线；其他状态后续补全；head 帧可复用现有 IDLE_BASE 数据** |
 
 ---

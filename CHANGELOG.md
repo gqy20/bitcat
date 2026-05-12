@@ -21,7 +21,7 @@
 - **截图观察**：独立后台线程定时截图，BitBlt 捕获 + dHash 去重 + 熄屏检测，Vision API 分析屏幕内容，屏幕活动摘要定时总结，支持多显示器拼接
 - **弹出面板**：Quicker 风格 3×2 玻璃面板，手柄方向键导航，快速启动程序/执行脚本
 - **系统托盘**：托盘图标 + 右键菜单（截图/折叠/置顶/重载配置/退出）
-- **配置系统**：`actions.yml`（按键→动作）、`buttons.yml`（按钮映射）、`prompts.yml`（AI 提示词），编译时嵌入 exe，用户放 yml 到 exe 同目录可覆盖，支持热重载
+- **配置系统**：`config/actions.yml`（按键→动作）、`config/buttons.yml`（按钮映射）、`config/prompts.yml`（AI 提示词），编译时嵌入 exe，用户在 exe 同目录/config/ 放 yml 可覆盖，支持热重载
 - **全局热键**：`Ctrl+Alt+Space` 弹出/隐藏面板
 - **日志系统**：tracing 双写（stderr 带颜色 + 文件按日滚动），`.env` 多级加载
 - **测试**：130+ 测试（insta 快照 / rstest 参数化 / wiremock mock / proptest 属性测试 / Vitest 前端）

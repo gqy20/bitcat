@@ -58,7 +58,7 @@ fn parse_hat_key(s: &str) -> Option<(i32, i32)> {
 
 impl ButtonConfig {
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        const DEFAULT_YML: &str = include_str!("../../buttons.yml");
+        const DEFAULT_YML: &str = include_str!("../../config/buttons.yml");
         let content = std::env::current_exe()
             .ok()
             .and_then(|exe| exe.parent().map(|dir| dir.join(path)))
@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn test_load_buttons_yml() {
-        let config = ButtonConfig::load("buttons.yml").unwrap();
+        let config = ButtonConfig::load("config/buttons.yml").unwrap();
         assert!(config.buttons.contains_key(&0));
         assert!(config.buttons.contains_key(&11));
         assert!(config.hat.contains_key(&(0, 1)));
@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn test_load_button_details() {
-        let config = ButtonConfig::load("buttons.yml").unwrap();
+        let config = ButtonConfig::load("config/buttons.yml").unwrap();
         let a = config.get(0).unwrap();
         assert_eq!(a.name, "A");
         assert!(a.aliases.contains(&"确认".to_string()));
@@ -143,7 +143,7 @@ mod tests {
 
     #[test]
     fn test_load_hat_directions() {
-        let config = ButtonConfig::load("buttons.yml").unwrap();
+        let config = ButtonConfig::load("config/buttons.yml").unwrap();
         let up = config.hat.get(&(0, 1)).unwrap();
         assert_eq!(up.arrow, "↑");
         assert_eq!(up.name, "上");
@@ -151,13 +151,13 @@ mod tests {
 
     #[test]
     fn test_load_dpad_hint() {
-        let config = ButtonConfig::load("buttons.yml").unwrap();
+        let config = ButtonConfig::load("config/buttons.yml").unwrap();
         assert!(!config.dpad_hint.is_empty());
     }
 
     #[test]
     fn test_find_by_name() {
-        let config = ButtonConfig::load("buttons.yml").unwrap();
+        let config = ButtonConfig::load("config/buttons.yml").unwrap();
         assert_eq!(config.find_by_name("A"), Some(0));
         assert_eq!(config.find_by_name("Start"), Some(11));
         assert_eq!(config.find_by_name("确认"), Some(0));
@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn test_load_missing_file_falls_back_to_default() {
         // 文件不存在时，load 会退化到内置 DEFAULT_YML（buttons.yml）。
-        let config = ButtonConfig::load("definitely_does_not_exist_123abc.yml")
+        let config = ButtonConfig::load("config/definitely_does_not_exist_123abc.yml")
             .expect("load 不应失败，应回退到内置默认");
         assert!(!config.buttons.is_empty(), "默认 buttons 不应为空");
     }

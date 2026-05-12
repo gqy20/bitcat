@@ -30,11 +30,13 @@ jobs:
 
       - name: Copy config files
         run: |
-          copy buttons.yml core\
-          copy actions.yml core\
-          copy prompts.yml core\
-          copy buttons.yml app\
-          copy actions.yml app\
+          mkdir core\config
+          copy config\buttons.yml core\config\
+          copy config\actions.yml core\config\
+          copy config\prompts.yml core\config\
+          mkdir app\config
+          copy config\buttons.yml app\config\
+          copy config\actions.yml app\config\
 
       - uses: taiki-e/install-action@v2
         with:

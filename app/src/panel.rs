@@ -1,11 +1,11 @@
 use tauri::{AppHandle, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 use tracing::{info, warn};
 
-/// 从 actions.yml 加载配置并执行面板动作（复用 core::action::launch_program）
+/// 从 config/actions.yml 加载配置并执行面板动作（复用 core::action::launch_program）
 #[tauri::command]
 pub async fn cmd_execute_panel_action(id: String) -> Result<(), String> {
-    let config = ai_pad_core::action::ActionConfig::load("actions.yml")
-        .map_err(|e| format!("加载 actions.yml 失败: {e}"))?;
+    let config = ai_pad_core::action::ActionConfig::load("config/actions.yml")
+        .map_err(|e| format!("加载 config/actions.yml 失败: {e}"))?;
     let action_def = config
         .actions
         .get(&id)
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn test_load_panel_actions_from_yml() {
-        let config = ai_pad_core::action::ActionConfig::load("actions.yml").unwrap();
+        let config = ai_pad_core::action::ActionConfig::load("config/actions.yml").unwrap();
         assert!(config.actions.contains_key("Start"));
         assert!(config.actions.contains_key("Y"));
         assert!(config.actions.contains_key("L1"));
@@ -178,14 +178,14 @@ mod tests {
 
     #[test]
     fn test_panel_actions_are_launch_type() {
-        let config = ai_pad_core::action::ActionConfig::load("actions.yml").unwrap();
+        let config = ai_pad_core::action::ActionConfig::load("config/actions.yml").unwrap();
         let action = config.actions.get("Start").unwrap();
         assert_eq!(action.action_type, "launch", "Start 应为 launch 类型");
     }
 
     #[test]
     fn test_unknown_action_errors() {
-        let config = ai_pad_core::action::ActionConfig::load("actions.yml").unwrap();
+        let config = ai_pad_core::action::ActionConfig::load("config/actions.yml").unwrap();
         assert!(config.actions.get("nonexistent").is_none());
     }
 }

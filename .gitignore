@@ -41,12 +41,9 @@ app/frontend/package-lock.json
 *.tmp
 *.bak
 
-# Test artifacts (make test copies yml to core/ and app/)
-core/actions.yml
-core/prompts.yml
-core/buttons.yml
-app/buttons.yml
-app/actions.yml
+# Test artifacts (make test copies config/ to core/config/ and app/config/)
+core/config/
+app/config/
 
 # insta snapshot pending reviews
 *.snap.new
