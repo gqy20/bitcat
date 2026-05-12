@@ -1,0 +1,166 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+
+jobs:
+  # ── 1. 先跑测试，确保 tag 能通过 ──
+  test:
+    name: Test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}-cargo-release-test
+
+      - name: Copy config files
+        run: |
+          copy buttons.yml core\
+          copy actions.yml core\
+          copy prompts.yml core\
+          copy buttons.yml app\
+          copy actions.yml app\
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - name: Run tests
+        run: cargo nextest run --profile ci --workspace 2>&1
+
+  # ── 2. 构建 Release ──
+  build:
+    name: Build Release
+    runs-on: windows-latest
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            arch: x64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}-cargo-release-${{ matrix.target }}
+
+      - name: Copy config files to target dirs
+        run: |
+          copy buttons.yml core\
+          copy actions.yml core\
+          copy prompts.yml core\
+          copy buttons.yml app\
+          copy actions.yml app\
+
+      # ── 构建（使用已有的 release profile：opt-level=z, LTO, strip, panic=abort）──
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Copy runtime configs
+        run: |
+          copy buttons.yml target/${{ matrix.target }}/release/
+          copy actions.yml target/${{ matrix.target }}/release/
+          copy prompts.yml target/${{ matrix.target }}/release/
+
+      # ── 收集产物信息 ──
+      - name: Gather artifact info
+        id: info
+        shell: pwsh
+        run: |
+          $exe = Get-Item "target/${{ matrix.target }}/release/ai-pad-app.exe"
+          $sizeMB = [math]::Round($exe.Length / 1MB, 1)
+          echo "exe_size=$($exe.Length)" >> $env:GITHUB_OUTPUT
+          echo "size_mb=$sizeMB" >> $env:GITHUB_OUTPUT
+          echo "version=${{ github.ref_name }}" >> $env:GITHUB_OUTPUT
+          Write-Host "EXE size: $sizeMB MB"
+
+      # ── 打包（ZIP）──
+      - name: Package (ZIP)
+        shell: pwsh
+        run: |
+          $dir = "ai-pad-${{ github.ref_name }}-windows-${{ matrix.arch }}"
+          New-Item -ItemType Directory -Path $dir | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/ai-pad-app.exe" "$dir/"
+          Copy-Item "buttons.yml" "$dir/"
+          Copy-Item "actions.yml" "$dir/"
+          Copy-Item "prompts.yml" "$dir/"
+          Compress-Archive -Path "$dir/*" -DestinationPath "$dir.zip"
+
+      # ── 上传 Artifact ──
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-pad-${{ github.ref_name }}-windows-${{ matrix.arch }}
+          path: ai-pad-${{ github.ref_name }}-windows-${{ matrix.arch }}.zip
+
+  # ── 3. 创建 GitHub Release ──
+  release:
+    name: Create GitHub Release
+    runs-on: windows-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # 获取上一个 tag 用于生成 changelog
+          $tag = "${{ github.ref_name }}"
+          $prevTag = git describe --tags --abbrev=0 HEAD^ 2>$null
+          if ($prevTag) {
+            $log = git log $prevTag..HEAD --pretty=format:"- %s (%h)" --no-merges
+            echo "changelog<<EOF" >> $env:GITHUB_OUTPUT
+            echo "## Changes" >> $env:GITHUB_OUTPUT
+            echo "" >> $env:GITHUB_OUTPUT
+            echo $log >> $env:GITHUB_OUTPUT
+            echo "EOF" >> $env:GITHUB_OUTPUT
+          } else {
+            echo "changelog=Initial release" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "8Bit Cat ${{ github.ref_name }}"
+          body: |
+            ## 8Bit Cat ${{ github.ref_name }}
+
+            AI 桌面宠物 — Rust + Tauri 2.0 + SDL2 手柄驱动
+
+            ${{ steps.changelog.outputs.changelog }}
+
+            ### 安装
+            解压后将 `ai-pad-app.exe`、`buttons.yml`、`actions.yml`、`prompts.yml` 放在同一目录运行。
+
+            > 需要 [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)（Win10/11 通常已预装）
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+          files: artifacts/**/*.zip
