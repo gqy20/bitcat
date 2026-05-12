@@ -465,7 +465,17 @@
       showInput();
     });
 
-    startPolling();
+    // 初始化时消费 pending_text：如果有内容（截图等非流式写入），
+    // 直接渲染 + 启动隐藏定时器，不走轮询（避免稳定检测误判 showInput）
+    pollPending().then(function(txt) {
+      if (txt && txt.length > 0) {
+        setText(txt);
+        ensureVisible();
+        startHideTimer();
+      } else {
+        startPolling();
+      }
+    });
   }
 
   document.addEventListener('DOMContentLoaded', init);
