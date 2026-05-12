@@ -124,6 +124,82 @@ pub fn take_pending_chat(state: &State<'_, SharedPendingChat>) -> Option<String>
     state.pending.lock().ok().and_then(|mut g| g.take())
 }
 
+// ========================================================================
+// 共享业务状态：AI 对话 / 记忆 / 用户画像
+// 从 gamepad_loop 解耦，使无手柄时对话链仍可运行
+// ========================================================================
+
+pub struct SharedChatCore {
+    pub memory: Mutex<MemoryStore>,
+    pub long_term: Mutex<LongTermMemory>,
+    pub profile: Mutex<ProfileStore>,
+    pub last_aggregation: Mutex<std::time::Instant>,
+}
+
+impl SharedChatCore {
+    pub fn new() -> Self {
+        let memory = MemoryStore::load();
+        let long_term = LongTermMemory::load();
+        let profile = ProfileStore::load();
+        info!(
+            entries = memory.entries.len(),
+            "[chat-core] 对话记忆系统已初始化"
+        );
+        info!(
+            long_term = long_term.entries.len(),
+            profile = !profile.profile_text.is_empty(),
+            "[chat-core] 长期记忆系统已初始化"
+        );
+        Self {
+            memory: Mutex::new(memory),
+            long_term: Mutex::new(long_term),
+            profile: Mutex::new(profile),
+            last_aggregation: Mutex::new(std::time::Instant::now()),
+        }
+    }
+}
+
+impl Default for SharedChatCore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// 延迟初始化的 AI Agent。
+/// 任何线程首次调用 `get_or_init` 时初始化；失败记录 None，后续直接返回 None。
+pub struct SharedAgent {
+    inner: std::sync::OnceLock<Option<PetAgent>>,
+}
+
+impl SharedAgent {
+    pub fn new() -> Self {
+        Self {
+            inner: std::sync::OnceLock::new(),
+        }
+    }
+
+    pub fn get_or_init(&self) -> Option<&PetAgent> {
+        self.inner
+            .get_or_init(|| match PetAgent::new() {
+                Ok(a) => {
+                    info!("AI Agent 初始化成功 (8Bit Cat)");
+                    Some(a)
+                }
+                Err(e) => {
+                    error!(error = %e, "AI Agent 初始化失败，后续对话将不可用");
+                    None
+                }
+            })
+            .as_ref()
+    }
+}
+
+impl Default for SharedAgent {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[tauri::command]
 pub async fn cmd_pet_log(msg: String) -> Result<(), String> {
     info!("[pet-diag] {msg}");
@@ -232,46 +308,11 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
         }
     };
 
-    let agent: std::sync::OnceLock<std::option::Option<PetAgent>> = std::sync::OnceLock::new();
-
-    fn get_agent(agent: &std::sync::OnceLock<std::option::Option<PetAgent>>) -> Option<&PetAgent> {
-        agent
-            .get_or_init(|| match PetAgent::new() {
-                Ok(a) => {
-                    info!("AI Agent 初始化成功 (8Bit Cat)");
-                    Some(a)
-                }
-                Err(e) => {
-                    error!(error = %e, "AI Agent 初始化失败，后续对话将不可用");
-                    None
-                }
-            })
-            .as_ref()
-    }
-
     let mut action_config = ActionConfig::load("actions.yml").ok();
     let ac = action_config.as_ref().map(|c| c.actions.len()).unwrap_or(0);
     info!(action_count = ac, "已加载 {ac} 个动作绑定");
 
-    let mut memory = MemoryStore::load();
     let memory_config = ai_pad_core::prompts::PromptsConfig::load().memory;
-    info!(entries = memory.entries.len(), "对话记忆系统已初始化");
-
-    let mut long_term = LongTermMemory::load();
-    let mut profile = ProfileStore::load();
-    let mut last_aggregation = std::time::Instant::now();
-    let prompts_cfg = ai_pad_core::prompts::PromptsConfig::load();
-    info!(
-        long_term = long_term.entries.len(),
-        profile = !profile.profile_text.is_empty(),
-        "长期记忆系统已初始化"
-    );
-
-    let summary_store = ai_pad_core::screen_summary::ScreenSummaryStore::load();
-    info!(
-        entries = summary_store.entries.len(),
-        "屏幕活动摘要系统已初始化"
-    );
 
     let mut alt_tab = HeldModifier::new(0x12);
     let mut ctrl_tab = HeldModifier::new(0x11);
@@ -430,19 +471,13 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                             let _ = app.emit("pet-event", evt);
                         }
 
-                        if let (Some(msg), Some(ag)) = (&agent_msg, get_agent(&agent)) {
-                            info!(msg = %msg, "→ AI: {msg}");
-                            run_ai_chat(
-                                &rt,
-                                ag,
-                                app,
-                                msg,
-                                "",
-                                &mut memory,
-                                &memory_config,
-                                &mut long_term,
-                                &mut profile,
-                            );
+                        if let Some(msg) = &agent_msg {
+                            let agent_state: State<SharedAgent> = app.state();
+                            if let Some(ag) = agent_state.get_or_init() {
+                                let core: State<SharedChatCore> = app.state();
+                                info!(msg = %msg, "→ AI: {msg}");
+                                run_ai_chat(&rt, ag, app, msg, "", &core, &memory_config);
+                            }
                         }
 
                         if let Some(ref config) = action_config {
@@ -500,18 +535,10 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                             warn!("[voice] 虚拟输入框为空 (识别可能失败或焦点被抢走)");
                         } else {
                             info!(text = %text, len = text.chars().count(), "[voice] 识别全文: {text}");
-                            if let Some(ag) = get_agent(&agent) {
-                                run_ai_chat(
-                                    &rt,
-                                    ag,
-                                    app,
-                                    &text,
-                                    "[voice]",
-                                    &mut memory,
-                                    &memory_config,
-                                    &mut long_term,
-                                    &mut profile,
-                                );
+                            let agent_state: State<SharedAgent> = app.state();
+                            if let Some(ag) = agent_state.get_or_init() {
+                                let core: State<SharedChatCore> = app.state();
+                                run_ai_chat(&rt, ag, app, &text, "[voice]", &core, &memory_config);
                             } else {
                                 warn!("[voice] AI Agent 未初始化");
                             }
@@ -523,26 +550,8 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
 
             prev_buttons = buttons;
 
-            // Bubble 聊天输入
-            if let Some(chat_msg) = {
-                let pc: State<SharedPendingChat> = app.state();
-                take_pending_chat(&pc)
-            } {
-                if let Some(ag) = get_agent(&agent) {
-                    info!(msg = %chat_msg, "[chat] → AI 对话 (bubble 输入)");
-                    run_ai_chat(
-                        &rt,
-                        ag,
-                        app,
-                        &chat_msg,
-                        "[chat]",
-                        &mut memory,
-                        &memory_config,
-                        &mut long_term,
-                        &mut profile,
-                    );
-                }
-            }
+            // 注意：Bubble 聊天输入消费 + 长期记忆聚合 已迁移到 chat_loop
+            // 这里只处理手柄原生事件
 
             // 方向键
             let hat = gamepad.read_hat(0);
@@ -570,75 +579,224 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
             }
             prev_hat = hat;
 
-            // 定时聚合：每 30 分钟 或 累积 ≥20 条未聚合记录时触发
-            {
-                let agg_interval = std::time::Duration::from_secs(
-                    (prompts_cfg.memory_v2.aggregation_interval_min as u64) * 60,
-                );
-                let unagg_count = long_term.unaggregated_entries().len();
-                let should_aggregate = unagg_count >= 20
-                    || (!profile.profile_text.is_empty()
-                        && last_aggregation.elapsed() >= agg_interval);
-
-                if should_aggregate && unagg_count > 0 {
-                    let ai_cfg = ai_pad_core::ai_config::AiConfig::load();
-                    match ai_cfg {
-                        Ok(cfg) => {
-                            let unagg = long_term.unaggregated_entries();
-                            info!(count = unagg_count, "开始聚合长期记忆 → 用户画像");
-                            match rt.block_on(ai_pad_core::memory::aggregate_profile(
-                                &unagg,
-                                &profile.profile_text,
-                                &cfg,
-                            )) {
-                                Ok(new_profile) => {
-                                    profile.update(&new_profile);
-                                    long_term.mark_all_aggregated();
-                                    let _ = profile.save();
-                                    let _ = long_term.save();
-                                    last_aggregation = std::time::Instant::now();
-                                    info!(
-                                        profile_len = profile.profile_text.chars().count(),
-                                        "用户画像已更新"
-                                    );
-                                }
-                                Err(e) => warn!(error = %e, "记忆聚合失败，下次重试"),
-                            }
-                        }
-                        Err(e) => warn!(error = %e, "AI 配置加载失败，跳过聚合"),
-                    }
-                }
-            }
-
             std::thread::sleep(std::time::Duration::from_millis(80));
         }
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
 }
 
-/// 统一的 AI 流式对话执行
+/// 独立业务循环：消费 bubble 输入 + 定时聚合长期记忆
+///
+/// 与 gamepad_loop **平级独立运行**。没有手柄、手柄断开、手柄未识别时，
+/// 本循环依然按常规节奏处理前端 `cmd_submit_chat` 提交的消息以及记忆聚合。
+#[instrument(skip(app))]
+pub fn chat_loop(app: &tauri::AppHandle) {
+    info!("[chat_loop] 已启动（独立于手柄）");
+
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(r) => r,
+        Err(e) => {
+            error!(error = %e, "[chat_loop] Tokio 运行时创建失败");
+            return;
+        }
+    };
+
+    let memory_config = ai_pad_core::prompts::PromptsConfig::load().memory;
+    let prompts_cfg = ai_pad_core::prompts::PromptsConfig::load();
+
+    loop {
+        // --- 1. 消费 bubble 聊天输入 ---
+        let chat_msg = {
+            let pc: State<SharedPendingChat> = app.state();
+            take_pending_chat(&pc)
+        };
+        if let Some(msg) = chat_msg {
+            let agent_state: State<SharedAgent> = app.state();
+            if let Some(ag) = agent_state.get_or_init() {
+                let core: State<SharedChatCore> = app.state();
+                info!(msg = %msg, "[chat] → AI 对话 (bubble 输入)");
+                run_ai_chat(&rt, ag, app, &msg, "[chat]", &core, &memory_config);
+            } else {
+                warn!(msg = %msg, "[chat] AI Agent 未就绪，消息被丢弃");
+            }
+        }
+
+        // --- 2. 定时聚合长期记忆 → 用户画像 ---
+        {
+            let core: State<SharedChatCore> = app.state();
+            let agg_interval = std::time::Duration::from_secs(
+                (prompts_cfg.memory_v2.aggregation_interval_min as u64) * 60,
+            );
+            let snapshot = {
+                let lt = match core.long_term.lock() {
+                    Ok(g) => g,
+                    Err(_) => {
+                        std::thread::sleep(std::time::Duration::from_millis(80));
+                        continue;
+                    }
+                };
+                let pf = match core.profile.lock() {
+                    Ok(g) => g,
+                    Err(_) => {
+                        std::thread::sleep(std::time::Duration::from_millis(80));
+                        continue;
+                    }
+                };
+                let la = match core.last_aggregation.lock() {
+                    Ok(g) => g,
+                    Err(_) => {
+                        std::thread::sleep(std::time::Duration::from_millis(80));
+                        continue;
+                    }
+                };
+                (
+                    lt.unaggregated_entries().len(),
+                    pf.profile_text.is_empty(),
+                    la.elapsed(),
+                )
+            };
+            let (unagg_count, profile_empty, elapsed) = snapshot;
+            let should_aggregate = unagg_count >= 20 || (!profile_empty && elapsed >= agg_interval);
+
+            if should_aggregate && unagg_count > 0 {
+                match ai_pad_core::ai_config::AiConfig::load() {
+                    Ok(cfg) => {
+                        // 快照条目和现有画像（持锁克隆一次，聚合 IO 不持锁）
+                        let (entries_cloned, cur_profile) = {
+                            let lt = core.long_term.lock().unwrap();
+                            let pf = core.profile.lock().unwrap();
+                            let entries: Vec<ai_pad_core::memory::LongTermEntry> =
+                                lt.unaggregated_entries().into_iter().cloned().collect();
+                            (entries, pf.profile_text.clone())
+                        };
+                        info!(
+                            count = unagg_count,
+                            "[chat_loop] 开始聚合长期记忆 → 用户画像"
+                        );
+                        let entry_refs: Vec<&ai_pad_core::memory::LongTermEntry> =
+                            entries_cloned.iter().collect();
+                        let agg_result = rt.block_on(ai_pad_core::memory::aggregate_profile(
+                            &entry_refs,
+                            &cur_profile,
+                            &cfg,
+                        ));
+                        match agg_result {
+                            Ok(new_profile) => {
+                                if let Ok(mut pf) = core.profile.lock() {
+                                    pf.update(&new_profile);
+                                    let _ = pf.save();
+                                }
+                                if let Ok(mut lt) = core.long_term.lock() {
+                                    lt.mark_all_aggregated();
+                                    let _ = lt.save();
+                                }
+                                if let Ok(mut la) = core.last_aggregation.lock() {
+                                    *la = std::time::Instant::now();
+                                }
+                                let new_len = core
+                                    .profile
+                                    .lock()
+                                    .map(|p| p.profile_text.chars().count())
+                                    .unwrap_or(0);
+                                info!(profile_len = new_len, "[chat_loop] 用户画像已更新");
+                            }
+                            Err(e) => {
+                                warn!(error = %e, "[chat_loop] 记忆聚合失败，下次重试")
+                            }
+                        }
+                    }
+                    Err(e) => warn!(error = %e, "[chat_loop] AI 配置加载失败，跳过聚合"),
+                }
+            }
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(80));
+    }
+}
+
+/// RAII guard：进入 AI 对话时置 chat_active=true，drop 时自动还原 false。
+/// 保证即使 panic / early return / early continue，截屏线程也能在下一轮恢复。
+struct ChatActiveGuard {
+    app: tauri::AppHandle,
+    log_prefix: String,
+}
+
+impl ChatActiveGuard {
+    fn new(app: &tauri::AppHandle, log_prefix: &str) -> Self {
+        let bubble_state: tauri::State<'_, bubble::SharedBubble> = app.state();
+        bubble_state.set_chat_active(true);
+        info!("{log_prefix}[chat_guard] chat_active=true (截屏已锁定)");
+        Self {
+            app: app.clone(),
+            log_prefix: log_prefix.to_string(),
+        }
+    }
+}
+
+impl Drop for ChatActiveGuard {
+    fn drop(&mut self) {
+        let bubble_state: tauri::State<'_, bubble::SharedBubble> = self.app.state();
+        bubble_state.set_chat_active(false);
+        info!(
+            "{prefix}[chat_guard] chat_active=false (截屏已解锁)",
+            prefix = self.log_prefix
+        );
+    }
+}
+
+/// 统一的 AI 流式对话执行（线程安全版）
+///
+/// 锁策略：
+/// - 读取上下文时各持短锁，读完立即释放
+/// - 流式网络 IO 期间 **完全不持锁**，不阻塞其他线程
+/// - 写入记忆时再次短锁
+///
+/// 截屏互斥：函数入口 set chat_active=true，RAII guard 保证 panic/return 都会 false。
 pub fn run_ai_chat(
     rt: &tokio::runtime::Runtime,
     agent: &PetAgent,
     app: &tauri::AppHandle,
     msg: &str,
     log_prefix: &str,
-    memory: &mut MemoryStore,
+    core: &SharedChatCore,
     memory_config: &ai_pad_core::memory::MemoryConfig,
-    long_term: &mut LongTermMemory,
-    profile: &mut ProfileStore,
 ) {
     let tag = if log_prefix.is_empty() { "" } else { " " };
     info!(model = %agent.config.model, msg = %msg, "{log_prefix}→ AI 对话开始");
+
+    // RAII 锁：整个 chat 期间阻止截屏线程进入 Vision 分析；panic 或 early return 时自动释放
+    let _chat_guard = ChatActiveGuard::new(app, log_prefix);
+
     if let Err(e) = bubble::start_streaming_bubble(app) {
         warn!(error = %e, "{log_prefix}气泡启动错误");
         return;
     }
 
-    // 构建上下文：短期记忆 + 用户画像 + 相关长期记忆 + 截图观察 + 屏幕摘要
-    let ctx = memory.build_context(memory_config);
-    let profile_ctx = profile.build_context();
-    let long_term_ctx = long_term.retrieve(msg, 800);
+    // ---- 构建上下文：各字段单独短锁 ----
+    let ctx = match core.memory.lock() {
+        Ok(g) => g.build_context(memory_config),
+        Err(e) => {
+            warn!(error = %e, "memory 锁中毒，跳过上下文");
+            return;
+        }
+    };
+    let profile_ctx = match core.profile.lock() {
+        Ok(g) => g.build_context(),
+        Err(e) => {
+            warn!(error = %e, "profile 锁中毒，跳过上下文");
+            return;
+        }
+    };
+    let long_term_ctx = match core.long_term.lock() {
+        Ok(g) => g.retrieve(msg, 800),
+        Err(e) => {
+            warn!(error = %e, "long_term 锁中毒，跳过上下文");
+            return;
+        }
+    };
     let summary_store = ai_pad_core::screen_summary::ScreenSummaryStore::load();
     let summary_config = ai_pad_core::prompts::PromptsConfig::load().screen_summary;
     let summary_ctx = summary_store.build_context(&summary_config);
@@ -660,6 +818,7 @@ pub fn run_ai_chat(
         format!("{}\n用户说: {msg}", context_parts.join("\n"))
     };
 
+    // ---- 流式 IO：不持锁 ----
     let app_for_chunks = app.clone();
     let prefix = log_prefix.to_string();
     let prefix_for_log = prefix.clone();
@@ -668,19 +827,26 @@ pub fn run_ai_chat(
         let _ = bubble::append_bubble_chunk(&app_for_chunks, chunk);
     }));
     let _ = bubble::finalize_bubble(app);
+
     match stream_result {
         Ok(reply) => {
-            // 短期记忆（现有逻辑）
-            memory.record_conversation(msg, &reply, memory_config);
-            if let Err(e) = memory.save() {
-                warn!(error = %e, "保存对话记忆失败");
+            // 短期记忆：短锁写入
+            if let Ok(mut memory) = core.memory.lock() {
+                memory.record_conversation(msg, &reply, memory_config);
+                if let Err(e) = memory.save() {
+                    warn!(error = %e, "保存对话记忆失败");
+                }
+            } else {
+                warn!("memory 锁中毒，跳过短期记忆写入");
             }
 
-            // 长期记忆：判断是否值得存，存入原始记录
+            // 长期记忆：视内容决定是否保留
             if should_store(msg, &reply) {
-                long_term.record(msg, &reply, 200);
-                if let Err(e) = long_term.save() {
-                    warn!(error = %e, "保存长期记忆失败");
+                if let Ok(mut long_term) = core.long_term.lock() {
+                    long_term.record(msg, &reply, 200);
+                    if let Err(e) = long_term.save() {
+                        warn!(error = %e, "保存长期记忆失败");
+                    }
                 }
             }
 

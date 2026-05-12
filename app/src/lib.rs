@@ -10,7 +10,7 @@ pub mod tray;
 pub mod tts;
 pub mod voice;
 
-use gamepad::SharedPendingChat;
+use gamepad::{SharedAgent, SharedChatCore, SharedPendingChat};
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tracing::{debug, info, warn};
@@ -25,6 +25,8 @@ pub fn run() {
         .manage(voice::SharedVoice::new())
         .manage(screenshot::SharedScreenshotState::default())
         .manage(SharedPendingChat::new())
+        .manage(SharedChatCore::new())
+        .manage(SharedAgent::new())
         .invoke_handler(tauri::generate_handler![
             commands::cmd_set_state,
             commands::cmd_walk_to,
@@ -154,6 +156,12 @@ pub fn run() {
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 gamepad::gamepad_loop(&handle);
+            });
+
+            // 业务循环（独立于手柄）：消费 bubble 聊天输入 + 定时聚合长期记忆
+            let chat_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                gamepad::chat_loop(&chat_handle);
             });
 
             // 气泡跟随独立线程：脱离手柄循环，确保无手柄时也能实时跟随
