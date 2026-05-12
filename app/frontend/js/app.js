@@ -371,15 +371,40 @@
           dancePlayer.index = 0;
           console.log('[dance] 循环，从头开始');
         } else {
-          // 舞蹈结束，交还控制权给状态机
           console.log('[dance] 舞蹈播放完毕');
           dancePlayer = null;
           return;
         }
       }
     }
+
     var currentAction = dancePlayer.steps[dancePlayer.index].action;
-    SpriteRenderer.renderSprite(ctx, currentAction, 0, pet.facingRight, 8);
+    var progress = dancePlayer.time / step.duration_ms;  // 0..1 当前步骤内进度
+    var opts = {};
+
+    // 每个动作的渲染层动画
+    switch (currentAction) {
+      case 'jump':
+        // 抛物线上移：0→顶→0，最高点在 progress=0.5
+        var jumpH = -Math.sin(progress * Math.PI) * 20;
+        opts.offsetY = jumpH;
+        break;
+      case 'spin':
+        // 快速翻转 facingRight（每 80ms 切一次）
+        var flipCount = Math.floor(dancePlayer.time / 80);
+        pet.facingRight = flipCount % 2 === 0;
+        break;
+      case 'wave':
+        // 轻微上下浮动模拟挥手节奏
+        opts.offsetY = -Math.abs(Math.sin(progress * Math.PI * 4)) * 4;
+        break;
+      case 'shake':
+        // 高频左右抖动
+        opts.offsetX = Math.sin(dancePlayer.time * 0.04) * 5;
+        break;
+    }
+
+    SpriteRenderer.renderSprite(ctx, currentAction, 0, pet.facingRight, 8, opts);
   }
 
   function syncStateClass(state) {

@@ -126,22 +126,58 @@ const CONFUSED_RIGHT = cloneSprite(IDLE_BASE, [
 
 // ---- 舞蹈动作帧（基于 IDLE_BASE 的变体）----
 
-// jump: 整体上移（底部脚位清空，模拟腾空）
+// jump: 腾空 — 脚部全清 + 笑眼 + 大嘴（渲染层再加 y 上移）
 const JUMP_SPRITE = cloneSprite(IDLE_BASE, [
-  [13, 4, 0], [13, 5, 0], [13, 8, 0], [13, 9, 0],
-  [14, 4, 0], [14, 5, 0], [14, 8, 0], [14, 9, 0],
+  // 清空脚部 rows 12-14
+  [12, 3, 0], [12, 4, 0], [12, 5, 0], [12, 6, 0], [12, 7, 0], [12, 8, 0], [12, 9, 0], [12, 10, 0], [12, 11, 0], [12, 12, 0],
+  [13, 4, 0], [13, 5, 0], [13, 6, 0], [13, 7, 0], [13, 8, 0], [13, 9, 0],
+  [14, 5, 0], [14, 6, 0], [14, 7, 0], [14, 8, 0], [14, 9, 0],
+  // 笑眼弯月
+  [5, 3, 1], [5, 4, 1], [5, 10, 1], [5, 11, 1],
+  [6, 3, 2], [6, 4, 2], [6, 10, 2], [6, 11, 2],
+  // 大嘴笑
+  [8, 6, 1], [8, 7, 5], [8, 8, 5], [8, 9, 5], [8, 10, 1],
+  [9, 7, 5], [9, 8, 5], [9, 9, 5],
 ]);
 
-// spin: 与 idle 相同，渲染层通过快速翻转 facingRight 实现旋转效果
-const SPIN_SPRITE = IDLE_BASE;
+// spin: 高速旋转 — 激动大眼 + 大张嘴 + 角落速度线（渲染层快速翻转 facingRight）
+const SPIN_SPRITE = cloneSprite(IDLE_BASE, [
+  // 角落速度线像素
+  [1, 1, 1], [1, 14, 1],
+  [2, 0, 1], [2, 15, 1],
+  // 眼睛放大一圈（激动感）
+  [4, 2, 1], [4, 3, 2], [4, 4, 3], [4, 5, 2], [4, 6, 1],
+  [4, 10, 1], [4, 11, 2], [4, 12, 3], [4, 13, 2], [4, 14, 1],
+  // 大张嘴
+  [8, 6, 1], [8, 7, 0], [8, 8, 0], [8, 9, 0], [8, 10, 1],
+  [9, 7, 0], [9, 8, 5], [9, 9, 0],
+]);
 
-// wave: 左前爪抬起（左上角像素清空）
+// wave: 挥手 — 左侧大面积清空模拟抬爪 + 眯眼微笑
 const WAVE_SPRITE = cloneSprite(IDLE_BASE, [
-  [3, 0, 0], [3, 1, 0], [3, 2, 1], [4, 0, 0], [4, 1, 1],
+  // 左侧抬爪：清空左耳+左肩 (cols 0-3, rows 0-5)
+  [0, 2, 0], [0, 3, 0],
+  [1, 1, 0], [1, 2, 0], [1, 3, 0], [1, 4, 0],
+  [2, 1, 0], [2, 2, 0], [2, 3, 0],
+  [3, 0, 0], [3, 1, 0], [3, 2, 0], [3, 3, 0],
+  [4, 0, 0], [4, 1, 0], [4, 2, 0],
+  [5, 0, 0], [5, 1, 0],
+  // 左眼眯成笑眼
+  [5, 3, 1], [5, 4, 1],
+  [6, 3, 2], [6, 4, 2],
+  // 微笑嘴
+  [8, 7, 5], [8, 8, 5], [8, 9, 5],
 ]);
 
-// shake: 与 idle 相同，渲染层通过 x 偏移实现晃动
-const SHAKE_SPRITE = IDLE_BASE;
+// shake: 晃动 — X 眼 + 波浪嘴 + 加深腮红
+const SHAKE_SPRITE = cloneSprite(IDLE_BASE, [
+  // X 眼
+  [5, 3, 4], [5, 4, 0], [6, 3, 0], [6, 4, 4],
+  [5, 10, 4], [5, 11, 0], [6, 10, 0], [6, 11, 4],
+  // 波浪嘴 ~ 形
+  [8, 5, 5], [8, 6, 0], [8, 7, 5], [8, 8, 5], [8, 9, 0], [8, 10, 5],
+  [9, 6, 5], [9, 7, 0], [9, 8, 5], [9, 9, 5],
+]);
 
 // 多帧精灵：每个状态对应一个帧数组（每帧仍是 256 像素）
 const SPRITES = {
@@ -165,9 +201,13 @@ function getSprite(state, frame) {
   return frames[f];
 }
 
-// 渲染指定帧到 Canvas，可左右翻转
-function renderSprite(ctx, state, frame, facingRight, scale) {
+// 渲染指定帧到 Canvas，可左右翻转 + 像素偏移
+// opts: { offsetX, offsetY } — 用于舞蹈动画（jump 上移、shake 抖动）
+function renderSprite(ctx, state, frame, facingRight, scale, opts) {
   scale = scale || 8;
+  opts = opts || {};
+  var ox = opts.offsetX || 0;
+  var oy = opts.offsetY || 0;
   const data = getSprite(state, frame);
   const totalW = SPRITE_W * scale;
   const totalH = SPRITE_H * scale;
@@ -186,7 +226,7 @@ function renderSprite(ctx, state, frame, facingRight, scale) {
       const color = PALETTE[data[idx]];
       if (color) {
         ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},${color[3] / 255})`;
-        ctx.fillRect(col * scale, row * scale, scale, scale);
+        ctx.fillRect(col * scale + ox, row * scale + oy, scale, scale);
       }
     }
   }
