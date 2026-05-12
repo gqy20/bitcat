@@ -70,26 +70,34 @@ pub fn launch_program(
     default_terminal: &str,
 ) -> Result<(), String> {
     if terminal {
-        let term = if terminal && default_terminal.is_empty() {
+        let term = if default_terminal.is_empty() {
             "powershell"
         } else {
             default_terminal
         };
         let is_shell = matches!(program, "powershell" | "pwsh" | "cmd");
-        let ps_cmd = if is_shell && args.is_empty() {
-            format!("Start-Process {program} -WindowStyle Maximized")
+        // 用数组式参数传递，避免命令注入
+        let (ps_args, cmd) = if is_shell && args.is_empty() {
+            let shell_cmd = format!("Start-Process {program} -WindowStyle Maximized");
+            (
+                vec!["-NoExit".to_string(), "-Command".to_string(), shell_cmd],
+                None,
+            )
         } else {
-            let cmd = if args.is_empty() {
-                program.to_string()
-            } else {
-                format!("{program} {args}")
-            };
-            format!(
-                "Start-Process {term} -ArgumentList '-NoExit','-Command','{cmd}' -WindowStyle Maximized"
+            let cmd_str = if args.is_empty() { program.to_string() } else { format!("{program} {args}") };
+            (
+                vec!["-NoExit".to_string(), "-Command".to_string()],
+                Some(cmd_str),
             )
         };
-        std::process::Command::new("powershell")
-            .args(["-Command", &ps_cmd])
+
+        let mut cmd_builder = std::process::Command::new(term);
+        cmd_builder.args(&ps_args);
+        if let Some(c) = &cmd {
+            cmd_builder.arg(c);
+        }
+        cmd_builder.arg("-WindowStyle").arg("Maximized");
+        cmd_builder
             .spawn()
             .map(|_| ())
             .map_err(|e| format!("启动失败: {e}"))

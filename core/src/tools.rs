@@ -1,6 +1,32 @@
 use crate::action::launch_program;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
+use thiserror::Error;
 use tracing::debug;
+
+#[derive(Debug, Error)]
+pub enum ToolError {
+    #[error("执行失败: {0}")]
+    Execution(String),
+    #[error("权限不足: {0}")]
+    Permission(String),
+    #[error("超时")]
+    Timeout,
+}
+
+/// 按字符数截断字符串（中文/emoji 安全）
+pub fn truncate_chars(s: &str, max: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count <= max {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(max).collect();
+        format!("{truncated}...(截断，共 {char_count} 字符)")
+    }
+}
+
+const SHELL_TIMEOUT_SECS: u64 = 30;
+const MAX_OUTPUT_CHARS: usize = 8000;
 
 // ---- Tool 参数定义 ----
 
@@ -91,32 +117,31 @@ pub fn execute_launch(args: &LaunchArgs) -> ToolResult {
     }
 }
 
-/// 执行 shell 命令
-pub fn execute_shell(args: &ShellArgs) -> ToolResult {
+/// 执行 shell 命令（async，带超时和输出截断）
+pub async fn execute_shell(args: &ShellArgs) -> Result<ToolResult, ToolError> {
     debug!(command = %args.command, "AI 执行 shell 命令");
-    let output = std::process::Command::new("powershell")
-        .args(["-Command", &args.command])
-        .output();
+    let result = tokio::time::timeout(
+        Duration::from_secs(SHELL_TIMEOUT_SECS),
+        tokio::process::Command::new("powershell")
+            .args(["-Command", &args.command])
+            .output(),
+    )
+    .await;
 
-    match output {
-        Ok(o) => {
+    match result {
+        Ok(Ok(o)) => {
             let stdout = String::from_utf8_lossy(&o.stdout).trim().to_string();
             let stderr = String::from_utf8_lossy(&o.stderr).trim().to_string();
             if o.status.success() {
-                ToolResult::ok(if stdout.is_empty() {
-                    "(无输出)".into()
-                } else {
-                    stdout
-                })
+                let output = if stdout.is_empty() { "(无输出)".into() } else { truncate_chars(&stdout, MAX_OUTPUT_CHARS) };
+                Ok(ToolResult::ok(output))
             } else {
-                ToolResult::err(if stderr.is_empty() {
-                    format!("命令失败 (exit code {:?})", o.status.code())
-                } else {
-                    stderr
-                })
+                let err_msg = if stderr.is_empty() { format!("命令失败 (exit code {:?})", o.status.code()) } else { truncate_chars(&stderr, MAX_OUTPUT_CHARS) };
+                Ok(ToolResult::err(err_msg))
             }
         }
-        Err(e) => ToolResult::err(format!("执行错误: {e}")),
+        Ok(Err(e)) => Ok(ToolResult::err(format!("执行错误: {e}"))),
+        Err(_) => Err(ToolError::Timeout),
     }
 }
 
@@ -125,10 +150,8 @@ pub fn execute_read_file(args: &ReadFileArgs) -> ToolResult {
     match std::fs::read_to_string(&args.path) {
         Ok(content) => {
             // 截断过长的文件，避免 token 浪费
-            let max_chars = 8000;
-            if content.chars().count() > max_chars {
-                let truncated: String = content.chars().take(max_chars).collect();
-                ToolResult::ok(format!("{truncated}...(截断，共 {} 字符)", content.len()))
+            if content.chars().count() > MAX_OUTPUT_CHARS {
+                ToolResult::ok(truncate_chars(&content, MAX_OUTPUT_CHARS))
             } else {
                 ToolResult::ok(content)
             }
@@ -186,6 +209,52 @@ pub fn execute_recent_screenshots(
     ToolResult::ok(lines.join("\n"))
 }
 
+// ---- 新增工具：Hotkey / Clipboard / Foreground ----
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct HotkeyArgs {
+    pub keys: Vec<String>,
+    #[serde(default)]
+    pub hold: f64,
+}
+
+/// 模拟键盘快捷键
+pub fn execute_hotkey(args: &HotkeyArgs) -> ToolResult {
+    debug!(keys = ?args.keys, hold = args.hold, "AI 模拟快捷键");
+    let key_refs: Vec<&str> = args.keys.iter().map(|s| s.as_str()).collect();
+    match crate::hotkey::trigger_hotkey(&key_refs, args.hold) {
+        Ok(()) => ToolResult::ok(format!("已发送快捷键: {}", args.keys.join("+"))),
+        Err(e) => ToolResult::err(e),
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ClipboardArgs {}
+
+/// 读取剪贴板文本
+pub fn execute_clipboard(_args: &ClipboardArgs) -> ToolResult {
+    match crate::hotkey::read_clipboard() {
+        Some(text) => {
+            let truncated = truncate_chars(&text, MAX_OUTPUT_CHARS);
+            ToolResult::ok(truncated)
+        }
+        None => ToolResult::err("剪贴板无内容或无法读取"),
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ForegroundArgs {
+    pub hwnd: isize,
+}
+
+/// 将指定窗口提到前台
+pub fn execute_foreground(args: &ForegroundArgs) -> ToolResult {
+    match crate::hotkey::force_foreground(args.hwnd) {
+        Ok(()) => ToolResult::ok("窗口已置顶"),
+        Err(e) => ToolResult::err(e),
+    }
+}
+
 // ---- 测试 ----
 
 #[cfg(test)]
@@ -232,22 +301,22 @@ mod tests {
         assert_eq!(args.format, "full");
     }
 
-    #[test]
-    fn test_execute_shell_echo() {
+    #[tokio::test]
+    async fn test_execute_shell_echo() {
         let args = ShellArgs {
             command: "echo 'hello_world'".into(),
         };
-        let result = execute_shell(&args);
+        let result = execute_shell(&args).await.unwrap();
         assert!(result.success);
         assert!(result.output.contains("hello_world") || !result.output.is_empty());
     }
 
-    #[test]
-    fn test_execute_shell_invalid_command() {
+    #[tokio::test]
+    async fn test_execute_shell_invalid_command() {
         let args = ShellArgs {
             command: "nonexistent_command_xyz_12345".into(),
         };
-        let result = execute_shell(&args);
+        let result = execute_shell(&args).await.unwrap();
         assert!(!result.success);
     }
 
@@ -378,5 +447,76 @@ mod tests {
         let result = execute_recent_screenshots(&args, Some(empty.as_path()));
         assert!(result.success);
         assert!(result.output.contains("暂无"));
+    }
+
+    // ---- truncate_chars 测试 ----
+
+    #[test]
+    fn test_truncate_chars_short_string_unchanged() {
+        assert_eq!(truncate_chars("hello", 10), "hello");
+    }
+
+    #[test]
+    fn test_truncate_chars_exact_length_unchanged() {
+        assert_eq!(truncate_chars("hello", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_chars_long_string_truncated() {
+        let result = truncate_chars("x".repeat(100).as_str(), 10);
+        assert!(result.contains("截断"));
+        assert!(result.contains("100 字符"));
+    }
+
+    #[test]
+    fn test_truncate_chars_chinese_safe() {
+        // 中文字符每个占 3 字节，但 chars().count() 正确计数
+        let s = "你好世界测试截断";
+        let result = truncate_chars(s, 4);
+        assert_eq!(result, "你好世界...(截断，共 6 字符)");
+    }
+
+    // ---- Hotkey / Clipboard / Foreground 参数测试 ----
+
+    #[test]
+    fn test_hotkey_args_deserialize() {
+        let json = r#"{"keys":["ctrl","alt","delete"]}"#;
+        let args: HotkeyArgs = serde_json::from_str(json).unwrap();
+        assert_eq!(args.keys, vec!["ctrl", "alt", "delete"]);
+        assert!((args.hold - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_hotkey_args_with_hold() {
+        let json = r#"{"keys":["alt","tab"],"hold":0.05}"#;
+        let args: HotkeyArgs = serde_json::from_str(json).unwrap();
+        assert_eq!(args.keys.len(), 2);
+        assert!((args.hold - 0.05).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_clipboard_args_deserialize_empty() {
+        let json = r#"{}"#;
+        let _args: ClipboardArgs = serde_json::from_str(json).unwrap();
+    }
+
+    #[test]
+    fn test_foreground_args_deserialize() {
+        let json = r#"{"hwnd":12345}"#;
+        let args: ForegroundArgs = serde_json::from_str(json).unwrap();
+        assert_eq!(args.hwnd, 12345);
+    }
+
+    #[test]
+    fn test_tool_error_display() {
+        assert_eq!(
+            ToolError::Execution("fail".to_string()).to_string(),
+            "执行失败: fail"
+        );
+        assert_eq!(
+            ToolError::Permission("denied".to_string()).to_string(),
+            "权限不足: denied"
+        );
+        assert_eq!(ToolError::Timeout.to_string(), "超时");
     }
 }

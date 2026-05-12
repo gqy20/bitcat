@@ -1,6 +1,10 @@
 use crate::ai_config::AiConfig;
+use crate::permission_hook::PermissionHook;
 use crate::prompts::PromptsConfig;
-use crate::tools::{self, LaunchArgs, ReadFileArgs, RecentScreenshotsArgs, ShellArgs};
+use crate::tools::{
+    self, ClipboardArgs, ForegroundArgs, GetTimeArgs, HotkeyArgs, LaunchArgs,
+    RecentScreenshotsArgs, ReadFileArgs, ShellArgs, ToolError,
+};
 use futures::StreamExt;
 use rig::agent::Agent;
 use rig::agent::MultiTurnStreamItem;
@@ -14,7 +18,7 @@ use tracing::{debug, info};
 
 /// 桌宠 AI Agent
 pub struct PetAgent {
-    pub agent: Agent<anthropic::completion::CompletionModel>,
+    pub agent: Agent<anthropic::completion::CompletionModel, PermissionHook>,
     pub config: AiConfig,
 }
 
@@ -36,11 +40,15 @@ impl PetAgent {
         let agent = rig::agent::AgentBuilder::new(model)
             .preamble(&prompts.agent.preamble)
             .max_tokens(max_tokens)
+            .hook(PermissionHook)
             .tool(LaunchTool)
             .tool(ShellTool)
             .tool(ReadFileTool)
             .tool(GetTimeTool)
             .tool(RecentScreenshotsTool)
+            .tool(HotkeyTool)
+            .tool(ClipboardTool)
+            .tool(ForegroundTool)
             .build();
 
         Ok(Self { agent, config })
@@ -73,9 +81,14 @@ impl PetAgent {
                     chunk_count += 1;
                 }
                 Ok(MultiTurnStreamItem::StreamAssistantItem(
-                    StreamedAssistantContent::ToolCall { .. },
+                    StreamedAssistantContent::ToolCall { tool_call, .. },
                 )) => {
                     tool_call_count += 1;
+                    // 通知用户 AI 正在调用工具
+                    on_chunk(&format!(
+                        "[正在执行: {}...]",
+                        tool_call.function.name
+                    ));
                 }
                 Ok(MultiTurnStreamItem::FinalResponse(res)) => {
                     debug!(
@@ -103,149 +116,179 @@ impl PetAgent {
     }
 }
 
-// ---- Tool: 启动程序 ----
+// ---- 工具定义宏：消除样板代码 ----
 
-struct LaunchTool;
-impl Tool for LaunchTool {
-    const NAME: &'static str = "launch_program";
-    type Error = std::convert::Infallible;
-    type Args = LaunchArgs;
-    type Output = tools::ToolResult;
+/// 定义一个同步执行的 Tool（execute 函数返回 `ToolResult`）
+macro_rules! define_tool_sync {
+    ($name:ident, $tool_name:literal, $desc:literal, $args_ty:ty, $params:expr, $exec_fn:expr) => {
+        struct $name;
+        impl Tool for $name {
+            const NAME: &'static str = $tool_name;
+            type Error = ToolError;
+            type Args = $args_ty;
+            type Output = tools::ToolResult;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "launch_program".into(),
-            description: "启动一个程序或应用".into(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "program": { "type": "string", "description": "要启动的程序名或路径" },
-                    "args": { "type": "string", "description": "命令行参数" },
-                    "terminal": { "type": "boolean", "description": "是否在新终端窗口中打开" },
-                    "workdir": { "type": "string", "description": "工作目录" }
-                },
-                "required": ["program"]
-            }),
-        }
-    }
-
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        Ok(tools::execute_launch(&args))
-    }
-}
-
-// ---- Tool: 执行 Shell 命令 ----
-
-struct ShellTool;
-impl Tool for ShellTool {
-    const NAME: &'static str = "shell";
-    type Error = std::convert::Infallible;
-    type Args = ShellArgs;
-    type Output = tools::ToolResult;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "shell".into(),
-            description: "执行 PowerShell 命令并返回输出".into(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "command": { "type": "string", "description": "要执行的 PowerShell 命令" }
-                },
-                "required": ["command"]
-            }),
-        }
-    }
-
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        Ok(tools::execute_shell(&args))
-    }
-}
-
-// ---- Tool: 读取文件 ----
-
-struct ReadFileTool;
-impl Tool for ReadFileTool {
-    const NAME: &'static str = "read_file";
-    type Error = std::convert::Infallible;
-    type Args = ReadFileArgs;
-    type Output = tools::ToolResult;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "read_file".into(),
-            description: "读取文件内容，支持文本文件".into(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "path": { "type": "string", "description": "文件路径" }
-                },
-                "required": ["path"]
-            }),
-        }
-    }
-
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        Ok(tools::execute_read_file(&args))
-    }
-}
-
-// ---- Tool: 获取时间 ----
-
-struct GetTimeTool;
-use crate::tools::GetTimeArgs;
-
-impl Tool for GetTimeTool {
-    const NAME: &'static str = "get_time";
-    type Error = std::convert::Infallible;
-    type Args = GetTimeArgs;
-    type Output = tools::ToolResult;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "get_time".into(),
-            description: "获取当前日期和时间".into(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "format": { "type": "string", "enum": ["full", "date", "time"], "description": "输出格式" }
+            async fn definition(&self, _prompt: String) -> ToolDefinition {
+                ToolDefinition {
+                    name: $tool_name.into(),
+                    description: $desc.into(),
+                    parameters: $params.clone(),
                 }
-            }),
-        }
-    }
+            }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        Ok(tools::execute_get_time(&args))
-    }
+            async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+                Ok($exec_fn(&args))
+            }
+        }
+    };
 }
 
-// ---- Tool: 查询最近截图分析记录 ----
+/// 定义一个异步执行的 Tool（execute 函数返回 `Result<ToolResult, ToolError>`）
+macro_rules! define_tool_async {
+    ($name:ident, $tool_name:literal, $desc:literal, $args_ty:ty, $params:expr, $exec_fn:expr) => {
+        struct $name;
+        impl Tool for $name {
+            const NAME: &'static str = $tool_name;
+            type Error = ToolError;
+            type Args = $args_ty;
+            type Output = tools::ToolResult;
 
-struct RecentScreenshotsTool;
+            async fn definition(&self, _prompt: String) -> ToolDefinition {
+                ToolDefinition {
+                    name: $tool_name.into(),
+                    description: $desc.into(),
+                    parameters: $params.clone(),
+                }
+            }
 
-impl Tool for RecentScreenshotsTool {
-    const NAME: &'static str = "recent_screenshots";
-    type Error = std::convert::Infallible;
-    type Args = RecentScreenshotsArgs;
-    type Output = tools::ToolResult;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "recent_screenshots".into(),
-            description: "查询最近的截图视觉分析记录，了解用户最近在屏幕上做什么".into(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "count": { "type": "integer", "description": "返回的记录数量，默认 3" }
-                },
-            }),
+            async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+                $exec_fn(&args).await
+            }
         }
-    }
-
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        Ok(tools::execute_recent_screenshots(&args, None))
-    }
+    };
 }
+
+// ---- 8 个工具定义 ----
+
+define_tool_sync!(
+    LaunchTool,
+    "launch_program",
+    "启动一个程序或应用",
+    LaunchArgs,
+    json!({
+        "type": "object",
+        "properties": {
+            "program": { "type": "string", "description": "要启动的程序名或路径" },
+            "args": { "type": "string", "description": "命令行参数" },
+            "terminal": { "type": "boolean", "description": "是否在新终端窗口中打开" },
+            "workdir": { "type": "string", "description": "工作目录" }
+        },
+        "required": ["program"]
+    }),
+    tools::execute_launch
+);
+
+define_tool_async!(
+    ShellTool,
+    "shell",
+    "执行 PowerShell 命令并返回输出（30s 超时，输出截断至 8000 字符）",
+    ShellArgs,
+    json!({
+        "type": "object",
+        "properties": {
+            "command": { "type": "string", "description": "要执行的 PowerShell 命令" }
+        },
+        "required": ["command"]
+    }),
+    tools::execute_shell
+);
+
+define_tool_sync!(
+    ReadFileTool,
+    "read_file",
+    "读取文件内容，支持文本文件（超过 8000 字符自动截断）",
+    ReadFileArgs,
+    json!({
+        "type": "object",
+        "properties": {
+            "path": { "type": "string", "description": "文件路径" }
+        },
+        "required": ["path"]
+    }),
+    tools::execute_read_file
+);
+
+define_tool_sync!(
+    GetTimeTool,
+    "get_time",
+    "获取当前日期和时间",
+    GetTimeArgs,
+    json!({
+        "type": "object",
+        "properties": {
+            "format": { "type": "string", "enum": ["full", "date", "time"], "description": "输出格式" }
+        }
+    }),
+    tools::execute_get_time
+);
+
+define_tool_sync!(
+    RecentScreenshotsTool,
+    "recent_screenshots",
+    "查询最近的截图视觉分析记录，了解用户最近在屏幕上做什么",
+    RecentScreenshotsArgs,
+    json!({
+        "type": "object",
+        "properties": {
+            "count": { "type": "integer", "description": "返回的记录数量，默认 3" }
+        }
+    }),
+    |args| tools::execute_recent_screenshots(args, None)
+);
+
+define_tool_sync!(
+    HotkeyTool,
+    "send_hotkey",
+    "模拟键盘快捷键组合（如 Alt+Tab 切窗口、Ctrl+C 复制）",
+    HotkeyArgs,
+    json!({
+        "type": "object",
+        "properties": {
+            "keys": { "type": "array", "items": { "type": "string" }, "description": "按键列表，如 [\"ctrl\", \"alt\", \"tab\"]" },
+            "hold": { "type": "number", "description": "按键保持时间（秒），默认 0.02" }
+        },
+        "required": ["keys"]
+    }),
+    tools::execute_hotkey
+);
+
+define_tool_sync!(
+    ClipboardTool,
+    "read_clipboard",
+    "读取系统剪贴板中的文本内容",
+    ClipboardArgs,
+    json!({
+        "type": "object",
+        "properties": {},
+        "description": "无参数，直接读取剪贴板"
+    }),
+    tools::execute_clipboard
+);
+
+define_tool_sync!(
+    ForegroundTool,
+    "force_foreground",
+    "将指定窗口强制提到前台（需要窗口句柄 hwnd）",
+    ForegroundArgs,
+    json!({
+        "type": "object",
+        "properties": {
+            "hwnd": { "type": "number", "description": "目标窗口的句柄（整数）" }
+        },
+        "required": ["hwnd"]
+    }),
+    tools::execute_foreground
+);
 
 // ---- 测试 ----
 
@@ -264,8 +307,7 @@ mod tests {
     #[test]
     fn test_launch_tool_definition() {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let tool = LaunchTool;
-        let def = rt.block_on(tool.definition(String::new()));
+        let def = rt.block_on(LaunchTool.definition(String::new()));
         assert_eq!(def.name, "launch_program");
         assert!(!def.description.is_empty());
         let params = def.parameters.as_object().unwrap();
@@ -276,8 +318,7 @@ mod tests {
     #[test]
     fn test_shell_tool_definition() {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let tool = ShellTool;
-        let def = rt.block_on(tool.definition(String::new()));
+        let def = rt.block_on(ShellTool.definition(String::new()));
         assert_eq!(def.name, "shell");
         assert!(def.description.contains("PowerShell"));
     }
@@ -285,16 +326,14 @@ mod tests {
     #[test]
     fn test_read_file_tool_definition() {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let tool = ReadFileTool;
-        let def = rt.block_on(tool.definition(String::new()));
+        let def = rt.block_on(ReadFileTool.definition(String::new()));
         assert_eq!(def.name, "read_file");
     }
 
     #[test]
     fn test_get_time_tool_definition() {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let tool = GetTimeTool;
-        let def = rt.block_on(tool.definition(String::new()));
+        let def = rt.block_on(GetTimeTool.definition(String::new()));
         assert_eq!(def.name, "get_time");
         let params = def.parameters.as_object().unwrap();
         let props = params.get("properties").unwrap().as_object().unwrap();
@@ -304,75 +343,73 @@ mod tests {
     }
 
     #[test]
-    fn test_tool_call_launch() {
+    fn test_hotkey_tool_definition() {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let tool = LaunchTool;
+        let def = rt.block_on(HotkeyTool.definition(String::new()));
+        assert_eq!(def.name, "send_hotkey");
+        assert!(def.description.contains("快捷键"));
+    }
+
+    #[test]
+    fn test_clipboard_tool_definition() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let def = rt.block_on(ClipboardTool.definition(String::new()));
+        assert_eq!(def.name, "read_clipboard");
+    }
+
+    #[test]
+    fn test_foreground_tool_definition() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let def = rt.block_on(ForegroundTool.definition(String::new()));
+        assert_eq!(def.name, "force_foreground");
+    }
+
+    #[tokio::test]
+    async fn test_tool_call_launch() {
         let args = LaunchArgs {
             program: "echo".into(),
             args: "test".into(),
             workdir: String::new(),
             terminal: false,
         };
-        let result = rt.block_on(tool.call(args)).unwrap();
+        let result = LaunchTool.call(args).await.unwrap();
         assert!(result.success);
     }
 
-    #[test]
-    fn test_tool_call_shell() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let tool = ShellTool;
+    #[tokio::test]
+    async fn test_tool_call_shell() {
         let args = ShellArgs {
             command: "echo hello_test".into(),
         };
-        let result = rt.block_on(tool.call(args)).unwrap();
+        let result = ShellTool.call(args).await.unwrap();
         assert!(result.success);
         assert!(result.output.contains("hello_test"));
     }
 
-    #[test]
-    fn test_tool_call_read_file() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let tool = ReadFileTool;
+    #[tokio::test]
+    async fn test_tool_call_read_file() {
         let args = ReadFileArgs {
             path: "Cargo.toml".into(),
         };
-        let result = rt.block_on(tool.call(args)).unwrap();
+        let result = ReadFileTool.call(args).await.unwrap();
         assert!(result.success);
     }
 
-    #[test]
-    fn test_tool_call_get_time() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let tool = GetTimeTool;
+    #[tokio::test]
+    async fn test_tool_call_get_time() {
         let args = GetTimeArgs {
             format: "date".into(),
         };
-        let result = rt.block_on(tool.call(args)).unwrap();
+        let result = GetTimeTool.call(args).await.unwrap();
         assert!(result.success);
         assert!(!result.output.is_empty());
     }
 
-    // ---- RecentScreenshotsTool TDD 测试 ----
-
-    #[test]
-    fn test_recent_screenshots_tool_definition() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let tool = RecentScreenshotsTool;
-        let def = rt.block_on(tool.definition(String::new()));
-        assert_eq!(def.name, "recent_screenshots");
-        assert!(def.description.contains("截图"));
-        let params = def.parameters.as_object().unwrap();
-        assert!(params.contains_key("properties"));
-    }
-
-    #[test]
-    fn test_recent_screenshots_tool_call_returns_result() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let tool = RecentScreenshotsTool;
+    #[tokio::test]
+    async fn test_recent_screenshots_tool_call_returns_result() {
         let args = RecentScreenshotsArgs { count: Some(3) };
-        let result = rt.block_on(tool.call(args)).unwrap();
+        let result = RecentScreenshotsTool.call(args).await.unwrap();
         assert!(result.success);
-        // 无真实数据时返回提示信息
         assert!(!result.output.is_empty());
     }
 }

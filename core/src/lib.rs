@@ -6,6 +6,7 @@ pub mod config;
 pub mod device;
 pub mod hotkey;
 pub mod memory;
+pub mod permission_hook;
 pub mod pet;
 pub mod prompts;
 pub mod screen_summary;
