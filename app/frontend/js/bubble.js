@@ -211,8 +211,8 @@
   }
 
   function pollPending() {
-    if (!window.__TAURI__ || !window.__TAURI__.core) return;
-    window.__TAURI__.core.invoke('cmd_consume_bubble_text')
+    if (!window.__TAURI__ || !window.__TAURI__.core) return Promise.resolve();
+    return window.__TAURI__.core.invoke('cmd_consume_bubble_text')
       .then((result) => {
         const txt = result || '';
         if (txt.length > 0) {
@@ -308,10 +308,12 @@
 
     listen('bubble-end', () => {
       stopPolling();
-      pollPending();
-      // 最终渲染：去掉打字光标
-      if (lastRawText) setText(lastRawText, false);
-      startHideTimer();
+      userScrolledUp = false; // 流结束，解锁滚动
+      // 先拉取最后一批文本（同步等待），再最终渲染去光标
+      pollPending().then(function() {
+        if (lastRawText) setText(lastRawText, false);
+        startHideTimer();
+      });
     });
 
     listen('bubble-update', (event) => {
