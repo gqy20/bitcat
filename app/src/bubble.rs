@@ -199,6 +199,44 @@ pub fn finalize_bubble(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// 启动一个独立的气泡跟随线程：轮询宠物窗口位置变化，
+/// 实时把气泡窗口对齐到宠物正上方。与手柄循环彻底解耦，
+/// 确保"无手柄"场景下气泡仍能实时跟随。
+pub fn spawn_bubble_follower(app: AppHandle) {
+    std::thread::spawn(move || {
+        let mut prev_pet_pos: Option<(i32, i32)> = None;
+        loop {
+            if let Some(bubble_win) = app.get_webview_window("bubble") {
+                if bubble_win.is_visible().unwrap_or(false) {
+                    let pet = app
+                        .get_webview_window("pet")
+                        .filter(|w| w.is_visible().unwrap_or(false))
+                        .or_else(|| {
+                            app.get_webview_window("pet-mini")
+                                .filter(|w| w.is_visible().unwrap_or(false))
+                        })
+                        .or_else(|| {
+                            app.get_webview_window("pet-snap")
+                                .filter(|w| w.is_visible().unwrap_or(false))
+                        });
+                    if let Some(p) = pet {
+                        if let Ok(pos) = p.outer_position() {
+                            let key = (pos.x, pos.y);
+                            if Some(key) != prev_pet_pos {
+                                prev_pet_pos = Some(key);
+                                position_above_pet(&app, &bubble_win);
+                            }
+                        }
+                    }
+                } else {
+                    prev_pet_pos = None;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    });
+}
+
 /// 把 bubble 窗口对齐到 pet 窗口正上方，带屏幕边界检测
 pub fn position_above_pet(app: &AppHandle, bubble: &tauri::WebviewWindow) {
     // 优先查找可见的宠物窗口（支持折叠态 + 吸附态）

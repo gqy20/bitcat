@@ -153,6 +153,9 @@ pub fn run() {
             let handle = app.handle().clone();
             std::thread::spawn(move || { gamepad::gamepad_loop(&handle); });
 
+            // 气泡跟随独立线程：脱离手柄循环，确保无手柄时也能实时跟随
+            bubble::spawn_bubble_follower(app.handle().clone());
+
             let ss_handle = app.handle().clone();
             std::thread::spawn(move || {
                 eprintln!("[SS-DBG] 截图线程已 spawn");

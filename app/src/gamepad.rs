@@ -225,7 +225,6 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
     let mut alt_tab = HeldModifier::new(0x12);
     let mut ctrl_tab = HeldModifier::new(0x11);
     let mut held_voice = HeldCombo::new();
-    let mut prev_pet_pos: Option<(i32, i32)> = None;
 
     let mut last_warn: Option<std::time::Instant> = None;
     loop {
@@ -449,28 +448,6 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                 else if dx < 0 { let _ = hotkey::send_scroll_h(-120 * speed); }
             }
             prev_hat = hat;
-
-            // 气泡跟随
-            if let Some(bubble_win) = app.get_webview_window("bubble") {
-                if bubble_win.is_visible().unwrap_or(false) {
-                    let pet = app
-                        .get_webview_window("pet")
-                        .filter(|w| w.is_visible().unwrap_or(false))
-                        .or_else(|| app.get_webview_window("pet-mini").filter(|w| w.is_visible().unwrap_or(false)))
-                        .or_else(|| app.get_webview_window("pet-snap").filter(|w| w.is_visible().unwrap_or(false)));
-                    if let Some(p) = pet {
-                        if let Ok(pos) = p.outer_position() {
-                            let key = (pos.x, pos.y);
-                            if Some(key) != prev_pet_pos {
-                                prev_pet_pos = Some(key);
-                                bubble::position_above_pet(app, &bubble_win);
-                            }
-                        }
-                    }
-                } else {
-                    prev_pet_pos = None;
-                }
-            }
 
             std::thread::sleep(std::time::Duration::from_millis(80));
         }
