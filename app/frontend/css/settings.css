@@ -7,8 +7,8 @@
 html, body {
   width: 100%;
   height: 100%;
-  background: transparent;
-  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  background: #1c1d23;
+  font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
   color: #e8eaed;
   overflow: hidden;
   font-size: 13px;
@@ -17,11 +17,9 @@ html, body {
 .shell {
   width: 100%;
   height: 100%;
-  background: rgba(32, 32, 38, 0.92);
+  background: #23252d;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  backdrop-filter: blur(24px) saturate(1.2);
-  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  border-radius: 10px;
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.5),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
@@ -125,11 +123,14 @@ html, body {
   margin-bottom: 14px;
   line-height: 1.55;
 }
-.tab .hint code {
+.tab .hint code,
+code {
   background: rgba(255,255,255,0.08);
-  padding: 1px 5px;
+  padding: 1px 6px;
   border-radius: 4px;
-  font-size: 11.5px;
+  font-family: "Consolas", "JetBrains Mono", "Courier New", monospace;
+  font-size: 12px;
+  color: #d6dce3;
 }
 .section-sep {
   height: 1px;
@@ -168,6 +169,37 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
   outline: none;
   flex: 1;
   transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+/* 自绘 select：箭头 + 深色下拉（option 由浏览器绘制，给它深色背景） */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 28px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #9aa0a6 50%),
+    linear-gradient(135deg, #9aa0a6 50%, transparent 50%);
+  background-position:
+    calc(100% - 16px) 14px,
+    calc(100% - 11px) 14px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+select:focus {
+  background-image:
+    linear-gradient(45deg, transparent 50%, #aad0ff 50%),
+    linear-gradient(135deg, #aad0ff 50%, transparent 50%);
+}
+select option {
+  background: #23252d;
+  color: #e8eaed;
+  padding: 6px 10px;
+}
+select option:checked,
+select option:hover {
+  background: #2d3c58;
+  color: #fff;
 }
 textarea {
   font-family: "Consolas", "Courier New", monospace;
@@ -222,20 +254,45 @@ input[type="checkbox"] {
   margin-bottom: 8px;
   background: rgba(255,255,255,0.03);
 }
+.action-item.unbound {
+  opacity: 0.72;
+  border-style: dashed;
+}
 .action-item .ai-head {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 8px;
+  flex-wrap: wrap;
 }
-.action-item .ai-head .key {
+.action-item .ai-head .key-block {
+  display: flex;
+  flex-direction: column;
+  min-width: 130px;
+  line-height: 1.25;
+}
+.action-item .ai-head .key-block .key {
   font-weight: 600;
   color: #aad0ff;
-  min-width: 70px;
   font-family: "Consolas", monospace;
-  font-size: 12px;
+  font-size: 13px;
 }
-.action-item select { flex: 0 0 130px; }
+.action-item .ai-head .key-block .key-label {
+  color: #c8cdd3;
+  font-size: 11.5px;
+}
+.action-item .ai-head .key-block .key-pos {
+  color: #8d939a;
+  font-size: 10.5px;
+  margin-top: 1px;
+}
+.action-item select.a-type { flex: 0 0 130px; }
+.action-item .trig-hint {
+  color: #8d939a;
+  font-size: 11px;
+  font-family: "Consolas", monospace;
+  margin-left: auto;
+}
 .action-item .ai-body .row { margin-bottom: 6px; }
 .action-item .ai-body .row > label { min-width: 100px; font-size: 12px; }
 

@@ -5,7 +5,15 @@
 
 const { invoke } = window.__TAURI__.core;
 
-const ACTION_TYPES = ["launch", "hotkey", "script", "voice"];
+// 按键绑定类型：unbound 代表未绑定（保存时会从 actions.yml 中移除该按键）
+const ACTION_TYPES = ["unbound", "launch", "hotkey", "script", "voice"];
+const ACTION_TYPE_LABELS = {
+  unbound: "未绑定",
+  launch: "启动程序 (launch)",
+  hotkey: "按键序列 (hotkey)",
+  script: "脚本命令 (script)",
+  voice: "语音触发 (voice)",
+};
 
 // 全量快照（来自后端）
 let SNAPSHOT = null;
@@ -77,41 +85,78 @@ function renderAi(ai) {
 }
 
 function renderActions(actionsView) {
-  $("actions-term").value = actionsView.defaults.terminal || "";
-  $("actions-win").value = actionsView.defaults.window || "";
-  $("actions-term").oninput = () => markDirty("actions");
-  $("actions-win").oninput = () => markDirty("actions");
+  $("actions-term").value = actionsView.defaults.terminal || "powershell";
+  $("actions-win").value = actionsView.defaults.window || "maximized";
+  $("actions-term").onchange = () => markDirty("actions");
+  $("actions-win").onchange = () => markDirty("actions");
 
   const list = $("actions-list");
   list.innerHTML = "";
-  const keys = Object.keys(actionsView.actions).sort();
-  for (const key of keys) {
-    list.appendChild(renderActionItem(key, actionsView.actions[key]));
+
+  // 优先按 button_catalog 渲染（覆盖 buttons.yml 里的全部按键）
+  const catalog = Array.isArray(SNAPSHOT.button_catalog) ? SNAPSHOT.button_catalog : [];
+  if (catalog.length > 0) {
+    for (const item of catalog) {
+      const def = actionsView.actions[item.name] || null;
+      list.appendChild(renderActionItem(item, def));
+    }
+    // 补充 catalog 之外、但 actions.yml 里已有的自定义按键（若有）
+    const catalogNames = new Set(catalog.map(i => i.name));
+    Object.keys(actionsView.actions).sort().forEach(key => {
+      if (catalogNames.has(key)) return;
+      list.appendChild(renderActionItem(
+        { name: key, label: "(自定义)", position: "", order: 9999 },
+        actionsView.actions[key]
+      ));
+    });
+  } else {
+    // 退化：没有 catalog 时按已配置按键渲染
+    Object.keys(actionsView.actions).sort().forEach(key => {
+      list.appendChild(renderActionItem(
+        { name: key, label: "", position: "", order: 0 },
+        actionsView.actions[key]
+      ));
+    });
   }
 }
 
-function renderActionItem(key, def) {
+function renderActionItem(btn, def) {
   const el = document.createElement("div");
   el.className = "action-item";
-  el.dataset.key = key;
+  el.dataset.key = btn.name;
+
+  const isUnbound = !def;
+  if (isUnbound) el.classList.add("unbound");
+
+  const curType = def ? def.action_type : "unbound";
+  const trigHintText = def && Array.isArray(def.trigger) && def.trigger.length > 0
+    ? "trigger: " + def.trigger.join("+")
+    : "";
+
   el.innerHTML = `
     <div class="ai-head">
-      <span class="key">${escapeHtml(key)}</span>
-      <select class="a-type">
-        ${ACTION_TYPES.map(t => `<option value="${t}" ${t === def.action_type ? "selected" : ""}>${t}</option>`).join("")}
+      <div class="key-block">
+        <div class="key">${escapeHtml(btn.name)}</div>
+        <div class="key-label">${escapeHtml(btn.label || "")}</div>
+        <div class="key-pos">${escapeHtml(btn.position || "")}</div>
+      </div>
+      <select class="a-type" title="动作类型">
+        ${ACTION_TYPES.map(t => `<option value="${t}" ${t === curType ? "selected" : ""}>${escapeHtml(ACTION_TYPE_LABELS[t] || t)}</option>`).join("")}
       </select>
-      <span class="hint" style="margin:0; font-size:11px;">trigger: ${def.trigger ? escapeHtml(def.trigger.join("+")) : "—"}</span>
+      <span class="trig-hint">${escapeHtml(trigHintText)}</span>
     </div>
     <div class="ai-body"></div>
   `;
 
   const body = el.querySelector(".ai-body");
-  renderActionBody(body, def);
+  const workingDef = def ? { ...def } : { action_type: "unbound" };
+  renderActionBody(body, workingDef);
 
   const sel = el.querySelector(".a-type");
   sel.addEventListener("change", () => {
-    def.action_type = sel.value;
-    renderActionBody(body, def);
+    workingDef.action_type = sel.value;
+    el.classList.toggle("unbound", sel.value === "unbound");
+    renderActionBody(body, workingDef);
     markDirty("actions");
   });
   return el;
@@ -119,6 +164,11 @@ function renderActionItem(key, def) {
 
 function renderActionBody(body, def) {
   body.innerHTML = "";
+  const t = def.action_type;
+  if (t === "unbound") {
+    body.innerHTML = `<div class="hint" style="margin:0;font-size:11.5px;color:#8d939a;">未绑定：保存后该按键将从 actions.yml 中移除。</div>`;
+    return;
+  }
   const mk = (label, id, val, type = "text") => {
     const row = document.createElement("div");
     row.className = "row";
@@ -135,7 +185,6 @@ function renderActionBody(body, def) {
     row.querySelector("input").onchange = () => markDirty("actions");
   };
 
-  const t = def.action_type;
   if (t === "launch") {
     mk("程序 program", "program", def.program || "");
     mk("参数 args", "args", def.args || "");
@@ -160,6 +209,7 @@ function collectActions() {
   document.querySelectorAll(".action-item").forEach(el => {
     const key = el.dataset.key;
     const type = el.querySelector(".a-type").value;
+    if (type === "unbound") return; // 未绑定：不写入 actions.yml
     const def = { type };
     const getVal = (f) => {
       const node = el.querySelector(`input[data-field="${f}"]`);

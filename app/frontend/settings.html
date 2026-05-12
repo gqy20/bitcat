@@ -60,11 +60,20 @@
           <p class="hint">保存后立即热重载。默认终端与窗口模式在顶部设置。</p>
           <div class="row">
             <label>默认终端</label>
-            <input id="actions-term" type="text" placeholder="powershell" />
+            <select id="actions-term">
+              <option value="powershell">powershell（Windows PowerShell 5.1）</option>
+              <option value="pwsh">pwsh（PowerShell 7）</option>
+              <option value="cmd">cmd（传统命令提示符）</option>
+              <option value="wt">wt（Windows Terminal）</option>
+            </select>
           </div>
           <div class="row">
             <label>默认窗口</label>
-            <input id="actions-win" type="text" placeholder="maximized" />
+            <select id="actions-win">
+              <option value="maximized">maximized（最大化）</option>
+              <option value="normal">normal（默认尺寸）</option>
+              <option value="minimized">minimized（最小化后台）</option>
+            </select>
           </div>
           <div class="section-sep"></div>
           <div id="actions-list"></div>

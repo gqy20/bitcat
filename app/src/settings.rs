@@ -53,8 +53,7 @@ fn create_settings_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri
         .inner_size(WINDOW_W, WINDOW_H)
         .min_inner_size(540.0, 400.0)
         .decorations(false)
-        .transparent(true)
-        .background_color(tauri::webview::Color(0, 0, 0, 0))
+        .transparent(false)
         .shadow(true)
         .always_on_top(false)
         .skip_taskbar(false)
@@ -74,6 +73,21 @@ pub struct SettingsSnapshot {
     pub prompts: PromptsConfig,
     pub appearance: AppearanceSettings,
     pub about: AboutInfo,
+    /// 按 buttons.yml 列出的所有可配置按键（有序，index 升序）
+    pub button_catalog: Vec<ButtonCatalogItem>,
+}
+
+/// 按键元数据：用于设置界面展示"全部支持的按键 + 中文说明"。
+#[derive(Debug, Serialize)]
+pub struct ButtonCatalogItem {
+    /// 按键主名，如 "Start"（同 actions.yml 里的 key）
+    pub name: String,
+    /// 中文别名，例如 "开始"；取 buttons.yml aliases 中第一个中文别名
+    pub label: String,
+    /// 硬件位置描述，例如 "中间偏右"
+    pub position: String,
+    /// 显示顺序（对应 buttons.yml 中的 button index）
+    pub order: u32,
 }
 
 /// AI 视图：覆盖层原值 + 生效值（UI 可以在 input 显示 overlay，placeholder 显示 effective）。
@@ -187,6 +201,28 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|| "<unknown>".into());
 
+    // 读取 buttons.yml 提供可配置按键全集
+    let button_catalog = match ai_pad_core::config::ButtonConfig::load("buttons.yml") {
+        Ok(btn_cfg) => {
+            let mut items: Vec<ButtonCatalogItem> = btn_cfg
+                .buttons
+                .iter()
+                .map(|(idx, info)| ButtonCatalogItem {
+                    name: info.name.clone(),
+                    label: pick_cn_label(&info.aliases),
+                    position: info.position.clone(),
+                    order: *idx,
+                })
+                .collect();
+            items.sort_by_key(|it| it.order);
+            items
+        }
+        Err(e) => {
+            warn!(error = %e, "加载 buttons.yml 失败，按键列表为空");
+            Vec::new()
+        }
+    };
+
     Ok(SettingsSnapshot {
         ai: AiView {
             overlay: overlay.ai,
@@ -205,7 +241,18 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
             actions_yml_hint: "actions.yml（exe 同目录 或 CWD）".into(),
             prompts_yml_hint: "prompts.yml（exe 同目录 或 CWD）".into(),
         },
+        button_catalog,
     })
+}
+
+/// 从 aliases 中挑选最合适的中文标签（优先含中文的条目；退化为第一个；空则用 name 当 fallback 由调用方决定）
+fn pick_cn_label(aliases: &[String]) -> String {
+    for a in aliases {
+        if a.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)) {
+            return a.clone();
+        }
+    }
+    aliases.first().cloned().unwrap_or_default()
 }
 
 /// 保存 AI 覆盖层（仅非空字段写入 overlay；空串视为"清除覆盖，回退下一层"）。
@@ -356,10 +403,26 @@ mod tests {
                 actions_yml_hint: "".into(),
                 prompts_yml_hint: "".into(),
             },
+            button_catalog: vec![ButtonCatalogItem {
+                name: "Start".into(),
+                label: "开始".into(),
+                position: "中间偏右".into(),
+                order: 11,
+            }],
         };
         let json = serde_json::to_string(&snap).expect("snapshot serialize");
         assert!(json.contains("effective"));
         assert!(json.contains("appearance"));
+        assert!(json.contains("button_catalog"));
+    }
+
+    #[test]
+    fn test_pick_cn_label() {
+        assert_eq!(pick_cn_label(&["Back".into(), "选择".into()]), "选择");
+        assert_eq!(pick_cn_label(&["确认".into()]), "确认");
+        assert_eq!(pick_cn_label(&["LB".into(), "左肩键".into()]), "左肩键");
+        assert_eq!(pick_cn_label(&["OnlyEn".into()]), "OnlyEn");
+        assert_eq!(pick_cn_label(&[]), "");
     }
 
     #[test]
