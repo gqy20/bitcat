@@ -6,6 +6,7 @@ pub mod panel;
 pub mod screenshot;
 pub mod tray;
 pub mod voice;
+pub mod tts;
 
 use bubble::SharedBubble;
 use commands::{SharedPet, SharedWindowState};
@@ -996,6 +997,12 @@ fn run_ai_chat(
             } else {
                 info!(model = %agent.config.model, chars = reply.chars().count(), reply = %reply, "{prefix} AI 回复全文 ({reply})");
             }
+            // 异步朗读 AI 回复（不阻塞主线程）
+            let reply_for_tts = reply.clone();
+            std::thread::spawn(move || {
+                tts::speak(&reply_for_tts);
+            });
+
             let ai_events = gamepad::process_agent_response(&reply);
             for evt in &ai_events {
                 let _ = app.emit("pet-event", evt);
