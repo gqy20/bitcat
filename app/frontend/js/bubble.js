@@ -452,6 +452,7 @@
       setStreamingClass(false);
       var payload = event.payload || {};
       var text = typeof payload === 'string' ? payload : (payload.text || '');
+      diag('bubble-update received, text_len=' + (text || '').length);
       setText(text);
       ensureVisible();
       startHideTimer();
