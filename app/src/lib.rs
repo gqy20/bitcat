@@ -646,7 +646,59 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
+/// 从候选设备中选出"真正的游戏手柄"。
+///
+/// 规则（按优先级，命中即返回）：
+/// 1. 黑名单：跳过键鼠接收器（Link-KM / Keyboard / Mouse / Receiver / Wireless Link）
+/// 2. 白名单：优先名字含 Controller / Gamepad / 8BitDo / Xbox / DualShock / DualSense / Joy-Con / Pro Controller
+/// 3. 有方向键（num_hats>=1）或带摇杆（num_axes>=2）
+/// 4. 兜底：任意未被黑名单过滤的
+fn choose_gamepad(pads: &[joystick::GamepadInfo]) -> Option<&joystick::GamepadInfo> {
+    let is_kbm_like = |name: &str| {
+        let n = name.to_lowercase();
+        ["link-km", "receiver", "keyboard", "mouse", "wireless link"]
+            .iter()
+            .any(|kw| n.contains(kw))
+    };
+    let is_preferred = |name: &str| {
+        let n = name.to_lowercase();
+        [
+            "controller",
+            "gamepad",
+            "8bitdo",
+            "xbox",
+            "dualshock",
+            "dualsense",
+            "joy-con",
+            "joycon",
+            "pro controller",
+        ]
+        .iter()
+        .any(|kw| n.contains(kw))
+    };
+
+    let filtered: Vec<&joystick::GamepadInfo> =
+        pads.iter().filter(|p| !is_kbm_like(&p.name)).collect();
+
+    // 优先白名单
+    if let Some(p) = filtered.iter().find(|p| is_preferred(&p.name)) {
+        return Some(*p);
+    }
+    // 次选：有方向键或摇杆
+    if let Some(p) = filtered
+        .iter()
+        .find(|p| p.num_hats >= 1 || p.num_axes >= 2)
+    {
+        return Some(*p);
+    }
+    // 兜底
+    filtered.first().copied()
+}
+
 /// 主游戏手柄循环 — 80ms tick，按键检测 → 状态机 → AI → 气泡/动作
+///
+/// 外层循环负责**热插拔重连**：手柄未连接/断开时每秒重新枚举；
+/// 内层循环负责正常采样。长生命周期状态（AI Agent/记忆/配置）跨重连保留。
 #[instrument(skip(app))]
 fn gamepad_loop(app: &tauri::AppHandle) {
     eprintln!("[GP-DBG] gamepad_loop 开始");
@@ -654,32 +706,6 @@ fn gamepad_loop(app: &tauri::AppHandle) {
         Ok(s) => s,
         Err(e) => {
             error!(error = %e, "SDL2 初始化失败");
-            return;
-        }
-    };
-
-    let pads = match SdlGamepad::list_gamepads(&sdl) {
-        Ok(p) => p,
-        Err(e) => {
-            error!(error = %e, "枚举手柄失败");
-            return;
-        }
-    };
-
-    if pads.is_empty() {
-        warn!("未检测到游戏手柄，等待连接...");
-        return;
-    }
-
-    for p in &pads {
-        info!(index = p.index, name = %p.name, buttons = p.num_buttons, "设备 [{}] {} ({} 按钮)", p.index, p.name, p.num_buttons);
-    }
-    info!("ai-pad 启动");
-
-    let mut gamepad = match SdlGamepad::open(&sdl, pads.first().map(|p| p.index).unwrap_or(0)) {
-        Ok(g) => g,
-        Err(e) => {
-            error!(error = %e, "打开手柄失败");
             return;
         }
     };
@@ -723,225 +749,299 @@ fn gamepad_loop(app: &tauri::AppHandle) {
     let summary_store = ai_pad_core::screen_summary::ScreenSummaryStore::load();
     info!(entries = summary_store.entries.len(), "屏幕活动摘要系统已初始化");
 
-    let mut prev_buttons: u32 = 0;
-    let mut prev_hat: Option<(i32, i32)> = None;
     let mut alt_tab = HeldModifier::new(0x12); // VK_MENU
     let mut ctrl_tab = HeldModifier::new(0x11); // VK_CONTROL
     let mut held_voice = HeldCombo::new();
     let mut prev_pet_pos: Option<(i32, i32)> = None; // 气泡跟随：上次宠物位置
 
+    // 外层热插拔循环：选设备 → 采样 → 断开后重连
+    let mut last_warn: Option<std::time::Instant> = None;
     loop {
-        // 配置热重载：托盘 "重载配置" 设置 flag，此处消费
-        {
-            let ws: tauri::State<'_, SharedWindowState> = app.state();
-            if ws.config_reload.load(Ordering::SeqCst) {
-                ws.config_reload.store(false, Ordering::SeqCst);
-                action_config = ActionConfig::load("actions.yml").ok();
-                info!(
-                    actions = action_config.as_ref().map(|c| c.actions.len()).unwrap_or(0),
-                    "gamepad_loop 配置已刷新"
-                );
+        let pads = match SdlGamepad::list_gamepads(&sdl) {
+            Ok(p) => p,
+            Err(e) => {
+                error!(error = %e, "枚举手柄失败，2s 后重试");
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                continue;
             }
+        };
+
+        for p in &pads {
+            debug!(index = p.index, name = %p.name, buttons = p.num_buttons, hats = p.num_hats, axes = p.num_axes, "候选设备");
         }
 
-        let panel_visible = app
-            .get_webview_window("panel")
-            .and_then(|w| w.is_visible().ok())
-            .unwrap_or(false);
+        let target = match choose_gamepad(&pads) {
+            Some(t) => t.clone(),
+            None => {
+                // 降噪：每 10s 打一次 warn
+                if last_warn.map_or(true, |t| t.elapsed() > std::time::Duration::from_secs(10)) {
+                    warn!(
+                        enumerated = pads.len(),
+                        "未检测到真正的游戏手柄（已自动跳过键鼠接收器等），每秒重试中..."
+                    );
+                    last_warn = Some(std::time::Instant::now());
+                }
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                continue;
+            }
+        };
+        last_warn = None;
 
-        let buttons = gamepad.read_buttons();
-        let new_presses = (buttons ^ prev_buttons) & buttons;
+        info!(
+            index = target.index,
+            name = %target.name,
+            buttons = target.num_buttons,
+            hats = target.num_hats,
+            axes = target.num_axes,
+            "✓ 选中手柄 [{}] {}",
+            target.index,
+            target.name
+        );
 
-        if new_presses != 0 {
-            for bit in 0..32 {
-                if new_presses & (1 << bit) != 0 {
-                    let idx = bit as u32;
-                    let name = button_name(idx as usize).unwrap_or("?");
-                    debug!(button_idx = idx, button_name = name, "按下 #{idx} {name}");
+        let mut gamepad = match SdlGamepad::open(&sdl, target.index) {
+            Ok(g) => g,
+            Err(e) => {
+                error!(error = %e, "打开手柄失败，1s 后重试");
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                continue;
+            }
+        };
+        info!("ai-pad 启动（手柄已就绪）");
 
-                    // 如果 Alt/Ctrl+Tab 按住中，按其他键时先释放
-                    if (alt_tab.held && name != "L1") || (ctrl_tab.held && name != "L2") {
-                        alt_tab.release();
-                        ctrl_tab.release();
-                    }
+        // 内层采样循环状态（每次重连重置）
+        let mut prev_buttons: u32 = 0;
+        let mut prev_hat: Option<(i32, i32)> = None;
+        let mut attach_check_tick: u32 = 0;
 
-                    // Home 键 → 切换面板（独占处理）
-                    if name == "Home" {
-                        info!("→ 切换面板");
-                        panel::toggle_panel(app);
-                        continue;
-                    }
+        loop {
+            // 配置热重载：托盘 "重载配置" 设置 flag，此处消费
+            {
+                let ws: tauri::State<'_, SharedWindowState> = app.state();
+                if ws.config_reload.load(Ordering::SeqCst) {
+                    ws.config_reload.store(false, Ordering::SeqCst);
+                    action_config = ActionConfig::load("actions.yml").ok();
+                    info!(
+                        actions = action_config.as_ref().map(|c| c.actions.len()).unwrap_or(0),
+                        "gamepad_loop 配置已刷新"
+                    );
+                }
+            }
 
-                    // 面板可见 → 按键转发到面板
-                    if panel_visible {
-                        match name {
-                            "A" => {
-                                info!("→ 面板确认");
-                                let _ = app.emit("panel-confirm", ());
-                            }
-                            "B" => {
-                                info!("→ 面板关闭");
-                                let _ = app.emit("panel-close", ());
-                            }
-                            _ => {}
+            // 每 ~1s 检测一次手柄连接状态（12 tick × 80ms ≈ 960ms）
+            attach_check_tick += 1;
+            if attach_check_tick >= 12 {
+                attach_check_tick = 0;
+                if !gamepad.is_attached() {
+                    // 释放所有持按键，避免"卡键"
+                    alt_tab.release();
+                    ctrl_tab.release();
+                    held_voice.release_keys();
+                    warn!(index = target.index, name = %target.name, "手柄已断开，返回外层重新枚举");
+                    break;
+                }
+            }
+
+            let panel_visible = app
+                .get_webview_window("panel")
+                .and_then(|w| w.is_visible().ok())
+                .unwrap_or(false);
+
+            let buttons = gamepad.read_buttons();
+            let new_presses = (buttons ^ prev_buttons) & buttons;
+
+            if new_presses != 0 {
+                for bit in 0..32 {
+                    if new_presses & (1 << bit) != 0 {
+                        let idx = bit as u32;
+                        let name = button_name(idx as usize).unwrap_or("?");
+                        debug!(button_idx = idx, button_name = name, "按下 #{idx} {name}");
+
+                        // 如果 Alt/Ctrl+Tab 按住中，按其他键时先释放
+                        if (alt_tab.held && name != "L1") || (ctrl_tab.held && name != "L2") {
+                            alt_tab.release();
+                            ctrl_tab.release();
                         }
-                        continue;
-                    }
 
-                    // Bridge: 特殊按键 → 宠物状态/AI
-                    let (agent_msg, _pet_cmd) = handle_button_press(idx, "");
+                        // Home 键 → 切换面板（独占处理）
+                        if name == "Home" {
+                            info!("→ 切换面板");
+                            panel::toggle_panel(app);
+                            continue;
+                        }
 
-                    let events = gamepad::process_button(idx);
-                    for evt in &events {
-                        let _ = app.emit("pet-event", evt);
-                    }
+                        // 面板可见 → 按键转发到面板
+                        if panel_visible {
+                            match name {
+                                "A" => {
+                                    info!("→ 面板确认");
+                                    let _ = app.emit("panel-confirm", ());
+                                }
+                                "B" => {
+                                    info!("→ 面板关闭");
+                                    let _ = app.emit("panel-close", ());
+                                }
+                                _ => {}
+                            }
+                            continue;
+                        }
 
-                    if let (Some(msg), Some(ag)) = (&agent_msg, get_agent(&agent)) {
-                        info!(msg = %msg, "→ AI: {msg}");
-                        run_ai_chat(&rt, ag, app, msg, "", &mut memory, &memory_config);
-                    }
+                        // Bridge: 特殊按键 → 宠物状态/AI
+                        let (agent_msg, _pet_cmd) = handle_button_press(idx, "");
 
-                    // Actions: 按键名 → 动作绑定
-                    if let Some(ref config) = action_config {
-                        if let Some(action_def) = config.actions.get(name) {
-                            info!(name = name, action_type = %action_def.action_type, "→ {} ({})", name, action_def.action_type);
-                            execute_action(
-                                action_def,
-                                &config.defaults,
-                                &mut alt_tab,
-                                &mut ctrl_tab,
-                            );
+                        let events = gamepad::process_button(idx);
+                        for evt in &events {
+                            let _ = app.emit("pet-event", evt);
+                        }
+
+                        if let (Some(msg), Some(ag)) = (&agent_msg, get_agent(&agent)) {
+                            info!(msg = %msg, "→ AI: {msg}");
+                            run_ai_chat(&rt, ag, app, msg, "", &mut memory, &memory_config);
+                        }
+
+                        // Actions: 按键名 → 动作绑定
+                        if let Some(ref config) = action_config {
+                            if let Some(action_def) = config.actions.get(name) {
+                                info!(name = name, action_type = %action_def.action_type, "→ {} ({})", name, action_def.action_type);
+                                execute_action(
+                                    action_def,
+                                    &config.defaults,
+                                    &mut alt_tab,
+                                    &mut ctrl_tab,
+                                );
+                            }
                         }
                     }
                 }
             }
-        }
 
-        // Voice 按住检测
-        let mut voice_just_released = false;
-        let mut voice_just_pressed = false;
-        if let Some(ref config) = action_config {
-            let mut voice_bits: u32 = 0;
-            for (name, action_def) in &config.actions {
-                if action_def.action_type == "voice" {
-                    if let Some(bit) = name_to_bit(name) {
-                        voice_bits |= 1 << bit;
-                    }
-                }
-            }
-            let voice_active = (buttons & voice_bits) != 0;
-            let (jp, jr) = held_voice.detect(voice_active);
-            voice_just_pressed = jp;
-            voice_just_released = jr;
-        }
-
-        // voice 按下
-        if voice_just_pressed {
-            match voice::open_voice_capture(app) {
-                Ok(()) => info!("[voice] 录音条已显示并强制前台化"),
-                Err(e) => warn!(error = %e, "[voice] 打开录音条失败"),
-            }
-            std::thread::sleep(std::time::Duration::from_millis(80));
+            // Voice 按住检测
+            let mut voice_just_released = false;
+            let mut voice_just_pressed = false;
             if let Some(ref config) = action_config {
-                held_voice.press_keys(config);
+                let mut voice_bits: u32 = 0;
+                for (name, action_def) in &config.actions {
+                    if action_def.action_type == "voice" {
+                        if let Some(bit) = name_to_bit(name) {
+                            voice_bits |= 1 << bit;
+                        }
+                    }
+                }
+                let voice_active = (buttons & voice_bits) != 0;
+                let (jp, jr) = held_voice.detect(voice_active);
+                voice_just_pressed = jp;
+                voice_just_released = jr;
             }
-        }
 
-        // voice 释放
-        if voice_just_released {
-            held_voice.release_keys();
-            info!("[voice] 等待识别注入完成 (700ms)...");
-            std::thread::sleep(std::time::Duration::from_millis(700));
-            match voice::take_voice_text(app) {
-                Ok(raw) => {
-                    let text = raw.trim().to_string();
-                    if text.is_empty() {
-                        warn!("[voice] 虚拟输入框为空 (识别可能失败或焦点被抢走)");
-                    } else {
-                        info!(text = %text, len = text.chars().count(), "[voice] 识别全文: {text}");
+            // voice 按下
+            if voice_just_pressed {
+                match voice::open_voice_capture(app) {
+                    Ok(()) => info!("[voice] 录音条已显示并强制前台化"),
+                    Err(e) => warn!(error = %e, "[voice] 打开录音条失败"),
+                }
+                std::thread::sleep(std::time::Duration::from_millis(80));
+                if let Some(ref config) = action_config {
+                    held_voice.press_keys(config);
+                }
+            }
 
-                        if let Some(ag) = get_agent(&agent) {
-                            run_ai_chat(
-                                &rt,
-                                ag,
-                                app,
-                                &text,
-                                "[voice]",
-                                &mut memory,
-                                &memory_config,
-                            );
+            // voice 释放
+            if voice_just_released {
+                held_voice.release_keys();
+                info!("[voice] 等待识别注入完成 (700ms)...");
+                std::thread::sleep(std::time::Duration::from_millis(700));
+                match voice::take_voice_text(app) {
+                    Ok(raw) => {
+                        let text = raw.trim().to_string();
+                        if text.is_empty() {
+                            warn!("[voice] 虚拟输入框为空 (识别可能失败或焦点被抢走)");
                         } else {
-                            warn!("[voice] AI Agent 未初始化");
+                            info!(text = %text, len = text.chars().count(), "[voice] 识别全文: {text}");
+
+                            if let Some(ag) = get_agent(&agent) {
+                                run_ai_chat(
+                                    &rt,
+                                    ag,
+                                    app,
+                                    &text,
+                                    "[voice]",
+                                    &mut memory,
+                                    &memory_config,
+                                );
+                            } else {
+                                warn!("[voice] AI Agent 未初始化");
+                            }
                         }
                     }
-                }
-                Err(e) => warn!(error = %e, "[voice] 读取虚拟输入框失败"),
-            }
-        }
-
-        prev_buttons = buttons;
-
-        // Bubble 聊天输入：检查前端是否提交了消息
-        if let Some(chat_msg) = {
-            let pc: State<SharedPendingChat> = app.state();
-            take_pending_chat(&pc)
-        } {
-            if let Some(ag) = get_agent(&agent) {
-                info!(msg = %chat_msg, "[chat] → AI 对话 (bubble 输入)");
-                run_ai_chat(&rt, ag, app, &chat_msg, "[chat]", &mut memory, &memory_config);
-            }
-        }
-
-        // 方向键
-        let hat = gamepad.read_hat(0);
-        if panel_visible {
-            if hat != prev_hat {
-                if let Some((dx, dy)) = hat {
-                    info!(dx = dx, dy = dy, "→ 面板导航");
-                    let _ = app.emit("panel-nav", (dx, dy));
+                    Err(e) => warn!(error = %e, "[voice] 读取虚拟输入框失败"),
                 }
             }
-        } else if let Some((dx, dy)) = hat {
-            alt_tab.release();
-            ctrl_tab.release();
-            let speed = 3;
-            if dy > 0 {
-                let _ = hotkey::send_scroll(120 * speed);
-            } else if dy < 0 {
-                let _ = hotkey::send_scroll(-120 * speed);
-            }
-            if dx > 0 {
-                let _ = hotkey::send_scroll_h(120 * speed);
-            } else if dx < 0 {
-                let _ = hotkey::send_scroll_h(-120 * speed);
-            }
-        }
-        prev_hat = hat;
 
-        // 气泡跟随：宠物移动时自动重定位气泡窗口
-        if let Some(bubble_win) = app.get_webview_window("bubble") {
-            if bubble_win.is_visible().unwrap_or(false) {
-                let pet = app
-                    .get_webview_window("pet")
-                    .filter(|w| w.is_visible().unwrap_or(false))
-                    .or_else(|| app.get_webview_window("pet-mini").filter(|w| w.is_visible().unwrap_or(false)))
-                    .or_else(|| app.get_webview_window("pet-snap").filter(|w| w.is_visible().unwrap_or(false)));
-                if let Some(p) = pet {
-                    if let Ok(pos) = p.outer_position() {
-                        let key = (pos.x, pos.y);
-                        if Some(key) != prev_pet_pos {
-                            prev_pet_pos = Some(key);
-                            bubble::position_above_pet(app, &bubble_win);
-                        }
+            prev_buttons = buttons;
+
+            // Bubble 聊天输入：检查前端是否提交了消息
+            if let Some(chat_msg) = {
+                let pc: State<SharedPendingChat> = app.state();
+                take_pending_chat(&pc)
+            } {
+                if let Some(ag) = get_agent(&agent) {
+                    info!(msg = %chat_msg, "[chat] → AI 对话 (bubble 输入)");
+                    run_ai_chat(&rt, ag, app, &chat_msg, "[chat]", &mut memory, &memory_config);
+                }
+            }
+
+            // 方向键
+            let hat = gamepad.read_hat(0);
+            if panel_visible {
+                if hat != prev_hat {
+                    if let Some((dx, dy)) = hat {
+                        info!(dx = dx, dy = dy, "→ 面板导航");
+                        let _ = app.emit("panel-nav", (dx, dy));
                     }
                 }
-            } else {
-                // 气泡隐藏时重置位置缓存（下次显示时必定重定位）
-                prev_pet_pos = None;
+            } else if let Some((dx, dy)) = hat {
+                alt_tab.release();
+                ctrl_tab.release();
+                let speed = 3;
+                if dy > 0 {
+                    let _ = hotkey::send_scroll(120 * speed);
+                } else if dy < 0 {
+                    let _ = hotkey::send_scroll(-120 * speed);
+                }
+                if dx > 0 {
+                    let _ = hotkey::send_scroll_h(120 * speed);
+                } else if dx < 0 {
+                    let _ = hotkey::send_scroll_h(-120 * speed);
+                }
             }
-        }
+            prev_hat = hat;
 
-        std::thread::sleep(std::time::Duration::from_millis(80));
+            // 气泡跟随：宠物移动时自动重定位气泡窗口
+            if let Some(bubble_win) = app.get_webview_window("bubble") {
+                if bubble_win.is_visible().unwrap_or(false) {
+                    let pet = app
+                        .get_webview_window("pet")
+                        .filter(|w| w.is_visible().unwrap_or(false))
+                        .or_else(|| app.get_webview_window("pet-mini").filter(|w| w.is_visible().unwrap_or(false)))
+                        .or_else(|| app.get_webview_window("pet-snap").filter(|w| w.is_visible().unwrap_or(false)));
+                    if let Some(p) = pet {
+                        if let Ok(pos) = p.outer_position() {
+                            let key = (pos.x, pos.y);
+                            if Some(key) != prev_pet_pos {
+                                prev_pet_pos = Some(key);
+                                bubble::position_above_pet(app, &bubble_win);
+                            }
+                        }
+                    }
+                } else {
+                    // 气泡隐藏时重置位置缓存（下次显示时必定重定位）
+                    prev_pet_pos = None;
+                }
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(80));
+        }
+        // 内层 break 到这里：小睡一下再回外层重枚举（避免空转）
+        std::thread::sleep(std::time::Duration::from_millis(500));
     }
 }
 

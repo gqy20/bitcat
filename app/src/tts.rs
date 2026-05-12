@@ -5,26 +5,50 @@ use windows_sys::Win32::System::Com::*;
 
 static SPEAKING: AtomicBool = AtomicBool::new(false);
 
-const CLSID_SpVoice: windows_sys::core::GUID = windows_sys::core::GUID {
-    data1: 0xC8BCA161,
-    data2: 0x11D1,
-    data3: 0x4B05,
-    data4: [0xA5, 0x3B, 0x19, 0xD4, 0xF4, 0xE5, 0xA5, 0x22],
+const CLSID_SP_VOICE: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0x96749377,
+    data2: 0x3391,
+    data3: 0x11D2,
+    data4: [0x9E, 0xE3, 0x00, 0xC0, 0x4F, 0x79, 0x73, 0x96],
 };
 
-const IID_ISpVoice: windows_sys::core::GUID = windows_sys::core::GUID {
+const IID_ISP_VOICE: windows_sys::core::GUID = windows_sys::core::GUID {
     data1: 0x6C44DF74,
-    data2: 0x8620,
-    data3: 0x4F7D,
-    data4: [0x95, 0xAA, 0x00, 0x6F, 0xAB, 0x31, 0xD3, 0x3C],
+    data2: 0x72B9,
+    data3: 0x4992,
+    data4: [0xA1, 0xEC, 0xEF, 0x99, 0x6E, 0x04, 0x22, 0xD4],
 };
 
+/// ISpVoice vtable 布局
+/// 继承链：IUnknown(3) → ISpNotifySource(7) → ISpEventSource(3) → ISpVoice
+/// Speak 是 ISpVoice 的第 8 个方法，整体 vtable index = 3+7+3+7 = 20
 #[repr(C)]
 struct ISpVoiceVtbl {
+    // IUnknown
     query_interface: usize,
     add_ref: usize,
     release: unsafe extern "system" fn(this: *mut ISpVoice) -> u32,
-    _pad: [usize; 9],
+    // ISpNotifySource (7)
+    set_notify_sink: usize,
+    set_notify_window_message: usize,
+    set_notify_callback_function: usize,
+    set_notify_callback_interface: usize,
+    set_notify_win32_event: usize,
+    wait_for_notify_event: usize,
+    get_notify_event_handle: usize,
+    // ISpEventSource (3)
+    set_interest: usize,
+    get_events: usize,
+    get_info: usize,
+    // ISpVoice（Speak 前 7 个）
+    set_output: usize,
+    get_output_object_token: usize,
+    get_output_stream: usize,
+    pause: usize,
+    resume: usize,
+    set_voice: usize,
+    get_voice: usize,
+    // Speak (vtable index 20)
     speak: unsafe extern "system" fn(
         this: *mut ISpVoice,
         pwcs: *const u16,
@@ -35,11 +59,11 @@ struct ISpVoiceVtbl {
 
 #[repr(C)]
 struct ISpVoice {
-    lpVtbl: *const ISpVoiceVtbl,
+    lp_vtbl: *const ISpVoiceVtbl,
 }
 
-const SVSFDefault: u32 = 0;
-const SVFSPurgeBeforeSpeak: u32 = 2;
+const SVSF_DEFAULT: u32 = 0;
+const SVSF_PURGE_BEFORE_SPEAK: u32 = 2;
 const S_FALSE: i32 = 1;
 
 fn succeeded(hr: i32) -> bool { hr >= 0 }
@@ -69,10 +93,10 @@ fn do_speak(text: &str) -> Result<(), String> {
 
         let mut voice: *mut c_void = std::ptr::null_mut();
         let hr = CoCreateInstance(
-            &CLSID_SpVoice,
+            &CLSID_SP_VOICE,
             std::ptr::null_mut(),
             CLSCTX_INPROC_SERVER,
-            &IID_ISpVoice,
+            &IID_ISP_VOICE,
             &mut voice,
         );
         if !succeeded(hr) {
@@ -82,16 +106,16 @@ fn do_speak(text: &str) -> Result<(), String> {
 
         let wide_text: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
         let voice_ptr = voice as *mut ISpVoice;
-        let hr = ((*(*voice_ptr).lpVtbl).speak)(
+        let hr = ((*(*voice_ptr).lp_vtbl).speak)(
             voice_ptr,
             wide_text.as_ptr(),
-            SVSFDefault | SVFSPurgeBeforeSpeak,
+            SVSF_DEFAULT | SVSF_PURGE_BEFORE_SPEAK,
             std::ptr::null_mut(),
         );
 
         // IUnknown::Release (vtable index 2)
         let release_fn: unsafe extern "system" fn(this: *mut ISpVoice) -> u32 =
-            std::mem::transmute((*(*voice_ptr).lpVtbl).release);
+            std::mem::transmute((*(*voice_ptr).lp_vtbl).release);
         release_fn(voice_ptr);
         CoUninitialize();
 

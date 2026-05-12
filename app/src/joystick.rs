@@ -86,6 +86,11 @@ impl SdlGamepad {
         buttons
     }
 
+    /// 手柄是否仍连接（用于热插拔检测）
+    pub fn is_attached(&self) -> bool {
+        self.joystick.attached()
+    }
+
     pub fn read_hat(&mut self, hat_index: u32) -> Option<(i32, i32)> {
         let state = self.joystick.hat(hat_index).ok()?;
         use sdl2::joystick::HatState;
