@@ -312,12 +312,14 @@ define_tool_sync!(
 define_tool_sync!(
     PlayDanceTool,
     "play_dance",
-    "立即播放一段已保存的舞蹈（通过 create_dance 生成的），桌宠会根据 steps 序列表演",
+    "立即播放一段已保存的舞蹈（通过 create_dance 生成的），桌宠会根据 steps 序列表演。可选 loops 指定轮数（0=无限），duration_ms 指定硬上限毫秒",
     PlayDanceArgs,
     json!({
         "type": "object",
         "properties": {
-            "name": { "type": "string", "description": "舞蹈名称，必须已存在于 ~/.ai-pad/dances/" }
+            "name": { "type": "string", "description": "舞蹈名称，必须已存在于 ~/.ai-pad/dances/" },
+            "loops": { "type": "integer", "description": "播放轮数：不填或 1=单次，0=无限循环，>=2=固定轮数" },
+            "duration_ms": { "type": "integer", "description": "硬上限毫秒数，到时强制停止（优先级高于 loops）" }
         },
         "required": ["name"]
     }),

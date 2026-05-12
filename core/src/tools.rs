@@ -306,19 +306,44 @@ pub fn execute_create_dance(args: &CreateDanceArgs) -> ToolResult {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PlayDanceArgs {
     pub name: String,
+    /// 播放轮数：不填或 1 = 单次；0 = 无限循环；>=2 = 固定轮数
+    #[serde(default)]
+    pub loops: Option<u32>,
+    /// 硬上限毫秒数，到时强制停
+    #[serde(default)]
+    pub duration_ms: Option<u32>,
 }
 
 /// AI 播放已保存的舞蹈：校验舞蹈存在 → 通过事件通道通知 app 层 emit 到前端
 pub fn execute_play_dance(args: &PlayDanceArgs) -> ToolResult {
-    debug!(name = %args.name, "AI 播放舞蹈");
+    debug!(
+        name = %args.name,
+        loops = ?args.loops,
+        duration_ms = ?args.duration_ms,
+        "AI 播放舞蹈"
+    );
 
     // 先确认舞蹈文件存在且能反序列化，避免发了事件前端却拿不到定义
     if let Err(e) = crate::dance::load_dance(&args.name) {
         return ToolResult::err(format!("舞蹈「{}」不存在或无法加载: {}", args.name, e));
     }
 
-    match crate::dance::request_play_dance(&args.name) {
-        Ok(()) => ToolResult::ok(format!("已触发播放舞蹈「{}」", args.name)),
+    let req = crate::dance::PlayDanceRequest {
+        name: args.name.clone(),
+        loops: args.loops,
+        duration_ms: args.duration_ms,
+    };
+
+    match crate::dance::request_play_dance(req) {
+        Ok(()) => {
+            let hint = match (args.loops, args.duration_ms) {
+                (Some(0), _) => "无限循环".to_string(),
+                (Some(n), _) if n >= 2 => format!("{n} 轮"),
+                (_, Some(ms)) => format!("{ms}ms 上限"),
+                _ => "单次".to_string(),
+            };
+            ToolResult::ok(format!("已触发播放舞蹈「{}」（{}）", args.name, hint))
+        }
         Err(e) => ToolResult::err(format!("触发播放失败: {e}")),
     }
 }
@@ -638,12 +663,24 @@ mod tests {
         let json = r#"{"name":"happy_twist"}"#;
         let args: PlayDanceArgs = serde_json::from_str(json).unwrap();
         assert_eq!(args.name, "happy_twist");
+        assert!(args.loops.is_none());
+        assert!(args.duration_ms.is_none());
+    }
+
+    #[test]
+    fn play_dance_args_with_loops_and_duration() {
+        let json = r#"{"name":"spin","loops":3,"duration_ms":5000}"#;
+        let args: PlayDanceArgs = serde_json::from_str(json).unwrap();
+        assert_eq!(args.loops, Some(3));
+        assert_eq!(args.duration_ms, Some(5000));
     }
 
     #[test]
     fn execute_play_dance_missing_file_returns_err() {
         let args = PlayDanceArgs {
             name: "definitely_not_exist_dance_xyz_987".into(),
+            loops: None,
+            duration_ms: None,
         };
         let result = execute_play_dance(&args);
         assert!(!result.success);

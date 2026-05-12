@@ -255,7 +255,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
     use ai_pad_core::screenshot::{encode_jpeg, resize_bgra, ScreenshotConfig};
     use ai_pad_core::vision::{self, VisionConfig};
     use base64::Engine;
-    use tracing::{error, info, warn};
+    use tracing::{debug, error, info, warn};
 
     let rt = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -306,6 +306,16 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
         eprintln!("[SS-DBG] 获取 state");
         let state: tauri::State<SharedScreenshotState> = app.state();
         if !*state.enabled.lock().unwrap() {
+            continue;
+        }
+
+        // 跳舞期间跳过本轮：避免视觉分析回调打断舞蹈表演
+        if ai_pad_core::dance::is_dancing() {
+            eprintln!("[SS-DBG] 正在跳舞，跳过本轮截图");
+            debug!(
+                cycle = cycle_count,
+                "[screenshot] is_dancing=true，跳过本轮"
+            );
             continue;
         }
 

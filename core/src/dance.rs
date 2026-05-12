@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, info, warn};
 
@@ -134,29 +135,54 @@ pub fn list_dances() -> Vec<String> {
 // ---- 播放事件通道（跨 crate 解耦）----
 //
 // app 层启动时通过 [set_play_dance_sender] 注入一个 channel sender，
-// core 层 AI 工具执行 [execute_play_dance] 时发送舞蹈名，
+// core 层 AI 工具执行 [execute_play_dance] 时发送播放请求，
 // app 层在独立任务里消费并 emit 到前端 pet 窗口。
 
-static PLAY_DANCE_TX: OnceLock<UnboundedSender<String>> = OnceLock::new();
+/// AI 工具→app 的播放请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayDanceRequest {
+    pub name: String,
+    /// 播放轮数；None 或 Some(1) = 一次；Some(0) = 按 yaml 里的 loop_ 无限循环；>=2 = 固定轮数
+    #[serde(default)]
+    pub loops: Option<u32>,
+    /// 硬上限毫秒数；到时前端强制停止，即便还在 loop
+    #[serde(default)]
+    pub duration_ms: Option<u32>,
+}
+
+static PLAY_DANCE_TX: OnceLock<UnboundedSender<PlayDanceRequest>> = OnceLock::new();
 
 /// app 层启动时注入 sender（只生效一次）
-pub fn set_play_dance_sender(tx: UnboundedSender<String>) -> Result<(), String> {
+pub fn set_play_dance_sender(tx: UnboundedSender<PlayDanceRequest>) -> Result<(), String> {
     PLAY_DANCE_TX
         .set(tx)
         .map_err(|_| "舞蹈事件 sender 已初始化，不能重复设置".to_string())
 }
 
 /// 发送一个"播放舞蹈"事件，返回是否成功
-pub fn request_play_dance(name: &str) -> Result<(), String> {
+pub fn request_play_dance(req: PlayDanceRequest) -> Result<(), String> {
     match PLAY_DANCE_TX.get() {
-        Some(tx) => tx
-            .send(name.to_string())
-            .map_err(|e| format!("舞蹈事件发送失败: {e}")),
+        Some(tx) => tx.send(req).map_err(|e| format!("舞蹈事件发送失败: {e}")),
         None => {
             warn!("[dance] PLAY_DANCE_TX 未初始化，忽略播放请求");
             Err("舞蹈事件通道未初始化".to_string())
         }
     }
+}
+
+// ---- 舞蹈进行态开关（供截图循环等观察）----
+
+static IS_DANCING: AtomicBool = AtomicBool::new(false);
+
+/// 查询当前是否正在跳舞
+pub fn is_dancing() -> bool {
+    IS_DANCING.load(Ordering::Relaxed)
+}
+
+/// 设置舞蹈进行态（由 app 层 bridge 在 emit/超时时调用）
+pub fn set_dancing(on: bool) {
+    IS_DANCING.store(on, Ordering::Relaxed);
+    debug!(on, "[dance] IS_DANCING 更新");
 }
 
 // ---- Mood → 编排模板 ----

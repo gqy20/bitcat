@@ -121,26 +121,76 @@ pub fn run() {
             tray::create_tray(app.handle())?;
 
             // 桥接 core 的舞蹈播放事件 → 前端 pet 窗口的 play-dance 事件
-            // AI 工具 execute_play_dance 往 channel 发舞蹈名，这里消费并 emit
-            let (dance_tx, mut dance_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+            // AI 工具 execute_play_dance 往 channel 发请求，这里消费并 emit，
+            // 同时维护 is_dancing 状态（供截图循环跳过本轮用）。
+            let (dance_tx, mut dance_rx) =
+                tokio::sync::mpsc::unbounded_channel::<ai_pad_core::dance::PlayDanceRequest>();
             if let Err(e) = ai_pad_core::dance::set_play_dance_sender(dance_tx) {
                 warn!(error = %e, "注入 play_dance sender 失败");
             }
             let dance_app = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                while let Some(name) = dance_rx.recv().await {
-                    match ai_pad_core::dance::load_dance(&name) {
-                        Ok(def) => match serde_json::to_value(&def) {
-                            Ok(payload) => {
-                                if let Err(e) = dance_app.emit("play-dance", &payload) {
-                                    warn!(error = %e, dance = %name, "emit play-dance 失败");
-                                } else {
-                                    info!(dance = %name, "[dance-bridge] 已 emit play-dance");
-                                }
-                            }
-                            Err(e) => warn!(error = %e, dance = %name, "DanceDef 序列化失败"),
-                        },
-                        Err(e) => warn!(error = %e, dance = %name, "加载舞蹈失败"),
+                while let Some(req) = dance_rx.recv().await {
+                    let name = req.name.clone();
+                    let def = match ai_pad_core::dance::load_dance(&name) {
+                        Ok(d) => d,
+                        Err(e) => {
+                            warn!(error = %e, dance = %name, "加载舞蹈失败");
+                            continue;
+                        }
+                    };
+
+                    // 根据 loops / duration_ms 计算最终 loop_ 行为与硬上限
+                    let one_round_ms = def.total_duration_ms() as u64;
+                    let (loop_effective, total_ms): (bool, Option<u64>) = match req.loops {
+                        Some(0) => (true, None),          // 无限循环
+                        Some(n) if n >= 2 => (true, Some(one_round_ms.saturating_mul(n as u64))),
+                        _ => (false, Some(one_round_ms)), // None / 1 = 单次
+                    };
+                    // duration_ms 若存在则取更小的硬上限
+                    let max_ms: Option<u64> = match (total_ms, req.duration_ms) {
+                        (Some(t), Some(d)) => Some(t.min(d as u64)),
+                        (Some(t), None) => Some(t),
+                        (None, Some(d)) => Some(d as u64),
+                        (None, None) => None, // 仅在 loops=0 且未设 duration 时为真·无限
+                    };
+
+                    // 构造前端 payload：覆盖 loop_ + 附加 max_duration_ms
+                    let mut payload = match serde_json::to_value(&def) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            warn!(error = %e, dance = %name, "DanceDef 序列化失败");
+                            continue;
+                        }
+                    };
+                    if let Some(obj) = payload.as_object_mut() {
+                        obj.insert("loop_".into(), serde_json::json!(loop_effective));
+                        if let Some(ms) = max_ms {
+                            obj.insert("max_duration_ms".into(), serde_json::json!(ms));
+                        }
+                    }
+
+                    ai_pad_core::dance::set_dancing(true);
+                    if let Err(e) = dance_app.emit("play-dance", &payload) {
+                        warn!(error = %e, dance = %name, "emit play-dance 失败");
+                        ai_pad_core::dance::set_dancing(false);
+                        continue;
+                    }
+                    info!(
+                        dance = %name,
+                        loop_ = loop_effective,
+                        max_ms = ?max_ms,
+                        "[dance-bridge] 已 emit play-dance"
+                    );
+
+                    // 定时复位 IS_DANCING：若有硬上限则到时关闭；无限循环只靠下一次请求覆盖
+                    if let Some(ms) = max_ms {
+                        let guard_name = name.clone();
+                        tauri::async_runtime::spawn(async move {
+                            tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+                            ai_pad_core::dance::set_dancing(false);
+                            debug!(dance = %guard_name, "[dance-bridge] 舞蹈时长到，IS_DANCING 复位");
+                        });
                     }
                 }
                 warn!("[dance-bridge] channel 已关闭，消费任务退出");

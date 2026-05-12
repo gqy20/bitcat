@@ -361,6 +361,15 @@
 
   function updateDance(dt) {
     dancePlayer.time += dt;
+    dancePlayer.elapsed += dt;
+
+    // 硬上限：总累计时长超过 max_duration_ms 则停止，即便 loop_ 为 true
+    if (dancePlayer.maxDurationMs != null && dancePlayer.elapsed >= dancePlayer.maxDurationMs) {
+      console.log('[dance] 达到 max_duration_ms=' + dancePlayer.maxDurationMs + '，停止');
+      dancePlayer = null;
+      return;
+    }
+
     var step = dancePlayer.steps[dancePlayer.index];
     if (dancePlayer.time >= step.duration_ms) {
       dancePlayer.time = 0;
@@ -495,11 +504,13 @@
     // 舞蹈播放事件（Rust 侧 cmd_play_dance 发出）
     window.__TAURI__.event.listen('play-dance', (event) => {
       var payload = event.payload;
-      console.log('[dance] 收到播放指令:', payload.name, '-', payload.steps.length, '步, loop=', payload.loop_);
+      console.log('[dance] 收到播放指令:', payload.name, '-', payload.steps.length, '步, loop=', payload.loop_, 'max_ms=', payload.max_duration_ms);
       dancePlayer = {
         steps: payload.steps,
         index: 0,
         time: 0,
+        elapsed: 0,
+        maxDurationMs: typeof payload.max_duration_ms === 'number' ? payload.max_duration_ms : null,
         loop_: payload.loop_ !== false,
       };
       console.log('[dance] ▶ 舞蹈播放器启动');
