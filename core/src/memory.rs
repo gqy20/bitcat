@@ -472,23 +472,13 @@ fn relevance_score(text: &str, query: &str) -> f32 {
 
 // ---- AI 聚合：从原始记录生成画像摘要 ----
 
-const DEFAULT_AGGREGATION_PROMPT: &str = r#"你是 8Bit 的记忆整理模块。
-
-以下是你和主人的最近对话记录（按时间顺序）。请把它们整理成一份"关于主人"的记忆摘要。
-
-要求：
-1. 提取关键事实：名字、职业、项目、偏好、习惯、承诺/待办、禁忌
-2. 合并重复信息（同一件事提到多次 → 写一次 + 标注提及频率）
-3. 去掉闲聊废话，只留有价值的信息
-4. 用自然语言写成连贯的段落，不要列表不要 JSON
-5. 控制在 400 字以内
-6. 如果之前已有记忆摘要，在其基础上增量更新（新增的加上去，变化的改过来）"#;
-
 /// 调用 AI 将未聚合的长期记忆条目聚合为用户画像摘要。
+/// `prompt` 来自 `PromptsConfig::default().aggregation.prompt`（即 config/prompts.yml 的 aggregation 段）。
 pub async fn aggregate_profile(
     unaggregated: &[&LongTermEntry],
     existing_profile: &str,
     ai_config: &AiConfig,
+    prompt: &str,
 ) -> Result<String, String> {
     if unaggregated.is_empty() {
         return Err("没有需要聚合的新记录".to_string());
@@ -514,7 +504,7 @@ pub async fn aggregate_profile(
         "messages": [
             {
                 "role": "user",
-                "content": format!("{DEFAULT_AGGREGATION_PROMPT}\n\n{user_content}")
+                "content": format!("{prompt}\n\n{user_content}")
             }
         ]
     });
@@ -1056,7 +1046,7 @@ mod tests {
             model: "test-model".into(),
         };
 
-        let result = aggregate_profile(&refs, "", &ai_config).await;
+        let result = aggregate_profile(&refs, "", &ai_config, "测试聚合提示词").await;
         assert!(result.is_ok());
         let profile = result.unwrap();
         assert!(profile.contains("小明"));
@@ -1088,7 +1078,8 @@ mod tests {
             model: "test-model".into(),
         };
 
-        let result = aggregate_profile(&refs, "主人叫小明，程序员", &ai_config).await;
+        let result =
+            aggregate_profile(&refs, "主人叫小明，程序员", &ai_config, "测试聚合提示词").await;
         assert!(result.is_ok());
     }
 
@@ -1099,7 +1090,7 @@ mod tests {
             base_url: "https://api.anthropic.com".into(),
             model: "test".into(),
         };
-        let result = aggregate_profile(&[], "", &ai_config).await;
+        let result = aggregate_profile(&[], "", &ai_config, "测试聚合提示词").await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("没有需要聚合"));
     }
@@ -1128,7 +1119,7 @@ mod tests {
             model: "test-model".into(),
         };
 
-        let result = aggregate_profile(&refs, "", &ai_config).await;
+        let result = aggregate_profile(&refs, "", &ai_config, "测试聚合提示词").await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("错误"));
     }

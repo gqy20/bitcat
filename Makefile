@@ -25,10 +25,10 @@ EXE_NAME    = ai-pad-app.exe
 # ══════════════════════════════════════
 
 build:
-	cargo build && mkdir -p $(DEBUG_DIR)/config && cp config/buttons.yml config/actions.yml config/prompts.yml config/user.yml $(DEBUG_DIR)/config/
+	cargo build && mkdir -p $(DEBUG_DIR)/config && cp config/*.yml $(DEBUG_DIR)/config/
 
 release:
-	cargo build --release && mkdir -p $(RELEASE_DIR)/config && cp config/buttons.yml config/actions.yml config/prompts.yml config/user.yml $(RELEASE_DIR)/config/
+	cargo build --release && mkdir -p $(RELEASE_DIR)/config && cp config/*.yml $(RELEASE_DIR)/config/
 
 # ══════════════════════════════════════
 #  打包：exe + yml → 版本化 ZIP
@@ -60,7 +60,7 @@ dist-upx:
 
 # 拷贝配置文件到 core/（测试需要这些 yml）
 _copy-fixtures:
-	@mkdir -p core/config && cp config/buttons.yml config/actions.yml config/prompts.yml config/user.yml core/config/
+	@mkdir -p core/config && cp config/*.yml core/config/
 
 # 完整测试：整个 workspace（core + app）。app crate 依赖 SDL2/Tauri，编译较慢。
 test: _copy-fixtures

@@ -700,10 +700,14 @@ pub fn chat_loop(app: &tauri::AppHandle) {
                         );
                         let entry_refs: Vec<&ai_pad_core::memory::LongTermEntry> =
                             entries_cloned.iter().collect();
+                        let agg_prompt = ai_pad_core::prompts::PromptsConfig::default()
+                            .aggregation
+                            .prompt;
                         let agg_result = rt.block_on(ai_pad_core::memory::aggregate_profile(
                             &entry_refs,
                             &cur_profile,
                             &cfg,
+                            &agg_prompt,
                         ));
                         match agg_result {
                             Ok(new_profile) => {

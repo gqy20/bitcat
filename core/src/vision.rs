@@ -160,8 +160,15 @@ mod tests {
     fn test_vision_prompt_is_non_empty() {
         let def = VisionPromptConfig::default();
         assert!(!def.prompt.is_empty());
-        assert!(def.prompt.contains("不要"));
-        assert!(def.prompt.contains("编造"));
+        assert!(
+            def.prompt.contains("不要瞎猜"),
+            "应包含反幻觉规则（来自内嵌 YAML）"
+        );
+        assert!(
+            def.prompt.contains("看不太清"),
+            "应包含看不清指引（来自内嵌 YAML）"
+        );
+        assert!(def.prompt.contains("120 字"), "应使用 YAML 中的字数限制");
     }
 
     // ---- insta 快照测试：请求体结构 ----

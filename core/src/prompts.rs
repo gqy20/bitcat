@@ -3,39 +3,17 @@ use crate::screen_summary::ScreenSummaryConfig;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-// ---- 默认值 ----
+// ---- 内嵌默认值（唯一来源，与 config/prompts.yml 保持同步） ----
 
-const DEFAULT_AGENT_PREAMBLE: &str = r#"你是 8Bit，一只住在电脑屏幕上的像素风小猫助手。
+const EMBEDDED_YML: &str = include_str!("../../config/prompts.yml");
 
-性格特点：
-- 活泼好奇，喜欢用 emoji
-- 偶尔调皮，但做事靠谱
-- 回答简洁，不说废话
-- 用中文交流
+/// 从内嵌 YAML 解析完整配置，再提取对应字段作为默认值。
+/// 这确保 Default/serde(default) 始终与编译嵌入的 YAML 一致，不会出现过时 const。
+fn embedded_default<T: for<'de> Deserialize<'de>>() -> T {
+    serde_yaml::from_str(EMBEDDED_YML).expect("内嵌 config/prompts.yml 损坏")
+}
 
-你通过手柄和用户交互，可以帮用户：
-- 启动程序、执行命令
-- 查时间、读文件
-- 闲聊、讲笑话、提醒事项
-
-回答时保持角色感，像一只懂技术的猫。"#;
-
-const DEFAULT_VISION_PROMPT: &str = r#"你是 8Bit，一只住在电脑屏幕上的像素风小猫助手。你刚刚看了一眼主人的屏幕。
-
-严格遵守以下规则：
-1. 如果你无法看清文字、标签、文件名，必须说"看不清"，绝对不要猜测或编造
-2. 对于模糊的图标，只描述颜色和形状，用"看起来像是"而非"就是"
-3. 不要编造任何具体的名称、数字、文字内容
-4. 与其编造细节，不如诚实说"这个太小了喵~我看不太清"
-5. 回复控制在 80 字以内，语气活泼可爱，像猫的视角
-
-请描述你看到的屏幕内容。"#;
-
-const DEFAULT_VISION_PROMPT_MULTI: &str = r#"
-注意：这张截图是多显示器拼接的，内容从左到右排列。
-左边通常是副屏，右边通常是主屏。请分别描述各屏的内容。"#;
-
-// ---- 统一配置结构 ----
+// ---- 数据结构 ----
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentPromptConfig {
@@ -73,12 +51,19 @@ fn default_aggregation_interval() -> u32 {
 
 impl Default for MemoryV2Config {
     fn default() -> Self {
-        Self {
-            long_term_max_entries: default_long_term_max(),
-            retrieve_budget_chars: default_retrieve_budget(),
-            aggregation_interval_min: default_aggregation_interval(),
-        }
+        embedded_default()
     }
+}
+
+/// 记忆聚合提示词配置（来自 config/prompts.yml 的 aggregation 段）
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct AggregationConfig {
+    #[serde(default = "default_aggregation_prompt")]
+    pub prompt: String,
+}
+
+fn default_aggregation_prompt() -> String {
+    embedded_default::<PromptsConfig>().aggregation.prompt
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -93,32 +78,29 @@ pub struct PromptsConfig {
     pub memory_v2: MemoryV2Config,
     #[serde(default)]
     pub screen_summary: ScreenSummaryConfig,
+    #[serde(default)]
+    pub aggregation: AggregationConfig,
 }
 
 fn default_agent_preamble() -> String {
-    DEFAULT_AGENT_PREAMBLE.to_string()
+    embedded_default::<PromptsConfig>().agent.preamble
 }
 fn default_vision_prompt() -> String {
-    DEFAULT_VISION_PROMPT.to_string()
+    embedded_default::<PromptsConfig>().vision.prompt
 }
 fn default_vision_prompt_multi() -> String {
-    DEFAULT_VISION_PROMPT_MULTI.to_string()
+    embedded_default::<PromptsConfig>().vision.prompt_multi
 }
 
 impl Default for AgentPromptConfig {
     fn default() -> Self {
-        Self {
-            preamble: default_agent_preamble(),
-        }
+        embedded_default()
     }
 }
 
 impl Default for VisionPromptConfig {
     fn default() -> Self {
-        Self {
-            prompt: default_vision_prompt(),
-            prompt_multi: default_vision_prompt_multi(),
-        }
+        embedded_default()
     }
 }
 
@@ -129,7 +111,7 @@ impl PromptsConfig {
         match serde_yaml::from_str::<PromptsConfig>(&content) {
             Ok(cfg) => cfg,
             Err(e) => {
-                tracing::warn!(error = %e, "解析 prompts.yml 失败，使用默认提示词");
+                tracing::warn!(error = %e, "解析 config/prompts.yml 失败，使用默认提示词");
                 Self::default()
             }
         }
@@ -149,9 +131,9 @@ impl PromptsConfig {
     }
 
     /// 内置默认配置（解析嵌入的 config/prompts.yml）。
+    /// 与 Default::default() 返回相同值——两者都来自同一内嵌 YAML。
     pub fn default_builtin() -> Self {
-        const DEFAULT_YML: &str = include_str!("../../config/prompts.yml");
-        serde_yaml::from_str(DEFAULT_YML).unwrap_or_default()
+        embedded_default()
     }
 }
 
@@ -200,9 +182,10 @@ mod tests {
     #[test]
     fn test_default_vision_prompt_anti_hallucination() {
         let cfg = VisionPromptConfig::default();
-        assert!(cfg.prompt.contains("不要"));
-        assert!(cfg.prompt.contains("编造"));
-        assert!(cfg.prompt.contains("看不清"));
+        // 断言来自 config/prompts.yml（内嵌 YAML），非旧 const
+        assert!(cfg.prompt.contains("不要瞎猜"), "应包含反幻觉规则");
+        assert!(cfg.prompt.contains("看不太清"), "应包含看不清指引");
+        assert!(cfg.prompt.contains("120 字"), "应使用 YAML 中的 120 字限制");
     }
 
     #[test]
@@ -226,7 +209,7 @@ agent:
 "#;
         let cfg: PromptsConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(cfg.agent.preamble, "只有 agent");
-        assert!(!cfg.vision.prompt.is_empty()); // 默认值
+        assert!(!cfg.vision.prompt.is_empty()); // 默认值来自内嵌 YAML
         assert!(!cfg.vision.prompt_multi.is_empty());
     }
 
@@ -250,5 +233,40 @@ agent:
         assert_eq!(cfg.agent.preamble, "只有 agent");
         assert_eq!(cfg.memory.max_entries, 20);
         assert_eq!(cfg.memory.max_context_chars, 1500);
+    }
+
+    #[test]
+    fn test_default_matches_builtin() {
+        // Default 和 default_builtin 必须返回相同值（都来自内嵌 YAML）
+        let d = PromptsConfig::default();
+        let b = PromptsConfig::default_builtin();
+        assert_eq!(d.agent.preamble, b.agent.preamble);
+        assert_eq!(d.vision.prompt, b.vision.prompt);
+        assert_eq!(d.vision.prompt_multi, b.vision.prompt_multi);
+        assert_eq!(d.memory.max_entries, b.memory.max_entries);
+    }
+
+    #[test]
+    fn test_default_includes_dance_capability() {
+        // 关键回归：默认 preamble 必须包含舞蹈工具说明（旧 const 缺失此内容）
+        let cfg = AgentPromptConfig::default();
+        assert!(
+            cfg.preamble.contains("create_dance"),
+            "默认 preamble 应包含舞蹈工具说明（来自内嵌 YAML）"
+        );
+    }
+
+    #[test]
+    fn test_default_vision_has_correct_length_limit() {
+        // 关键回归：默认 vision prompt 应使用 YAML 中的 120 字限制（旧 const 用了 80）
+        let cfg = VisionPromptConfig::default();
+        assert!(
+            cfg.prompt.contains("120"),
+            "默认 vision prompt 应使用 YAML 中的 120 字限制"
+        );
+        assert!(
+            !cfg.prompt.contains("80 字"),
+            "默认 vision prompt 不应包含旧的 80 字限制"
+        );
     }
 }

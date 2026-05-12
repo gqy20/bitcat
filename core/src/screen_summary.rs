@@ -54,17 +54,17 @@ fn default_max_context_chars() -> usize {
     2000
 }
 
-const DEFAULT_SCREEN_SUMMARY_PROMPT: &str = r#"你是 8Bit 的观察模块。以下是一段时间内对主人屏幕的多次 AI 观察记录。
-
-请将它们整理为结构化的活动日志：
-- 按活动类型分组（编程、浏览、通讯、娱乐、文档等）
-- 每组列出时间段和具体活动
-- 合并重复的观察（如连续多次看到同一应用，合并为时间段范围）
-- 保留关键细节（项目名、文件名、网站等能看清的信息）
-- 控制在 300 字以内"#;
-
+/// 从内嵌 config/prompts.yml 提取 screen_summary.prompt 作为默认值，
+/// 确保与 YAML 保持同步。
 fn default_screen_summary_prompt() -> String {
-    DEFAULT_SCREEN_SUMMARY_PROMPT.to_string()
+    const EMBEDDED: &str = include_str!("../../config/prompts.yml");
+    let cfg: serde_yaml::Value =
+        serde_yaml::from_str(EMBEDDED).expect("内嵌 config/prompts.yml 损坏");
+    cfg.get("screen_summary")
+        .and_then(|v| v.get("prompt"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
 }
 
 impl Default for ScreenSummaryConfig {
