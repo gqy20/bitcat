@@ -213,7 +213,8 @@
     if (inputIdleTimer) { clearTimeout(inputIdleTimer); inputIdleTimer = null; }
     window.__TAURI__.core.invoke('cmd_submit_chat', { text: text })
       .then(function() {
-        hideInputSmooth(); // 发送成功后优雅收起
+        hideInputSmooth();       // 发送成功后优雅收起
+        startPolling();          // 启动轮询等待 AI 流式回复
       })
       .catch(function(e) {
         console.error('[chat] submit failed:', e);
@@ -393,6 +394,7 @@
 
     listen('bubble-update', (event) => {
       stopPolling();
+      streaming = false;     // 截图摘要非流式，标记结束
       var payload = event.payload || {};
       var text = typeof payload === 'string' ? payload : (payload.text || '');
       setText(text, false);
