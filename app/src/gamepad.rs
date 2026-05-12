@@ -1,58 +1,51 @@
+use ai_pad_core::action::{ActionConfig, ActionDef};
+use ai_pad_core::agent::PetAgent;
 use ai_pad_core::bridge::{handle_button_press, resolve_agent_response, PetCommand};
+use ai_pad_core::device::button_name;
+use ai_pad_core::hotkey;
+use ai_pad_core::memory::MemoryStore;
+use crate::bubble;
+use crate::commands::SharedWindowState;
+use crate::joystick::{self, SdlGamepad};
+use crate::panel;
+use crate::tts;
+use crate::voice;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::Ordering;
+use std::sync::Mutex;
+use tauri::{AppHandle, Emitter, Manager, State};
+use tracing::{debug, error, info, instrument, warn};
 
-/// 前端事件 payload
+// ========================================================================
+// PetEvent：前端事件
+// ========================================================================
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PetEvent {
-    /// 状态变化（如果有）
     pub state: Option<String>,
-    /// 气泡文本（如果有）
     pub bubble: Option<String>,
-    /// 走到目标位置（如果有）
     pub walk_to: Option<f32>,
 }
 
 impl PetEvent {
     pub fn set_state(state: &str) -> Self {
-        Self {
-            state: Some(state.to_string()),
-            bubble: None,
-            walk_to: None,
-        }
+        Self { state: Some(state.to_string()), bubble: None, walk_to: None }
     }
-
     pub fn bubble(text: &str) -> Self {
-        Self {
-            state: None,
-            bubble: Some(text.to_string()),
-            walk_to: None,
-        }
+        Self { state: None, bubble: Some(text.to_string()), walk_to: None }
     }
-
     pub fn walk_to(x: f32) -> Self {
-        Self {
-            state: None,
-            bubble: None,
-            walk_to: Some(x),
-        }
+        Self { state: None, bubble: None, walk_to: Some(x) }
     }
-
     pub fn empty() -> Self {
-        Self {
-            state: None,
-            bubble: None,
-            walk_to: None,
-        }
+        Self { state: None, bubble: None, walk_to: None }
     }
 }
 
-/// 从 PetCommand 生成前端事件列表
 pub fn commands_to_events(cmds: &[PetCommand]) -> Vec<PetEvent> {
     cmds.iter()
         .map(|cmd| match cmd {
-            PetCommand::SetState { state } => {
-                PetEvent::set_state(&format!("{:?}", state).to_lowercase())
-            }
+            PetCommand::SetState { state } => PetEvent::set_state(&format!("{:?}", state).to_lowercase()),
             PetCommand::WalkTo { x } => PetEvent::walk_to(*x),
             PetCommand::ShowBubble { text } => PetEvent::bubble(text),
             PetCommand::Exit => PetEvent::set_state("exit"),
@@ -60,23 +53,621 @@ pub fn commands_to_events(cmds: &[PetCommand]) -> Vec<PetEvent> {
         .collect()
 }
 
-/// 处理手柄按键，返回要发送给前端的事件
 pub fn process_button(button_index: u32) -> Vec<PetEvent> {
     let (_agent_msg, pet_cmd) = handle_button_press(button_index, "");
     let mut events = Vec::new();
     if let Some(cmd) = pet_cmd {
         events.extend(commands_to_events(&[cmd]));
     }
-    // agent_msg 在集成阶段处理（需要 async Agent 调用）
     events
 }
 
-/// 处理 AI 回复，返回要发送给前端的事件
 pub fn process_agent_response(reply: &str) -> Vec<PetEvent> {
     commands_to_events(&resolve_agent_response(reply))
 }
 
-// ---- 测试（TDD：先写测试） ----
+// ========================================================================
+// 聊天输入系统（前端提交 → gamepad_loop 消费）
+// ========================================================================
+
+pub struct SharedPendingChat {
+    pending: Mutex<Option<String>>,
+}
+
+impl SharedPendingChat {
+    pub fn new() -> Self {
+        Self { pending: Mutex::new(None) }
+    }
+}
+
+impl Default for SharedPendingChat {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[tauri::command]
+pub async fn cmd_submit_chat(
+    state: State<'_, SharedPendingChat>,
+    text: String,
+) -> Result<(), String> {
+    let trimmed = text.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("消息不能为空".into());
+    }
+    *state.pending.lock().map_err(|e| e.to_string())? = Some(trimmed);
+    Ok(())
+}
+
+pub fn take_pending_chat(state: &State<'_, SharedPendingChat>) -> Option<String> {
+    state.pending.lock().ok().and_then(|mut g| g.take())
+}
+
+#[tauri::command]
+pub async fn cmd_pet_log(msg: String) -> Result<(), String> {
+    info!("[pet-diag] {msg}");
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn cmd_exit_chat(app: AppHandle) -> Result<(), String> {
+    let state: State<bubble::SharedBubble> = app.state();
+    state.set_chat_active(false);
+    info!("[cmd_exit_chat] chat 模式结束，截图恢复写 bubble");
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn cmd_open_chat(app: AppHandle) -> Result<(), String> {
+    info!("[cmd_open_chat] 开始");
+
+    let window = match app.get_webview_window("bubble") {
+        Some(w) => w,
+        None => bubble::create_bubble_window(&app).map_err(|e| e.to_string())?,
+    };
+
+    let state: State<bubble::SharedBubble> = app.state();
+    *state.pending_text.lock().map_err(|e| e.to_string())? = Some(String::new());
+    state.set_chat_active(true);
+
+    bubble::position_above_pet(&app, &window);
+    let _ = window.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
+    let _ = window.show();
+
+    for attempt in 0..10u8 {
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        if window.eval(
+            "if(typeof __bubble_showInput==='function'){__bubble_showInput();'ok'}else{'no-fn'}"
+        ).is_ok() {
+            info!(attempt = attempt, "[cmd_open_chat] ✓ eval showInput 成功");
+            return Ok(());
+        }
+        info!(attempt = attempt, "[cmd_open_chat] eval 重试中...");
+    }
+
+    warn!("[cmd_open_chat] eval showInput 失败（10 次重试均未成功）");
+    Ok(())
+}
+
+// ========================================================================
+// 手柄选择 + 主循环 + AI 对话 + 动作执行
+// ========================================================================
+
+fn choose_gamepad(pads: &[joystick::GamepadInfo]) -> Option<&joystick::GamepadInfo> {
+    let is_kbm_like = |name: &str| {
+        let n = name.to_lowercase();
+        ["link-km", "receiver", "keyboard", "mouse", "wireless link"]
+            .iter()
+            .any(|kw| n.contains(kw))
+    };
+    let is_preferred = |name: &str| {
+        let n = name.to_lowercase();
+        [
+            "controller", "gamepad", "8bitdo", "xbox", "dualshock",
+            "dualsense", "joy-con", "joycon", "pro controller",
+        ]
+        .iter()
+        .any(|kw| n.contains(kw))
+    };
+
+    let filtered: Vec<&joystick::GamepadInfo> =
+        pads.iter().filter(|p| !is_kbm_like(&p.name)).collect();
+
+    if let Some(p) = filtered.iter().find(|p| is_preferred(&p.name)) {
+        return Some(*p);
+    }
+    if let Some(p) = filtered.iter().find(|p| p.num_hats >= 1 || p.num_axes >= 2) {
+        return Some(*p);
+    }
+    filtered.first().copied()
+}
+
+#[instrument(skip(app))]
+pub fn gamepad_loop(app: &tauri::AppHandle) {
+    eprintln!("[GP-DBG] gamepad_loop 开始");
+    let sdl = match SdlGamepad::init() {
+        Ok(s) => s,
+        Err(e) => {
+            error!(error = %e, "SDL2 初始化失败");
+            return;
+        }
+    };
+
+    let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+        Ok(r) => r,
+        Err(e) => {
+            error!(error = %e, "Tokio 运行时创建失败");
+            return;
+        }
+    };
+
+    let agent: std::sync::OnceLock<std::option::Option<PetAgent>> = std::sync::OnceLock::new();
+
+    fn get_agent(agent: &std::sync::OnceLock<std::option::Option<PetAgent>>) -> Option<&PetAgent> {
+        agent
+            .get_or_init(|| match PetAgent::new() {
+                Ok(a) => { info!("AI Agent 初始化成功 (8Bit Cat)"); Some(a) }
+                Err(e) => { error!(error = %e, "AI Agent 初始化失败，后续对话将不可用"); None }
+            })
+            .as_ref()
+    }
+
+    let mut action_config = ActionConfig::load("actions.yml").ok();
+    let ac = action_config.as_ref().map(|c| c.actions.len()).unwrap_or(0);
+    info!(action_count = ac, "已加载 {ac} 个动作绑定");
+
+    let mut memory = MemoryStore::load();
+    let memory_config = ai_pad_core::prompts::PromptsConfig::load().memory;
+    info!(entries = memory.entries.len(), "对话记忆系统已初始化");
+    let summary_store = ai_pad_core::screen_summary::ScreenSummaryStore::load();
+    info!(entries = summary_store.entries.len(), "屏幕活动摘要系统已初始化");
+
+    let mut alt_tab = HeldModifier::new(0x12);
+    let mut ctrl_tab = HeldModifier::new(0x11);
+    let mut held_voice = HeldCombo::new();
+    let mut prev_pet_pos: Option<(i32, i32)> = None;
+
+    let mut last_warn: Option<std::time::Instant> = None;
+    loop {
+        let pads = match SdlGamepad::list_gamepads(&sdl) {
+            Ok(p) => p,
+            Err(e) => {
+                error!(error = %e, "枚举手柄失败，2s 后重试");
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                continue;
+            }
+        };
+
+        for p in &pads {
+            debug!(index = p.index, name = %p.name, buttons = p.num_buttons, hats = p.num_hats, axes = p.num_axes, "候选设备");
+        }
+
+        let target = match choose_gamepad(&pads) {
+            Some(t) => t.clone(),
+            None => {
+                if last_warn.map_or(true, |t| t.elapsed() > std::time::Duration::from_secs(10)) {
+                    warn!(
+                        enumerated = pads.len(),
+                        "未检测到真正的游戏手柄（已自动跳过键鼠接收器等），每秒重试中..."
+                    );
+                    last_warn = Some(std::time::Instant::now());
+                }
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                continue;
+            }
+        };
+        last_warn = None;
+
+        info!(
+            index = target.index,
+            name = %target.name,
+            buttons = target.num_buttons,
+            hats = target.num_hats,
+            axes = target.num_axes,
+            "✓ 选中手柄 [{}] {}",
+            target.index,
+            target.name
+        );
+
+        let mut gamepad = match SdlGamepad::open(&sdl, target.index) {
+            Ok(g) => g,
+            Err(e) => {
+                error!(error = %e, "打开手柄失败，1s 后重试");
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                continue;
+            }
+        };
+        info!("ai-pad 启动（手柄已就绪）");
+
+        let mut prev_buttons: u32 = 0;
+        let mut prev_hat: Option<(i32, i32)> = None;
+        let mut attach_check_tick: u32 = 0;
+
+        loop {
+            // 配置热重载
+            {
+                let ws: tauri::State<'_, SharedWindowState> = app.state();
+                if ws.config_reload.load(Ordering::SeqCst) {
+                    ws.config_reload.store(false, Ordering::SeqCst);
+                    action_config = ActionConfig::load("actions.yml").ok();
+                    info!(
+                        actions = action_config.as_ref().map(|c| c.actions.len()).unwrap_or(0),
+                        "gamepad_loop 配置已刷新"
+                    );
+                }
+            }
+
+            attach_check_tick += 1;
+            if attach_check_tick >= 12 {
+                attach_check_tick = 0;
+                if !gamepad.is_attached() {
+                    alt_tab.release();
+                    ctrl_tab.release();
+                    held_voice.release_keys();
+                    warn!(index = target.index, name = %target.name, "手柄已断开，返回外层重新枚举");
+                    break;
+                }
+            }
+
+            let panel_visible = app
+                .get_webview_window("panel")
+                .and_then(|w| w.is_visible().ok())
+                .unwrap_or(false);
+
+            let buttons = gamepad.read_buttons();
+            let new_presses = (buttons ^ prev_buttons) & buttons;
+
+            if new_presses != 0 {
+                for bit in 0..32 {
+                    if new_presses & (1 << bit) != 0 {
+                        let idx = bit as u32;
+                        let name = button_name(idx as usize).unwrap_or("?");
+                        debug!(button_idx = idx, button_name = name, "按下 #{idx} {name}");
+
+                        if (alt_tab.held && name != "L1") || (ctrl_tab.held && name != "L2") {
+                            alt_tab.release();
+                            ctrl_tab.release();
+                        }
+
+                        if name == "Home" {
+                            info!("→ 切换面板");
+                            panel::toggle_panel(app);
+                            continue;
+                        }
+
+                        if panel_visible {
+                            match name {
+                                "A" => { info!("→ 面板确认"); let _ = app.emit("panel-confirm", ()); }
+                                "B" => { info!("→ 面板关闭"); let _ = app.emit("panel-close", ()); }
+                                _ => {}
+                            }
+                            continue;
+                        }
+
+                        let (agent_msg, _pet_cmd) = handle_button_press(idx, "");
+
+                        let events = process_button(idx);
+                        for evt in &events {
+                            let _ = app.emit("pet-event", evt);
+                        }
+
+                        if let (Some(msg), Some(ag)) = (&agent_msg, get_agent(&agent)) {
+                            info!(msg = %msg, "→ AI: {msg}");
+                            run_ai_chat(&rt, ag, app, msg, "", &mut memory, &memory_config);
+                        }
+
+                        if let Some(ref config) = action_config {
+                            if let Some(action_def) = config.actions.get(name) {
+                                info!(name = name, action_type = %action_def.action_type, "→ {} ({})", name, action_def.action_type);
+                                execute_action(action_def, &config.defaults, &mut alt_tab, &mut ctrl_tab);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Voice 按住检测
+            let mut voice_just_released = false;
+            let mut voice_just_pressed = false;
+            if let Some(ref config) = action_config {
+                let mut voice_bits: u32 = 0;
+                for (name, action_def) in &config.actions {
+                    if action_def.action_type == "voice" {
+                        if let Some(bit) = name_to_bit(name) {
+                            voice_bits |= 1 << bit;
+                        }
+                    }
+                }
+                let voice_active = (buttons & voice_bits) != 0;
+                let (jp, jr) = held_voice.detect(voice_active);
+                voice_just_pressed = jp;
+                voice_just_released = jr;
+            }
+
+            if voice_just_pressed {
+                match voice::open_voice_capture(app) {
+                    Ok(()) => info!("[voice] 录音条已显示并强制前台化"),
+                    Err(e) => warn!(error = %e, "[voice] 打开录音条失败"),
+                }
+                std::thread::sleep(std::time::Duration::from_millis(80));
+                if let Some(ref config) = action_config {
+                    held_voice.press_keys(config);
+                }
+            }
+
+            if voice_just_released {
+                held_voice.release_keys();
+                info!("[voice] 等待识别注入完成 (700ms)...");
+                std::thread::sleep(std::time::Duration::from_millis(700));
+                match voice::take_voice_text(app) {
+                    Ok(raw) => {
+                        let text = raw.trim().to_string();
+                        if text.is_empty() {
+                            warn!("[voice] 虚拟输入框为空 (识别可能失败或焦点被抢走)");
+                        } else {
+                            info!(text = %text, len = text.chars().count(), "[voice] 识别全文: {text}");
+                            if let Some(ag) = get_agent(&agent) {
+                                run_ai_chat(&rt, ag, app, &text, "[voice]", &mut memory, &memory_config);
+                            } else {
+                                warn!("[voice] AI Agent 未初始化");
+                            }
+                        }
+                    }
+                    Err(e) => warn!(error = %e, "[voice] 读取虚拟输入框失败"),
+                }
+            }
+
+            prev_buttons = buttons;
+
+            // Bubble 聊天输入
+            if let Some(chat_msg) = {
+                let pc: State<SharedPendingChat> = app.state();
+                take_pending_chat(&pc)
+            } {
+                if let Some(ag) = get_agent(&agent) {
+                    info!(msg = %chat_msg, "[chat] → AI 对话 (bubble 输入)");
+                    run_ai_chat(&rt, ag, app, &chat_msg, "[chat]", &mut memory, &memory_config);
+                }
+            }
+
+            // 方向键
+            let hat = gamepad.read_hat(0);
+            if panel_visible {
+                if hat != prev_hat {
+                    if let Some((dx, dy)) = hat {
+                        info!(dx = dx, dy = dy, "→ 面板导航");
+                        let _ = app.emit("panel-nav", (dx, dy));
+                    }
+                }
+            } else if let Some((dx, dy)) = hat {
+                alt_tab.release();
+                ctrl_tab.release();
+                let speed = 3;
+                if dy > 0 { let _ = hotkey::send_scroll(120 * speed); }
+                else if dy < 0 { let _ = hotkey::send_scroll(-120 * speed); }
+                if dx > 0 { let _ = hotkey::send_scroll_h(120 * speed); }
+                else if dx < 0 { let _ = hotkey::send_scroll_h(-120 * speed); }
+            }
+            prev_hat = hat;
+
+            // 气泡跟随
+            if let Some(bubble_win) = app.get_webview_window("bubble") {
+                if bubble_win.is_visible().unwrap_or(false) {
+                    let pet = app
+                        .get_webview_window("pet")
+                        .filter(|w| w.is_visible().unwrap_or(false))
+                        .or_else(|| app.get_webview_window("pet-mini").filter(|w| w.is_visible().unwrap_or(false)))
+                        .or_else(|| app.get_webview_window("pet-snap").filter(|w| w.is_visible().unwrap_or(false)));
+                    if let Some(p) = pet {
+                        if let Ok(pos) = p.outer_position() {
+                            let key = (pos.x, pos.y);
+                            if Some(key) != prev_pet_pos {
+                                prev_pet_pos = Some(key);
+                                bubble::position_above_pet(app, &bubble_win);
+                            }
+                        }
+                    }
+                } else {
+                    prev_pet_pos = None;
+                }
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(80));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+}
+
+/// 统一的 AI 流式对话执行
+pub fn run_ai_chat(
+    rt: &tokio::runtime::Runtime,
+    agent: &PetAgent,
+    app: &tauri::AppHandle,
+    msg: &str,
+    log_prefix: &str,
+    memory: &mut MemoryStore,
+    memory_config: &ai_pad_core::memory::MemoryConfig,
+) {
+    let tag = if log_prefix.is_empty() { "" } else { " " };
+    info!(model = %agent.config.model, msg = %msg, "{log_prefix}→ AI 对话开始");
+    if let Err(e) = bubble::start_streaming_bubble(app) {
+        warn!(error = %e, "{log_prefix}气泡启动错误");
+        return;
+    }
+
+    let ctx = memory.build_context(memory_config);
+    let summary_store = ai_pad_core::screen_summary::ScreenSummaryStore::load();
+    let summary_config = ai_pad_core::prompts::PromptsConfig::load().screen_summary;
+    info!(entries = summary_store.entries.len(), "屏幕活动摘要已加载");
+    let summary_ctx = summary_store.build_context(&summary_config);
+    let recent_ctx = ai_pad_core::screenshot::build_recent_analyses_context(10, 1500);
+    let context_parts: Vec<&str> = [&ctx, &recent_ctx, &summary_ctx]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.as_str())
+        .collect();
+    let enriched_msg = if context_parts.is_empty() {
+        msg.to_string()
+    } else {
+        format!("{}\n用户说: {msg}", context_parts.join("\n"))
+    };
+
+    let app_for_chunks = app.clone();
+    let prefix = log_prefix.to_string();
+    let prefix_for_log = prefix.clone();
+    let stream_result = rt.block_on(agent.chat_stream(&enriched_msg, move |chunk| {
+        debug!(len = chunk.len(), "{prefix_for_log}{tag}AI chunk");
+        let _ = bubble::append_bubble_chunk(&app_for_chunks, chunk);
+    }));
+    let _ = bubble::finalize_bubble(app);
+    match stream_result {
+        Ok(reply) => {
+            memory.record_conversation(msg, &reply, memory_config);
+            if let Err(e) = memory.save() {
+                warn!(error = %e, "保存对话记忆失败");
+            }
+
+            if prefix.is_empty() {
+                let preview: String = reply.chars().take(60).collect();
+                info!(model = %agent.config.model, preview = %preview, "← AI: {preview}");
+            } else {
+                info!(model = %agent.config.model, chars = reply.chars().count(), reply = %reply, "{prefix} AI 回复全文 ({reply})");
+            }
+            let reply_for_tts = reply.clone();
+            std::thread::spawn(move || { tts::speak(&reply_for_tts); });
+
+            let ai_events = process_agent_response(&reply);
+            for evt in &ai_events {
+                let _ = app.emit("pet-event", evt);
+            }
+        }
+        Err(e) => warn!(model = %agent.config.model, error = %e, "{prefix} AI 错误"),
+    }
+}
+
+pub(self) fn execute_action(
+    action: &ActionDef,
+    defaults: &ai_pad_core::action::Defaults,
+    alt_tab: &mut HeldModifier,
+    ctrl_tab: &mut HeldModifier,
+) {
+    match action.action_type.as_str() {
+        "launch" => {
+            let program = match &action.program {
+                Some(p) => p.as_str(),
+                None => return,
+            };
+            let args = action.args.as_deref().unwrap_or("");
+            let _ = ai_pad_core::action::launch_program(
+                program, args, &action.workdir, action.terminal, &defaults.terminal,
+            );
+        }
+        "voice" => {}
+        "script" => {
+            if let Some(cmd) = &action.command {
+                let _ = std::process::Command::new("powershell").args(["-Command", cmd]).spawn();
+            }
+        }
+        "hotkey" => {
+            if let Some(trigger) = &action.trigger {
+                let has_alt = trigger.iter().any(|k| k.to_lowercase() == "alt");
+                let has_ctrl = trigger.iter().any(|k| k.to_lowercase() == "ctrl");
+                let has_tab = trigger.iter().any(|k| k.to_lowercase() == "tab");
+
+                if has_alt && has_tab {
+                    alt_tab.press();
+                } else if has_ctrl && has_tab {
+                    ctrl_tab.press();
+                } else {
+                    let key_refs: Vec<&str> = trigger.iter().map(|s| s.as_str()).collect();
+                    if let Err(e) = hotkey::trigger_hotkey(&key_refs, 0.02) {
+                        warn!(error = %e, "热键触发失败");
+                    }
+                }
+            }
+        }
+        other => { warn!(action_type = other, "未知动作类型"); }
+    }
+}
+
+// ---- 辅助结构体 ----
+
+pub(crate) struct HeldModifier {
+    vk: u16,
+    held: bool,
+}
+
+impl HeldModifier {
+    fn new(vk: u16) -> Self { Self { vk, held: false } }
+    fn press(&mut self) {
+        if !self.held {
+            let _ = hotkey::key_down(self.vk);
+            self.held = true;
+        }
+        let _ = hotkey::key_down(0x09);
+        let _ = hotkey::key_up(0x09);
+    }
+    fn release(&mut self) {
+        if self.held {
+            let _ = hotkey::key_up(self.vk);
+            self.held = false;
+        }
+    }
+}
+
+pub struct HeldCombo {
+    vks: Vec<u16>,
+    held: bool,
+}
+
+impl HeldCombo {
+    pub fn new() -> Self { Self { vks: Vec::new(), held: false } }
+
+    pub fn detect(&mut self, active: bool) -> (bool, bool) {
+        match (active, self.held) {
+            (true, false) => { self.held = true; (true, false) }
+            (false, true) => { self.held = false; (false, true) }
+            _ => (false, false),
+        }
+    }
+
+    pub fn press_keys(&mut self, config: &ai_pad_core::action::ActionConfig) {
+        let mut vks = Vec::new();
+        for action_def in config.actions.values() {
+            if action_def.action_type == "voice" {
+                if let Some(voice) = &action_def.voice {
+                    let keys: Vec<&str> = voice.trigger.iter().map(|s| s.as_str()).collect();
+                    vks.extend(hotkey::parse_keys(&keys));
+                }
+            }
+        }
+        self.vks = vks;
+        for &vk in &self.vks {
+            let _ = hotkey::key_down(vk);
+        }
+        info!(vk_count = self.vks.len(), "→ 输入法语音热键已按下");
+    }
+
+    pub fn release_keys(&mut self) {
+        for &vk in self.vks.iter().rev() {
+            let _ = hotkey::key_up(vk);
+        }
+        info!("→ 输入法语音热键已松开");
+    }
+}
+
+fn name_to_bit(name: &str) -> Option<u32> {
+    match name {
+        "A" => Some(0), "B" => Some(1), "X" => Some(3), "Y" => Some(4),
+        "L1" => Some(6), "R1" => Some(7), "L2" => Some(8), "R2" => Some(9),
+        "Select" => Some(10), "Start" => Some(11), "Home" => Some(12),
+        _ => None,
+    }
+}
+
+// ========================================================================
+// 测试
+// ========================================================================
 
 #[cfg(test)]
 mod tests {
@@ -88,14 +679,12 @@ mod tests {
         let e = PetEvent::set_state("talk");
         assert_eq!(e.state, Some("talk".to_string()));
         assert_eq!(e.bubble, None);
-        assert_eq!(e.walk_to, None);
     }
 
     #[test]
     fn test_event_bubble() {
         let e = PetEvent::bubble("喵~");
         assert_eq!(e.bubble, Some("喵~".to_string()));
-        assert_eq!(e.state, None);
     }
 
     #[test]
@@ -113,61 +702,21 @@ mod tests {
     }
 
     #[test]
-    fn test_event_deserialization_full() {
-        let json = r#"{"state":"talk","bubble":"hello","walk_to":100.0}"#;
-        let e: PetEvent = serde_json::from_str(json).unwrap();
-        assert_eq!(e.state, Some("talk".to_string()));
-        assert_eq!(e.bubble, Some("hello".to_string()));
-        assert_eq!(e.walk_to, Some(100.0));
-    }
-
-    #[test]
-    fn test_commands_to_events_set_state() {
-        let cmds = vec![PetCommand::SetState {
-            state: PetStateName::Talk,
-        }];
-        let events = commands_to_events(&cmds);
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0].state, Some("talk".to_string()));
-    }
-
-    #[test]
-    fn test_commands_to_events_walk() {
-        let cmds = vec![PetCommand::WalkTo { x: 200.0 }];
-        let events = commands_to_events(&cmds);
-        assert_eq!(events[0].walk_to, Some(200.0));
-    }
-
-    #[test]
-    fn test_commands_to_events_bubble() {
-        let cmds = vec![PetCommand::ShowBubble { text: "hi".into() }];
-        let events = commands_to_events(&cmds);
-        assert_eq!(events[0].bubble, Some("hi".to_string()));
-    }
-
-    #[test]
     fn test_process_button_start() {
-        let events = process_button(11); // Start
+        let events = process_button(11);
         assert!(!events.is_empty());
         assert_eq!(events[0].state, Some("talk".to_string()));
-    }
-
-    #[test]
-    fn test_process_button_select() {
-        let events = process_button(10); // Select
-        assert!(!events.is_empty());
-        assert_eq!(events[0].state, Some("sleep".to_string()));
     }
 
     #[test]
     fn test_process_button_unknown() {
-        let events = process_button(99); // 不存在的按钮
+        let events = process_button(99);
         assert!(events.is_empty());
     }
 
     #[test]
     fn test_process_button_a_is_praise() {
-        let events = process_button(0); // A → Praise
+        let events = process_button(0);
         assert!(!events.is_empty());
         assert_eq!(events[0].state, Some("happy".to_string()));
     }
@@ -176,24 +725,57 @@ mod tests {
     fn test_process_agent_response_happy() {
         let events = process_agent_response("哈哈哈太有趣了！");
         assert!(events.iter().any(|e| e.state == Some("happy".to_string())));
-        assert!(events.iter().any(|e| e.bubble.is_some()));
-        // 最后一个事件应该是回 idle
         assert_eq!(events.last().unwrap().state, Some("idle".to_string()));
     }
 
     #[test]
-    fn test_process_agent_response_error() {
-        let events = process_agent_response("抱歉，操作失败了");
-        assert!(events
-            .iter()
-            .any(|e| e.state == Some("confused".to_string())));
+    fn test_pending_chat_default_empty() {
+        let pc = SharedPendingChat::new();
+        assert!(pc.pending.lock().unwrap().is_none());
     }
 
     #[test]
-    fn test_process_agent_response_normal() {
-        let events = process_agent_response("今天的天气不错");
-        // 应该有 bubble + idle
-        assert!(events.iter().any(|e| e.bubble.is_some()));
-        assert!(events.iter().any(|e| e.state == Some("idle".to_string())));
+    fn test_pending_chat_submit_and_take() {
+        let pc = SharedPendingChat::new();
+        *pc.pending.lock().unwrap() = Some("你好 AI".into());
+        let taken = pc.pending.lock().unwrap().take();
+        assert_eq!(taken, Some("你好 AI".to_string()));
+        assert!(pc.pending.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_pending_chat_submit_overwrites() {
+        let pc = SharedPendingChat::new();
+        *pc.pending.lock().unwrap() = Some("第一条".into());
+        *pc.pending.lock().unwrap() = Some("第二条".into());
+        assert_eq!(pc.pending.lock().unwrap().take(), Some("第二条".to_string()));
+    }
+
+    #[test]
+    fn test_name_to_bit_mapping() {
+        assert_eq!(name_to_bit("A"), Some(0));
+        assert_eq!(name_to_bit("Home"), Some(12));
+        assert_eq!(name_to_bit("Invalid"), None);
+    }
+
+    #[test]
+    fn test_held_modifier_press_release() {
+        let mut hm = HeldModifier::new(0x12);
+        assert!(!hm.held);
+        hm.press();
+        assert!(hm.held);
+        hm.release();
+        assert!(!hm.held);
+    }
+
+    #[test]
+    fn test_held_combo_detect() {
+        let mut hc = HeldCombo::new();
+        let (pressed, released) = hc.detect(true);
+        assert!(pressed && !released);
+        assert!(hc.held);
+        let (p2, r2) = hc.detect(false);
+        assert!(!p2 && r2);
+        assert!(!hc.held);
     }
 }

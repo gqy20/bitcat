@@ -11,5 +11,7 @@ pub mod pet;
 pub mod prompts;
 pub mod screen_summary;
 pub mod screenshot;
+#[cfg(test)]
+mod screenshot_tests;
 pub mod tools;
 pub mod vision;
