@@ -4,13 +4,26 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要发布的 tag（如 v0.1.0）；不传则使用当前 ref"
+        required: false
+        default: ""
 
 permissions:
   contents: write
 
+# 同一 tag 不并发，避免重复跑 + 上传竞态；但不中途取消（release 重试代价高）
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
   CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+  # 统一解析出"本次要发布的版本号"：tag 触发取 ref_name，手动触发取 inputs.tag
+  RELEASE_TAG: ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
 
 jobs:
   # ── 1. 先跑测试，确保 tag 能通过 ──
@@ -19,6 +32,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 后续 release job 读 CHANGELOG.md / git describe 需要完整历史
+          fetch-depth: 0
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -26,27 +42,24 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ runner.os }}-cargo-release-test
+          # 与 build 共享同一 key，减少重复编译
+          key: ${{ runner.os }}-cargo-release-x86_64-pc-windows-msvc
 
       - name: Copy config files
         run: |
           mkdir core\config
-          copy config\buttons.yml core\config\
-          copy config\actions.yml core\config\
-          copy config\prompts.yml core\config\
-          copy config\user.yml core\config\
+          copy config\*.yml core\config\
           mkdir app\config
-          copy config\buttons.yml app\config\
-          copy config\actions.yml app\config\
+          copy config\*.yml app\config\
 
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
 
       - name: Run tests
-        run: cargo nextest run --profile ci --workspace 2>&1
+        run: cargo nextest run --profile ci --workspace
 
-  # ── 2. 构建 Release ──
+  # ── 2. 构建 Tauri Release（msi + nsis）──
   build:
     name: Build Release
     runs-on: windows-latest
@@ -60,6 +73,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -69,92 +84,183 @@ jobs:
         with:
           key: ${{ runner.os }}-cargo-release-${{ matrix.target }}
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Copy config files to target dirs
         run: |
           mkdir core\config
-          copy config\buttons.yml core\config\
-          copy config\actions.yml core\config\
-          copy config\prompts.yml core\config\
-          copy config\user.yml core\config\
+          copy config\*.yml core\config\
           mkdir app\config
-          copy config\buttons.yml app\config\
-          copy config\actions.yml app\config\
+          copy config\*.yml app\config\
 
-      # ── 构建（使用已有的 release profile：opt-level=z, LTO, strip, panic=abort）──
-      - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }}
+      # ── 用 tauri-action 打 msi + nsis 安装器（不让它自己发布 release）──
+      # projectPath 指向 tauri.conf.json 所在目录
+      # tagName 留空时 tauri-action 仅构建，不创建 release；我们在独立 job 里汇总后再发布
+      - name: Build Tauri bundles
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: app
+          args: --target ${{ matrix.target }}
+          tagName: ""
+          releaseDraft: false
+          prerelease: false
 
-      # ── 收集产物信息 ──
-      - name: Gather artifact info
+      # ── 收集产物：同时输出 portable zip 和 tauri bundles ──
+      - name: Collect artifacts
         id: info
         shell: pwsh
         run: |
-          $exe = Get-Item "target/${{ matrix.target }}/release/ai-pad-app.exe"
-          $sizeMB = [math]::Round($exe.Length / 1MB, 1)
-          echo "exe_size=$($exe.Length)" >> $env:GITHUB_OUTPUT
-          echo "size_mb=$sizeMB" >> $env:GITHUB_OUTPUT
-          echo "version=${{ github.ref_name }}" >> $env:GITHUB_OUTPUT
-          Write-Host "EXE size: $sizeMB MB"
+          $tag = "${{ env.RELEASE_TAG }}"
+          $outDir = "release-out"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
-      # ── 打包（ZIP）──
-      - name: Package (ZIP)
-        shell: pwsh
-        run: |
-          $dir = "ai-pad-${{ github.ref_name }}-windows-${{ matrix.arch }}"
-          New-Item -ItemType Directory -Path $dir | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/ai-pad-app.exe" "$dir/"
-          Compress-Archive -Path "$dir/*" -DestinationPath "$dir.zip"
+          # 1) Portable ZIP（裸 exe，供不想安装的用户使用）
+          $exe = "target/${{ matrix.target }}/release/ai-pad-app.exe"
+          if (Test-Path $exe) {
+            $portableDir = "ai-pad-$tag-windows-${{ matrix.arch }}-portable"
+            New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
+            Copy-Item $exe "$portableDir/"
+            Compress-Archive -Path "$portableDir/*" -DestinationPath "$outDir/$portableDir.zip" -Force
+            Write-Host "✓ portable zip: $portableDir.zip"
+          } else {
+            Write-Warning "exe not found at $exe"
+          }
 
-      # ── 上传 Artifact ──
+          # 2) Tauri bundles（msi + nsis）——重命名含 tag 后拷到 release-out
+          $bundleRoot = "target/${{ matrix.target }}/release/bundle"
+          Get-ChildItem -Path $bundleRoot -Recurse -Include *.msi,*.exe -ErrorAction SilentlyContinue | ForEach-Object {
+            $ext = $_.Extension.TrimStart('.')
+            $dest = "$outDir/ai-pad-$tag-windows-${{ matrix.arch }}.$ext"
+            Copy-Item $_.FullName $dest -Force
+            Write-Host "✓ $ext bundle: $dest"
+          }
+
+          Write-Host "--- release-out ---"
+          Get-ChildItem $outDir | ForEach-Object { Write-Host ("  {0}  ({1:N1} KB)" -f $_.Name, ($_.Length / 1KB)) }
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ai-pad-${{ github.ref_name }}-windows-${{ matrix.arch }}
-          path: ai-pad-${{ github.ref_name }}-windows-${{ matrix.arch }}.zip
+          name: ai-pad-${{ env.RELEASE_TAG }}-windows-${{ matrix.arch }}
+          path: release-out/*
+          if-no-files-found: error
 
-  # ── 3. 创建 GitHub Release ──
+  # ── 3. 创建 GitHub Release（汇总所有平台 + checksums + CHANGELOG）──
   release:
     name: Create GitHub Release
     runs-on: windows-latest
     needs: build
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          path: dist
+          pattern: ai-pad-*
+          merge-multiple: true
 
-      - name: Generate changelog
-        id: changelog
+      # ── SHA256 校验文件（所有产物）──
+      - name: Generate checksums
+        shell: pwsh
         run: |
-          # 获取上一个 tag 用于生成 changelog
-          $tag = "${{ github.ref_name }}"
-          $prevTag = git describe --tags --abbrev=0 HEAD^ 2>$null
-          if ($prevTag) {
-            $log = git log $prevTag..HEAD --pretty=format:"- %s (%h)" --no-merges
-            echo "changelog<<EOF" >> $env:GITHUB_OUTPUT
-            echo "## Changes" >> $env:GITHUB_OUTPUT
-            echo "" >> $env:GITHUB_OUTPUT
-            echo $log >> $env:GITHUB_OUTPUT
-            echo "EOF" >> $env:GITHUB_OUTPUT
-          } else {
-            echo "changelog=Initial release" >> $env:GITHUB_OUTPUT
+          Push-Location dist
+          $files = Get-ChildItem -File
+          if ($files.Count -eq 0) { throw "dist/ 为空，没有可发布的产物" }
+          $lines = foreach ($f in $files) {
+            $h = (Get-FileHash -Path $f.FullName -Algorithm SHA256).Hash.ToLower()
+            "$h  $($f.Name)"
           }
+          $lines -join "`n" | Out-File -FilePath "checksums.txt" -Encoding ascii -NoNewline
+          Write-Host "--- checksums.txt ---"
+          Get-Content "checksums.txt"
+          Pop-Location
+
+      # ── release notes：优先切 CHANGELOG.md 对应版本段落，回退到 git log ──
+      - name: Build release notes
+        id: notes
+        shell: pwsh
+        run: |
+          $tag = "${{ env.RELEASE_TAG }}"
+          $version = $tag -replace '^v', ''
+          $notesFile = "release-notes.md"
+          $changelog = "CHANGELOG.md"
+
+          $captured = @()
+          if (Test-Path $changelog) {
+            $capture = $false
+            foreach ($line in Get-Content $changelog) {
+              if ($line -match "^##\s*\[$([regex]::Escape($version))\]") { $capture = $true; continue }
+              if ($capture -and $line -match "^##\s*\[") { break }
+              if ($capture) { $captured += $line }
+            }
+          }
+
+          if ($captured.Count -gt 0) {
+            Write-Host "✓ 从 CHANGELOG.md 抽取到 [$version] 段落，共 $($captured.Count) 行"
+            $changelogBody = ($captured -join "`n").Trim()
+          } else {
+            Write-Host "⚠ CHANGELOG.md 没有 [$version] 段落，回退到 git log"
+            $prevTag = git describe --tags --abbrev=0 "$tag^" 2>$null
+            if ($prevTag) {
+              $changelogBody = (git log "$prevTag..$tag" --pretty=format:"- %s (%h)" --no-merges) -join "`n"
+            } else {
+              $changelogBody = "首次发布"
+            }
+          }
+
+          $downloads = @(
+            '### 下载',
+            '',
+            '| 类型 | 文件 | 说明 |',
+            '|------|------|------|',
+            "| 🟦 Windows 安装器 (MSI) | ``ai-pad-$tag-windows-x64.msi`` | 标准 MSI，适合企业/静默安装 |",
+            "| 🟩 Windows 安装器 (NSIS) | ``ai-pad-$tag-windows-x64.exe`` | 常规安装向导（推荐） |",
+            "| 🟨 Windows 便携版 | ``ai-pad-$tag-windows-x64-portable.zip`` | 解压即用，无需安装 |",
+            '| 🔐 校验和 | ``checksums.txt`` | SHA-256 |',
+            '',
+            '> 下载后可用 ``Get-FileHash <文件> -Algorithm SHA256`` 与 ``checksums.txt`` 对比验证完整性。'
+          ) -join "`n"
+
+          $repo = '${{ github.repository }}'
+          $body = @(
+            "## 8Bit Cat $tag",
+            '',
+            'AI 桌面宠物 — Rust + Tauri 2.0 + SDL2 手柄驱动',
+            '',
+            $downloads,
+            '',
+            '### 更新内容',
+            '',
+            $changelogBody,
+            '',
+            '---',
+            '',
+            "安装与配置说明见 [README](https://github.com/$repo/blob/master/README.md) · [完整 CHANGELOG](https://github.com/$repo/blob/master/CHANGELOG.md)"
+          ) -join "`n"
+
+          $body | Out-File -FilePath $notesFile -Encoding utf8
+          Write-Host "--- $notesFile ---"
+          Get-Content $notesFile
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: "8Bit Cat ${{ github.ref_name }}"
-          body: |
-            ## 8Bit Cat ${{ github.ref_name }}
-
-            AI 桌面宠物 — Rust + Tauri 2.0 + SDL2 手柄驱动
-
-            ${{ steps.changelog.outputs.changelog }}
-
-            安装与配置说明见 [README](https://github.com/${{ github.repository }}/blob/master/README.md)
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: "8Bit Cat ${{ env.RELEASE_TAG }}"
+          body_path: release-notes.md
           draft: false
-          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
-          files: artifacts/**/*.zip
+          prerelease: ${{ contains(env.RELEASE_TAG, 'alpha') || contains(env.RELEASE_TAG, 'beta') || contains(env.RELEASE_TAG, 'rc') }}
+          make_latest: ${{ !(contains(env.RELEASE_TAG, 'alpha') || contains(env.RELEASE_TAG, 'beta') || contains(env.RELEASE_TAG, 'rc')) }}
+          files: |
+            dist/*.msi
+            dist/*.exe
+            dist/*.zip
+            dist/checksums.txt
