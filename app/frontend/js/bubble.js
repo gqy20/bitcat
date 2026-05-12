@@ -28,6 +28,7 @@
   let sendBtnEl = null;
   let isComposing = false;    // IME 组合状态标记
   let userScrolledUp = false;  // 用户是否手动向上滚动了（锁定自动跟底）
+  let streaming = false;        // 是否处于流式输出中（bubble-end 后为 false 拦截迟到的轮询）
 
   function ensureVisible() {
     document.body.classList.remove('hidden');
@@ -249,6 +250,7 @@
 
   function startPolling() {
     stopPolling();
+    streaming = true;       // 标记流式开始
     userScrolledUp = false; // 新流式开始，重置锁定
     showThinking();         // 显示思考指示器
     pollTimer = setInterval(function() {
@@ -273,7 +275,8 @@
 
   /// 轮询回调：有新文本才渲染（流式模式，带光标）
   function onPollResult(txt) {
-    if (!txt || txt.length === 0) return;
+    // 流已结束 → 丢弃迟到的轮询结果（clearInterval 无法取消已在途的 IPC）
+    if (!streaming || !txt || txt.length === 0) return;
     setText(txt, true);
     ensureVisible();
   }
@@ -374,16 +377,13 @@
 
     listen('bubble-end', () => {
       stopPolling();
+      streaming = false;     // 立即标记结束，拦截后续迟到的 onPollResult
       userScrolledUp = false; // 流结束，解锁滚动
       hideThinking();
-      // 拉取最后一批文本（如有），然后直接最终渲染（streaming=false，无光标）
-      pollPending().then(function(finalTxt) {
-        if (finalTxt && finalTxt.length > 0) lastRawText = finalTxt;
-        if (lastRawText) setText(lastRawText, false);
-        startHideTimer();
-        // 流式结束后重新展开输入框，方便继续对话
-        showInput();
-      });
+      // lastRawText 已是最新（每次 setText 都更新了），直接同步最终渲染
+      if (lastRawText) setText(lastRawText, false);
+      startHideTimer();
+      showInput();
     });
 
     listen('bubble-update', (event) => {
