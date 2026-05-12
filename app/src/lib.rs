@@ -854,6 +854,7 @@ fn gamepad_loop(app: &tauri::AppHandle) {
     let mut alt_tab = HeldModifier::new(0x12); // VK_MENU
     let mut ctrl_tab = HeldModifier::new(0x11); // VK_CONTROL
     let mut held_voice = HeldCombo::new();
+    let mut prev_pet_pos: Option<(i32, i32)> = None; // 气泡跟随：上次宠物位置
 
     loop {
         // 配置热重载：托盘 "重载配置" 设置 flag，此处消费
@@ -1042,6 +1043,29 @@ fn gamepad_loop(app: &tauri::AppHandle) {
             }
         }
         prev_hat = hat;
+
+        // 气泡跟随：宠物移动时自动重定位气泡窗口
+        if let Some(bubble_win) = app.get_webview_window("bubble") {
+            if bubble_win.is_visible().unwrap_or(false) {
+                let pet = app
+                    .get_webview_window("pet")
+                    .filter(|w| w.is_visible().unwrap_or(false))
+                    .or_else(|| app.get_webview_window("pet-mini").filter(|w| w.is_visible().unwrap_or(false)))
+                    .or_else(|| app.get_webview_window("pet-snap").filter(|w| w.is_visible().unwrap_or(false)));
+                if let Some(p) = pet {
+                    if let Ok(pos) = p.outer_position() {
+                        let key = (pos.x, pos.y);
+                        if Some(key) != prev_pet_pos {
+                            prev_pet_pos = Some(key);
+                            bubble::position_above_pet(app, &bubble_win);
+                        }
+                    }
+                }
+            } else {
+                // 气泡隐藏时重置位置缓存（下次显示时必定重定位）
+                prev_pet_pos = None;
+            }
+        }
 
         std::thread::sleep(std::time::Duration::from_millis(80));
     }
