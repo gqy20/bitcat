@@ -1,0 +1,10 @@
+---
+source: core/src/screenshot_tests.rs
+expression: record
+---
+description: VS Code
+hash: 999
+skipped: false
+width: 960
+height: 540
+jpeg_size: 32000

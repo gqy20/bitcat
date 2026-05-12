@@ -51,4 +51,7 @@ app/actions.yml
 # insta snapshot pending reviews
 *.snap.new
 
+# Claude Code worktrees (temporary)
+.claude/worktrees/
+
 .playwright*
