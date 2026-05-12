@@ -173,13 +173,13 @@ async fn cmd_snap_transform(app: tauri::AppHandle, edge: String, x: i32, y: i32)
     let _ = snap_win.set_always_on_top(on_top);
     snap_win.show().map_err(|e| e.to_string())?;
 
-    // 通知竖条窗口渐变方向（需要延迟等 JS 初始化）
-    let edge_for_emit = edge.clone();
-    let app_clone = app.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        let _ = app_clone.emit_to("pet-snap", "snap-edge", edge_for_emit);
-    });
+    // 通过 eval 直接调用 __setSnapEdge 设置方向（无需延迟，eval 等价于同步）
+    let edge_for_eval = edge.clone();
+    if let Ok(_) = snap_win.eval(
+        &format!("if(typeof __setSnapEdge==='function'){{__setSnapEdge('{edge_for_eval}');'ok'}}else{{'no-fn'}}")
+    ) {
+        info!(edge = %edge, "[cmd_snap_snap] ✓ eval setSnapEdge 成功");
+    }
 
     // 记录吸附状态
     *ws.is_snapped.lock().map_err(|e| e.to_string())? = true;
@@ -345,134 +345,9 @@ fn precreate_pet_windows(app: &tauri::AppHandle) -> Result<(), tauri::Error> {
     Ok(())
 }
 
-const GLOW_W: f64 = 40.0;
-const GLOW_H: f64 = 120.0;
-const SNAP_W: f64 = 8.0;   // 贴边后宠物窗口宽度（精致发光细线）
-const SNAP_H: i32 = 100;   // 贴边后宠物窗口高度（竖条）
+const SNAP_W: f64 = 24.0;  // 吸附竖条宽度（视觉 2px + 隐式热区 22px）
+const SNAP_H: i32 = 100;   // 吸附竖条高度（竖条）
 
-/// 预创建侧边亮条窗口（启动时隐藏），避免运行时竞态
-fn precreate_edge_glow_window(app: &tauri::AppHandle) -> Result<(), tauri::Error> {
-    let label = "edge-glow";
-    if let Some(existing) = app.get_webview_window(label) {
-        info!(glow_precreate = true, label = label, "precreate_edge_glow_window: glow 窗口已存在");
-        let is_vis = existing.is_visible().unwrap_or(false);
-        if let Ok(pos) = existing.outer_position() {
-            if let Ok(size) = existing.outer_size() {
-                info!(glow_precreate = true, label = label, is_visible = is_vis, pos_x = pos.x, pos_y = pos.y, size_w = size.width, size_h = size.height, "已存在 glow 窗口状态");
-            }
-        }
-    } else {
-        info!(glow_precreate = true, glow_w = GLOW_W, glow_h = GLOW_H, "precreate_edge_glow_window: 开始创建 glow 窗口");
-        let result = WebviewWindowBuilder::new(app, label, WebviewUrl::App("glow.html".into()))
-            .title("Edge Glow")
-            .inner_size(GLOW_W, GLOW_H)
-            .decorations(false)
-            .transparent(true)
-            .background_color(tauri::webview::Color(0, 0, 0, 0))
-            .shadow(false)
-            .always_on_top(true)
-            .skip_taskbar(true)
-            .resizable(false)
-            .focused(false)
-            .visible(false)
-            .build();
-        match result {
-            Ok(_) => {
-                info!("precreate_edge_glow_window: glow 窗口创建成功");
-                if let Some(w) = app.get_webview_window(label) {
-                    let _ = w.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
-                    if let (Ok(pos), Ok(size)) = (w.outer_position(), w.outer_size()) {
-                        info!(glow_precreate = true, label = label, inner_w = GLOW_W, inner_h = GLOW_H, pos_x = pos.x, pos_y = pos.y, size_w = size.width, size_h = size.height, "glow 窗口创建后状态");
-                    }
-                }
-            }
-            Err(e) => {
-                error!(glow_precreate = true, label = label, error = %e, "precreate_edge_glow_window: glow 窗口创建失败");
-            }
-        }
-    }
-    Ok(())
-}
-
-/// 显示侧边亮条
-#[tauri::command]
-async fn cmd_show_edge_glow(app: tauri::AppHandle, edge: String, pet_y: i32) -> Result<(), String> {
-    let Some(glow) = app.get_webview_window("edge-glow") else {
-        return Err("edge-glow window not found".into());
-    };
-
-    // 获取可见的宠物窗口
-    let pet_win = app
-        .get_webview_window("pet")
-        .filter(|w| w.is_visible().unwrap_or(false))
-        .or_else(|| app.get_webview_window("pet-mini"))
-        .ok_or("no visible pet window")?;
-
-    let pet_pos = pet_win.outer_position().map_err(|e| e.to_string())?;
-    let pet_size = pet_win.outer_size().map_err(|e| e.to_string())?;
-    let scale = pet_win.scale_factor().unwrap_or(1.0);
-    let pet_h = pet_size.height as f64;
-    let pw = pet_size.width as f64;
-
-    // 获取工作区（排除任务栏），和 cmd_snap_pet 保持一致
-    let work = get_work_area_for_window(&pet_win);
-    let glow_h_px = GLOW_H * scale;
-    let glow_w_px = GLOW_W * scale;
-    let pet_center_y = pet_y as f64 + pet_h / 2.0;
-
-    // glow 和 pet 对齐在同一 x 坐标
-    let (glow_x, glow_y) = if edge == "left" {
-        let x = work.left as f64;
-        let y = pet_center_y - glow_h_px / 2.0;
-        (x, y)
-    } else {
-        let x = work.right as f64 - pw;
-        let y = pet_center_y - glow_h_px / 2.0;
-        (x, y)
-    };
-
-    info!(
-        glow_show = true,
-        edge = %edge,
-        pet_pos_x = pet_pos.x,
-        pet_pos_y = pet_pos.y,
-        pet_y_arg = pet_y,
-        pet_w = pw,
-        pet_h = pet_h,
-        pet_center_y = pet_center_y,
-        scale = scale,
-        work_left = work.left,
-        work_right = work.right,
-        work_top = work.top,
-        work_bottom = work.bottom,
-        glow_w = glow_w_px,
-        glow_h = glow_h_px,
-        glow_x = glow_x,
-        glow_y = glow_y,
-        "cmd_show_edge_glow: 完整参数"
-    );
-
-    let result = glow.set_position(PhysicalPosition::new(glow_x as i32, glow_y as i32));
-    info!(glow_set_pos = ?result, "set_position 结果");
-
-    let show_result = glow.show();
-    info!(glow_show_result = ?show_result, "show() 结果");
-
-    // 通知 glow 窗口切换 right class（用于右侧时翻转渐变）
-    let edge_clone = edge.clone();
-    let emit_result = glow.emit_to("edge-glow", "glow-edge", edge_clone);
-    info!(glow_emit_result = ?emit_result, "emit_to glow-edge 结果");
-    Ok(())
-}
-
-/// 隐藏侧边亮条
-#[tauri::command]
-async fn cmd_hide_edge_glow(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(glow) = app.get_webview_window("edge-glow") {
-        glow.hide().map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
 
 // ---- Bubble 聊天输入：前端提交 → gamepad_loop 消费 ----
 
@@ -643,8 +518,6 @@ pub fn run() {
             cmd_snap_pet,
             cmd_snap_transform,
             cmd_unsnap_transform,
-            cmd_show_edge_glow,
-            cmd_hide_edge_glow,
             screenshot::cmd_screenshot_now,
             cmd_submit_chat,
             cmd_open_chat,

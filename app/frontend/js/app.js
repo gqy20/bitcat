@@ -66,73 +66,122 @@
     setupDrag();
   }
 
-  /// 吸附竖条模式：精致发光细线 + 脉冲呼吸动画 + 点击恢复
+  /// 吸附竖条模式：多层发光 + hover 展宽 + 物理呼吸 + 点击恢复
   function setupSnapBar() {
-    const w = canvas.width = 8;
+    const w = canvas.width = 24;   // 更宽的热区（视觉上只画边缘 2px）
     const h = canvas.height = 100;
-    let edgeReversed = false;
-    let breathPhase = 0;
 
+    let edgeReversed = false;     // right=true 时画在右侧
+    let hovered = false;          // 鼠标悬停状态
+    let breathPhase = 0;          // 呼吸相位
+    let lastTime = performance.now();
+
+    // ---- 绘制 ----
     function drawGlow() {
       ctx.clearRect(0, 0, w, h);
 
-      // 呼吸脉冲：亮度在 0.6~1.0 之间缓慢波动
-      const breath = 0.6 + 0.4 * (0.5 + 0.5 * Math.sin(breathPhase));
-      const alpha = breath;
+      // 基于时间差的物理呼吸（不依赖帧率）
+      const now = performance.now();
+      const dt = (now - lastTime) / 1000;
+      lastTime = now;
+      breathPhase += dt * 1.8; // 约 3.5s 一个完整周期
 
-      // 发光核心：2px 宽的亮线
-      const coreX = edgeReversed ? w - 2 : 0;
-      ctx.fillStyle = `rgba(96, 216, 255, ${(0.95 * alpha).toFixed(2)})`;
-      ctx.fillRect(coreX, 4, 2, h - 8);
+      // 双层呼吸：核心快 + 外层慢（相位差营造层次感）
+      const coreBreath = 0.65 + 0.35 * (0.5 + 0.5 * Math.sin(breathPhase));
+      const outerBreath = 0.55 + 0.30 * (0.5 + 0.5 * Math.sin(breathPhase * 0.7));
 
-      // 外层柔光：渐变扩散
-      const x0 = edgeReversed ? w : 0;
-      const x1 = edgeReversed ? 0 : w;
-      const grad = ctx.createLinearGradient(x0, 0, x1, 0);
-      grad.addColorStop(0, `rgba(96, 216, 255, ${(0.45 * alpha).toFixed(2)})`);
-      grad.addColorStop(0.4, `rgba(96, 216, 255, ${(0.15 * alpha).toFixed(2)})`);
-      grad.addColorStop(1, 'rgba(96, 216, 255, 0)');
-      ctx.fillStyle = grad;
+      // hover 时整体提亮
+      const hoverBoost = hovered ? 0.25 : 0;
 
-      // 圆角矩形
-      const r = 3;
-      ctx.beginPath();
-      ctx.moveTo(0, r);
-      ctx.quadraticCurveTo(0, 0, r, 0);
-      ctx.lineTo(w - r, 0);
-      ctx.quadraticCurveTo(w, 0, w, r);
-      ctx.lineTo(w, h - r);
-      ctx.quadraticCurveTo(w, h, w - r, h);
-      ctx.lineTo(r, h);
-      ctx.quadraticCurveTo(0, h, 0, h - r);
-      ctx.closePath();
+      // 视觉宽度：默认 2px，hover 时展宽到 6px
+      const visualW = hovered ? 6 : 2;
+      const coreX = edgeReversed ? w - visualW : 0;
+
+      // ===== 第一层：外层柔光（宽范围低透明度）=====
+      const glowW = Math.min(w, hovered ? 20 : 12); // hover 时柔光更广
+      const gx0 = edgeReversed ? w - glowW : 0;
+      const gx1 = edgeReversed ? w : glowW;
+      const outerGrad = ctx.createLinearGradient(gx0, 0, gx1, 0);
+      const oa = (outerBreath + hoverBoost) * 0.35;
+      outerGrad.addColorStop(0, `rgba(99, 102, 241, ${oa.toFixed(2)})`);
+      outerGrad.addColorStop(0.5, `rgba(99, 102, 241, ${(oa * 0.4).toFixed(2)})`);
+      outerGrad.addColorStop(1, 'rgba(99, 102, 241, 0)');
+      ctx.fillStyle = outerGrad;
+      roundRect(ctx, 0, 0, w, h, 4);
       ctx.fill();
+
+      // ===== 第二层：中层辉光（窄范围中透明度）=====
+      const midW = Math.min(w, hovered ? 14 : 8);
+      const mx0 = edgeReversed ? w - midW : 0;
+      const mx1 = edgeReversed ? w : midW;
+      const midGrad = ctx.createLinearGradient(mx0, 0, mx1, 0);
+      const ma = (coreBreath + hoverBoost) * 0.55;
+      midGrad.addColorStop(0, `rgba(139, 92, 246, ${ma.toFixed(2)})`);
+      midGrad.addColorStop(0.6, `rgba(139, 92, 246, ${(ma * 0.35).toFixed(2)})`);
+      midGrad.addColorStop(1, 'rgba(139, 92, 246, 0)');
+      ctx.fillStyle = midGrad;
+      roundRect(ctx, 0, 0, w, h, 3);
+      ctx.fill();
+
+      // ===== 第三层：高亮核心（最细最亮）=====
+      const ca = (coreBreath + hoverBoost) * 0.95;
+      ctx.fillStyle = `rgba(165, 180, 252, ${ca.toFixed(2)})`;
+      ctx.fillRect(coreX, 4, visualW, h - 8);
+
+      // hover 时在核心旁画一个微小的"点击提示"亮点
+      if (hovered) {
+        const dotY = h / 2 + Math.sin(breathPhase * 2) * 8;
+        const dotX = edgeReversed ? w - visualW - 4 : visualW + 4;
+        ctx.fillStyle = `rgba(200, 210, 255, ${(0.6 * coreBreath).toFixed(2)})`;
+        ctx.beginPath();
+        ctx.arc(dotX, dotY, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
-    // 呼吸动画循环
+    /// 圆角矩形辅助函数
+    function roundRect(c, x, y, rw, rh, r) {
+      c.beginPath();
+      c.moveTo(x + r, y);
+      c.lineTo(x + rw - r, y);
+      c.quadraticCurveTo(x + rw, y, x + rw, y + r);
+      c.lineTo(x + rw, y + rh - r);
+      c.quadraticCurveTo(x + rw, y + rh, x + rw - r, y + rh);
+      c.lineTo(x + r, y + rh);
+      c.quadraticCurveTo(x, y + rh, x, y + rh - r);
+      c.lineTo(x, y + r);
+      c.quadraticCurveTo(x, y, x + r, y);
+      c.closePath();
+    }
+
+    // 动画循环
     function animateBreath() {
-      breathPhase += 0.03;
       drawGlow();
       requestAnimationFrame(animateBreath);
     }
     animateBreath();
 
-    // 点击恢复宠物
-    const root = document.getElementById('pet-root');
-    if (root) {
-      root.addEventListener('mousedown', async (e) => {
-        if (e.button !== 0) return;
-        console.log('[pet-snap] 点击竖条，恢复宠物');
-        await cmdUnsnapTransform();
-      });
-    }
+    // ---- 交互：hover 检测 ----
+    // Tauri 透明窗口的整个区域都可接收鼠标事件
+    canvas.addEventListener('mouseenter', () => { hovered = true; });
+    canvas.addEventListener('mouseleave', () => { hovered = false; });
+    // 设置 cursor 样式
+    canvas.style.cursor = 'pointer';
 
-    // 监听 edge 方向（用于翻转渐变方向）
-    if (window.__TAURI__ && window.__TAURI__.event) {
-      window.__TAURI__.event.listen('snap-edge', (event) => {
-        edgeReversed = event.payload === 'right';
-      });
-    }
+    // ---- 点击恢复宠物 ----
+    canvas.addEventListener('mousedown', async (e) => {
+      if (e.button !== 0) return;
+      // 点击反馈：短暂变亮后执行恢复
+      hovered = true;
+      drawGlow(); // 立即重绘一次 hover 态
+      await cmdUnsnapTransform();
+    });
+
+    // ---- 方向同步（通过 eval 直接调用，无需事件）----
+    // Rust 侧通过 window.eval 调用此函数设置方向
+    window.__setSnapEdge = function(edge) {
+      edgeReversed = edge === 'right';
+    };
   }
 
   // ========== Pull 模式：前端 init 时从 Rust 拉取窗口状态 ==========
