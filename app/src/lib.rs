@@ -120,6 +120,32 @@ pub fn run() {
 
             tray::create_tray(app.handle())?;
 
+            // 桥接 core 的舞蹈播放事件 → 前端 pet 窗口的 play-dance 事件
+            // AI 工具 execute_play_dance 往 channel 发舞蹈名，这里消费并 emit
+            let (dance_tx, mut dance_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+            if let Err(e) = ai_pad_core::dance::set_play_dance_sender(dance_tx) {
+                warn!(error = %e, "注入 play_dance sender 失败");
+            }
+            let dance_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                while let Some(name) = dance_rx.recv().await {
+                    match ai_pad_core::dance::load_dance(&name) {
+                        Ok(def) => match serde_json::to_value(&def) {
+                            Ok(payload) => {
+                                if let Err(e) = dance_app.emit("play-dance", &payload) {
+                                    warn!(error = %e, dance = %name, "emit play-dance 失败");
+                                } else {
+                                    info!(dance = %name, "[dance-bridge] 已 emit play-dance");
+                                }
+                            }
+                            Err(e) => warn!(error = %e, dance = %name, "DanceDef 序列化失败"),
+                        },
+                        Err(e) => warn!(error = %e, dance = %name, "加载舞蹈失败"),
+                    }
+                }
+                warn!("[dance-bridge] channel 已关闭，消费任务退出");
+            });
+
             if let Err(e) = snap::precreate_pet_windows(app.handle()) {
                 warn!(error = %e, "预创建 pet 窗口失败");
             }

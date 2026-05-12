@@ -3,7 +3,7 @@ use crate::permission_hook::PermissionHook;
 use crate::prompts::PromptsConfig;
 use crate::tools::{
     self, ClipboardArgs, CreateDanceArgs, ForegroundArgs, GetTimeArgs, HotkeyArgs, LaunchArgs,
-    ReadFileArgs, RecentScreenshotsArgs, ShellArgs, ToolError,
+    PlayDanceArgs, ReadFileArgs, RecentScreenshotsArgs, ShellArgs, ToolError,
 };
 use futures::StreamExt;
 use rig::agent::Agent;
@@ -50,6 +50,7 @@ impl PetAgent {
             .tool(ClipboardTool)
             .tool(ForegroundTool)
             .tool(CreateDanceTool)
+            .tool(PlayDanceTool)
             .build();
 
         Ok(Self { agent, config })
@@ -294,7 +295,7 @@ define_tool_sync!(
 define_tool_sync!(
     CreateDanceTool,
     "create_dance",
-    "创建一段舞蹈动画。根据心情(mood)自动编排动作序列，保存为 YAML 文件，可随时播放",
+    "创建一段舞蹈动画。根据心情(mood)自动编排动作序列，保存为 YAML 文件。创建后如需立即播放，请接着调用 play_dance(name)",
     CreateDanceArgs,
     json!({
         "type": "object",
@@ -306,6 +307,21 @@ define_tool_sync!(
         "required": ["name", "mood"]
     }),
     tools::execute_create_dance
+);
+
+define_tool_sync!(
+    PlayDanceTool,
+    "play_dance",
+    "立即播放一段已保存的舞蹈（通过 create_dance 生成的），桌宠会根据 steps 序列表演",
+    PlayDanceArgs,
+    json!({
+        "type": "object",
+        "properties": {
+            "name": { "type": "string", "description": "舞蹈名称，必须已存在于 ~/.ai-pad/dances/" }
+        },
+        "required": ["name"]
+    }),
+    tools::execute_play_dance
 );
 
 // ---- 测试 ----
@@ -384,6 +400,18 @@ mod tests {
         let props = params.get("properties").unwrap().as_object().unwrap();
         assert!(props.get("name").is_some());
         assert!(props.get("mood").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_play_dance_tool_definition() {
+        let def = PlayDanceTool.definition(String::new()).await;
+        assert_eq!(def.name, "play_dance");
+        assert!(def.description.contains("播放"));
+        let params = def.parameters.as_object().unwrap();
+        let props = params.get("properties").unwrap().as_object().unwrap();
+        assert!(props.get("name").is_some());
+        let required = params.get("required").unwrap().as_array().unwrap();
+        assert!(required.iter().any(|v| v == "name"));
     }
 
     #[tokio::test]

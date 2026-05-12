@@ -5,7 +5,9 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tracing::{debug, info};
+use std::sync::OnceLock;
+use tokio::sync::mpsc::UnboundedSender;
+use tracing::{debug, info, warn};
 
 // ---- 数据定义 ----
 
@@ -127,6 +129,34 @@ pub fn list_dances() -> Vec<String> {
             .map(String::from)
     })
     .collect()
+}
+
+// ---- 播放事件通道（跨 crate 解耦）----
+//
+// app 层启动时通过 [set_play_dance_sender] 注入一个 channel sender，
+// core 层 AI 工具执行 [execute_play_dance] 时发送舞蹈名，
+// app 层在独立任务里消费并 emit 到前端 pet 窗口。
+
+static PLAY_DANCE_TX: OnceLock<UnboundedSender<String>> = OnceLock::new();
+
+/// app 层启动时注入 sender（只生效一次）
+pub fn set_play_dance_sender(tx: UnboundedSender<String>) -> Result<(), String> {
+    PLAY_DANCE_TX
+        .set(tx)
+        .map_err(|_| "舞蹈事件 sender 已初始化，不能重复设置".to_string())
+}
+
+/// 发送一个"播放舞蹈"事件，返回是否成功
+pub fn request_play_dance(name: &str) -> Result<(), String> {
+    match PLAY_DANCE_TX.get() {
+        Some(tx) => tx
+            .send(name.to_string())
+            .map_err(|e| format!("舞蹈事件发送失败: {e}")),
+        None => {
+            warn!("[dance] PLAY_DANCE_TX 未初始化，忽略播放请求");
+            Err("舞蹈事件通道未初始化".to_string())
+        }
+    }
 }
 
 // ---- Mood → 编排模板 ----
