@@ -34,6 +34,7 @@ jobs:
           copy config\buttons.yml core\config\
           copy config\actions.yml core\config\
           copy config\prompts.yml core\config\
+          copy config\user.yml core\config\
           mkdir app\config
           copy config\buttons.yml app\config\
           copy config\actions.yml app\config\
@@ -70,11 +71,14 @@ jobs:
 
       - name: Copy config files to target dirs
         run: |
-          copy buttons.yml core\
-          copy actions.yml core\
-          copy prompts.yml core\
-          copy buttons.yml app\
-          copy actions.yml app\
+          mkdir core\config
+          copy config\buttons.yml core\config\
+          copy config\actions.yml core\config\
+          copy config\prompts.yml core\config\
+          copy config\user.yml core\config\
+          mkdir app\config
+          copy config\buttons.yml app\config\
+          copy config\actions.yml app\config\
 
       # ── 构建（使用已有的 release profile：opt-level=z, LTO, strip, panic=abort）──
       - name: Build release binary

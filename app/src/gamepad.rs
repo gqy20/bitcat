@@ -10,6 +10,7 @@ use ai_pad_core::bridge::{handle_button_press, resolve_agent_response, PetComman
 use ai_pad_core::device::button_name;
 use ai_pad_core::hotkey;
 use ai_pad_core::memory::{should_store, LongTermMemory, MemoryStore, ProfileStore};
+use ai_pad_core::user_profile::UserProfile;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
@@ -133,6 +134,7 @@ pub struct SharedChatCore {
     pub memory: Mutex<MemoryStore>,
     pub long_term: Mutex<LongTermMemory>,
     pub profile: Mutex<ProfileStore>,
+    pub user_profile: Mutex<UserProfile>,
     pub last_aggregation: Mutex<std::time::Instant>,
 }
 
@@ -141,6 +143,7 @@ impl SharedChatCore {
         let memory = MemoryStore::load();
         let long_term = LongTermMemory::load();
         let profile = ProfileStore::load();
+        let user_profile = UserProfile::load();
         info!(
             entries = memory.entries.len(),
             "[chat-core] 对话记忆系统已初始化"
@@ -148,12 +151,14 @@ impl SharedChatCore {
         info!(
             long_term = long_term.entries.len(),
             profile = !profile.profile_text.is_empty(),
+            user_configured = !user_profile.is_empty(),
             "[chat-core] 长期记忆系统已初始化"
         );
         Self {
             memory: Mutex::new(memory),
             long_term: Mutex::new(long_term),
             profile: Mutex::new(profile),
+            user_profile: Mutex::new(user_profile),
             last_aggregation: Mutex::new(std::time::Instant::now()),
         }
     }
@@ -800,12 +805,25 @@ pub fn run_ai_chat(
             return;
         }
     };
-    let profile_ctx = match core.profile.lock() {
-        Ok(g) => g.build_context(),
+
+    // 用户显式声明优先（config/user.yml），为空时回退到自动聚合画像
+    let user_profile_ctx = match core.user_profile.lock() {
+        Ok(up) => up.build_context(),
         Err(e) => {
-            warn!(error = %e, "profile 锁中毒，跳过上下文");
-            return;
+            warn!(error = %e, "user_profile 锁中毒，跳过用户配置");
+            String::new()
         }
+    };
+    let profile_ctx = if user_profile_ctx.is_empty() {
+        match core.profile.lock() {
+            Ok(g) => g.build_context(),
+            Err(e) => {
+                warn!(error = %e, "profile 锁中毒，跳过上下文");
+                String::new()
+            }
+        }
+    } else {
+        String::new()
     };
     let long_term_ctx = match core.long_term.lock() {
         Ok(g) => g.retrieve(msg, 800),
@@ -819,6 +837,7 @@ pub fn run_ai_chat(
     let summary_ctx = summary_store.build_context(&summary_config);
     let recent_ctx = ai_pad_core::screenshot::build_recent_analyses_context(10, 1500);
     let context_parts: Vec<&str> = [
+        &user_profile_ctx,
         &profile_ctx,
         &long_term_ctx,
         &ctx,

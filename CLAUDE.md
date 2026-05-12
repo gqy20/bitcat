@@ -99,6 +99,10 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 
 `MemoryStore` 维护滚动窗口对话记忆（默认 20 条），持久化到 `~/.ai-pad/memory/chat_summary.json`。每次 AI 对话后记录 user_msg + ai_reply（按字符截断），下次对话时通过 `build_context()` 注入 prompt。配置在 `config/prompts.yml` 的 `memory` 段。
 
+### 用户画像
+
+`UserProfile` 从 `config/user.yml` 加载用户显式声明的身份信息（name/role/preferences/context/language），通过 `build_context()` 生成 `[关于主人]...[/关于主人]` 注入 prompt。**优先级高于** `ProfileStore` 的自动聚合画像：user.yml 有内容时直接使用，全空时才回退到聚合结果。设置窗口可编辑，支持重置为默认。
+
 ### Prompts 配置
 
 `config/prompts.yml` 统一管理四段提示词：`agent.preamble`（AI 人设）、`vision.prompt`/`vision.prompt_multi`（截图分析提示词，强调反幻觉）、`memory`（记忆窗口大小和截断阈值）、`screen_summary`（截图摘要注入配置）。所有字段有编译时默认值，YAML 可选覆盖。运行时从 exe 同目录/config/ 加载，构建时需 cp 到 target/config/。
@@ -181,6 +185,7 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 - `core/src/vision.rs` — Vision API 请求构建/响应解析（Anthropic Messages 图片分析）
 - `core/src/memory.rs` — 滚动窗口对话记忆，`~/.ai-pad/memory/` 持久化
 - `core/src/prompts.rs` — 统一提示词配置加载（agent/vision/memory），prompts.yml 解析
+- `core/src/user_profile.rs` — 用户画像配置（name/role/preferences），user.yml 解析，优先于自动聚合画像
 - `app/src/voice.rs` — 语音输入窗口 + generation 防残留
 - `app/src/bubble.rs` — 独立气泡窗口 + 流式 chunk 协议
 - `app/frontend/js/app.js` — 宠物窗口主逻辑（拖拽、状态同步、精灵渲染）

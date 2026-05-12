@@ -16,4 +16,5 @@ pub mod screenshot;
 #[cfg(test)]
 mod screenshot_tests;
 pub mod tools;
+pub mod user_profile;
 pub mod vision;

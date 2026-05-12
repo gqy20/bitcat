@@ -164,7 +164,8 @@ AI 可通过 Tool 调用生成舞蹈编排，前端实时播放像素动画 + �
 ├── config/                 # 运行时配置目录（编译时嵌入 exe，exe 同目录可覆盖）
 │   ├── actions.yml         # 按键动作绑定
 │   ├── buttons.yml         # 硬件按键映射
-│   └── prompts.yml         # AI 提示词配置
+│   ├── prompts.yml         # AI 提示词配置
+│   └── user.yml            # 用户画像（名字/角色/偏好/语言）
 ├── core/                   # 纯逻辑库（无 UI 依赖）
 │   └── src/
 │       ├── lib.rs          # 模块入口
@@ -274,6 +275,22 @@ actions:
 - `vision.prompt` / `vision.prompt_multi` — 截图分析提示词（强调反幻觉）
 - `memory` — 短期记忆窗口大小和截断阈值
 - `screen_summary` — 截图摘要注入条数（默认 10 条）
+
+### config/user.yml — 用户画像
+
+告诉 AI 你是谁，**优先级高于自动聚合画像**（长期记忆系统慢慢猜出的画像）：
+
+```yaml
+name: "小明"              # 名字/昵称
+role: "全栈工程师"         # 职业/角色
+preferences:             # 偏好列表
+  - "中文交流"
+  - "简洁回答"
+context: "正在开发 Rust 桌面应用"  # 自由描述
+language: "zh-CN"         # 首选语言（空则自动判断）
+```
+
+全空时回退到自动聚合画像；有内容时直接使用，跳过聚合。
 
 ### 方向键（面板隐藏时）
 

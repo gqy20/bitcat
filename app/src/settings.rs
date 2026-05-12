@@ -2,13 +2,14 @@
 //!
 //! 设计要点（见 plan `Settings_UI_Design_Plan`）：
 //! - `~/.claude/settings.json` 仅读，**永不写入**；AI 覆盖写入 `app_settings.json`
-//! - config/actions.yml / config/prompts.yml 就地写回（注释会被覆盖，保存前自动备份 `.bak`）
+//! - config/actions.yml / config/prompts.yml / config/user.yml 就地写回（注释会被覆盖，保存前自动备份 `.bak`）
 //! - 保存后仅 set 原子 flag，由 gamepad_loop 下 tick 自动 reload（复用现有机制）
 
 use crate::commands::SharedWindowState;
 use ai_pad_core::action::{ActionConfig, ActionDef, Defaults};
 use ai_pad_core::app_settings::{AiOverride, AppSettings, AppearanceSettings};
 use ai_pad_core::prompts::PromptsConfig;
+use ai_pad_core::user_profile::UserProfile;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -69,6 +70,7 @@ fn create_settings_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri
 #[derive(Debug, Serialize)]
 pub struct SettingsSnapshot {
     pub ai: AiView,
+    pub user: UserProfile,
     pub actions: ActionsView,
     pub prompts: PromptsConfig,
     pub appearance: AppearanceSettings,
@@ -235,6 +237,7 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
             effective,
             has_effective_key: has_key,
         },
+        user: UserProfile::load(),
         actions: ActionsView {
             defaults: action_cfg.defaults,
             actions: action_cfg.actions,
@@ -316,6 +319,14 @@ pub async fn cmd_settings_save_prompts(payload: PromptsConfig) -> Result<(), Str
     Ok(())
 }
 
+/// 保存用户配置（写回 config/user.yml）
+#[tauri::command]
+pub async fn cmd_settings_save_user(payload: UserProfile) -> Result<(), String> {
+    payload.save()?;
+    info!("[settings] config/user.yml 已保存");
+    Ok(())
+}
+
 /// 保存外观设置（写入 app_settings.json 的 appearance 段）
 #[tauri::command]
 pub async fn cmd_settings_save_appearance(
@@ -347,7 +358,7 @@ pub async fn cmd_settings_save_appearance(
     Ok(())
 }
 
-/// 重置某一分类为内置默认（actions / prompts / appearance / ai）
+/// 重置某一分类为内置默认（actions / prompts / appearance / ai / user）
 #[tauri::command]
 pub async fn cmd_settings_reset(category: String) -> Result<(), String> {
     match category.as_str() {
@@ -366,6 +377,9 @@ pub async fn cmd_settings_reset(category: String) -> Result<(), String> {
             let mut s = AppSettings::load();
             s.ai = AiOverride::default();
             s.save()?;
+        }
+        "user" => {
+            UserProfile::default_builtin().save()?;
         }
         other => return Err(format!("未知重置分类: {other}")),
     }
@@ -400,6 +414,7 @@ mod tests {
                 },
                 has_effective_key: false,
             },
+            user: UserProfile::default(),
             actions: ActionsView {
                 defaults: Defaults::default(),
                 actions: HashMap::new(),

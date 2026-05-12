@@ -40,6 +40,7 @@ jobs:
           copy config\buttons.yml core\config\
           copy config\actions.yml core\config\
           copy config\prompts.yml core\config\
+          copy config\user.yml core\config\
           mkdir app\config
           copy config\buttons.yml app\config\
           copy config\actions.yml app\config\
@@ -67,6 +68,7 @@ jobs:
           copy config\buttons.yml core\config\
           copy config\actions.yml core\config\
           copy config\prompts.yml core\config\
+          copy config\user.yml core\config\
           mkdir app\config
           copy config\buttons.yml app\config\
           copy config\actions.yml app\config\
