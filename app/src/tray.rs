@@ -11,6 +11,7 @@ const MENU_SCREENSHOT: &str = "screenshot";
 const MENU_COLLAPSE: &str = "collapse";
 const MENU_TOP: &str = "top";
 const MENU_RELOAD: &str = "reload";
+const MENU_SETTINGS: &str = "settings";
 const MENU_EXIT: &str = "exit";
 
 pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
@@ -18,6 +19,7 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let collapse_item = MenuItem::with_id(app, MENU_COLLAPSE, "折叠", true, None::<&str>)?;
     let top_item = MenuItem::with_id(app, MENU_TOP, "取消置顶", true, None::<&str>)?;
     let reload_item = MenuItem::with_id(app, MENU_RELOAD, "重载配置", true, None::<&str>)?;
+    let settings_item = MenuItem::with_id(app, MENU_SETTINGS, "设置…", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let exit_item = MenuItem::with_id(app, MENU_EXIT, "退出", true, None::<&str>)?;
 
@@ -28,6 +30,7 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             &collapse_item,
             &top_item,
             &reload_item,
+            &settings_item,
             &separator,
             &exit_item,
         ],
@@ -82,6 +85,9 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             MENU_RELOAD => {
                 ws_reload_config(app);
             }
+            MENU_SETTINGS => {
+                crate::settings::toggle_settings(app);
+            }
             MENU_EXIT => {
                 app.exit(0);
             }
@@ -118,6 +124,7 @@ mod tests {
             MENU_COLLAPSE,
             MENU_TOP,
             MENU_RELOAD,
+            MENU_SETTINGS,
             MENU_EXIT,
         ];
         let mut sorted = ids;
@@ -133,6 +140,7 @@ mod tests {
         assert!(!MENU_COLLAPSE.is_empty());
         assert!(!MENU_TOP.is_empty());
         assert!(!MENU_RELOAD.is_empty());
+        assert!(!MENU_SETTINGS.is_empty());
         assert!(!MENU_EXIT.is_empty());
     }
 

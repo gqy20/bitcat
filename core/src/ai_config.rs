@@ -11,41 +11,30 @@ pub struct AiConfig {
 }
 
 impl AiConfig {
-    /// 优先级: 环境变量 > ~/.claude/settings.json > 默认值
+    /// 逐字段优先级：环境变量 > `app_settings.json` 覆盖层 > `~/.claude/settings.json` > 默认值。
+    ///
+    /// 任一来源提供该字段即采用；`~/.claude/settings.json` 全程只读。
     pub fn load() -> Result<Self, String> {
-        // 1. 尝试环境变量
-        if let Ok(key) = env_fallback("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
-            && let Ok(url) = std::env::var("ANTHROPIC_BASE_URL")
-        {
-            let model = std::env::var("ANTHROPIC_MODEL")
-                .unwrap_or_else(|_| "claude-sonnet-4-20250514".into());
-            return Ok(Self {
-                api_key: key,
-                base_url: url,
-                model,
-            });
-        }
+        let overlay = crate::app_settings::AppSettings::load().ai;
+        let claude = load_claude_env().unwrap_or_default();
 
-        // 2. 回退到 settings.json
-        let path = settings_path();
-        let raw = fs::read_to_string(&path).map_err(|e| format!("读取 {:?} 失败: {e}", path))?;
-        let cfg: SettingsFile =
-            serde_json::from_str(&raw).map_err(|e| format!("解析 settings.json 失败: {e}"))?;
+        let api_key = non_empty_env("ANTHROPIC_API_KEY")
+            .or_else(|| non_empty_env("ANTHROPIC_AUTH_TOKEN"))
+            .or_else(|| overlay.api_key.clone().filter(|s| !s.is_empty()))
+            .or_else(|| claude.ANTHROPIC_AUTH_TOKEN.clone())
+            .or_else(|| claude.ANTHROPIC_API_KEY.clone())
+            .ok_or_else(|| {
+                String::from("未找到 API key（环境变量 / app_settings.json / ~/.claude/settings.json 均为空）")
+            })?;
 
-        let api_key = cfg
-            .env
-            .ANTHROPIC_AUTH_TOKEN
-            .or(cfg.env.ANTHROPIC_API_KEY)
-            .ok_or_else(|| String::from("settings.json 中未找到 API key"))?;
-
-        let base_url = cfg
-            .env
-            .ANTHROPIC_BASE_URL
+        let base_url = non_empty_env("ANTHROPIC_BASE_URL")
+            .or_else(|| overlay.base_url.clone().filter(|s| !s.is_empty()))
+            .or_else(|| claude.ANTHROPIC_BASE_URL.clone())
             .unwrap_or_else(|| String::from("https://api.anthropic.com"));
 
-        let model = cfg
-            .env
-            .ANTHROPIC_MODEL
+        let model = non_empty_env("ANTHROPIC_MODEL")
+            .or_else(|| overlay.model.clone().filter(|s| !s.is_empty()))
+            .or_else(|| claude.ANTHROPIC_MODEL.clone())
             .unwrap_or_else(|| String::from("claude-sonnet-4-20250514"));
 
         Ok(Self {
@@ -67,6 +56,10 @@ impl AiConfig {
         {
             return n;
         }
+        // app_settings 覆盖层
+        if let Some(n) = crate::app_settings::AppSettings::load().ai.max_tokens {
+            return n;
+        }
         model_max_tokens(&self.model)
     }
 }
@@ -82,12 +75,13 @@ fn model_max_tokens(model: &str) -> u64 {
 
 // ---- 内部解析结构 ----
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default, Clone)]
 struct SettingsFile {
+    #[serde(default)]
     env: EnvSection,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default, Clone)]
 #[allow(non_snake_case)]
 struct EnvSection {
     #[serde(default, alias = "anthropic_auth_token")]
@@ -98,6 +92,18 @@ struct EnvSection {
     ANTHROPIC_BASE_URL: Option<String>,
     #[serde(default, alias = "anthropic_model")]
     ANTHROPIC_MODEL: Option<String>,
+}
+
+/// 非空环境变量读取。空串视为未设置。
+fn non_empty_env(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|v| !v.is_empty())
+}
+
+/// 读取 `~/.claude/settings.json` 的 env 段（只读）。返回 `None` 表示文件不存在或损坏。
+fn load_claude_env() -> Option<EnvSection> {
+    let raw = fs::read_to_string(settings_path()).ok()?;
+    let cfg: SettingsFile = serde_json::from_str(&raw).ok()?;
+    Some(cfg.env)
 }
 
 fn env_fallback(a: &str, b: &str) -> Result<String, ()> {

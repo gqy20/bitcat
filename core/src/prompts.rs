@@ -93,14 +93,7 @@ impl Default for VisionPromptConfig {
 impl PromptsConfig {
     /// 加载 prompts.yml：exe 同目录 → CWD → 编译时嵌入的默认值
     pub fn load() -> Self {
-        const DEFAULT_YML: &str = include_str!("../../prompts.yml");
-        let content = std::env::current_exe()
-            .ok()
-            .and_then(|exe| exe.parent().map(|dir| dir.join("prompts.yml")))
-            .filter(|p| p.exists())
-            .and_then(|p| fs::read_to_string(p).ok())
-            .or_else(|| fs::read_to_string("prompts.yml").ok())
-            .unwrap_or_else(|| DEFAULT_YML.to_string());
+        let content = load_prompts_content();
         match serde_yaml::from_str::<PromptsConfig>(&content) {
             Ok(cfg) => cfg,
             Err(e) => {
@@ -109,6 +102,49 @@ impl PromptsConfig {
             }
         }
     }
+
+    /// 序列化写回 prompts.yml（会覆盖注释，保存前自动备份 `.bak`）。
+    pub fn save(&self) -> Result<(), String> {
+        let target = resolve_prompts_path();
+        if let Ok(old) = fs::read_to_string(&target) {
+            let _ = fs::write(target.with_extension("yml.bak"), old);
+        }
+        let header = "# 由 8Bit Cat 设置界面生成\n\
+                      # 手动编辑仍然生效，但下次保存设置会覆盖注释\n\n";
+        let body = serde_yaml::to_string(self).map_err(|e| e.to_string())?;
+        fs::write(&target, format!("{header}{body}"))
+            .map_err(|e| format!("写入 {:?} 失败: {e}", target))
+    }
+
+    /// 内置默认配置（解析嵌入的 prompts.yml）。
+    pub fn default_builtin() -> Self {
+        const DEFAULT_YML: &str = include_str!("../../prompts.yml");
+        serde_yaml::from_str(DEFAULT_YML).unwrap_or_default()
+    }
+}
+
+const DEFAULT_PROMPTS_YML: &str = include_str!("../../prompts.yml");
+
+fn load_prompts_content() -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("prompts.yml")))
+        .filter(|p| p.exists())
+        .and_then(|p| fs::read_to_string(p).ok())
+        .or_else(|| fs::read_to_string("prompts.yml").ok())
+        .unwrap_or_else(|| DEFAULT_PROMPTS_YML.to_string())
+}
+
+fn resolve_prompts_path() -> std::path::PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("prompts.yml")))
+        .filter(|p| p.exists())
+        .or_else(|| {
+            let p = std::path::PathBuf::from("prompts.yml");
+            if p.exists() { Some(p) } else { None }
+        })
+        .unwrap_or_else(|| std::path::PathBuf::from("prompts.yml"))
 }
 
 #[cfg(test)]

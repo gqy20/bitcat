@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>8Bit Cat 设置</title>
+  <link rel="stylesheet" href="/css/settings.css" />
+</head>
+<body>
+  <div class="shell">
+    <header class="titlebar">
+      <div class="drag">
+        <span class="dot"></span>
+        <span class="title">8Bit Cat · 设置</span>
+      </div>
+      <div class="tb-actions">
+        <button id="btn-close" class="tb-btn" title="关闭 (Esc)">×</button>
+      </div>
+    </header>
+
+    <div class="body">
+      <aside class="nav">
+        <button class="nav-item active" data-tab="ai"><span class="icon">🤖</span><span>AI 模型</span></button>
+        <button class="nav-item" data-tab="actions"><span class="icon">🎮</span><span>按键绑定</span></button>
+        <button class="nav-item" data-tab="prompts"><span class="icon">💬</span><span>Prompt</span></button>
+        <button class="nav-item" data-tab="appearance"><span class="icon">🎨</span><span>外观行为</span></button>
+        <button class="nav-item" data-tab="about"><span class="icon">ℹ️</span><span>关于</span></button>
+      </aside>
+
+      <main class="pane">
+        <!-- AI -->
+        <section class="tab" data-pane="ai">
+          <h2>AI 模型</h2>
+          <p class="hint">修改将写入 app_settings.json 覆盖层；<code>~/.claude/settings.json</code> 只读不写。留空则回退到下一级（环境变量 / Claude settings / 默认）。</p>
+          <div class="row">
+            <label>API Key</label>
+            <div class="input-with-action">
+              <input id="ai-key" type="password" placeholder="（已保存：****）" autocomplete="off" />
+              <button class="mini" id="ai-key-toggle" type="button">👁</button>
+            </div>
+          </div>
+          <div class="row">
+            <label>Base URL</label>
+            <input id="ai-baseurl" type="text" placeholder="https://api.anthropic.com" />
+          </div>
+          <div class="row">
+            <label>模型</label>
+            <input id="ai-model" type="text" placeholder="claude-sonnet-4-20250514" />
+          </div>
+          <div class="row">
+            <label>Max Tokens</label>
+            <input id="ai-maxtokens" type="number" min="1" placeholder="256000" />
+          </div>
+          <div class="effective" id="ai-effective"></div>
+        </section>
+
+        <!-- Actions -->
+        <section class="tab hidden" data-pane="actions">
+          <h2>按键绑定</h2>
+          <p class="hint">保存后立即热重载。默认终端与窗口模式在顶部设置。</p>
+          <div class="row">
+            <label>默认终端</label>
+            <input id="actions-term" type="text" placeholder="powershell" />
+          </div>
+          <div class="row">
+            <label>默认窗口</label>
+            <input id="actions-win" type="text" placeholder="maximized" />
+          </div>
+          <div class="section-sep"></div>
+          <div id="actions-list"></div>
+        </section>
+
+        <!-- Prompts -->
+        <section class="tab hidden" data-pane="prompts">
+          <h2>Prompt</h2>
+          <p class="hint">修改将写回 prompts.yml（原文件自动备份为 <code>.bak</code>）。</p>
+          <div class="row col">
+            <label>Agent Preamble</label>
+            <textarea id="p-agent" rows="8"></textarea>
+          </div>
+          <div class="row col">
+            <label>Vision Prompt</label>
+            <textarea id="p-vision" rows="6"></textarea>
+          </div>
+          <div class="row col">
+            <label>Vision Prompt (多屏)</label>
+            <textarea id="p-vision-multi" rows="3"></textarea>
+          </div>
+          <div class="row">
+            <label>Memory 最大条数</label>
+            <input id="p-mem-max" type="number" min="1" />
+          </div>
+          <div class="row">
+            <label>Memory 最大上下文字符</label>
+            <input id="p-mem-ctx" type="number" min="0" />
+          </div>
+          <div class="row">
+            <label>屏幕摘要间隔（分钟）</label>
+            <input id="p-ss-interval" type="number" min="1" />
+          </div>
+        </section>
+
+        <!-- Appearance -->
+        <section class="tab hidden" data-pane="appearance">
+          <h2>外观与行为</h2>
+          <div class="row toggle">
+            <label>默认置顶</label>
+            <input id="a-top" type="checkbox" />
+          </div>
+          <div class="row toggle">
+            <label>启动时折叠</label>
+            <input id="a-collapsed" type="checkbox" />
+          </div>
+          <div class="row toggle">
+            <label>TTS 语音</label>
+            <input id="a-tts" type="checkbox" />
+          </div>
+          <div class="row">
+            <label>全局快捷键</label>
+            <input id="a-shortcut" type="text" placeholder="CommandOrControl+Alt+Space" />
+          </div>
+          <p class="hint">全局快捷键的实时切换需要重启应用才完全生效。</p>
+        </section>
+
+        <!-- About -->
+        <section class="tab hidden" data-pane="about">
+          <h2>关于</h2>
+          <div class="row"><label>版本</label><span id="about-version" class="ro">-</span></div>
+          <div class="row col"><label>app_settings.json 路径</label><span id="about-settings-path" class="ro mono">-</span></div>
+          <div class="row col"><label>actions.yml</label><span id="about-actions-hint" class="ro mono">-</span></div>
+          <div class="row col"><label>prompts.yml</label><span id="about-prompts-hint" class="ro mono">-</span></div>
+          <div class="row">
+            <label>项目地址</label>
+            <span class="ro">GitHub: 8Bit Cat</span>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <footer class="actionsbar">
+      <div id="toast" class="toast hidden"></div>
+      <div class="actions-left">
+        <button id="btn-reset" class="btn ghost">恢复默认</button>
+      </div>
+      <div class="actions-right">
+        <button id="btn-cancel" class="btn">取消</button>
+        <button id="btn-save" class="btn primary">保存</button>
+      </div>
+    </footer>
+  </div>
+  <script src="/js/settings.js"></script>
+</body>
+</html>

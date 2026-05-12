@@ -4,6 +4,7 @@ pub mod gamepad;
 pub mod joystick;
 pub mod panel;
 pub mod screenshot;
+pub mod settings;
 pub mod tray;
 pub mod voice;
 pub mod tts;
@@ -584,10 +585,27 @@ pub fn run() {
             cmd_open_chat,
             cmd_exit_chat,
             cmd_pet_log,
+            settings::cmd_settings_show,
+            settings::cmd_settings_hide,
+            settings::cmd_settings_close,
+            settings::cmd_settings_log,
+            settings::cmd_settings_load,
+            settings::cmd_settings_save_ai,
+            settings::cmd_settings_save_actions,
+            settings::cmd_settings_save_prompts,
+            settings::cmd_settings_save_appearance,
+            settings::cmd_settings_reset,
+            settings::cmd_settings_apply,
         ])
         .on_window_event(|window, event| {
             if window.label() == "panel" {
                 if let WindowEvent::Focused(false) = event {
+                    let _ = window.hide();
+                }
+            }
+            if window.label() == "settings" {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
                     let _ = window.hide();
                 }
             }

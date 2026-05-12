@@ -1,9 +1,10 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
+use std::path::PathBuf;
 
 // ---- 数据结构 ----
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Defaults {
     #[serde(default = "default_terminal")]
     pub terminal: String,
@@ -18,30 +19,38 @@ fn default_window() -> String {
     "maximized".into()
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ActionConfig {
     #[serde(default)]
     pub defaults: Defaults,
     pub actions: std::collections::HashMap<String, ActionDef>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ActionDef {
     #[serde(rename = "type")]
     pub action_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub program: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub args: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub workdir: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub terminal: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voice: Option<VoiceConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trigger: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct VoiceConfig {
     #[serde(default)]
     pub trigger: Vec<String>,
@@ -66,11 +75,42 @@ fn load_config_content(path: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_string())
 }
 
+/// 解析保存路径：优先复用加载时的路径（exe 同目录 → CWD），都不存在则写到 CWD。
+fn resolve_save_path(path: &str) -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join(path)))
+        .filter(|p| p.exists())
+        .or_else(|| {
+            let p = PathBuf::from(path);
+            if p.exists() { Some(p) } else { None }
+        })
+        .unwrap_or_else(|| PathBuf::from(path))
+}
+
 impl ActionConfig {
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let content = load_config_content(path, DEFAULT_YML);
         let config: ActionConfig = serde_yaml::from_str(&content)?;
         Ok(config)
+    }
+
+    /// 序列化写回 actions.yml（会覆盖注释，保存前自动备份 `.bak`）。
+    pub fn save(&self, path: &str) -> Result<(), String> {
+        let target = resolve_save_path(path);
+        if let Ok(old) = fs::read_to_string(&target) {
+            let _ = fs::write(target.with_extension("yml.bak"), old);
+        }
+        let header = "# 由 8Bit Cat 设置界面生成\n\
+                      # 手动编辑仍然生效，但下次保存设置会覆盖注释\n\n";
+        let body = serde_yaml::to_string(self).map_err(|e| e.to_string())?;
+        fs::write(&target, format!("{header}{body}"))
+            .map_err(|e| format!("写入 {:?} 失败: {e}", target))
+    }
+
+    /// 返回内置默认 yml 解析后的 `ActionConfig`（用于"重置为默认"）。
+    pub fn default_builtin() -> Self {
+        serde_yaml::from_str(DEFAULT_YML).expect("内置 actions.yml 损坏")
     }
 }
 
