@@ -2,8 +2,8 @@ use crate::ai_config::AiConfig;
 use crate::permission_hook::PermissionHook;
 use crate::prompts::PromptsConfig;
 use crate::tools::{
-    self, ClipboardArgs, ForegroundArgs, GetTimeArgs, HotkeyArgs, LaunchArgs,
-    RecentScreenshotsArgs, ReadFileArgs, ShellArgs, ToolError,
+    self, ClipboardArgs, CreateDanceArgs, ForegroundArgs, GetTimeArgs, HotkeyArgs, LaunchArgs,
+    ReadFileArgs, RecentScreenshotsArgs, ShellArgs, ToolError,
 };
 use futures::StreamExt;
 use rig::agent::Agent;
@@ -49,6 +49,7 @@ impl PetAgent {
             .tool(HotkeyTool)
             .tool(ClipboardTool)
             .tool(ForegroundTool)
+            .tool(CreateDanceTool)
             .build();
 
         Ok(Self { agent, config })
@@ -85,10 +86,7 @@ impl PetAgent {
                 )) => {
                     tool_call_count += 1;
                     // 通知用户 AI 正在调用工具
-                    on_chunk(&format!(
-                        "[正在执行: {}...]",
-                        tool_call.function.name
-                    ));
+                    on_chunk(&format!("[正在执行: {}...]", tool_call.function.name));
                 }
                 Ok(MultiTurnStreamItem::FinalResponse(res)) => {
                     debug!(
@@ -290,6 +288,23 @@ define_tool_sync!(
     tools::execute_foreground
 );
 
+define_tool_sync!(
+    CreateDanceTool,
+    "create_dance",
+    "创建一段舞蹈动画。根据心情(mood)自动编排动作序列，保存为 YAML 文件，可随时播放",
+    CreateDanceArgs,
+    json!({
+        "type": "object",
+        "properties": {
+            "name": { "type": "string", "description": "舞蹈名称（用于文件名，如 happy_twist）" },
+            "mood": { "type": "string", "description": "心情关键词：happy/excited/sleepy/angry/cute/开心/兴奋/困/生气/萌" },
+            "duration_ms": { "type": "integer", "description": "可选，总时长限制（毫秒），不填则使用默认编排" }
+        },
+        "required": ["name", "mood"]
+    }),
+    tools::execute_create_dance
+);
+
 // ---- 测试 ----
 
 #[cfg(test)]
@@ -355,6 +370,17 @@ mod tests {
     async fn test_foreground_tool_definition() {
         let def = ForegroundTool.definition(String::new()).await;
         assert_eq!(def.name, "force_foreground");
+    }
+
+    #[tokio::test]
+    async fn test_create_dance_tool_definition() {
+        let def = CreateDanceTool.definition(String::new()).await;
+        assert_eq!(def.name, "create_dance");
+        assert!(def.description.contains("舞蹈"));
+        let params = def.parameters.as_object().unwrap();
+        let props = params.get("properties").unwrap().as_object().unwrap();
+        assert!(props.get("name").is_some());
+        assert!(props.get("mood").is_some());
     }
 
     #[tokio::test]

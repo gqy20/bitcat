@@ -124,6 +124,25 @@ const CONFUSED_RIGHT = cloneSprite(IDLE_BASE, [
   [8, 9, 5], [8, 10, 5],
 ]);
 
+// ---- 舞蹈动作帧（基于 IDLE_BASE 的变体）----
+
+// jump: 整体上移（底部脚位清空，模拟腾空）
+const JUMP_SPRITE = cloneSprite(IDLE_BASE, [
+  [13, 4, 0], [13, 5, 0], [13, 8, 0], [13, 9, 0],
+  [14, 4, 0], [14, 5, 0], [14, 8, 0], [14, 9, 0],
+]);
+
+// spin: 与 idle 相同，渲染层通过快速翻转 facingRight 实现旋转效果
+const SPIN_SPRITE = IDLE_BASE;
+
+// wave: 左前爪抬起（左上角像素清空）
+const WAVE_SPRITE = cloneSprite(IDLE_BASE, [
+  [3, 0, 0], [3, 1, 0], [3, 2, 1], [4, 0, 0], [4, 1, 1],
+]);
+
+// shake: 与 idle 相同，渲染层通过 x 偏移实现晃动
+const SHAKE_SPRITE = IDLE_BASE;
+
 // 多帧精灵：每个状态对应一个帧数组（每帧仍是 256 像素）
 const SPRITES = {
   idle:     [IDLE_BASE, IDLE_BLINK_HALF, IDLE_BLINK_CLOSED, IDLE_BASE],
@@ -132,6 +151,11 @@ const SPRITES = {
   talk:     [TALK_SMALL, TALK_LARGE, TALK_CLOSED],
   happy:    [HAPPY_BASE, HAPPY_BLINK, HAPPY_BASE],
   confused: [CONFUSED_LEFT, CONFUSED_RIGHT],
+  // 舞蹈动作（单帧，由舞蹈播放器控制时长）
+  jump:     [JUMP_SPRITE],
+  spin:     [SPIN_SPRITE],
+  wave:     [WAVE_SPRITE],
+  shake:    [SHAKE_SPRITE],
 };
 
 // 取出指定状态的指定帧（越界自动取模）

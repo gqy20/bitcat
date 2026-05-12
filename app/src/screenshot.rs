@@ -460,14 +460,21 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
                         "喵~ 看不太清屏幕内容，可能需要检查 API 配置",
                     );
                 } else {
-                    info!(chars = description.chars().count(), "[screenshot] 调用 show_bubble");
+                    info!(
+                        chars = description.chars().count(),
+                        "[screenshot] 调用 show_bubble"
+                    );
                     match crate::bubble::show_bubble(app, &description) {
                         Ok(()) => info!("[screenshot] show_bubble 成功"),
                         Err(e) => warn!(error = %e, "[screenshot] show_bubble 失败"),
                     }
                 }
             } else {
-                info!(i, total = resolutions.len(), "[screenshot] 非最后一个分辨率，跳过气泡");
+                info!(
+                    i,
+                    total = resolutions.len(),
+                    "[screenshot] 非最后一个分辨率，跳过气泡"
+                );
             }
         }
 
@@ -494,10 +501,15 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
                 info!(time_range = %time_range, "开始生成屏幕活动摘要");
 
                 if let Ok(today_dir) = ai_pad_core::screenshot::ensure_today_dir() {
-                    let records =
-                        ai_pad_core::screenshot::list_recent_analyses(&today_dir, summary_cfg.max_recent_analyses);
-                    let descriptions: Vec<String> =
-                        records.into_iter().map(|r| r.description).filter(|d| !d.is_empty()).collect();
+                    let records = ai_pad_core::screenshot::list_recent_analyses(
+                        &today_dir,
+                        summary_cfg.max_recent_analyses,
+                    );
+                    let descriptions: Vec<String> = records
+                        .into_iter()
+                        .map(|r| r.description)
+                        .filter(|d| !d.is_empty())
+                        .collect();
 
                     if !descriptions.is_empty() {
                         match rt.block_on(ai_pad_core::screen_summary::generate_summary(

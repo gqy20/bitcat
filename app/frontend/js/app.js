@@ -28,6 +28,9 @@
   // 当前窗口是否为吸附竖条窗口
   let isSnapWindow = false;
 
+  // 舞蹈播放器（非 null 时劫持渲染循环）
+  let dancePlayer = null;  // { steps, index, time, loop }
+
   // Tauri 2 正确的 API 路径：getCurrentWindow() 不是 getCurrent()
   function getCurrentWin() {
     try {
@@ -332,22 +335,48 @@
     lastTime = now;
 
     if (!collapsed) {
-      pet.update(dt);
+      if (dancePlayer) {
+        // 舞蹈模式：按时间轴切换动作帧
+        updateDance(dt);
+      } else {
+        // 正常模式：状态机驱动
+        pet.update(dt);
 
-      if (pet.state !== prevState) {
-        syncStateClass(pet.state);
-        flashSprite();
-        Particles.onStateEnter(pet.state);
-        prevState = pet.state;
+        if (pet.state !== prevState) {
+          syncStateClass(pet.state);
+          flashSprite();
+          Particles.onStateEnter(pet.state);
+          prevState = pet.state;
+        }
+
+        SpriteRenderer.renderSprite(ctx, pet.state, pet.frame, pet.facingRight, 8);
+        Particles.tick(pet.state, dt);
       }
-
-      SpriteRenderer.renderSprite(ctx, pet.state, pet.frame, pet.facingRight, 8);
-      Particles.tick(pet.state, dt);
     } else {
       SpriteRenderer.renderMini(ctx, pet.state);
     }
 
     requestAnimationFrame(loop);
+  }
+
+  function updateDance(dt) {
+    dancePlayer.time += dt;
+    var step = dancePlayer.steps[dancePlayer.index];
+    if (dancePlayer.time >= step.duration_ms) {
+      dancePlayer.time = 0;
+      dancePlayer.index++;
+      if (dancePlayer.index >= dancePlayer.steps.length) {
+        if (dancePlayer.loop_) {
+          dancePlayer.index = 0;
+        } else {
+          // 舞蹈结束，交还控制权给状态机
+          dancePlayer = null;
+          return;
+        }
+      }
+    }
+    var currentAction = dancePlayer.steps[dancePlayer.index].action;
+    SpriteRenderer.renderSprite(ctx, currentAction, 0, pet.facingRight, 8);
   }
 
   function syncStateClass(state) {
@@ -433,6 +462,18 @@
       console.log('[pet] 收到 pet-toggle-top:', event.payload);
       alwaysOnTop = event.payload;
       applyAlwaysOnTop();
+    });
+
+    // 舞蹈播放事件（Rust 侧 cmd_play_dance 发出）
+    window.__TAURI__.event.listen('play-dance', (event) => {
+      console.log('[pet] 收到 play-dance:', event.payload);
+      var payload = event.payload;
+      dancePlayer = {
+        steps: payload.steps,
+        index: 0,
+        time: 0,
+        loop_: payload.loop_ !== false,
+      };
     });
   }
 

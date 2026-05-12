@@ -286,10 +286,7 @@ pub async fn cmd_settings_save_ai(payload: AiOverride) -> Result<(), String> {
 
 /// 保存按键绑定（写回 actions.yml + 触发 reload flag）
 #[tauri::command]
-pub async fn cmd_settings_save_actions(
-    app: AppHandle,
-    payload: ActionsView,
-) -> Result<(), String> {
+pub async fn cmd_settings_save_actions(app: AppHandle, payload: ActionsView) -> Result<(), String> {
     let cfg = ActionConfig {
         defaults: payload.defaults,
         actions: payload.actions,
@@ -298,7 +295,10 @@ pub async fn cmd_settings_save_actions(
     // 触发 gamepad_loop 热重载
     let ws: tauri::State<'_, SharedWindowState> = app.state();
     ws.config_reload.store(true, Ordering::SeqCst);
-    info!(actions = cfg.actions.len(), "[settings] actions.yml 已保存并触发 reload");
+    info!(
+        actions = cfg.actions.len(),
+        "[settings] actions.yml 已保存并触发 reload"
+    );
     Ok(())
 }
 

@@ -133,10 +133,18 @@ pub async fn execute_shell(args: &ShellArgs) -> Result<ToolResult, ToolError> {
             let stdout = String::from_utf8_lossy(&o.stdout).trim().to_string();
             let stderr = String::from_utf8_lossy(&o.stderr).trim().to_string();
             if o.status.success() {
-                let output = if stdout.is_empty() { "(无输出)".into() } else { truncate_chars(&stdout, MAX_OUTPUT_CHARS) };
+                let output = if stdout.is_empty() {
+                    "(无输出)".into()
+                } else {
+                    truncate_chars(&stdout, MAX_OUTPUT_CHARS)
+                };
                 Ok(ToolResult::ok(output))
             } else {
-                let err_msg = if stderr.is_empty() { format!("命令失败 (exit code {:?})", o.status.code()) } else { truncate_chars(&stderr, MAX_OUTPUT_CHARS) };
+                let err_msg = if stderr.is_empty() {
+                    format!("命令失败 (exit code {:?})", o.status.code())
+                } else {
+                    truncate_chars(&stderr, MAX_OUTPUT_CHARS)
+                };
                 Ok(ToolResult::err(err_msg))
             }
         }
@@ -252,6 +260,39 @@ pub fn execute_foreground(args: &ForegroundArgs) -> ToolResult {
     match crate::hotkey::force_foreground(args.hwnd) {
         Ok(()) => ToolResult::ok("窗口已置顶"),
         Err(e) => ToolResult::err(e),
+    }
+}
+
+// ---- 舞蹈工具 ----
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CreateDanceArgs {
+    pub name: String,
+    pub mood: String,
+    #[serde(default)]
+    pub duration_ms: Option<u32>,
+}
+
+/// AI 创建舞蹈：根据 mood 查表生成 DanceDef → 序列化 YAML → 写入 ~/.ai-pad/dances/
+pub fn execute_create_dance(args: &CreateDanceArgs) -> ToolResult {
+    debug!(name = %args.name, mood = %args.mood, "AI 创建舞蹈");
+
+    let steps = crate::dance::choreograph(&args.mood);
+    let def = crate::dance::DanceDef {
+        name: args.name.clone(),
+        loop_: true,
+        steps,
+    };
+
+    match crate::dance::save_dance(&def) {
+        Ok(path) => ToolResult::ok(format!(
+            "已创建舞蹈「{}」({} 步, {}ms)，保存在 {}",
+            args.name,
+            def.steps.len(),
+            def.total_duration_ms(),
+            path.display()
+        )),
+        Err(e) => ToolResult::err(format!("保存舞蹈失败: {e}")),
     }
 }
 
@@ -519,5 +560,47 @@ mod tests {
             "权限不足: denied"
         );
         assert_eq!(ToolError::Timeout.to_string(), "超时");
+    }
+
+    // ---- create_dance 工具测试 ----
+
+    #[test]
+    fn create_dance_args_deserialize() {
+        let json = r#"{"name":"happy_twist","mood":"happy"}"#;
+        let args: CreateDanceArgs = serde_json::from_str(json).unwrap();
+        assert_eq!(args.name, "happy_twist");
+        assert_eq!(args.mood, "happy");
+        assert!(args.duration_ms.is_none());
+    }
+
+    #[test]
+    fn create_dance_args_with_duration() {
+        let json = r#"{"name":"quick","mood":"excited","duration_ms":2000}"#;
+        let args: CreateDanceArgs = serde_json::from_str(json).unwrap();
+        assert_eq!(args.duration_ms, Some(2000));
+    }
+
+    #[test]
+    fn execute_create_dance_happy_generates_steps() {
+        let args = CreateDanceArgs {
+            name: "test_happy".into(),
+            mood: "happy".into(),
+            duration_ms: None,
+        };
+        // 注意：execute_create_dance 会写入磁盘，测试只验证返回值格式
+        let result = execute_create_dance(&args);
+        assert!(result.success);
+        assert!(result.output.contains("test_happy"));
+    }
+
+    #[test]
+    fn execute_create_dance_unknown_mood_fallback() {
+        let args = CreateDanceArgs {
+            name: "fallback_test".into(),
+            mood: "xyz_nonexistent".into(),
+            duration_ms: None,
+        };
+        let result = execute_create_dance(&args);
+        assert!(result.success); // 未知 mood 应该走默认模板，不报错
     }
 }

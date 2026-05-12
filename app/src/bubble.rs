@@ -109,7 +109,10 @@ pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
             text: text.to_string(),
         },
     );
-    info!(text_len = text.chars().count(), "[show_bubble] emit bubble-update 完成");
+    info!(
+        text_len = text.chars().count(),
+        "[show_bubble] emit bubble-update 完成"
+    );
 
     Ok(())
 }
@@ -243,14 +246,24 @@ pub fn position_above_pet(app: &AppHandle, bubble: &tauri::WebviewWindow) {
     let pet = app
         .get_webview_window("pet")
         .filter(|w| w.is_visible().unwrap_or(false))
-        .or_else(|| app.get_webview_window("pet-mini").filter(|w| w.is_visible().unwrap_or(false)))
-        .or_else(|| app.get_webview_window("pet-snap").filter(|w| w.is_visible().unwrap_or(false)));
-    let Some(pet) = pet else { return; };
+        .or_else(|| {
+            app.get_webview_window("pet-mini")
+                .filter(|w| w.is_visible().unwrap_or(false))
+        })
+        .or_else(|| {
+            app.get_webview_window("pet-snap")
+                .filter(|w| w.is_visible().unwrap_or(false))
+        });
+    let Some(pet) = pet else {
+        return;
+    };
     let (Ok(pet_pos), Ok(pet_size)) = (pet.outer_position(), pet.outer_size()) else {
         return;
     };
 
-    let Some(monitor) = pet.current_monitor().ok().flatten() else { return; };
+    let Some(monitor) = pet.current_monitor().ok().flatten() else {
+        return;
+    };
     let monitor_size = monitor.size();
     let monitor_pos = monitor.position();
 

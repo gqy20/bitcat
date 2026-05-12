@@ -1,6 +1,6 @@
 use crate::ai_config::AiConfig;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fs;
 use std::path::PathBuf;
 use tracing::{debug, info, warn};
@@ -99,13 +99,17 @@ impl ScreenSummaryStore {
             Ok(p) => p,
             Err(e) => {
                 warn!(error = %e, "获取屏幕摘要文件路径失败");
-                return Self { entries: Vec::new() };
+                return Self {
+                    entries: Vec::new(),
+                };
             }
         };
 
         if !path.exists() {
             info!("屏幕摘要文件不存在，使用空存储");
-            return Self { entries: Vec::new() };
+            return Self {
+                entries: Vec::new(),
+            };
         }
 
         match fs::read_to_string(&path) {
@@ -116,12 +120,16 @@ impl ScreenSummaryStore {
                 }
                 Err(e) => {
                     warn!(error = %e, "解析屏幕摘要文件失败，使用空存储");
-                    Self { entries: Vec::new() }
+                    Self {
+                        entries: Vec::new(),
+                    }
                 }
             },
             Err(e) => {
                 warn!(error = %e, "读取屏幕摘要文件失败，使用空存储");
-                Self { entries: Vec::new() }
+                Self {
+                    entries: Vec::new(),
+                }
             }
         }
     }
@@ -172,8 +180,7 @@ impl ScreenSummaryStore {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("创建摘要目录失败: {e}"))?;
         }
-        let json =
-            serde_json::to_string(self).map_err(|e| format!("序列化屏幕摘要失败: {e}"))?;
+        let json = serde_json::to_string(self).map_err(|e| format!("序列化屏幕摘要失败: {e}"))?;
         let mut tmp = tempfile::NamedTempFile::new_in(path.parent().unwrap())
             .map_err(|e| format!("创建临时文件失败: {e}"))?;
         std::io::Write::write_all(&mut tmp, json.as_bytes())
@@ -243,10 +250,7 @@ pub async fn generate_summary(
         .map_err(|e| format!("解析摘要 API 响应失败: {e}"))?;
 
     let elapsed = start.elapsed();
-    debug!(
-        elapsed_ms = elapsed.as_millis(),
-        "屏幕摘要生成完成"
-    );
+    debug!(elapsed_ms = elapsed.as_millis(), "屏幕摘要生成完成");
 
     parse_text_response(&json)
 }
@@ -367,7 +371,9 @@ mod tests {
             entries: Vec::new(),
         };
         assert!(
-            store.build_context(&ScreenSummaryConfig::default()).is_empty()
+            store
+                .build_context(&ScreenSummaryConfig::default())
+                .is_empty()
         );
     }
 
@@ -412,10 +418,7 @@ mod tests {
             );
         }
         for i in 25..30 {
-            assert!(
-                ctx.contains(&format!("摘要[{i:03}]")),
-                "应包含最近条目 {i}"
-            );
+            assert!(ctx.contains(&format!("摘要[{i:03}]")), "应包含最近条目 {i}");
         }
     }
 
@@ -533,11 +536,9 @@ mod tests {
     async fn test_generate_summary_api_error() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .respond_with(
-                ResponseTemplate::new(500).set_body_json(json!({
-                    "error": { "type": "server_error", "message": "internal error" }
-                })),
-            )
+            .respond_with(ResponseTemplate::new(500).set_body_json(json!({
+                "error": { "type": "server_error", "message": "internal error" }
+            })))
             .mount(&server)
             .await;
 
@@ -551,10 +552,7 @@ mod tests {
         let descriptions = vec!["some description".to_string()];
         let result = generate_summary(&descriptions, &config, &ai_config).await;
         assert!(result.is_err());
-        assert!(
-            result.unwrap_err().contains("错误"),
-            "应包含 API 错误信息"
-        );
+        assert!(result.unwrap_err().contains("错误"), "应包含 API 错误信息");
     }
 
     #[test]

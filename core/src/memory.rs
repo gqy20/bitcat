@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fs;
 use std::path::PathBuf;
 use tracing::{debug, info, warn};
@@ -216,23 +216,31 @@ impl LongTermMemory {
             Ok(p) => p,
             Err(e) => {
                 warn!(error = %e, "获取长期记忆文件路径失败");
-                return Self { entries: Vec::new() };
+                return Self {
+                    entries: Vec::new(),
+                };
             }
         };
         if !path.exists() {
-            return Self { entries: Vec::new() };
+            return Self {
+                entries: Vec::new(),
+            };
         }
         match fs::read_to_string(&path) {
             Ok(content) => match serde_json::from_str::<LongTermMemory>(&content) {
                 Ok(store) => store,
                 Err(e) => {
                     warn!(error = %e, "解析长期记忆文件失败");
-                    Self { entries: Vec::new() }
+                    Self {
+                        entries: Vec::new(),
+                    }
                 }
             },
             Err(e) => {
                 warn!(error = %e, "读取长期记忆文件失败");
-                Self { entries: Vec::new() }
+                Self {
+                    entries: Vec::new(),
+                }
             }
         }
     }
@@ -345,23 +353,35 @@ impl ProfileStore {
             Ok(p) => p,
             Err(e) => {
                 warn!(error = %e, "获取画像文件路径失败");
-                return Self { profile_text: String::new(), updated_at: String::new() };
+                return Self {
+                    profile_text: String::new(),
+                    updated_at: String::new(),
+                };
             }
         };
         if !path.exists() {
-            return Self { profile_text: String::new(), updated_at: String::new() };
+            return Self {
+                profile_text: String::new(),
+                updated_at: String::new(),
+            };
         }
         match fs::read_to_string(&path) {
             Ok(content) => match serde_json::from_str::<ProfileStore>(&content) {
                 Ok(store) => store,
                 Err(e) => {
                     warn!(error = %e, "解析画像文件失败");
-                    Self { profile_text: String::new(), updated_at: String::new() }
+                    Self {
+                        profile_text: String::new(),
+                        updated_at: String::new(),
+                    }
                 }
             },
             Err(e) => {
                 warn!(error = %e, "读取画像文件失败");
-                Self { profile_text: String::new(), updated_at: String::new() }
+                Self {
+                    profile_text: String::new(),
+                    updated_at: String::new(),
+                }
             }
         }
     }
@@ -371,10 +391,7 @@ impl ProfileStore {
         if self.profile_text.is_empty() {
             return String::new();
         }
-        format!(
-            "[关于主人]\n{}\n[/关于主人]\n",
-            self.profile_text
-        )
+        format!("[关于主人]\n{}\n[/关于主人]\n", self.profile_text)
     }
 
     pub fn save(&self) -> Result<(), String> {
@@ -410,9 +427,25 @@ pub fn should_store(user_msg: &str, ai_reply: &str) -> bool {
     }
 
     let keywords = [
-        "我叫", "我是", "我在", "我喜欢", "我讨厌", "帮我提醒", "记得",
-        "项目", "工作", "明天", "下周", "不要", "不对", "忘了", "记错",
-        "正在做", "在写", "在开发", "在做",
+        "我叫",
+        "我是",
+        "我在",
+        "我喜欢",
+        "我讨厌",
+        "帮我提醒",
+        "记得",
+        "项目",
+        "工作",
+        "明天",
+        "下周",
+        "不要",
+        "不对",
+        "忘了",
+        "记错",
+        "正在做",
+        "在写",
+        "在开发",
+        "在做",
     ];
     let combined = format!("{user_msg} {ai_reply}");
     if keywords.iter().any(|k| combined.contains(k)) {
@@ -764,7 +797,9 @@ mod tests {
 
     #[test]
     fn test_long_term_record_and_json_roundtrip() {
-        let mut store = LongTermMemory { entries: Vec::new() };
+        let mut store = LongTermMemory {
+            entries: Vec::new(),
+        };
         store.record("我叫小明", "你好小明！", 100);
         store.record("我在做 8Bit 项目", "Rust 桌宠听起来好酷", 100);
 
@@ -780,7 +815,9 @@ mod tests {
 
     #[test]
     fn test_long_term_record_truncates_reply() {
-        let mut store = LongTermMemory { entries: Vec::new() };
+        let mut store = LongTermMemory {
+            entries: Vec::new(),
+        };
         let long_reply = "这是一段非常非常长的AI回复用于测试截断功能是否正常工作".repeat(10);
         store.record("测试", &long_reply, 100);
         assert!(store.entries[0].ai_reply.chars().count() <= 400);
@@ -788,7 +825,9 @@ mod tests {
 
     #[test]
     fn test_long_term_enforces_max_entries() {
-        let mut store = LongTermMemory { entries: Vec::new() };
+        let mut store = LongTermMemory {
+            entries: Vec::new(),
+        };
         for i in 0..25 {
             store.record(&format!("msg{i}"), &format!("reply{i}"), 10);
         }
@@ -797,7 +836,9 @@ mod tests {
 
     #[test]
     fn test_long_term_prefer_evict_aggregated() {
-        let mut store = LongTermMemory { entries: Vec::new() };
+        let mut store = LongTermMemory {
+            entries: Vec::new(),
+        };
         for i in 0..5 {
             store.record(&format!("msg{i}"), &format!("reply{i}"), 10);
         }
@@ -813,13 +854,17 @@ mod tests {
 
     #[test]
     fn test_retrieve_empty_returns_empty() {
-        let store = LongTermMemory { entries: Vec::new() };
+        let store = LongTermMemory {
+            entries: Vec::new(),
+        };
         assert!(store.retrieve("anything", 500).is_empty());
     }
 
     #[test]
     fn test_retrieve_returns_relevant_entries() {
-        let mut store = LongTermMemory { entries: Vec::new() };
+        let mut store = LongTermMemory {
+            entries: Vec::new(),
+        };
         store.record("我在做 8Bit Cat 项目", "Rust 桌宠好酷", 100);
         store.record("今天天气不错", "是呢，适合出门", 100);
         store.record("帮我提醒明天交 PR", "收到，明天会提醒的", 100);
@@ -832,7 +877,9 @@ mod tests {
 
     #[test]
     fn test_retrieve_respects_budget() {
-        let mut store = LongTermMemory { entries: Vec::new() };
+        let mut store = LongTermMemory {
+            entries: Vec::new(),
+        };
         for i in 0..20 {
             store.record(
                 &format!("消息{}这是很长的一段内容用于测试预算控制", i),
@@ -846,7 +893,9 @@ mod tests {
 
     #[test]
     fn test_retrieve_no_match_returns_empty() {
-        let mut store = LongTermMemory { entries: Vec::new() };
+        let mut store = LongTermMemory {
+            entries: Vec::new(),
+        };
         store.record("今天天气不错", "是呢适合出门", 100);
         let ctx = store.retrieve("量子力学研究进展", 500);
         assert!(ctx.is_empty());
@@ -854,7 +903,9 @@ mod tests {
 
     #[test]
     fn test_mark_all_aggregated() {
-        let mut store = LongTermMemory { entries: Vec::new() };
+        let mut store = LongTermMemory {
+            entries: Vec::new(),
+        };
         store.record("msg1", "reply1", 100);
         store.record("msg2", "reply2", 100);
         store.mark_all_aggregated();
@@ -864,7 +915,9 @@ mod tests {
 
     #[test]
     fn test_unaggregated_entries_filters_correctly() {
-        let mut store = LongTermMemory { entries: Vec::new() };
+        let mut store = LongTermMemory {
+            entries: Vec::new(),
+        };
         store.record("msg1", "reply1", 100);
         store.record("msg2", "reply2", 100);
         store.record("msg3", "reply3", 100);
@@ -888,7 +941,10 @@ mod tests {
 
     #[test]
     fn test_profile_build_context_empty() {
-        let store = ProfileStore { profile_text: String::new(), updated_at: String::new() };
+        let store = ProfileStore {
+            profile_text: String::new(),
+            updated_at: String::new(),
+        };
         assert!(store.build_context().is_empty());
     }
 
@@ -907,7 +963,10 @@ mod tests {
 
     #[test]
     fn test_profile_update() {
-        let mut store = ProfileStore { profile_text: String::new(), updated_at: String::new() };
+        let mut store = ProfileStore {
+            profile_text: String::new(),
+            updated_at: String::new(),
+        };
         store.update("新的画像内容");
         assert_eq!(store.profile_text, "新的画像内容");
         assert!(!store.updated_at.is_empty());
@@ -1049,11 +1108,9 @@ mod tests {
     async fn test_aggregate_profile_api_error() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .respond_with(
-                ResponseTemplate::new(500).set_body_json(json!({
-                    "error": { "type": "server_error", "message": "internal error" }
-                })),
-            )
+            .respond_with(ResponseTemplate::new(500).set_body_json(json!({
+                "error": { "type": "server_error", "message": "internal error" }
+            })))
             .mount(&server)
             .await;
 

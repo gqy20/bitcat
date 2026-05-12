@@ -3,6 +3,7 @@ use ai_pad_core::pet::Pet;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use tauri::Emitter;
 
 /// 共享宠物状态
 pub struct SharedPet {
@@ -131,6 +132,27 @@ pub fn cmd_get_status(shared: tauri::State<'_, SharedPet>) -> Result<PetStatus, 
 pub fn cmd_tick(shared: tauri::State<'_, SharedPet>, dt_ms: u64) -> Result<PetStatus, String> {
     let mut pet = shared.pet.lock().map_err(|e| e.to_string())?;
     Ok(tick(&mut pet, dt_ms))
+}
+
+/// 播放舞蹈：加载 YML 定义 → 通过事件通知前端播放
+#[tauri::command]
+pub async fn cmd_play_dance(
+    _shared: tauri::State<'_, SharedPet>,
+    dance_name: String,
+    app: tauri::AppHandle,
+) -> Result<PetStatus, String> {
+    let def =
+        ai_pad_core::dance::load_dance(&dance_name).map_err(|e| format!("加载舞蹈失败: {e}"))?;
+
+    // 将 DanceDef 转发给 pet 前端窗口（通过 play-dance 事件）
+    let payload = serde_json::to_value(&def).expect("DanceDef 可序列化");
+    app.emit("play-dance", &payload)
+        .map_err(|e| format!("发送舞蹈事件失败: {e}"))?;
+
+    // 返回当前 pet 状态（舞蹈播放由前端接管渲染）
+    let pet = _shared.pet.lock().map_err(|e| e.to_string())?;
+    let bubble = _shared.bubble.lock().map_err(|e| e.to_string())?;
+    Ok(get_status(&pet, &bubble))
 }
 
 /// 窗口状态快照，返回给前端（pull 模式，替代不可靠的 emit push）
@@ -650,6 +672,33 @@ mod tests {
 
         tick(&mut pet, 3000);
         assert_eq!(pet.state, ai_pad_core::pet::PetState::Idle);
+    }
+
+    // ===== 舞蹈命令测试 =====
+
+    #[test]
+    fn test_play_dance_serializes_dance_def_for_emit() {
+        // 验证 DanceDef 可以被序列化为 emit payload
+        let def = ai_pad_core::dance::DanceDef {
+            name: "test".into(),
+            loop_: true,
+            steps: vec![ai_pad_core::dance::DanceStep {
+                action: ai_pad_core::dance::DanceAction::Jump,
+                duration_ms: 300,
+                repeat: 1,
+            }],
+        };
+        let payload = serde_json::to_value(&def).unwrap();
+        assert_eq!(payload["name"], "test");
+        assert!(payload["loop_"].as_bool().unwrap());
+        assert_eq!(payload["steps"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_play_dance_unknown_name_returns_err() {
+        // 不存在的舞蹈名应返回错误
+        let result = ai_pad_core::dance::load_dance("nonexistent_dance_xyz");
+        assert!(result.is_err());
     }
 }
 

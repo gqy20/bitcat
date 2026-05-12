@@ -1,7 +1,5 @@
 use crate::commands::{self, SharedWindowState};
-use tauri::{
-    Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder,
-};
+use tauri::{Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 use tracing::{info, warn};
 
 use std::sync::atomic::Ordering;
@@ -120,7 +118,11 @@ pub async fn cmd_snap_pet(app: tauri::AppHandle, x: i32, _y: i32) -> Result<Snap
         "cmd_snap_pet: 吸附结果"
     );
 
-    Ok(SnapResult { edge: edge.to_string(), x: target_x, y: target_y })
+    Ok(SnapResult {
+        edge: edge.to_string(),
+        x: target_x,
+        y: target_y,
+    })
 }
 
 /// 拖拽过程中查询磁性预告
@@ -159,7 +161,12 @@ pub async fn cmd_get_snap_preview(
 
 /// 贴边吸附：将宠物窗口转换为吸附态
 #[tauri::command]
-pub async fn cmd_snap_transform(app: tauri::AppHandle, edge: String, x: i32, y: i32) -> Result<(), String> {
+pub async fn cmd_snap_transform(
+    app: tauri::AppHandle,
+    edge: String,
+    x: i32,
+    y: i32,
+) -> Result<(), String> {
     let ws: tauri::State<'_, SharedWindowState> = app.state();
     let on_top = ws.always_on_top.load(Ordering::SeqCst);
 
@@ -180,7 +187,8 @@ pub async fn cmd_snap_transform(app: tauri::AppHandle, edge: String, x: i32, y: 
         }
     }
 
-    let snap_win = app.get_webview_window("pet-snap")
+    let snap_win = app
+        .get_webview_window("pet-snap")
         .ok_or("pet-snap window not found")?;
 
     let _ = snap_win.set_position(PhysicalPosition::new(x, y));
@@ -222,11 +230,13 @@ pub async fn cmd_unsnap_transform(app: tauri::AppHandle) -> Result<(), String> {
     let collapsed = ws.collapsed.load(Ordering::SeqCst);
     let target = if collapsed { "pet-mini" } else { "pet" };
 
-    let win = app.get_webview_window(target)
+    let win = app
+        .get_webview_window(target)
         .ok_or(format!("window '{}' not found", target))?;
 
     if let Some(pos) = snap_pos {
-        let offset = if ws.snap_edge.lock().ok().and_then(|e| e.clone()).as_deref() == Some("left") {
+        let offset = if ws.snap_edge.lock().ok().and_then(|e| e.clone()).as_deref() == Some("left")
+        {
             80
         } else {
             -80
@@ -251,7 +261,7 @@ pub fn get_work_area_for_window(
     win: &tauri::WebviewWindow,
 ) -> windows_sys::Win32::Foundation::RECT {
     use windows_sys::Win32::Graphics::Gdi::{
-        GetMonitorInfoW, MonitorFromWindow, MONITOR_DEFAULTTONEAREST, MONITORINFO,
+        GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
     };
 
     let mut mi = MONITORINFO {
@@ -285,7 +295,9 @@ pub fn get_work_area_for_window(
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn get_work_area_for_window(win: &tauri::WebviewWindow) -> windows_sys::Win32::Foundation::RECT {
+pub fn get_work_area_for_window(
+    win: &tauri::WebviewWindow,
+) -> windows_sys::Win32::Foundation::RECT {
     let (x, y, w, h) = if let Ok(Some(m)) = win.current_monitor() {
         let s = m.size();
         let p = m.position();
@@ -293,7 +305,12 @@ pub fn get_work_area_for_window(win: &tauri::WebviewWindow) -> windows_sys::Win3
     } else {
         (0, 0, 1920, 1080)
     };
-    windows_sys::Win32::Foundation::RECT { left: x, top: y, right: x + w, bottom: y + h }
+    windows_sys::Win32::Foundation::RECT {
+        left: x,
+        top: y,
+        right: x + w,
+        bottom: y + h,
+    }
 }
 
 /// 预创建两个 pet 窗口（正常 + 折叠 + 吸附），启动时隐藏备用

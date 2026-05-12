@@ -4,6 +4,7 @@ pub mod ai_config;
 pub mod app_settings;
 pub mod bridge;
 pub mod config;
+pub mod dance;
 pub mod device;
 pub mod hotkey;
 pub mod memory;
