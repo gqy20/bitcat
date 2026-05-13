@@ -1,24 +1,20 @@
+use rig::OneOrMany;
+use rig::client::CompletionClient;
+use rig::completion::Message;
+use rig::message::{ImageDetail, ImageMediaType, UserContent};
+use rig::providers::anthropic;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::ai_config::AiConfig;
 use crate::prompts::VisionPromptConfig;
 use crate::token_tracker::{
-    TokenCategory, TokenRecord, new_session_id, parse_anthropic_usage, record_token_usage,
+    TokenCategory, TokenRecord, TokenUsage, new_session_id, record_token_usage,
 };
-use tracing::{debug, warn};
+use tracing::{debug, info};
 
 // ---- 配置 ----
-
-const STRUCTURED_VISION_OUTPUT_INSTRUCTIONS: &str = r#"
-
-只返回一个 JSON 对象，不要使用 Markdown，不要添加解释。字段：
-- description: 一句话描述主活动
-- apps: 识别到的应用名称数组，不确定则 []
-- state: {"kind":"working","app":"应用名"} 或 {"kind":"idle"} / {"kind":"media"} / {"kind":"off_screen"} / {"kind":"unknown"}
-- text_readable: 是否能看清文字内容
-- confidence: 0 到 1 的置信度
-"#;
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct VisionConfig {
@@ -28,7 +24,7 @@ pub struct VisionConfig {
     pub vision_max_tokens: Option<u32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VisionAnalysis {
     pub description: String,
     #[serde(default)]
@@ -71,7 +67,7 @@ impl Default for VisionAnalysis {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum VisionState {
     Working { app: String },
@@ -100,10 +96,6 @@ impl VisionState {
 }
 
 // ---- 请求构建 ----
-
-fn build_structured_prompt(prompt: &str) -> String {
-    format!("{prompt}{STRUCTURED_VISION_OUTPUT_INSTRUCTIONS}")
-}
 
 /// 构建标准 Anthropic Messages API 请求体（含图片）。
 pub fn build_vision_request(model: &str, prompt: &str, base64_jpeg: &str) -> Value {
@@ -194,52 +186,6 @@ pub fn build_api_url(config: &AiConfig) -> String {
     format!("{}/v1/messages", base)
 }
 
-/// 发送视觉分析 HTTP 请求并解析响应。
-async fn send_vision_request(
-    client: &reqwest::Client,
-    url: &str,
-    api_key: &str,
-    model: &str,
-    body: &Value,
-) -> Result<VisionAnalysis, String> {
-    let start = std::time::Instant::now();
-    let response = client
-        .post(url)
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
-        .json(body)
-        .send()
-        .await
-        .map_err(|e| format!("视觉 API 请求失败: {e}"))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        warn!(status = %status, "视觉 API 返回错误");
-        return Err(format!("视觉 API 返回错误 {}: {}", status, text));
-    }
-
-    let json: Value = response
-        .json()
-        .await
-        .map_err(|e| format!("解析视觉 API 响应失败: {e}"))?;
-    let elapsed = start.elapsed();
-    debug!(
-        elapsed_ms = elapsed.as_millis(),
-        chars = json.to_string().chars().count(),
-        "视觉分析完成"
-    );
-
-    let usage = parse_anthropic_usage(&json);
-    record_token_usage(
-        &TokenRecord::new(new_session_id(), TokenCategory::Vision, model, usage)
-            .with_elapsed_ms(elapsed.as_millis() as u64),
-    );
-
-    parse_vision_analysis_response(&json)
-}
-
 /// 发送视觉分析请求。返回结构化视觉分析。
 pub async fn analyze_screenshot(
     config: &AiConfig,
@@ -252,25 +198,76 @@ pub async fn analyze_screenshot(
         .vision_model
         .as_deref()
         .unwrap_or(&config.model);
-    let prompt = build_structured_prompt(&prompt_config.prompt);
-
-    let body = if monitor_count > 1 {
-        build_vision_request_multi(
-            model,
-            &prompt,
-            base64_jpeg,
-            monitor_count,
-            &prompt_config.prompt_multi,
+    let prompt = if monitor_count > 1 {
+        format!(
+            "{}\n{}当前有 {} 个显示器。",
+            prompt_config.prompt, prompt_config.prompt_multi, monitor_count
         )
     } else {
-        build_vision_request(model, &prompt, base64_jpeg)
+        prompt_config.prompt.clone()
     };
 
-    let url = build_api_url(config);
-    debug!(model, url, "视觉分析请求");
+    debug!(
+        model,
+        base_url = %config.base_url,
+        monitor_count,
+        "视觉分析请求"
+    );
 
-    let client = reqwest::Client::new();
-    send_vision_request(&client, &url, &config.api_key, model, &body).await
+    let http_client = rig::http_client::ReqwestClient::builder()
+        .no_proxy()
+        .build()
+        .map_err(|e| format!("创建视觉 HTTP 客户端失败: {e}"))?;
+    let client = anthropic::Client::builder()
+        .api_key(&config.api_key)
+        .base_url(&config.base_url)
+        .http_client(http_client)
+        .build()
+        .map_err(|e| format!("创建 Anthropic 视觉 Client 失败: {e}"))?;
+    let extractor = client
+        .extractor::<VisionAnalysis>(model)
+        .preamble(&prompt)
+        .max_tokens(vision_config.vision_max_tokens.unwrap_or(1024) as u64)
+        .retries(1)
+        .build();
+
+    let message = Message::User {
+        content: OneOrMany::many([
+            UserContent::text("请分析这张截图。"),
+            UserContent::image_base64(
+                base64_jpeg,
+                Some(ImageMediaType::JPEG),
+                Some(ImageDetail::Auto),
+            ),
+        ])
+        .map_err(|e| format!("创建视觉消息失败: {e}"))?,
+    };
+
+    let start = std::time::Instant::now();
+    let response = extractor
+        .extract_with_usage(message)
+        .await
+        .map_err(|e| format!("生成结构化视觉分析失败: {e}"))?;
+    let elapsed = start.elapsed();
+
+    info!(
+        elapsed_ms = elapsed.as_millis(),
+        apps = response.data.apps.len(),
+        state = response.data.state.label(),
+        "视觉分析完成"
+    );
+
+    record_token_usage(
+        &TokenRecord::new(
+            new_session_id(),
+            TokenCategory::Vision,
+            model,
+            TokenUsage::from(response.usage),
+        )
+        .with_elapsed_ms(elapsed.as_millis() as u64),
+    );
+
+    Ok(response.data)
 }
 
 #[cfg(test)]
@@ -481,32 +478,50 @@ mod tests {
 #[cfg(test)]
 mod wiremock_tests {
     use super::*;
-    use wiremock::matchers::{header, method};
+    use crate::prompts::VisionPromptConfig;
+    use wiremock::matchers::method;
     use wiremock::{Mock, MockServer, ResponseTemplate};
-
-    fn test_client() -> reqwest::Client {
-        reqwest::Client::builder().no_proxy().build().unwrap()
-    }
 
     #[tokio::test]
     async fn test_vision_api_success() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(header("x-api-key", "test-key"))
-            .and(header("anthropic-version", "2023-06-01"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "type": "message",
+                "id": "msg_test",
+                "model": "test-model",
+                "role": "assistant",
+                "stop_reason": "tool_use",
+                "stop_sequence": null,
+                "usage": {
+                    "input_tokens": 21,
+                    "output_tokens": 9
+                },
                 "content": [{
-                    "type": "text",
-                    "text": r#"{"description":"VS Code 编辑器","apps":["VS Code"],"state":{"kind":"working","app":"VS Code"},"text_readable":true,"confidence":0.9}"#
+                    "type": "tool_use",
+                    "id": "toolu_test",
+                    "name": "submit",
+                    "input": {
+                        "description":"VS Code 编辑器",
+                        "apps":["VS Code"],
+                        "state":{"kind":"working","app":"VS Code"},
+                        "text_readable":true,
+                        "confidence":0.9
+                    }
                 }]
             })))
             .mount(&server)
             .await;
 
-        let client = test_client();
-        let url = format!("{}/v1/messages", server.uri());
-        let body = build_vision_request("test-model", "prompt", "AA==");
-        let result = send_vision_request(&client, &url, "test-key", "test-model", &body).await;
+        let ai_config = AiConfig {
+            api_key: "test-key".into(),
+            base_url: server.uri(),
+            model: "test-model".into(),
+        };
+        let vision_config = VisionConfig::default();
+        let prompt_config = VisionPromptConfig::default();
+        let result =
+            analyze_screenshot(&ai_config, &vision_config, &prompt_config, "AA==", 1).await;
         let analysis = result.unwrap();
         assert_eq!(analysis.description, "VS Code 编辑器");
         assert_eq!(analysis.apps, vec!["VS Code"]);
@@ -522,11 +537,16 @@ mod wiremock_tests {
             .mount(&server)
             .await;
 
-        let client = test_client();
-        let url = format!("{}/v1/messages", server.uri());
-        let body = build_vision_request("test-model", "prompt", "AA==");
-        let result = send_vision_request(&client, &url, "key", "test-model", &body).await;
+        let ai_config = AiConfig {
+            api_key: "key".into(),
+            base_url: server.uri(),
+            model: "test-model".into(),
+        };
+        let vision_config = VisionConfig::default();
+        let prompt_config = VisionPromptConfig::default();
+        let result =
+            analyze_screenshot(&ai_config, &vision_config, &prompt_config, "AA==", 1).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("429"));
+        assert!(result.unwrap_err().contains("生成结构化视觉分析失败"));
     }
 }
