@@ -66,6 +66,14 @@ struct BubbleChunkPayload {
 pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
     let state: State<SharedBubble> = app.state();
 
+    if ai_pad_core::dance::is_dancing() {
+        info!(
+            text_len = text.chars().count(),
+            "[show_bubble] 跳过（is_dancing=true，跳舞期间隐藏气泡）"
+        );
+        return Ok(());
+    }
+
     // chat 模式优先级：截图摘要不覆盖聊天内容
     if state.is_chat_active() {
         info!(
@@ -375,6 +383,10 @@ pub async fn cmd_consume_bubble_text(
 /// 前端自动隐藏定时到了 → 调用此 cmd 隐藏窗口
 #[tauri::command]
 pub async fn cmd_hide_bubble(app: AppHandle) -> Result<(), String> {
+    hide_bubble_window(&app)
+}
+
+pub fn hide_bubble_window(app: &AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("bubble") {
         w.hide().map_err(|e| e.to_string())?;
     }

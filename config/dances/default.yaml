@@ -1,0 +1,9 @@
+name: default
+loop_: true
+steps:
+  - action: shake
+    duration_ms: 400
+  - action: wave
+    duration_ms: 300
+  - action: idle
+    duration_ms: 300

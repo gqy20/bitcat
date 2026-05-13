@@ -172,6 +172,9 @@ pub fn run() {
                     }
 
                     ai_pad_core::dance::set_dancing(true);
+                    if let Err(e) = bubble::hide_bubble_window(&dance_app) {
+                        warn!(error = %e, dance = %name, "跳舞开始时隐藏 bubble 失败");
+                    }
                     if let Err(e) = dance_app.emit("play-dance", &payload) {
                         warn!(error = %e, dance = %name, "emit play-dance 失败");
                         ai_pad_core::dance::set_dancing(false);

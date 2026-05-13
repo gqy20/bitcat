@@ -1,0 +1,13 @@
+name: happy_twist
+loop_: true
+steps:
+  - action: jump
+    duration_ms: 300
+  - action: shake
+    duration_ms: 400
+  - action: spin
+    duration_ms: 500
+  - action: wave
+    duration_ms: 300
+  - action: idle
+    duration_ms: 200

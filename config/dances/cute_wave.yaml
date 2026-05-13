@@ -1,0 +1,13 @@
+name: cute_wave
+loop_: true
+steps:
+  - action: wave
+    duration_ms: 400
+  - action: jump
+    duration_ms: 300
+  - action: wave
+    duration_ms: 400
+  - action: spin
+    duration_ms: 400
+  - action: idle
+    duration_ms: 300

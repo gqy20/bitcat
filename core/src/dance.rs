@@ -4,7 +4,8 @@
 //! 根据 mood 关键词查表生成 DanceDef，序列化为 YAML 存入 ~/.ai-pad/dances/。
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc::UnboundedSender;
@@ -72,6 +73,15 @@ pub fn dance_dir() -> Option<PathBuf> {
     dirs::data_dir().map(|d| d.join("ai-pad").join("dances"))
 }
 
+/// 返回项目内置舞蹈目录 config/dances/
+pub fn bundled_dance_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("core crate should live under workspace root")
+        .join("config")
+        .join("dances")
+}
+
 /// 确保目录存在
 pub fn ensure_dance_dir() -> std::io::Result<PathBuf> {
     let dir = dance_dir()
@@ -99,37 +109,62 @@ pub fn save_dance(def: &DanceDef) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-/// 加载舞蹈定义
-pub fn load_dance(name: &str) -> Result<DanceDef, String> {
-    let dir = dance_dir().ok_or("无法确定用户数据目录")?;
-    let path = dir.join(format!("{name}.yaml"));
-    debug!(name = %name, path = %path.display(), "[dance] 加载舞蹈定义");
-    let content = std::fs::read_to_string(&path).map_err(|e| format!("读取文件失败: {e}"))?;
+fn load_dance_from_path(path: &Path) -> Result<DanceDef, String> {
+    let content = std::fs::read_to_string(path).map_err(|e| format!("读取文件失败: {e}"))?;
     serde_yaml::from_str(&content).map_err(|e| format!("解析 YAML 失败: {e}"))
+}
+
+/// 加载舞蹈定义：优先用户目录，找不到再读项目内置预设。
+pub fn load_dance(name: &str) -> Result<DanceDef, String> {
+    if let Some(dir) = dance_dir() {
+        let path = dir.join(format!("{name}.yaml"));
+        debug!(name = %name, path = %path.display(), "[dance] 加载用户舞蹈定义");
+        if path.exists() {
+            return load_dance_from_path(&path);
+        }
+    }
+
+    let path = bundled_dance_dir().join(format!("{name}.yaml"));
+    debug!(name = %name, path = %path.display(), "[dance] 加载舞蹈定义");
+    if path.exists() {
+        return load_dance_from_path(&path);
+    }
+
+    Err(format!("舞蹈定义不存在: {name}"))
 }
 
 /// 列出所有可用舞蹈名称
 pub fn list_dances() -> Vec<String> {
-    let Some(dir) = dance_dir() else {
-        debug!("[dance] dance_dir 不存在，返回空列表");
-        return vec![];
-    };
+    let mut names = BTreeSet::new();
+    collect_dance_names(&bundled_dance_dir(), &mut names);
+    if let Some(dir) = dance_dir() {
+        collect_dance_names(&dir, &mut names);
+    }
+    names.into_iter().collect()
+}
+
+fn collect_dance_names(dir: &Path, names: &mut BTreeSet<String>) {
     if !dir.exists() {
-        return vec![];
+        return;
     }
-    match std::fs::read_dir(&dir) {
-        Ok(entries) => entries,
-        Err(_) => return vec![],
-    }
-    .filter_map(|e| e.ok())
-    .filter(|e| e.path().extension().is_some_and(|ext| ext == "yaml"))
-    .filter_map(|e| {
-        e.file_name()
+
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.extension().is_some_and(|ext| ext == "yaml") {
+            continue;
+        }
+        if let Some(name) = entry
+            .file_name()
             .to_str()
             .and_then(|s| s.strip_suffix(".yaml"))
-            .map(String::from)
-    })
-    .collect()
+        {
+            names.insert(name.to_string());
+        }
+    }
 }
 
 // ---- 播放事件通道（跨 crate 解耦）----
@@ -325,6 +360,21 @@ mod tests {
         let yaml = "name: foo\nsteps:\n  - action: jump\n    duration_ms: 100";
         let def: DanceDef = serde_yaml::from_str(yaml).unwrap();
         assert!(def.loop_);
+    }
+
+    #[test]
+    fn load_dance_reads_bundled_preset() {
+        let def = load_dance("happy_twist").unwrap();
+        assert_eq!(def.name, "happy_twist");
+        assert_eq!(def.steps.len(), 5);
+        assert_eq!(def.steps[0].action, DanceAction::Jump);
+    }
+
+    #[test]
+    fn list_dances_includes_bundled_presets() {
+        let names = list_dances();
+        assert!(names.iter().any(|name| name == "happy_twist"));
+        assert!(names.iter().any(|name| name == "default"));
     }
 
     // === total_duration ===

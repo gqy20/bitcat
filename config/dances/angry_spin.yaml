@@ -1,0 +1,13 @@
+name: angry_spin
+loop_: true
+steps:
+  - action: shake
+    duration_ms: 150
+  - action: shake
+    duration_ms: 150
+  - action: spin
+    duration_ms: 300
+  - action: shake
+    duration_ms: 150
+  - action: shake
+    duration_ms: 150
