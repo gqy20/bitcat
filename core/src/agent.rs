@@ -16,6 +16,7 @@
 //! `bridge::resolve_agent_response` 决定宠物状态变化。
 
 use crate::ai_config::AiConfig;
+use crate::permission_hook;
 use crate::permission_hook::PermissionHook;
 use crate::prompts::PromptsConfig;
 use crate::token_tracker::{
@@ -51,6 +52,7 @@ const MAX_AGENT_TURNS: usize = 16;
 #[serde(rename_all = "snake_case")]
 pub enum ToolPhase {
     Planned,
+    Blocked,
     Finished,
     Failed,
 }
@@ -59,6 +61,7 @@ impl ToolPhase {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Planned => "planned",
+            Self::Blocked => "blocked",
             Self::Finished => "finished",
             Self::Failed => "failed",
         }
@@ -170,12 +173,17 @@ fn result_tool_event(
     internal_call_id: String,
 ) -> ToolRuntimeEvent {
     let preview = tool_result_preview(result);
+    let blocked = preview
+        .as_deref()
+        .is_some_and(permission_hook::is_policy_block_reason);
     let success = preview
         .as_deref()
         .and_then(|text| serde_json::from_str::<tools::ToolResult>(text).ok())
         .map(|result| result.success);
 
-    planned.phase = if success == Some(false) {
+    planned.phase = if blocked {
+        ToolPhase::Blocked
+    } else if success == Some(false) {
         ToolPhase::Failed
     } else {
         ToolPhase::Finished
@@ -187,7 +195,7 @@ fn result_tool_event(
         .or(Some(result.id.clone()));
     planned.internal_call_id = internal_call_id;
     planned.result_preview = preview;
-    planned.success = success;
+    planned.success = if blocked { Some(false) } else { success };
     planned
 }
 
@@ -515,6 +523,8 @@ mod tests {
         assert_eq!(event.phase.as_str(), "planned");
         assert_eq!(event.call_id.as_deref(), Some("provider-call"));
         assert_eq!(event.internal_call_id, "rig-call");
+        assert_eq!(event.result_preview, None);
+        assert_eq!(event.success, None);
     }
 
     #[tokio::test]

@@ -431,7 +431,7 @@ UI 分层：
 2. **已完成：升级流式回调契约**：`chat_stream<F: FnMut(&str)>` 已改为产出 `AgentStreamEvent::Text | AgentStreamEvent::Tool`，并移除了正文中的 `[正在执行: ...]`。
 3. **已完成：app 层桥接事件**：新增 `bubble-tool-event`，由 `bubble.rs`/聊天循环发送到前端。
 4. **已完成：bubble 工具状态 UI 雏形**：普通工具显示低干扰状态条；`perform_dance/play_dance` 作为 `performance` 类型使用不同视觉样式。
-5. **已完成：工具结果阶段雏形**：`StreamUserItem::ToolResult` 已关联回计划事件并发出 `Finished / Failed`，包含 `success` 和短 `result_preview`；下一步再把 PermissionHook 的 `Allowed / Blocked` 接进同一事件流。
+5. **已完成：工具结果阶段雏形**：`StreamUserItem::ToolResult` 已关联回计划事件并发出 `Finished / Failed / Blocked`，包含 `success` 和短 `result_preview`；`Blocked` 通过 PermissionHook 的稳定拦截原因识别。`Allowed` 不做伪事件，后续若需要精确展示需把 PermissionHook 改为带事件 sink 的状态化 hook。
 6. **下一步：工具事件日志**：写稳定字段，如 `session_id`、`tool`、`phase`、`success`、`elapsed_ms`、`blocked`、`error_kind`；参数和结果只写短 preview。
 7. **已完成：Args → JsonSchema 单一事实源**：`LaunchArgs` / `ShellArgs` / `ReadFileArgs` / `GetTimeArgs` / `RecentScreenshotsArgs` / `HotkeyArgs` / `ClipboardArgs` / `ForegroundArgs` / `PerformDanceArgs` / `PlayDanceArgs` 已 derive `JsonSchema`，`agent.rs` 不再维护大块手写参数 JSON。
 8. **已完成：类型级枚举约束**：`GetTimeArgs.format` 从自由字符串提升为 `GetTimeFormat` enum，schema 枚举和执行逻辑共用同一类型。

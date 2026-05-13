@@ -9,6 +9,9 @@ use tracing::{info, warn};
 
 use crate::logging::log_preview;
 
+/// shell 工具被安全策略拦截时返回给模型的稳定原因。
+pub const POLICY_BLOCK_REASON: &str = "此命令被安全策略阻止，可能造成数据丢失或系统损坏";
+
 /// 空结构体，实现 rig 的 PromptHook trait，在工具调用前进行安全检查
 #[derive(Clone)]
 pub struct PermissionHook;
@@ -33,7 +36,7 @@ impl<M: rig::completion::CompletionModel> PromptHook<M> for PermissionHook {
                             "tool call blocked by policy"
                         );
                         ToolCallHookAction::Skip {
-                            reason: "此命令被安全策略阻止，可能造成数据丢失或系统损坏".into(),
+                            reason: POLICY_BLOCK_REASON.into(),
                         }
                     } else {
                         info!(
@@ -84,4 +87,9 @@ fn is_dangerous_command(cmd: &str) -> bool {
         "sdelete",
     ];
     dangerous.iter().any(|pattern| cmd_lower.contains(pattern))
+}
+
+/// 判断工具结果是否来自 PermissionHook 的安全策略拦截。
+pub fn is_policy_block_reason(text: &str) -> bool {
+    text == POLICY_BLOCK_REASON
 }

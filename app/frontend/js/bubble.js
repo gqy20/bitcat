@@ -341,7 +341,9 @@
     var phase = payload && payload.phase ? payload.phase : 'planned';
     var kind = payload && payload.kind ? payload.kind : 'utility';
     var text;
-    if (phase === 'failed') {
+    if (phase === 'blocked') {
+      text = label + '已拦截';
+    } else if (phase === 'failed') {
       text = label + '失败';
     } else if (phase === 'finished') {
       text = label + '完成';
