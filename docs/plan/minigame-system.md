@@ -1,6 +1,6 @@
 # 迷你游戏系统实现设计
 
-> 状态：设计阶段（2026-05）
+> 状态：Phase 1 已完成（2026-05-13，提交 `a2105ff`）
 > 关联文档：
 > - 产品定位：[gdd/core-gameplay.md](../gdd/core-gameplay.md) §八、Mini-Game 定位
 > - GameDef schema：[plan/structured-output-design.md](structured-output-design.md) §3.2
@@ -268,21 +268,21 @@ minigame.rs     ███████              180  (15%)
 
 本节是基于 2026-05 的当前仓库状态补充的实施路线。原设计的方向仍然成立，但落地入口需要贴合现有架构：
 
-- 当前项目已经有 `app/src/action_bus.rs`，并且舞蹈入口已通过 `ActionBus::PlayDance` 归一分发。游戏不应再新增一套散落在 panel / gamepad / command 中的入口，而应新增 `Action::PlayGame`，由 `ActionBus` 统一触发。
+- 当前项目已经有 `app/src/action_bus.rs`，并且舞蹈入口已通过 `ActionBus::PlayDance` 归一分发。Phase 1 已新增 `Action::PlayGameDefault`，面板入口和未来工具入口应继续走同一条动作语义。
 - 舞蹈系统的成熟模式是 `core::dance` 持久化与请求通道 → app bridge 消费 → 前端播放。游戏可复用这个思路，但 Phase 1 先走预设 `GameDef`，等窗口生命周期和输入独占稳定后再接 AI 工具。
-- `panel.js` 当前是硬编码 3×2 六宫格。Phase 1 可以先把一个现有格子替换为"游戏"，或短期扩成 3×3；不要为了小游戏第一版顺手重做面板系统。
-- `gamepad_loop` 当前在面板可见时独占 A/B/D-pad，否则 D-pad 默认变成滚轮。游戏激活后必须成为更高优先级的独占模式：D-pad/A/B/Start 转发给游戏，暂停普通滚动、宠物按键与面板动作。
-- Tauri capabilities 当前只列出 `main/pet/pet-mini/pet-snap/bubble/panel/voice/settings`。新增动态 `game` 窗口时必须同步把 `"game"` 加入 `app/capabilities/default.json`，否则前端 Tauri API 可能不可用。
+- `panel.js` 已扩为 3×3，保留原 6 个入口并新增"游戏 / 设置 / 聊天"。后续新增入口时要同步 `COLS/ROWS`、面板尺寸和手柄导航边界。
+- `gamepad_loop` 已实现游戏激活优先级：game active > panel visible > voice held > 普通动作/滚轮。游戏激活时 D-pad/A/B/Start 转发为 `game-input`，普通滚轮和宠物动作暂停。
+- Tauri capabilities 已加入 `"game"`，动态 `game` 窗口可以使用 Tauri event / invoke API。
 
 ### 推荐最小闭环
 
-第一版不要一次实现 AI 生成、三种游戏、记分榜和体验打磨。最小闭环只做一件事：面板点"游戏"后打开透明全屏 Snake，键盘和手柄都能玩，退出后宠物回到正确状态。
+第一版已实现：面板点"游戏"后打开透明全屏 Snake，键盘和手柄都能玩，退出后宠物回到正确状态。
 
 数据流调整为：
 
 ```
 用户点击面板"游戏"格子
-  → panel.js invoke("cmd_start_game") 或 ActionBus::PlayGame
+  → panel.js invoke("cmd_start_game") 或 ActionBus::PlayGameDefault
   → app/src/game.rs 创建/聚焦 game 窗口，并写入 SharedGame.current_def
   → game.html 加载后 invoke("cmd_get_current_game")
   → game_engine.js 初始化 Snake
@@ -305,28 +305,28 @@ AI 路径推迟到 Phase 2：
 
 ## 七、实现阶段
 
-### Phase 1A：窗口与入口骨架
+### Phase 1A：窗口与入口骨架（已完成）
 
-目标：不用 AI、不完整游戏规则，先证明窗口生命周期和前后端通信可靠。
+目标：不用 AI、不完整游戏规则，先证明窗口生命周期和前后端通信可靠。已在提交 `a2105ff` 中完成。
 
-- 新增 `core/src/minigame.rs`：定义 `GameDef`、`MinigameType::Snake`、`GameGrid`、`PlayerConfig`、`GameRules`、`ThemeConfig`、`DialogueConfig`，实现 `default_snake()` 与 `validate_game_def()`。
+- 新增 `core/src/minigame.rs`：定义 `GameDef`、`MinigameType::Snake`、`GameGrid`、`PlayerConfig`、`GameRules`、`GameTheme`、`GameDialogue`，实现 `default_snake()` 与 `validate_game_def()`。
 - 修改 `core/src/lib.rs`：导出 `pub mod minigame;`。
 - 新增 `app/src/game.rs`：定义 `SharedGame { active, current_def }`，实现动态 `game` 窗口创建、关闭、当前游戏读取和结束回调。
 - 修改 `app/src/lib.rs`：注册 `game` 模块、`SharedGame`、`cmd_start_game`、`cmd_get_current_game`、`cmd_game_end`、`cmd_game_log`。
 - 修改 `app/capabilities/default.json`：窗口列表加入 `"game"`。
 - 新增 `app/frontend/game.html`、`app/frontend/css/game.css`、`app/frontend/js/game_engine.js`：页面能加载配置、绘制透明 canvas、显示简单 HUD。
-- 修改 `app/frontend/js/panel.js`：增加或替换一个"游戏"格子，触发 `cmd_start_game`。
+- 修改 `app/frontend/js/panel.js` / `panel.css` / `panel.rs`：面板扩为 3×3，新增"游戏"格子，触发 `cmd_start_game`。
 
-验收标准：
+验收结果：
 
 - 面板点击"游戏"能打开透明置顶游戏窗口。
-- `game.html` 能成功 `cmd_get_current_game` 并把标题/初始画面画出来。
-- Esc 或 B 退出后窗口关闭，`SharedGame.active` 复位。
+- `game.html` 能成功 `cmd_get_current_game` 并初始化 Snake。
+- Esc / B 退出后窗口关闭，`SharedGame.active` 复位。
 - `make test-core` 通过。
 
-### Phase 1B：Snake 可玩闭环
+### Phase 1B：Snake 可玩闭环（已完成）
 
-目标：Snake 规则完整，键盘与手柄都能玩。
+目标：Snake 规则完整，键盘与手柄都能玩。已在提交 `a2105ff` 中完成。
 
 - `game_engine.js` 实现 `GameEngine` 基类、`SnakeEngine`、主题绘制器、游戏状态机。
 - 键盘输入：方向键/WASD、Enter/Space、P、Escape 直接进入 `handleInput()`。
@@ -338,16 +338,16 @@ AI 路径推迟到 Phase 2：
 - 游戏结束通过 `cmd_game_end(result, score)` 回传 app。
 - `core/src/pet.rs` 与 `core/src/bridge.rs` 新增 `GamePlay` / `GameWin` / `GameLose` 状态；前端 sprite 暂时可映射到已有 happy/confused/idle 帧，避免素材阻塞。
 
-验收标准：
+验收结果：
 
 - Snake 能移动、吃食物、增长、加速、撞墙/撞自己失败、达到长度胜利。
 - 游戏激活时 D-pad 不再触发滚轮，A/B 不再触发普通宠物动作。
 - 胜利后宠物进入 `GameWin`，失败或取消后进入 `GameLose` 或 `Idle`。
-- `make test-fast` 通过；如果改到 Tauri IPC，再跑 `make test-app`。
+- `make test-core`、`cd app/frontend && npx vitest run`、`make test-app`、`make test-fast` 均通过。
 
 ### Phase 1 代码量预估
 
-第一阶段建议按 1A / 1B 两个提交实现，总量预估约 **760-980 行新增/修改**。其中 1A 约 **330-430 行**，1B 约 **430-550 行**。如果前端 Snake 渲染做得更精细，或 Tauri 窗口焦点需要 Windows 特化处理，可能上浮到 **1100 行左右**。
+第一阶段已完成，实际提交约 **1278 行新增/修改**。上浮主要来自完整前端 Snake 实现、Tauri game 窗口生命周期、3×3 面板扩展、宠物新状态测试和 capabilities schema 同步。
 
 | 文件 | Phase | 预计行数 | 说明 |
 |------|-------|----------|------|
@@ -379,15 +379,15 @@ AI 路径推迟到 Phase 2：
 3. 然后补 Snake 规则和键盘输入。
 4. 最后插入 `gamepad_loop` 独占转发与宠物状态联动。
 
-### Phase 2：体系补全
+### Phase 2：体系补全（下一步）
 
-目标：从"能玩 Snake"扩展到可配置游戏系统。
+目标：从"能玩 Snake"扩展到可配置游戏系统，并接入 AI 工具。
 
 - `game_engine.js` 增加 Memory 和 Catch，实现固定模板注册机制。
 - `config/minigames.yml` 增加三种游戏默认配置与难度预设。
 - `core/src/minigame.rs` 增加 `save_game()`、`load_game()`、`list_games()`，目录为 `~/.ai-pad/games/`，格式优先 YAML，规则保持可人工审查。
 - 新增分数持久化，目录为 `~/.ai-pad/scores/`，采用 append-only JSONL，方便 `rg` 检索和人工排查。
-- `ActionBus` 增加 `PlayGame(GameDef)` 或 `PlayGamePreset(String)`，前端、手柄、AI 工具都走同一入口。
+- `ActionBus` 在现有 `PlayGameDefault` 基础上增加 `PlayGame(GameDef)` 或 `PlayGamePreset(String)`，前端、手柄、AI 工具都走同一入口。
 
 验收标准：
 

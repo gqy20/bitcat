@@ -67,19 +67,29 @@
 
 ### A2. 迷你游戏引擎
 
-复用 A1 的模式：模型通过工具提交结构化 `GameDef` → panel 窗口运行游戏 → 结束联动 pet 状态。
+Phase 1 已完成（提交 `a2105ff`）：新增全屏透明 `game` 窗口，面板扩为 3×3 并加入"游戏"入口，内置 Snake 可通过键盘/手柄游玩，结束后联动 `GamePlay` / `GameWin` / `GameLose` 宠物状态。
+
+当前已落地的数据流：
+
+```
+panel → cmd_start_game → app/src/game.rs 动态创建 game 窗口
+      → game.html / game_engine.js 运行 Snake
+      → cmd_game_end(result, score) → 关闭窗口 + 切换 pet 状态
+```
+
+下一步继续复用 A1 的模式：模型通过工具提交结构化 `GameDef` → Rust validate / save → game 窗口运行游戏 → 结束联动 pet 状态。
 
 三种原型游戏共享同一个 GameEngine 类：
 
 | 游戏 | 操作 | 复杂度 |
 |------|------|--------|
-| 贪吃蛇 | 方向键转向 | 低 |
-| 记忆翻牌 | 方向键移动 + A 翻牌 | 低 |
-| 打地鼠 | 方向键移动光标 + A 点击 | 最低 |
+| 贪吃蛇 | 方向键转向 | 已完成 Phase 1 |
+| 记忆翻牌 | 方向键移动 + A 翻牌 | Phase 2 |
+| 打地鼠 | 方向键移动光标 + A 点击 | Phase 2 |
 
-输入复用 panel 现有手柄链路，无需新 IPC。胜利→Happy，失败→Confused。
+输入已改为游戏激活时独占：D-pad/A/B/Start 由 `gamepad_loop` 转发为 `game-input`，普通滚轮、宠物动作和面板动作暂停。胜利→`GameWin`，失败→`GameLose`，取消→`Idle`。
 
-详细设计：[plan/structured-output-design.md](plan/structured-output-design.md) §3.2
+详细设计：[plan/minigame-system.md](plan/minigame-system.md)
 
 ### A3. 内容生态扩展
 
@@ -252,7 +262,7 @@ A1+A2+C1 ──→ D1(Steam) MVP 功能完备
 | **B2** | Token 追踪 + 设置页统计 | 已完成 MVP | 0 | Done |
 | **B3** | Extractor 改造主链路 | 已完成 | 0 | Done |
 | **B3 cleanup** | 删除旧 raw helper / parser / 惰性配置 | 已完成，净删为主 | 0 | Done |
-| **A2** | 迷你游戏引擎 | ~450-700 行 | 0 | P1，1-3 天 |
+| **A2** | 迷你游戏引擎 | Phase 1 已完成；Phase 2 待接 AI + Memory/Catch | 0 | P1 |
 | **B4** | 工具运行时与开销优化 | ~250-450 行（B4.1-B4.3）+ ~50-150 行（B4.4） | 0 | P1，1-2 天；B4.5 实验项 |
 | **A3** | 内容扩展 | ~200-350 行/种 | 0 | P2，0.5-1 天/种 |
 | **B5** | grep-first 文本记忆 | ~250-450 行 | 0 | P2，1-3 天 |

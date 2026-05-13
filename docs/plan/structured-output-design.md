@@ -125,7 +125,9 @@ pub struct DanceDef {
 - `default` → 提示 LLM 可选字段的推荐值
 - `enum` → 枚举值约束
 
-### 3.2 GameDef（Phase 2 新建，core/src/minigame.rs）
+### 3.2 GameDef（A2 Phase 1 已新建，core/src/minigame.rs）
+
+> 当前状态（2026-05-13）：`core/src/minigame.rs` 已落地 Phase 1 版本，支持 `MinigameType::Snake`、`GameDef::default_snake()` 与 `validate_game_def()`。下方早期草案保留为结构化输出扩展参考；后续接 AI 工具时应以当前源码为准，而不是重新新建 `GameDef`。
 
 ```rust
 use schemars::JsonSchema;
@@ -499,22 +501,25 @@ async fn generate_with_retry(agent: &PetAgent, prompt: &str) -> Result<DanceDef,
 
 **当前状态：A1 已进入可用状态，后续只需继续调 prompt/schema 文案和真实交互体验。**
 
-### Phase 2：游戏（预计 2-3 天，复用同样模式）
+### Phase 2：游戏（部分完成，继续复用同样模式）
+
+> 已完成：`core/src/minigame.rs`、`app/src/game.rs`、独立 `game` 窗口、Snake 前端、3×3 面板入口、手柄输入独占和宠物结果状态联动。
+> 待完成：AI 工具、Memory/Catch、持久化游戏配置与分数。
 
 | 步骤 | 文件 | 改动 | 行数 |
 |------|------|------|------|
-| 1 | `core/src/minigame.rs`（新建） | `GameDef` + 全部子类型，全部加 `JsonSchema` derive | ~120 |
-| 2 | `core/src/lib.rs` | `pub mod minigame;` | 1 |
-| 3 | `core/src/agent.rs` | 新增 `generate_game()` 方法 | ~12 |
-| 4 | `app/src/intent.rs` | `Intent::CreateGame` 分支的关键词扩展 | ~5 |
-| 5 | `app/src/gamepad.rs` | 新增 `run_game_generation()` + dispatch 分支 | ~60 |
-| 6 | `app/src/commands.rs` | `cmd_start_game` + `cmd_game_input` IPC 命令 | ~30 |
-| 7 | `app/frontend/js/game_engine.js`（新建） | GameEngine 类：Snake/Memory/Whack 三种实现 | ~250 |
-| 8 | `app/frontend/panel.html` | `<canvas id="game-canvas">`（默认 hidden） | ~3 |
-| 9 | `app/frontend/js/panel.js` | 游戏模式切换 + 输入转发 + game-end 回调 | ~20 |
-| 10 | 测试 | GameDef schema 测试 + 各游戏类型单元测试 | ~80 |
+| 1 | `core/src/minigame.rs` | `GameDef` + Snake bounds 校验 | 已完成 |
+| 2 | `core/src/lib.rs` | `pub mod minigame;` | 已完成 |
+| 3 | `app/src/game.rs` | 动态 `game` 窗口 + IPC + 生命周期 | 已完成 |
+| 4 | `app/src/gamepad.rs` | 游戏激活时 D-pad/A/B/Start 独占转发 | 已完成 |
+| 5 | `app/frontend/js/game_engine.js` | Snake 引擎 + Canvas 2D 渲染 | 已完成 |
+| 6 | `app/frontend/js/panel.js` / `panel.css` | 3×3 面板 + 游戏入口 | 已完成 |
+| 7 | `core/src/agent.rs` / `tools.rs` | 新增 `perform_game` / `play_game` 工具 | 待做 |
+| 8 | `game_engine.js` | Memory + Catch 引擎注册 | 待做 |
+| 9 | `config/minigames.yml` | 默认配置与难度预设 | 待做 |
+| 10 | 测试 | AI 工具、Memory/Catch、持久化分数 | 待做 |
 
-**Phase 2 小计：~581 行新代码，零新依赖**
+**当前 A2 Phase 1：已提交 `a2105ff`；下一步是 AI 工具与多游戏体系。**
 
 ### Phase 3：后续增强
 
