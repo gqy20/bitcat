@@ -1,5 +1,7 @@
 # 日志体系规范化设计
 
+> 状态：2026-05-13 已完成第一轮落地。本文前半部分是长期规范，后半部分的问题清单已从“待办”转为“回归检查基线”。
+>
 > **目标**：让日志成为可读、可检索、可长期保留的运行叙事，而不是调试残渣。
 >
 > 优雅的标准不是“日志越多越好”，而是：
@@ -184,7 +186,17 @@ info!(
 
 ---
 
-## 五、当前问题清单
+## 五、落地状态与回归清单
+
+第一轮已经完成：
+
+- 生产代码统一走 `tracing`，避免新增 `eprintln!`；
+- 用户消息、AI 回复、语音文本、前端日志使用 `log_preview()` 或长度字段；
+- 高频 chunk / 截图细节降到 DEBUG/TRACE；
+- Token 明细从普通日志迁移到 `~/.ai-pad/logs/token_usage.jsonl` 和 `token_sessions.json`；
+- 设置页通过 `cmd_get_token_stats` 读取结构化统计，不解析日志。
+
+下面清单保留为回归检查项：每次新增 chat / voice / screenshot / tool / settings 日志时，应确认没有重新引入全文裸写、WARN 滥用或高频 INFO。
 
 ### P0：隐私和大文本污染
 
@@ -321,7 +333,7 @@ B2 `token_usage.jsonl` 不应混进普通日志。日志只记录：
 info!(input_tokens, output_tokens, cache_tokens, "token usage recorded");
 ```
 
-完整明细写入 `~/.ai-pad/token_usage.jsonl`。
+完整明细写入 `~/.ai-pad/logs/token_usage.jsonl`。
 
 ### JSON 日志模式
 

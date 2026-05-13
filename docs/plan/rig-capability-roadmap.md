@@ -10,7 +10,7 @@
 |------|------|
 | AgentBuilder + preamble | Extractor（结构化提取） |
 | Tool trait + 10 个工具定义 | Pipeline（链式处理） |
-| stream_prompt / prompt | Embeddings（向量检索） |
+| stream_prompt / prompt | Embeddings（明确不采用，见取舍文档） |
 | PermissionHook + HookAction | dynamic_tools（动态工具集） |
 | MultiTurnStreamItem 流式消费 | .context() / .dynamic_context() |
 | FinalResponse.usage() | output_schema（输出约束） |
@@ -158,7 +158,7 @@ pub enum ActivityCategory {
 
 ---
 
-## P1: dynamic_tools — 场景化工具裁剪
+## P1: 工具开销优化 — 先统计，后优化，不做关键词意图识别
 
 ### 问题
 
@@ -176,112 +176,44 @@ pub enum ActivityCategory {
 
 ### 方案
 
-使用 rig 的 `.dynamic_tools(fn)` 根据用户消息动态选择工具子集：
+不做“关键词匹配式意图识别”，也不为了简单任务额外发一次小模型分类请求。当前产品方向是：**大模型足够聪明，应该让它看到能力并自行决定是否调用工具**。因此 P1 从“dynamic_tools 裁剪”调整为“工具开销优化”，并按真实统计驱动。
 
-```rust
-// core/src/agent.rs — 工具注册策略
+优先级从高到低：
 
-use rig::agent::ToolSet;
-
-/// 根据消息意图推断所需工具集
-fn select_tools(message: &str) -> Vec<ToolSet> {
-    let msg_lower = message.to_lowercase();
-
-    // 闲聊/问答：只给轻量工具
-    if is_casual_chat(&msg_lower) {
-        vec![
-            ToolSet::new(GetTimeTool),
-            ToolSet::new(ReadFileTool),
-            ToolSet::new(ClipboardTool),
-            ToolSet::new(RecentScreenshotsTool),
-        ]
-    }
-    // 旧示意：关键词裁剪会和当前"让模型自行选择工具"的产品方向冲突。
-    // 真要做 dynamic_tools，应优先用模型端或保守默认策略，而不是硬编码舞蹈关键词。
-    else if msg_lower.contains("跳舞") || msg_lower.contains("舞蹈") || msg_lower.contains("dance") {
-        vec![
-            ToolSet::new(PerformDanceTool),
-            ToolSet::new(PlayDanceTool),
-            ToolSet::new(GetTimeTool),
-        ]
-    }
-    // 默认：全量工具（保持现有行为）
-    else {
-        vec![
-            ToolSet::new(LaunchTool),
-            ToolSet::new(ShellTool),
-            ToolSet::new(ReadFileTool),
-            ToolSet::new(GetTimeTool),
-            ToolSet::new(RecentScreenshotsTool),
-            ToolSet::new(HotkeyTool),
-            ToolSet::new(ClipboardTool),
-            ToolSet::new(ForegroundTool),
-            ToolSet::new(PerformDanceTool),
-            ToolSet::new(PlayDanceTool),
-        ]
-    }
-}
-
-fn is_casual_chat(msg: &str) -> bool {
-    let keywords = ["笑话", " joke", "故事", "天气", "几点", "时间", "你好", " hello",
-                    "在吗", "你是谁", "自我介绍", "帮忙", " help"];
-    keywords.any(|k| msg.contains(k))
-}
-```
-
-```rust
-// PetAgent::new() 中替换静态 .tool() 为动态注册
-
-let agent = rig::agent::AgentBuilder::new(model)
-    .preamble(&prompts.agent.preamble)
-    .max_tokens(max_tokens)
-    .hook(PermissionHook)
-    .dynamic_tools(|ctx| select_tools(&ctx.prompt))  // ← 关键改动
-    .build();
-```
+1. **观测真实成本**：使用 B2 的 `cmd_get_token_stats` 和 `token_usage.jsonl` 判断工具 schema 是否真是瓶颈。
+2. **压缩工具 schema**：短描述、少废话、参数字段保持明确，减少每次固定 prompt 开销。
+3. **整理工具边界**：合并重复能力，删除已经过时或极少使用的工具。
+4. **显式能力包**：只有用户进入某种模式时启用一组低频能力，例如开发/系统控制/内容生成模式。
+5. **默认不做 dynamic_tools**：除非未来真实数据证明固定工具 schema 成为核心瓶颈，否则不引入动态工具裁剪。
 
 ### Token 节省估算
 
-| 场景 | 当前工具数 | 裁剪后 | 节省 Token | 占比 |
-|------|-----------|--------|-----------|------|
-| 闲聊（"讲个笑话"） | 10 | 4 | ~420 tok | ~55% |
-| 时间查询（"几点了"） | 10 | 4 | ~420 tok | ~55% |
-| 舞蹈相关（"跳个舞"） | 10 | 3 | ~530 tok | ~69% |
-| 复杂任务（"帮我启动 VS Code"） | 10 | 10 | 0 | 0% |
+旧估算认为裁剪工具可平均节省约 250 tokens/对话，但这只是静态 prompt 估算。现在应改用真实数据：
 
-假设日常使用中 60% 为闲聊/简单查询，平均每次对话节省约 **250 tokens**。
+| 数据来源 | 用途 |
+|----------|------|
+| `token_usage.jsonl` | 看 chat 与 vision/summary/memory 的真实占比 |
+| `token_sessions.json` | 看最近会话是否有异常高消耗 |
+| 设置页用量统计 | 快速判断今天是否值得优化 token |
+| 未来工具调用日志 | 统计哪些工具长期没有被模型选择 |
 
 ### 实现路径
 
-1. **定义工具分组常量**：将 10 个工具按功能分为 `CASUAL_TOOLS`、`DANCE_TOOLS`、`FULL_TOOLSET`
-2. **实现工具选择策略**：优先选择模型/上下文驱动或保守默认策略，避免把简单语义理解退化成硬编码关键词匹配
-3. **修改 AgentBuilder**：`.tool(x10)` → `.dynamic_tools(fn)`
-4. **添加 metrics**：记录每次对话选择的工具集大小，用于评估裁剪效果
-5. **A/B 对比**：先以 feature flag 控制，对比裁剪前后回复质量
-
-### 进阶方案（P1.5）：LLM 驱动的工具选择
-
-硬编码匹配的局限在于无法理解复杂语义（如"帮我搞一下这个"可能需要 shell），也会和当前"由模型自行选择工具"的方向冲突。进阶方案是用一个极小的分类模型（或复用已有 agent 的单轮判断）来决定工具集：
-
-```rust
-.dynamic_tools(|ctx| {
-    // 用轻量级单次调用来决定工具集（仅在高置信时裁剪）
-    match classify_intent(&ctx.prompt) {
-        Intent::Casual => CASUAL_TOOLS.clone(),
-        Intent::Dance => DANCE_TOOLS.clone(),
-        Intent::System => FULL_TOOLSET.clone(),
-        Intent::Unknown => FULL_TOOLSET.clone(), // 不确定时不裁剪
-    }
-})
-```
+1. **先不改 AgentBuilder**：保持全量工具，避免功能回退。
+2. **统计工具使用率**：在 tool call 日志里记录 `tool`、`elapsed_ms`、成功/失败，不记录大文本。
+3. **压缩工具描述**：逐个审查 tool description 和 schema，删除冗余提示。
+4. **清理重复工具**：如果多个工具可以由一个更清晰的工具覆盖，优先合并。
+5. **评估显式模式**：例如“开发模式”启用 shell/read_file，“娱乐模式”启用 dance/game。
+6. **保留能力边界**：如果未来确实需要实验 dynamic_tools，必须 feature flag 可回滚，默认仍全量。
 
 ### 风险与缓解
 
 | 风险 | 缓解 |
 |------|------|
-| 裁剪过度导致 AI 无法执行用户想要的操作 | 默认不裁剪（full set）；只在**高置信度**闲聊场景裁剪；feature flag 可随时关闭 |
-| 硬编码匹配误判 | 不把关键词匹配作为主方案；优先保守默认全量工具或模型驱动分类 |
-| dynamic_tools 在 rig 中的性能开销 | 工具选择是同步函数（无 I/O），开销 < 1ms；远小于节省的 token 成本 |
+| 过早优化导致能力退化 | 默认不裁剪工具；先压缩 schema 和观测真实数据 |
+| 关键词匹配误判 | 明确禁止作为方案；简单任务交给模型自己理解 |
+| 额外分类调用反而更贵 | 不做“先分类再对话”的双调用路径 |
+| dynamic_tools 实验影响体验 | 必须 feature flag，可随时回退全量工具 |
 
 ### 依赖关系
 
@@ -290,224 +222,71 @@ let agent = rig::agent::AgentBuilder::new(model)
 
 ---
 
-## P2: Embeddings — 语义记忆检索（RAG）
+## P2: grep-first 文本记忆检索
 
-### 问题
+### 决策
 
-当前记忆系统（`memory.rs`）采用**滚动窗口**策略：
+不采用 Embeddings / Vector RAG。原因见：[../architecture/design-tradeoffs.md](../architecture/design-tradeoffs.md)。
 
-```
-MemoryStore:
-  - max_entries: 20（最近 20 条对话）
-  - max_context_chars: 1500（注入 prompt 的字符上限）
-  - 策略：FIFO，新条目挤掉旧条目
-  - 检索方式：取最近 N 条，无语义相关性
-```
-
-**核心缺陷**：
-
-1. **无语义关联**：用户问"上次那个 Rust 错误怎么解决的"，系统只看最近的 20 条，如果该对话已滚出窗口就丢失
-2. **固定窗口浪费**：连续闲聊占满窗口后，重要的技术讨论被挤出
-3. **无法跨会话回忆**：每次重启后记忆清空（只有 chat_summary.json 的持久化摘要，非原始对话）
-
-### 方案
-
-引入 rig 的 `Embeddings` 能力，将滚动窗口升级为**语义向量检索**：
-
-```
-架构变化：
-
-  现状（滚动窗口）：
-    user_msg → MemoryStore.entries（最近20条）→ build_context() → 注入 prompt
-                                              ↑ FIFO，无语义
-
-  目标（语义检索 RAG）：
-    user_msg → EmbeddingModel.encode(query)
-                  ↓
-              VectorStore.cosine_similarity(top_k=5)
-                  ↓
-              build_context(相关条目) → 注入 prompt
-```
-
-### 数据结构设计
-
-```rust
-// core/src/memory.rs — 新增向量索引
-
-use rig::embeddings::{EmbeddingModel, Embeddings};
-use rig::vector_store::VectorStoreIndex;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemoryEntry {
-    pub id: String,              // UUID
-    pub timestamp: String,       // ISO 8601
-    pub role: MemoryRole,        // User / Assistant
-    pub content: String,         // 原始文本（截断后）
-    pub embedding: Option<Vec<f32>>,  // 向量（懒计算/缓存）
-    pub tags: Vec<String>,       // 手动标签（可选）
-    pub session_id: String,      // 所属会话
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum MemoryRole {
-    #[serde(rename = "user")]
-    User,
-    #[serde(rename = "assistant")]
-    Assistant,
-}
-
-/// 语义记忆存储
-pub struct SemanticMemoryStore {
-    entries: Vec<MemoryEntry>,
-    index: Option<VectorStoreIndex<MemoryEntry>>,  // 向量索引
-    embedding_model: Option<EmbeddingModel>,        // 嵌入模型
-    config: MemoryConfig,
-}
-```
-
-### 检索流程
-
-```rust
-impl SemanticMemoryStore {
-    /// 语义检索：找到与 query 最相关的 K 条记忆
-    pub async fn search(&self, query: &str, top_k: usize) -> Vec<&MemoryEntry> {
-        if self.index.is_none() || self.embedding_model.is_none() {
-            // 降级为滚动窗口
-            return self.fallback_recent(top_k);
-        }
-
-        let model = self.embedding_model.as_ref().unwrap();
-        let query_embedding = model.embed_text(query).await.unwrap();
-
-        self.index.as_ref()
-            .unwrap()
-            .top_k::<CosineSimilarity>(&query_embedding, top_k)
-            .await
-            .unwrap_or_default()
-    }
-
-    /// 记录新对话并更新向量索引
-    pub async fn record(&mut self, role: MemoryRole, content: &str, session_id: &str) {
-        let entry = MemoryEntry {
-            id: Uuid::new_v4().to_string(),
-            timestamp: chrono::Local::now().to_rfc3339(),
-            role,
-            content: truncate_chars(content, self.config.max_entry_chars),
-            embedding: None,  // 延迟计算
-            tags: vec![],
-            session_id: session_id.to_string(),
-        };
-        self.entries.push(entry);
-
-        // 异步重建索引（不阻塞主流程）
-        if self.entries.len() % 5 == 0 {
-            self.rebuild_index().await;
-        }
-    }
-}
-```
-
-### 存储格式变更
+当前方向是把记忆做成可 grep、可读、可 diff 的结构化文本：
 
 ```
 ~/.ai-pad/memory/
-  chat_summary.json     — 现有：滚动窗口 JSON（保留作为降级备份）
-  memory_entries.jsonl  — 新增：append-only 行日志，每行一条 MemoryEntry
-  memory_index.bin      — 新增：序列化的向量索引（可选，加速冷启动）
+  chat_summary.json        — 当前滚动摘要，继续保留
+  memory_entries.jsonl     — append-only 记忆条目，可 grep
+  daily/YYYY-MM-DD.md      — 可选：按天沉淀的人类可读摘要
+  index/tags.json          — 可选：轻量标签索引，不是向量索引
 ```
 
-### Embedding 模型选择
+### 为什么这样更适合当前项目
 
-| 模型 | 维度 | 速度 | 适用场景 | 推荐度 |
-|------|------|------|---------|-------|
-| `text-embedding-3-small` (OpenAI) | 1536 | 快 | 通用 | 需额外 API key |
-| 本地 `all-MiniLM-L6-v2` (via `ort`/`candle`) | 384 | 极快 | 离线首选 | 高（零 API 成本） |
-| rig 内置 embedding provider | 取决于 backend | — | 与 rig 生态一致 | 最高（统一认证） |
+- `rg` / grep 对本地文本记忆足够快，甚至比维护向量索引更直接。
+- 记忆结果可解释：能看到命中的文件、行号、时间和来源。
+- 不需要 embedding provider、本地模型、向量持久化、重建和冷启动策略。
+- 大模型已经足够聪明：给它候选文本片段，它能判断哪些有用并压缩成上下文。
 
-**推荐策略**：优先使用 rig 内置的 embedding provider（与 Anthropic API 共享认证）；若 rig 不支持 Anthropic embedding，退而使用 OpenAI `text-embedding-3-small` 或本地模型。
+### 实施路径
 
-### 实施阶段
+1. 将对话记忆从单一滚动 JSON 扩展为 append-only `memory_entries.jsonl`。
+2. 每条记录写入稳定字段：`timestamp`、`source`、`role`、`tags`、`summary`、`text_preview`。
+3. 增加 `search_memory(query, since, limit)` helper，底层使用文本扫描/grep 风格匹配。
+4. `build_context()` 从“只取最近 N 条”变为“最近条目 + grep 候选 + 大模型压缩后的摘要”。
+5. 保持所有文件可人类阅读，避免二进制索引成为唯一真相。
 
-#### Phase 2.1: 基础设施
+### 与 rig 能力的关系
 
-1. 新增 `SemanticMemoryStore` 结构体和基本 CRUD
-2. 实现 `EmbeddingModel` wrapper（对接 rig embeddings API）
-3. 向量持久化：JSONL 条目 + 内存中的 `Vec<f32>` 索引
-4. 单测：embedding 维度正确性、cosine similarity 排序
-
-#### Phase 2.2: 检索集成
-
-1. 修改 `build_context()` 从"取最近 N 条"改为"语义搜索 top_k"
-2. 保留 `max_context_chars` 截断限制
-3. 添加 hybrid 策略：50% 语义相关 + 50% 最近条目（避免全新话题时返回无关旧记忆）
-4. A/B 对比：feature flag 切换滚动窗口 vs 语义检索
-
-#### Phase 2.3: 生命周期管理
-
-1. 索引重建策略：每 N 条记录或启动时增量重建
-2. 向量清理：与截图存储类似的过期策略（如 90 天）
-3. 冷启动优化：首次加载时反序列化已有条目的 embedding（或 lazy compute）
-
-### 收益
-
-| 维度 | 改善 |
-|------|------|
-| 召回率 | 从"最近 20 条"变为"最相关的 K 条"，历史重要信息不会因时间流失 |
-| Context 质量 | 注入 prompt 的记忆更聚焦于当前话题，减少噪声 token |
-| 跨会话记忆 | 重启后仍可通过向量索引检索历史对话 |
-| 可扩展性 | 向量索引天然支持 metadata filter（按时间范围/标签/会话过滤） |
-
-### Token 影响
-
-- **正面**：语义检索选出的 K 条更精准，`max_context_chars` 预算内信息密度更高
-- **负面**：每次对话前多一次 embedding API 调用（query encoding），约消耗 ~1K tokens
-- **净效果**：取决于使用频率。高频短对话可能略微增加成本；低频长对话显著降低成本（更好的 context 质量 → 更短的 AI 回复）
-
-### 风险与缓解
-
-| 风险 | 缓解 |
-|------|------|
-| Embedding API 额外成本 | 使用小维度模型（384-dim 本地模型零成本）；query embedding 缓存相似查询 |
-| 向量索引构建慢（大量历史数据） | Lazy 构建：首次搜索时才对旧条目 embed；后台异步 rebuild |
-| 语义漂移（同一话题不同时间的表述差异） | Hybrid 策略混合时间衰减权重；定期 re-embed 近期条目 |
-| rig embeddings API 稳定性 | 抽象 EmbeddingProvider trait，支持切换 backend |
-
-### 依赖关系
-
-- **依赖 P0**：结构化输出后记忆条目质量更高，向量的语义更准确
-- **可与 P1 并行**：工具裁剪节省的 token 可以抵消 embedding 的额外开销
-- **最大改动量**：涉及 memory.rs 重构 + 新增 embedding 依赖，建议在 P0/P1 完成后实施
+rig 的 Embeddings / Pipeline.lookup 仍然是可用能力，但当前明确不进入项目主线。更值得优先使用的是 Extractor / output schema 这类能改善结构化文本质量的能力，因为结构越干净，grep-first 检索越好用。
 
 ---
 
 ## 优先级总结与时间线
 
 ```
-Week 1-2    P0: Extractor 结构化输出
+0.5-1.5天  P0: Extractor 结构化输出
              ├ Vision 路径改造（VisionAnalysis struct + Extractor）
              ├ Screen Summary 路径改造（StructuredSummary struct）
              └ 清理 raw reqwest 遗留代码
 
-Week 3      P1: dynamic_tools 场景化裁剪
-             ├ 工具分组 + 关键词意图分类
-             ├ AgentBuilder 改造
-             └ metrics 收集 + 效果评估
+0.5天      P1: 工具开销优化调研
+             ├ 基于 token_usage.jsonl 看真实占比
+             ├ 审查工具 schema 和描述长度
+             └ 决定是否需要 feature-flag 实验
 
-Week 4-6    P2: Embeddings 语义记忆（最大块）
-             ├ SemanticMemoryStore 基础设施
-             ├ EmbeddingModel 对接
-             ├ 检索集成 + hybrid 策略
-             └ 生命周期管理 + 冷启动优化
+1-3天      P2: grep-first 文本记忆
+             ├ memory_entries.jsonl
+             ├ 文本检索 helper
+             ├ 最近条目 + grep 候选混合
+             └ 大模型压缩候选上下文
 ```
 
 ### 各方案的协同效应
 
 ```
-P0 (Extractor) ──→ 结构化数据质量提升 ──→ P2 向量更准确
+P0 (Extractor) ──→ 结构化数据质量提升 ──→ P2 文本更容易 grep
                                       ↘
-P1 (dynamic_tools) ──→ 节省 ~250 tok/对话 ──→ 抵消 P2 embedding API 开销
-                                            ↘
-                                          净 token 成本降低 + 回复质量提升
+P1 (工具开销优化) ──→ 降低固定 prompt 成本 ──→ 给 P2 候选上下文留预算
+                                              ↘
+                                            净 token 成本更可控 + 回复质量提升
 ```
 
 ---
@@ -517,9 +296,9 @@ P1 (dynamic_tools) ──→ 节省 ~250 tok/对话 ──→ 抵消 P2 embeddin
 | 能力 | rig API | 当前状态 | 未来价值 |
 |------|---------|---------|---------|
 | **Pipeline** | `.map().then().prompt().extract().lookup()` | 未使用 | 复杂多步推理链（如：截图→分析→决策→行动） |
-| **.context(doc)** | 静态文档注入 | 未使用（用 preamble 代替） | 注入长文档/RAG 检索结果，与 P2 配合 |
+| **.context(doc)** | 静态文档注入 | 未使用（用 preamble 代替） | 注入 grep-first 检索结果，与 P2 配合 |
 | **.dynamic_context(fn)** | 动态上下文选择 | 未使用 | 按 topic 选择不同的知识库片段 |
 | **output_schema\<T\>()** | 输出格式约束 | 未使用（Extractor 更强大） | 轻量级输出约束，无需 full Extractor |
-| **Pipeline.lookup()** | 向量查找 | 未使用 | 与 P2 embeddings 结合的知识检索 |
+| **Pipeline.lookup()** | 向量查找 | 明确不采用 | 当前不做向量检索 |
 
 这些能力在 P0-P2 实施后会变得更有价值（特别是 Pipeline + P2 的组合），但不属于当前瓶颈。

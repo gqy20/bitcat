@@ -142,6 +142,8 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 
 `MemoryStore` 维护滚动窗口对话记忆（默认 20 条），持久化到 `~/.ai-pad/memory/chat_summary.json`。每次 AI 对话后记录 user_msg + ai_reply（按字符截断），下次对话时通过 `build_context()` 注入 prompt。配置在 `config/prompts.yml` 的 `memory` 段。
 
+长期记忆检索坚持 **grep-first**：优先使用 append-only JSONL / Markdown / 稳定字段，让记忆可以被 `rg`、人工审查和大模型共同读取。不要引入 Embeddings / Vector RAG / 向量数据库作为主线方案；当前取舍见 `docs/architecture/design-tradeoffs.md`。需要召回历史时，先用关键词、时间范围、来源、标签等可解释条件筛出候选，再交给大模型判断和压缩。
+
 ### 用户画像
 
 `UserProfile` 从 `config/user.yml` 加载用户显式声明的身份信息（name/role/preferences/context/language），通过 `build_context()` 生成 `[关于主人]...[/关于主人]` 注入 prompt。**优先级高于** `ProfileStore` 的自动聚合画像：user.yml 有内容时直接使用，全空时才回退到聚合结果。设置窗口可编辑，支持重置为默认。
@@ -160,6 +162,8 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 - **中文处理**：Rust 中字符串切片必须按字符边界（`.chars().take(n)`），不可用字节索引
 - **前端**：无框架，IIFE 模块，通过 `window.__TAURI__` API 与后端通信
 - **配置**：`config/actions.yml`、`config/buttons.yml`、`config/prompts.yml` 运行时从 exe 同目录/config/ 加载，构建时需 cp 到 target/config/
+- **意图理解**：大模型擅长的简单任务不要做关键词匹配、正则分类或“小分类器”前置判断；让模型在普通对话里自行选择工具，Rust 只负责 schema、校验、权限和执行。
+- **记忆检索**：默认用可 grep 的结构化文本，不做 Embeddings / Vector RAG。若未来有人想重新评估，必须先更新 `docs/architecture/design-tradeoffs.md` 说明收益大于复杂度。
 
 ## 测试规范
 
