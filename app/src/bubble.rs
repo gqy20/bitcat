@@ -2,7 +2,8 @@ use std::sync::Mutex;
 use tracing::{debug, info};
 
 use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindowBuilder,
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, WebviewUrl,
+    WebviewWindowBuilder,
 };
 
 #[cfg(target_os = "windows")]
@@ -12,8 +13,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowExW, PostMessageW, W
 
 const BUBBLE_SUBCLASS_ID: usize = 100;
 
-const BUBBLE_W: f64 = 280.0;
-const BUBBLE_H: f64 = 140.0;
+const BUBBLE_W: f64 = 260.0;
+const BUBBLE_H: f64 = 120.0;
 const EDGE_MARGIN_LP: f64 = 12.0;
 const PET_GAP_LP: f64 = 8.0;
 const ARROW_MARGIN_LP: f64 = 26.0;
@@ -44,12 +45,21 @@ impl RectI {
             h: (self.h - margin * 2).max(1),
         }
     }
+
+    #[cfg(test)]
+    fn intersects(self, other: Self) -> bool {
+        self.x < other.right()
+            && self.right() > other.x
+            && self.y < other.bottom()
+            && self.bottom() > other.y
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
 struct BubblePlacement {
     x: i32,
     y: i32,
+    h: i32,
     arrow_x: f64,
     above_pet: bool,
 }
@@ -84,19 +94,24 @@ fn compute_bubble_placement(
     let centered_x = pet_center_x - bubble_w / 2;
     let x = clamp_i32(centered_x, min_x, max_x);
 
-    let above_y = pet.y - pet_gap - bubble_h;
-    let below_y = pet.bottom() + pet_gap;
-    let fits_above = above_y >= safe.y;
-    let fits_below = below_y + bubble_h <= safe.bottom();
-    let space_above = pet.y - pet_gap - safe.y;
-    let space_below = safe.bottom() - pet.bottom() - pet_gap;
+    let desired_h = bubble_h.min(safe.h).max(1);
+    let space_above = (pet.y - pet_gap - safe.y).max(0);
+    let space_below = (safe.bottom() - pet.bottom() - pet_gap).max(0);
+    let fits_above = desired_h <= space_above;
+    let fits_below = desired_h <= space_below;
 
-    let (raw_y, above_pet) = if fits_above || (!fits_below && space_above >= space_below) {
-        (above_y, true)
+    let (above_pet, available_h) = if fits_above || (!fits_below && space_above >= space_below) {
+        (true, space_above)
     } else {
-        (below_y, false)
+        (false, space_below)
     };
-    let y = clamp_i32(raw_y, safe.y, safe.bottom() - bubble_h);
+    let h = desired_h.min(available_h.max(1));
+    let raw_y = if above_pet {
+        pet.y - pet_gap - h
+    } else {
+        pet.bottom() + pet_gap
+    };
+    let y = clamp_i32(raw_y, safe.y, safe.bottom() - h);
 
     let arrow_x = (pet_center_x - x) as f64;
     let arrow_x = if bubble_w as f64 > arrow_margin * 2.0 {
@@ -108,6 +123,7 @@ fn compute_bubble_placement(
     BubblePlacement {
         x,
         y,
+        h,
         arrow_x,
         above_pet,
     }
@@ -229,7 +245,7 @@ pub fn precreate_bubble_window(app: &AppHandle) -> Result<(), tauri::Error> {
     WebviewWindowBuilder::new(app, "bubble", WebviewUrl::App("bubble.html".into()))
         .title("8Bit Bubble")
         .inner_size(BUBBLE_W, BUBBLE_H)
-        .min_inner_size(240.0, 120.0)
+        .min_inner_size(220.0, 104.0)
         .max_inner_size(420.0, 680.0)
         .decorations(false)
         .transparent(true)
@@ -396,6 +412,9 @@ pub fn position_above_pet(app: &AppHandle, bubble: &tauri::WebviewWindow) {
         scale,
     );
 
+    if placement.h != bubble_size.height as i32 {
+        let _ = bubble.set_size(PhysicalSize::new(bubble_size.width, placement.h as u32));
+    }
     let _ = bubble.set_position(PhysicalPosition::new(placement.x, placement.y));
     let arrow_side = if placement.above_pet { "bottom" } else { "top" };
     let arrow_css_x = (placement.arrow_x / scale.max(0.5)) - BUBBLE_INSET_X_LP;
@@ -413,7 +432,7 @@ pub fn create_bubble_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tau
     WebviewWindowBuilder::new(app, "bubble", WebviewUrl::App("bubble.html".into()))
         .title("8Bit Bubble")
         .inner_size(BUBBLE_W, BUBBLE_H)
-        .min_inner_size(240.0, 120.0)
+        .min_inner_size(220.0, 104.0)
         .max_inner_size(420.0, 680.0)
         .decorations(false)
         .transparent(true)
@@ -537,8 +556,8 @@ mod tests {
 
     #[test]
     fn test_bubble_constants_reasonable() {
-        // 280x140 适合阅读 4-6 行 13px 字体
-        assert!(BUBBLE_W >= 240.0 && BUBBLE_W <= 360.0);
+        // 260x120 keeps the default bubble compact while leaving room for 13px text.
+        assert!(BUBBLE_W >= 240.0 && BUBBLE_W <= 320.0);
         assert!(BUBBLE_H >= 100.0 && BUBBLE_H <= 200.0);
     }
 
@@ -684,7 +703,54 @@ mod tests {
         );
 
         assert!(placement.y >= 15);
-        assert!(placement.y + 680 <= 960 - 15);
+        let pet = RectI {
+            x: 700,
+            y: 200,
+            w: 128,
+            h: 128,
+        };
+        let bubble = RectI {
+            x: placement.x,
+            y: placement.y,
+            w: 420,
+            h: placement.h,
+        };
+
+        assert!(placement.h < 680);
+        assert!(placement.y >= 15);
+        assert!(placement.y + placement.h <= 960 - 15);
+        assert!(!bubble.intersects(pet));
+    }
+
+    #[test]
+    fn test_bubble_placement_avoids_pet_when_both_sides_are_tight() {
+        let pet = RectI {
+            x: 700,
+            y: 400,
+            w: 128,
+            h: 128,
+        };
+        let placement = compute_bubble_placement(
+            RectI {
+                x: 0,
+                y: 0,
+                w: 1536,
+                h: 960,
+            },
+            pet,
+            420,
+            680,
+            1.25,
+        );
+        let bubble = RectI {
+            x: placement.x,
+            y: placement.y,
+            w: 420,
+            h: placement.h,
+        };
+
+        assert!(placement.h < 680);
+        assert!(!bubble.intersects(pet));
     }
 
     #[test]

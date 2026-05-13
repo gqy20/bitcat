@@ -13,9 +13,9 @@
 
   const HIDE_AFTER_MS = 15000;
   const POLL_INTERVAL_MS = 120;
-  const MIN_H = 140;
+  const MIN_H = 120;
   const MAX_H = 340;
-  const MIN_W = 240;
+  const MIN_W = 220;
   const MAX_W = 420;
   const ABS_MAX_H = 680;      // 用户手动拖拽时的绝对最大高度
   const PADDING_TOTAL = 60;   // body top(6) + bubble padding-top(14) + padding-bottom(14) + body bottom(22) + 余量(4)
@@ -26,7 +26,7 @@
   let cursorEl = null;         // #typingCursor：常驻 DOM，仅通过 content 的 streaming class 控制
   let pollTimer = null;
   let currentWinH = MIN_H;
-  let currentWinW = 280;
+  let currentWinW = 260;
   let lastRawText = '';       // 记录最近一次原始文本，用于最终渲染去光标
   let inputRowEl = null;
   let inputEl = null;
@@ -121,7 +121,7 @@
     var neededH = Math.min(MAX_H, Math.max(MIN_H, contentH + PADDING_TOTAL + inputExtra));
 
     // MANUAL 模式：以用户偏好为下界，绝对最大高度也放宽
-    var targetW = 280;
+    var targetW = 260;
     if (resizeMode === 'manual' && userPrefSize) {
       neededH = Math.max(neededH, userPrefSize.h);
       neededH = Math.min(ABS_MAX_H, neededH);
@@ -187,7 +187,7 @@
     stopPolling();
     hideInput('hide-bubble');
     resizeMode = 'auto';
-    resizeBubbleWindow(280, MIN_H, false);
+    resizeBubbleWindow(260, MIN_H, false);
     document.body.classList.remove('show');
     document.body.classList.add('hidden');
     if (window.__TAURI__ && window.__TAURI__.core) {
