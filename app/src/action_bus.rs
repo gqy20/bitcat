@@ -257,16 +257,11 @@ fn open_chat_impl(app: &AppHandle) {
 }
 
 fn play_dance_impl(dance_name: String) {
-    // 不存在时自动创建 happy 舞蹈
     if ai_pad_core::dance::load_dance(&dance_name).is_err() {
-        info!(dance = %dance_name, "[action-bus] 舞蹈不存在，自动创建");
-        let def = ai_pad_core::dance::DanceDef {
-            name: dance_name.clone(),
-            loop_: true,
-            steps: ai_pad_core::dance::choreograph("happy"),
-        };
-        let _ = ai_pad_core::dance::save_dance(&def);
+        warn!(dance = %dance_name, "[action-bus] 舞蹈不存在，无法播放");
+        return;
     }
+
     let req = ai_pad_core::dance::PlayDanceRequest {
         name: dance_name,
         loops: Some(1),

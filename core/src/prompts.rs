@@ -251,7 +251,7 @@ agent:
         // 关键回归：默认 preamble 必须包含舞蹈工具说明（旧 const 缺失此内容）
         let cfg = AgentPromptConfig::default();
         assert!(
-            cfg.preamble.contains("create_dance"),
+            cfg.preamble.contains("perform_dance"),
             "默认 preamble 应包含舞蹈工具说明（来自内嵌 YAML）"
         );
     }

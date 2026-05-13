@@ -272,14 +272,6 @@ pub fn execute_foreground(args: &ForegroundArgs) -> ToolResult {
 // ---- 舞蹈工具 ----
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CreateDanceArgs {
-    pub name: String,
-    pub mood: String,
-    #[serde(default)]
-    pub duration_ms: Option<u32>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PerformDanceArgs {
     pub name: String,
     #[serde(default = "default_dance_loop")]
@@ -295,29 +287,6 @@ pub struct PerformDanceArgs {
 
 fn default_dance_loop() -> bool {
     true
-}
-
-/// AI 创建舞蹈：根据 mood 查表生成 DanceDef → 序列化 YAML → 写入 ~/.ai-pad/dances/
-pub fn execute_create_dance(args: &CreateDanceArgs) -> ToolResult {
-    debug!(name = %args.name, mood = %args.mood, "AI 创建舞蹈");
-
-    let steps = crate::dance::choreograph(&args.mood);
-    let def = crate::dance::DanceDef {
-        name: args.name.clone(),
-        loop_: true,
-        steps,
-    };
-
-    match crate::dance::save_dance(&def) {
-        Ok(path) => ToolResult::ok(format!(
-            "已创建舞蹈「{}」({} 步, {}ms)，保存在 {}",
-            args.name,
-            def.steps.len(),
-            def.total_duration_ms(),
-            path.display()
-        )),
-        Err(e) => ToolResult::err(format!("保存舞蹈失败: {e}")),
-    }
 }
 
 /// AI 直接编排并立即播放完整舞蹈定义。
@@ -677,48 +646,6 @@ mod tests {
             "权限不足: denied"
         );
         assert_eq!(ToolError::Timeout.to_string(), "超时");
-    }
-
-    // ---- create_dance 工具测试 ----
-
-    #[test]
-    fn create_dance_args_deserialize() {
-        let json = r#"{"name":"happy_twist","mood":"happy"}"#;
-        let args: CreateDanceArgs = serde_json::from_str(json).unwrap();
-        assert_eq!(args.name, "happy_twist");
-        assert_eq!(args.mood, "happy");
-        assert!(args.duration_ms.is_none());
-    }
-
-    #[test]
-    fn create_dance_args_with_duration() {
-        let json = r#"{"name":"quick","mood":"excited","duration_ms":2000}"#;
-        let args: CreateDanceArgs = serde_json::from_str(json).unwrap();
-        assert_eq!(args.duration_ms, Some(2000));
-    }
-
-    #[test]
-    fn execute_create_dance_happy_generates_steps() {
-        let args = CreateDanceArgs {
-            name: "test_happy".into(),
-            mood: "happy".into(),
-            duration_ms: None,
-        };
-        // 注意：execute_create_dance 会写入磁盘，测试只验证返回值格式
-        let result = execute_create_dance(&args);
-        assert!(result.success);
-        assert!(result.output.contains("test_happy"));
-    }
-
-    #[test]
-    fn execute_create_dance_unknown_mood_fallback() {
-        let args = CreateDanceArgs {
-            name: "fallback_test".into(),
-            mood: "xyz_nonexistent".into(),
-            duration_ms: None,
-        };
-        let result = execute_create_dance(&args);
-        assert!(result.success); // 未知 mood 应该走默认模板，不报错
     }
 
     // ---- perform_dance 工具测试 ----

@@ -1,7 +1,7 @@
 //! 舞蹈定义、YML 持久化与目录管理
 //!
-//! 舞蹈 = 按时间轴切换 sprite 动作帧的序列。AI 通过 create_dance 工具
-//! 根据 mood 关键词查表生成 DanceDef，序列化为 YAML 存入 ~/.ai-pad/dances/。
+//! 舞蹈 = 按时间轴切换 sprite 动作帧的序列。AI 通过 perform_dance 工具
+//! 直接提交 DanceDef，序列化为 YAML 存入 ~/.ai-pad/dances/。
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -277,62 +277,20 @@ pub fn set_dancing(on: bool) {
     debug!(on, "[dance] IS_DANCING 更新");
 }
 
-// ---- Mood → 编排模板 ----
-
-/// 根据 mood 关键词生成舞蹈步骤（确定性查表）
-pub fn choreograph(mood: &str) -> Vec<DanceStep> {
-    debug!(mood = %mood, "[dance] 编排舞蹈");
-    match mood.to_lowercase().as_str() {
-        "happy" | "excited" | "开心" | "兴奋" => vec![
-            step(DanceAction::Jump, 300),
-            step(DanceAction::Shake, 400),
-            step(DanceAction::Spin, 500),
-            step(DanceAction::Wave, 300),
-            step(DanceAction::Idle, 200),
-        ],
-        "sleepy" | "tired" | "困" | "累" => vec![
-            step(DanceAction::Shake, 600),
-            step(DanceAction::Idle, 800),
-            step(DanceAction::Shake, 400),
-            step(DanceAction::Idle, 1200),
-        ],
-        "angry" | "mad" | "生气" | "愤怒" => vec![
-            step(DanceAction::Shake, 150),
-            step(DanceAction::Shake, 150),
-            step(DanceAction::Spin, 300),
-            step(DanceAction::Shake, 150),
-            step(DanceAction::Shake, 150),
-        ],
-        "cute" | "可爱" | "萌" => vec![
-            step(DanceAction::Wave, 400),
-            step(DanceAction::Jump, 300),
-            step(DanceAction::Wave, 400),
-            step(DanceAction::Spin, 400),
-            step(DanceAction::Idle, 300),
-        ],
-        _ => vec![
-            // 默认：简单摆动
-            step(DanceAction::Shake, 400),
-            step(DanceAction::Wave, 300),
-            step(DanceAction::Idle, 300),
-        ],
-    }
-}
-
-fn step(action: DanceAction, duration_ms: u32) -> DanceStep {
-    DanceStep {
-        action,
-        duration_ms,
-        repeat: 1,
-    }
-}
-
 // ---- 测试 ----
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    fn step(action: DanceAction, duration_ms: u32) -> DanceStep {
+        DanceStep {
+            action,
+            duration_ms,
+            repeat: 1,
+        }
+    }
 
     // === DanceAction 序列化 ===
 
@@ -519,68 +477,6 @@ mod tests {
         assert_eq!(loaded.name, original.name);
         assert_eq!(loaded.steps.len(), original.steps.len());
         assert_eq!(loaded.loop_, original.loop_);
-    }
-
-    // === choreograph mood 查表 ===
-
-    #[test]
-    fn choreograph_happy_has_5_steps() {
-        let steps = choreograph("happy");
-        assert_eq!(steps.len(), 5);
-        assert_eq!(steps[0].action, DanceAction::Jump);
-        assert_eq!(steps[2].action, DanceAction::Spin);
-    }
-
-    #[test]
-    fn choreograph_sleepy_is_longer() {
-        let steps = choreograph("sleepy");
-        assert_eq!(steps.len(), 4);
-        // sleepy 应该有较长的 idle 步骤
-        let idle_count = steps
-            .iter()
-            .filter(|s| s.action == DanceAction::Idle)
-            .count();
-        assert!(idle_count >= 2);
-    }
-
-    #[test]
-    fn choreograph_angry_is_fast() {
-        let steps = choreograph("angry");
-        assert!(!steps.is_empty());
-        // angry 的步长应该较短
-        for s in &steps {
-            assert!(
-                s.duration_ms <= 500,
-                "angry dance step too long: {}",
-                s.duration_ms
-            );
-        }
-    }
-
-    #[test]
-    fn choreograph_cute_has_wave_and_jump() {
-        let steps = choreograph("cute");
-        let has_wave = steps.iter().any(|s| s.action == DanceAction::Wave);
-        let has_jump = steps.iter().any(|s| s.action == DanceAction::Jump);
-        assert!(has_wave, "cute dance should have wave");
-        assert!(has_jump, "cute dance should have jump");
-    }
-
-    #[test]
-    fn choreograph_unknown_mood_fallback() {
-        let steps = choreograph("completely_unknown_mood_xyz");
-        assert!(!steps.is_empty()); // 默认不应为空
-        assert_eq!(steps.len(), 3); // 默认模板 3 步
-    }
-
-    #[test]
-    fn choreograph_chinese_mood_keywords() {
-        // 中文 mood 也应该匹配
-        let happy_zh = choreograph("开心");
-        assert_eq!(happy_zh.len(), choreograph("happy").len());
-
-        let sleepy_zh = choreograph("困");
-        assert_eq!(sleepy_zh.len(), choreograph("sleepy").len());
     }
 
     // === list_dances 在空目录 ===

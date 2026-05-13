@@ -462,22 +462,16 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                         if let Some(PetCommand::PlayDance { name }) = &pet_cmd {
                             info!(dance = %name, "[gamepad] Y 键 → 播放舞蹈");
                             if ai_pad_core::dance::load_dance(name).is_err() {
-                                // 首次使用时自动创建默认舞蹈
-                                info!(dance = %name, "[gamepad] 舞蹈不存在，自动创建");
-                                let def = ai_pad_core::dance::DanceDef {
+                                warn!(dance = %name, "[gamepad] 舞蹈不存在，无法播放");
+                            } else {
+                                let req = ai_pad_core::dance::PlayDanceRequest {
                                     name: name.clone(),
-                                    loop_: true,
-                                    steps: ai_pad_core::dance::choreograph("happy"),
+                                    loops: Some(1), // Y 键默认单次
+                                    duration_ms: None,
                                 };
-                                let _ = ai_pad_core::dance::save_dance(&def);
-                            }
-                            let req = ai_pad_core::dance::PlayDanceRequest {
-                                name: name.clone(),
-                                loops: Some(1), // Y 键默认单次
-                                duration_ms: None,
-                            };
-                            if let Err(e) = ai_pad_core::dance::request_play_dance(req) {
-                                warn!(error = %e, "手柄触发舞蹈失败");
+                                if let Err(e) = ai_pad_core::dance::request_play_dance(req) {
+                                    warn!(error = %e, "手柄触发舞蹈失败");
+                                }
                             }
                         }
 

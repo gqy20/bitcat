@@ -2,8 +2,8 @@ use crate::ai_config::AiConfig;
 use crate::permission_hook::PermissionHook;
 use crate::prompts::PromptsConfig;
 use crate::tools::{
-    self, ClipboardArgs, CreateDanceArgs, ForegroundArgs, GetTimeArgs, HotkeyArgs, LaunchArgs,
-    PerformDanceArgs, PlayDanceArgs, ReadFileArgs, RecentScreenshotsArgs, ShellArgs, ToolError,
+    self, ClipboardArgs, ForegroundArgs, GetTimeArgs, HotkeyArgs, LaunchArgs, PerformDanceArgs,
+    PlayDanceArgs, ReadFileArgs, RecentScreenshotsArgs, ShellArgs, ToolError,
 };
 use futures::StreamExt;
 use rig::agent::Agent;
@@ -20,7 +20,7 @@ use tracing::{debug, info, instrument};
 ///
 /// 每次"模型输出 → 工具执行 → 模型再读结果"算一个 turn。设 0 时 rig 会立刻
 /// 抛 `MaxTurnError`（这也是 rig 默认值触发过的坑）。给个宽裕的上限覆盖：
-/// create_dance → play_dance → 再总结 ≈ 6 turn，带搜索记忆/读文件的链路可达 10+。
+/// perform_dance → 再总结 ≈ 4 turn，带搜索记忆/读文件的链路可达 10+。
 /// 16 留足余量又不会让异常循环无限跑（每轮至少数秒，满轮约等于几分钟超时兜底）。
 const MAX_AGENT_TURNS: usize = 16;
 
@@ -58,7 +58,6 @@ impl PetAgent {
             .tool(ClipboardTool)
             .tool(ForegroundTool)
             .tool(PerformDanceTool)
-            .tool(CreateDanceTool)
             .tool(PlayDanceTool)
             .build();
 
@@ -340,23 +339,6 @@ define_tool_sync!(
 );
 
 define_tool_sync!(
-    CreateDanceTool,
-    "create_dance",
-    "旧版兜底工具：根据心情(mood)用内置模板创建舞蹈 YAML。优先使用 perform_dance 直接编排完整 steps；仅当你只需要按 mood 快速生成模板时使用本工具。",
-    CreateDanceArgs,
-    json!({
-        "type": "object",
-        "properties": {
-            "name": { "type": "string", "description": "舞蹈名称（用于文件名，如 happy_twist）" },
-            "mood": { "type": "string", "description": "心情关键词：happy/excited/sleepy/angry/cute/开心/兴奋/困/生气/萌" },
-            "duration_ms": { "type": "integer", "description": "可选，总时长限制（毫秒），不填则使用默认编排" }
-        },
-        "required": ["name", "mood"]
-    }),
-    tools::execute_create_dance
-);
-
-define_tool_sync!(
     PlayDanceTool,
     "play_dance",
     "立即播放一段已保存的舞蹈，桌宠会根据 YAML 中的 steps 序列表演。若用户要求你即兴编一段新舞，优先调用 perform_dance。",
@@ -438,17 +420,6 @@ mod tests {
     async fn test_foreground_tool_definition() {
         let def = ForegroundTool.definition(String::new()).await;
         assert_eq!(def.name, "force_foreground");
-    }
-
-    #[tokio::test]
-    async fn test_create_dance_tool_definition() {
-        let def = CreateDanceTool.definition(String::new()).await;
-        assert_eq!(def.name, "create_dance");
-        assert!(def.description.contains("舞蹈"));
-        let params = def.parameters.as_object().unwrap();
-        let props = params.get("properties").unwrap().as_object().unwrap();
-        assert!(props.get("name").is_some());
-        assert!(props.get("mood").is_some());
     }
 
     #[tokio::test]
