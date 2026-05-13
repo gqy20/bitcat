@@ -1,5 +1,5 @@
 [workspace]
-members = ["core", "app"]
+members = ["core", "app", "xtask"]
 resolver = "2"
 
 [profile.release]

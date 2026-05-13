@@ -52,3 +52,4 @@ app/config/
 .claude/worktrees/
 
 .playwright*
+*.zip

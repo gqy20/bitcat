@@ -43,16 +43,45 @@ cargo insta accept     # 一键接受所有新快照
 $env:CMAKE_POLICY_VERSION_MINIMUM="3.5"; make build
 ```
 
+### 当前推荐开发习惯
+
+`Makefile` 会导出 `CMAKE_POLICY_VERSION_MINIMUM=3.5`，所以日常优先走 `make`，不要直接手写零散的 `cargo build` + 复制配置 + 压缩命令。
+
+- 快速改 core 逻辑：`make test-core` 或 `make test-fast`
+- 改 app/Tauri/SDL2 相关逻辑：`make build`，提交前再跑 `make test-app` 或 `make test`
+- 本地运行：`make run`；需要完整静态 SDL2 构建前，可先跑 `make build`
+- 便携包：`make dist`，会先 `make release`，再通过 `xtask` 生成 `ai-pad-<version>-windows-x64-portable.zip`
+- UPX 便携包：`make dist-upx`，只建议用于 portable zip；安装包保持 Tauri bundle 原样
+- CI 发布：`.github/workflows/release.yml` 也调用同一个 `xtask package-portable`，本地和 CI 的 portable 清单保持一致
+
+portable zip 标准内容：`ai-pad-app.exe` + `config/*.yml`。SDL2 通过 `sdl2 = { features = ["bundled", "static-link"] }` 静态链接进 exe，不再随包复制 `SDL2.dll`。如需直接使用 Cargo 命令绕过 Makefile，Windows 下仍需手动设置：
+
+```powershell
+$env:CMAKE_POLICY_VERSION_MINIMUM="3.5"
+cargo check -p ai-pad-app
+```
+
+### 打包工具约定
+
+仓库使用 `xtask` 承载项目级维护命令，避免把发布逻辑散落在 shell/PowerShell 里。
+
+```bash
+cargo run -p xtask -- package-portable --version v0.1.0 --release-dir target/release --out-dir .
+```
+
+`make dist`、`make dist-upx` 和 GitHub Release workflow 都必须调用这条 Rust 工具链路径；不要新增第二套 zip 复制逻辑。
+
 ## 架构
 
-Rust workspace（`core` + `app`），Tauri 2.0 多窗口桌面应用。无 npm 打包，前端是纯静态 HTML/JS/CSS。
+Rust workspace（`core` + `app` + `xtask`），Tauri 2.0 多窗口桌面应用。无 npm 打包，前端是纯静态 HTML/JS/CSS。
 
 ### Workspace 结构
 
 | Crate | 职责 | 关键依赖 |
 |-------|------|----------|
 | **core**（`ai-pad-core`） | 纯逻辑，零 UI 依赖，可独立单测 | rig-core(AI), serde_yaml, windows-sys |
-| **app**（`ai-pad-app`） | Tauri 2.0 壳：窗口管理、手柄循环、IPC、托盘 | tauri 2, sdl2(bundled), tokio |
+| **app**（`ai-pad-app`） | Tauri 2.0 壳：窗口管理、手柄循环、IPC、托盘 | tauri 2, sdl2(bundled + static-link), tokio |
+| **xtask** | 仓库维护工具：portable zip 打包等项目级命令 | zip |
 
 ### 核心数据流
 

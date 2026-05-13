@@ -38,21 +38,11 @@ VERSION   = $(shell git describe --tags --always --dirty 2>/dev/null || echo dev
 DIST_NAME = ai-pad-$(VERSION)-windows-x64
 
 dist: release
-	@rm -f $(DIST_NAME).zip && mkdir -p $(DIST_NAME) \
-	  && cp $(RELEASE_DIR)/$(EXE_NAME) $(DIST_NAME)/ \
-	  && powershell -c "Compress-Archive -Path $(DIST_NAME)/* -DestinationPath $(DIST_NAME).zip" \
-	  && echo "Done: $$(du -sh $(DIST_NAME).zip | cut -f1)" \
-	  && rm -rf $(DIST_NAME)
+	cargo run -p xtask -- package-portable --version "$(VERSION)" --release-dir "$(RELEASE_DIR)" --out-dir "."
 
 dist-upx:
 	$(MAKE) release
-	@which upx > /dev/null || (echo "UPX not found: winget install UPX.UPX" && false)
-	upx --best --lzma $(RELEASE_DIR)/$(EXE_NAME)
-	@rm -f $(DIST_NAME).zip && mkdir -p $(DIST_NAME) \
-	  && cp $(RELEASE_DIR)/$(EXE_NAME) $(DIST_NAME)/ \
-	  && powershell -c "Compress-Archive -Path $(DIST_NAME)/* -DestinationPath $(DIST_NAME).zip" \
-	  && echo "Done: $$(du -sh $(DIST_NAME).zip | cut -f1)" \
-	  && rm -rf $(DIST_NAME)
+	cargo run -p xtask -- package-portable --version "$(VERSION)" --release-dir "$(RELEASE_DIR)" --out-dir "." --upx
 
 # ══════════════════════════════════════
 #  测试 & 检查

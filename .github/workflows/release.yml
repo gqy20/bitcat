@@ -119,17 +119,12 @@ jobs:
           $outDir = "release-out"
           New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
-          # 1) Portable ZIP（裸 exe，供不想安装的用户使用）
-          $exe = "target/${{ matrix.target }}/release/ai-pad-app.exe"
-          if (Test-Path $exe) {
-            $portableDir = "ai-pad-$tag-windows-${{ matrix.arch }}-portable"
-            New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
-            Copy-Item $exe "$portableDir/"
-            Compress-Archive -Path "$portableDir/*" -DestinationPath "$outDir/$portableDir.zip" -Force
-            Write-Host "✓ portable zip: $portableDir.zip"
-          } else {
-            Write-Warning "exe not found at $exe"
-          }
+          # 1) Portable ZIP（exe + config，供不想安装的用户使用）
+          cargo run -p xtask -- package-portable `
+            --version $tag `
+            --target "${{ matrix.target }}" `
+            --arch "${{ matrix.arch }}" `
+            --out-dir $outDir
 
           # 2) Tauri bundles（msi + nsis）——重命名含 tag 后拷到 release-out
           $bundleRoot = "target/${{ matrix.target }}/release/bundle"
