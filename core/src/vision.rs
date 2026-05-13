@@ -14,7 +14,7 @@ use rig::completion::Message;
 use rig::message::{ImageDetail, ImageMediaType, UserContent};
 use rig::providers::anthropic;
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::ai_config::AiConfig;
 use crate::prompts::VisionPromptConfig;
@@ -85,14 +85,68 @@ impl Default for VisionAnalysis {
 /// 而 `glm-5v-turbo`（智谱）对 `oneOf` 类型会返回字符串化的 JSON 而非内联对象。
 /// 因此手动实现 `JsonSchema`，生成扁平的 `type: object` schema（kind 为 enum + app 为可选），
 /// 避免触发模型的 `oneOf` 兼容性问题。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum VisionState {
-    Working { app: String },
+    Working {
+        app: String,
+    },
     Idle,
     Media,
     OffScreen,
+    #[default]
     Unknown,
+}
+
+impl<'de> Deserialize<'de> for VisionState {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", rename_all = "snake_case")]
+        enum RawVisionState {
+            Working { app: Option<String> },
+            Idle,
+            Media,
+            OffScreen,
+            Unknown,
+        }
+
+        fn from_raw(raw: RawVisionState) -> VisionState {
+            match raw {
+                RawVisionState::Working { app } => VisionState::Working {
+                    app: app.unwrap_or_default(),
+                },
+                RawVisionState::Idle => VisionState::Idle,
+                RawVisionState::Media => VisionState::Media,
+                RawVisionState::OffScreen => VisionState::OffScreen,
+                RawVisionState::Unknown => VisionState::Unknown,
+            }
+        }
+
+        let value = serde_json::Value::deserialize(deserializer)?;
+        if let Some(raw) = value.as_str() {
+            if let Ok(raw_state) = serde_json::from_str::<RawVisionState>(raw) {
+                return Ok(from_raw(raw_state));
+            }
+            return match raw {
+                "working" => Ok(VisionState::Working { app: String::new() }),
+                "idle" => Ok(VisionState::Idle),
+                "media" => Ok(VisionState::Media),
+                "off_screen" => Ok(VisionState::OffScreen),
+                "unknown" => Ok(VisionState::Unknown),
+                other => Err(serde::de::Error::unknown_variant(
+                    other,
+                    &["working", "idle", "media", "off_screen", "unknown"],
+                )),
+            };
+        }
+
+        serde_json::from_value::<RawVisionState>(value)
+            .map(from_raw)
+            .map_err(serde::de::Error::custom)
+    }
 }
 
 impl JsonSchema for VisionState {
@@ -112,12 +166,6 @@ impl JsonSchema for VisionState {
             },
             "required": ["kind"]
         })
-    }
-}
-
-impl Default for VisionState {
-    fn default() -> Self {
-        Self::Unknown
     }
 }
 
@@ -269,6 +317,18 @@ mod tests {
         assert!(context.contains("Browser"));
         assert!(context.contains("working"));
         assert!(context.contains("0.80"));
+    }
+
+    #[test]
+    fn test_vision_state_deserializes_stringified_object() {
+        let state: VisionState = serde_json::from_str(r#""{\"kind\":\"working\"}""#).unwrap();
+        assert_eq!(state, VisionState::Working { app: String::new() });
+    }
+
+    #[test]
+    fn test_vision_state_deserializes_string_label() {
+        let state: VisionState = serde_json::from_str(r#""off_screen""#).unwrap();
+        assert_eq!(state, VisionState::OffScreen);
     }
 }
 

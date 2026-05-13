@@ -20,6 +20,76 @@
 
 ---
 
+## [0.1.1] - 2026-05-13
+
+0.1.0 后的稳定性与体验更新，重点补齐用量观测、工具状态、手动截图、迷你游戏和 Windows 打包链路。
+
+### 新增
+
+**截图与观察**
+- 新增手动截图入口：系统托盘、宠物左眼双击、`actions.yml` 的 `screenshot` 动作和 `keyboard_shortcut` 全局热键均可立即触发 Vision 分析。
+- 默认 `R2` 绑定为立即截图，默认热键为 `CommandOrControl+Alt+S`。
+- 截图记录升级为结构化存储，保存分析状态、摘要和上下文，方便后续检索与摘要注入。
+- 多显示器截图按虚拟桌面坐标排序拼接，避免左右屏顺序错乱。
+
+**小游戏**
+- 新增可玩的 Snake 迷你游戏切片（`game` 窗口、`game_engine.js`、`GameDef` schema）。
+- 面板可启动内置「毛线球大作战」，游戏中宠物进入 `GamePlay` 状态，结束后根据胜负切换表现。
+- 新增小游戏配置校验，限制网格、速度、胜利长度和主题枚举，防止异常配置卡死或越界。
+
+**Token 与工具观测**
+- AI 调用开始记录 token 用量到 `~/.ai-pad/logs/token_usage.jsonl`，并聚合最近会话到 `token_sessions.json`。
+- 设置窗口新增「用量」视图，展示今日汇总、最近 session、Chat/Vision/ScreenSummary/MemoryAggregation 分类统计。
+- Agent 工具调用新增运行时事件：计划、完成、失败、被阻止等状态可推送到气泡窗口。
+- 工具事件审计日志写入 `~/.ai-pad/logs/tool_events.jsonl`，便于排查工具链行为。
+
+**气泡与交互**
+- 气泡窗口支持手动拖拽调整大小，并保留用户手动尺寸偏好。
+- 气泡可在 AI 调用工具期间展示工具状态，性能类工具（如舞蹈）会有阶段提示。
+- 系统托盘右键菜单文案优化，截图、折叠、置顶、设置等入口更清晰。
+
+**设置与外观**
+- 设置窗口进行视觉打磨，新增本地字体资源，信息层级和表单布局更精致。
+- 设置窗口动作编辑器支持 `screenshot` 动作类型和键盘热键字段。
+
+### 修复
+
+- 修复气泡手动 resize 后定位和尺寸偏好丢失的问题。
+- 修复气泡在工具调用期间过早结束流式状态的问题。
+- 修复气泡在多显示器环境中的放置和宠物遮挡问题。
+- 修复贴边吸附只支持左右边的问题，扩展为四边吸附。
+- 修复默认 TTS 行为：默认关闭，并尊重 `tts_enabled` 设置。
+- 修复舞蹈 repeat 步骤未被正确播放的问题，并放大默认舞蹈动作幅度。
+- 修复 Vision 结构化状态的 JsonSchema 生成问题，避免 `oneOf` 兼容性风险。
+- 修复无 API key 的配置测试在 CI 中失败的问题，改为优雅跳过。
+- 修复 pre-commit hook 对未暂存 Rust 文件也跑 fmt 的问题。
+
+### 变更
+
+- ActionBus 归一化三路输入，手柄、面板、快捷键等动作走统一分发路径。
+- Agent 工具参数 schema 改为由类型派生，减少手写 JSON schema 样板。
+- Vision、屏幕摘要、记忆画像改为走 rig extractor 的结构化输出路径，并移除旧 extractor fallback。
+- 宠物动画引擎支持非均匀帧时长、瞬态 repeat 和 fallback 状态。
+- 日志输出进一步规范化，降低聊天、截图、ActionBus 等高频路径噪声。
+- `play_dance` / `perform_dance` 的 schema 文案收敛，减少 prompt token 占用。
+
+### 工具链
+
+- portable zip 打包统一迁移到 `xtask package-portable`，`make dist` / `make dist-upx` / Release workflow 共用同一条 Rust 路径。
+- `make test-core` / `make test-fast` / `make test-app` / `make test` 统一委托 `xtask`，兼容 PowerShell/cmd/Git Bash。
+- `make run` 标准化，日常运行优先通过 Makefile。
+- 新增/更新 cargo-husky、nextest、提交信息规范和 Windows SDL2 构建说明。
+
+### 文档
+
+- 新增用户指南：AI 对话、配置、舞蹈、手柄、入门、截图、排障。
+- 新增 grep-first 记忆检索取舍说明，明确不把 Embeddings / Vector RAG 作为当前主线。
+- 新增 structured vision cleanup、rig capability roadmap、tool runtime、动画优化和小游戏计划文档。
+- 新增 Steam 桌宠竞品分析、代码审查报告、临时产物目录约定。
+- 为 core/app 源文件补齐模块文档和公共 API 注释。
+
+---
+
 ## [0.1.0] - 2026-05-13
 
 首个公开版本。

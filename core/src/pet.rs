@@ -193,13 +193,13 @@ impl Pet {
         }
 
         // 瞬态：播完 repeat 遍后回落
-        if let Some(n) = self.state.repeat_count() {
-            if self.frame_time_ms >= pass * n as u64 {
-                if let Some(fb) = self.state.fallback() {
-                    self.set_state(fb);
-                }
-                return;
+        if let Some(n) = self.state.repeat_count()
+            && self.frame_time_ms >= pass * n as u64
+        {
+            if let Some(fb) = self.state.fallback() {
+                self.set_state(fb);
             }
+            return;
         }
 
         // 定位当前帧：elapsed % pass → 线性扫描

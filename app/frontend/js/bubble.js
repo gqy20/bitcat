@@ -43,6 +43,7 @@
   let resizeMode = 'auto';      // 'auto' | 'manual'
   let userPrefSize = null;      // { w, h } 用户手动设定的偏好尺寸
   let userResizeActive = false;
+  let userResizeArmedUntil = 0;
   let programmaticResize = false;
 
   // ---- 诊断日志（通过 Rust cmd_pet_log 输出到后端 tracing） ----
@@ -58,12 +59,19 @@
     void document.body.offsetWidth;
     // 首次 show 时，如果有保存的偏好尺寸，先应用
     if (resizeMode === 'auto' && userPrefSize && window.__TAURI__ && window.__TAURI__.window) {
+      diag('resize: ensureVisible applying pref w=' + userPrefSize.w + ' h=' + userPrefSize.h +
+           ' current=' + currentWinW + 'x' + currentWinH);
       resizeMode = 'manual';
       resizeBubbleWindow(
         Math.max(MIN_W, Math.min(MAX_W, userPrefSize.w)),
         Math.max(MIN_H, Math.min(ABS_MAX_H, userPrefSize.h)),
         true
       );
+    } else {
+      diag('resize: ensureVisible no pref apply mode=' + resizeMode +
+           ' hasPref=' + !!userPrefSize +
+           ' hasTauriWindow=' + !!(window.__TAURI__ && window.__TAURI__.window) +
+           ' current=' + currentWinW + 'x' + currentWinH);
     }
     document.body.classList.add('show');
   }
@@ -106,12 +114,18 @@
     if (!window.__TAURI__ || !window.__TAURI__.window) return Promise.resolve(false);
 
     var win = window.__TAURI__.window.getCurrentWindow();
+    diag('resize: setSize request w=' + targetW + ' h=' + targetH +
+         ' shouldReposition=' + !!shouldReposition +
+         ' mode=' + resizeMode +
+         ' programmatic=' + programmaticResize);
     programmaticResize = true;
     return win.setSize(new window.__TAURI__.window.LogicalSize(targetW, targetH))
       .then(function() {
         currentWinW = targetW;
         currentWinH = targetH;
         syncCssWidth(targetW);
+        diag('resize: setSize ok w=' + targetW + ' h=' + targetH +
+             ' shouldReposition=' + !!shouldReposition);
         if (shouldReposition) return repositionBubbleWindow();
       })
       .then(function() { return true; })
@@ -122,6 +136,26 @@
       .finally(function() {
         setTimeout(function() { programmaticResize = false; }, 250);
       });
+  }
+
+  function currentScaleFactor(win) {
+    if (!win || typeof win.scaleFactor !== 'function') return Promise.resolve(1);
+    return win.scaleFactor().catch(function() { return 1; });
+  }
+
+  function toLogicalSize(size, scale) {
+    var factor = Math.max(scale || 1, 0.5);
+    return {
+      w: Math.round(size.width / factor),
+      h: Math.round(size.height / factor),
+    };
+  }
+
+  function clampManualSize(w, h) {
+    return {
+      w: Math.max(MIN_W, Math.min(MAX_W, w)),
+      h: Math.max(MIN_H, Math.min(ABS_MAX_H, h)),
+    };
   }
 
   /// 根据实际渲染高度动态调整窗口高度
@@ -135,9 +169,9 @@
     // MANUAL 模式：以用户偏好为下界，绝对最大高度也放宽
     var targetW = 260;
     if (resizeMode === 'manual' && userPrefSize) {
-      neededH = Math.max(neededH, userPrefSize.h);
-      neededH = Math.min(ABS_MAX_H, neededH);
-      targetW = Math.max(MIN_W, Math.min(MAX_W, userPrefSize.w));
+      var manualSize = clampManualSize(userPrefSize.w, userPrefSize.h);
+      neededH = manualSize.h;
+      targetW = manualSize.w;
     }
 
     var newH = Math.round(neededH);
@@ -199,7 +233,12 @@
     stopPolling();
     hideInput('hide-bubble');
     resizeMode = 'auto';
-    resizeBubbleWindow(260, MIN_H, false);
+    diag('resize: hide ' + (userPrefSize ? 'keep manual pref' : 'reset window to default') + ', pref=' +
+         (userPrefSize ? (userPrefSize.w + 'x' + userPrefSize.h) : 'none') +
+         ' current=' + currentWinW + 'x' + currentWinH);
+    if (!userPrefSize) {
+      resizeBubbleWindow(260, MIN_H, false);
+    }
     document.body.classList.remove('show');
     document.body.classList.add('hidden');
     if (window.__TAURI__ && window.__TAURI__.core) {
@@ -604,6 +643,9 @@
         e.stopPropagation();
         resizeMode = 'manual';
         userResizeActive = true;
+        userResizeArmedUntil = Date.now() + 1500;
+        diag('resize: grip mousedown start x=' + e.clientX + ' y=' + e.clientY +
+             ' current=' + currentWinW + 'x' + currentWinH);
         win.startResizeDragging('SouthEast').catch(function(e) {
           diag('startResizeDragging failed: ' + e);
         });
@@ -624,27 +666,55 @@
       // Window size can change either from user dragging or from auto content sizing.
       // Only user dragging should overwrite the persisted preference.
       win.onResized(function() {
-        win.innerSize().then(function(size) {
-          var w = Math.round(size.width);
-          var h = Math.round(size.height);
+        Promise.all([win.innerSize(), currentScaleFactor(win)]).then(function(results) {
+          var size = results[0];
+          var scale = results[1];
+          var logical = toLogicalSize(size, scale);
+          var w = logical.w;
+          var h = logical.h;
           currentWinW = w;
           currentWinH = h;
           syncCssWidth(w);
           repositionBubbleWindow();
-          if (resizeMode === 'manual' && userResizeActive && !programmaticResize) {
-            userPrefSize = { w: w, h: h };
+          var userResizeArmed = Date.now() <= userResizeArmedUntil;
+          diag('resize: onResized w=' + w + ' h=' + h +
+               ' physical=' + Math.round(size.width) + 'x' + Math.round(size.height) +
+               ' scale=' + scale +
+               ' mode=' + resizeMode +
+               ' userActive=' + userResizeActive +
+               ' userArmed=' + userResizeArmed +
+               ' programmatic=' + programmaticResize +
+               ' hasPref=' + !!userPrefSize);
+          if (resizeMode === 'manual' && (userResizeActive || userResizeArmed) && !programmaticResize) {
+            userPrefSize = clampManualSize(w, h);
             localStorage.setItem('bubble_pref', JSON.stringify(userPrefSize));
-            diag('resize: manual pref saved w=' + w + ' h=' + h);
+            userResizeArmedUntil = Date.now() + 1500;
+            diag('resize: manual pref saved w=' + userPrefSize.w + ' h=' + userPrefSize.h);
+          } else {
+            diag('resize: pref not saved reason mode=' + resizeMode +
+                 ' userActive=' + userResizeActive +
+                 ' userArmed=' + userResizeArmed +
+                 ' programmatic=' + programmaticResize);
           }
         }).catch(function(e) {
           diag('resize read failed: ' + e);
         });
       });
       window.addEventListener('mouseup', function() {
+        if (userResizeActive) {
+          diag('resize: mouseup stop current=' + currentWinW + 'x' + currentWinH +
+               ' pref=' + (userPrefSize ? (userPrefSize.w + 'x' + userPrefSize.h) : 'none'));
+        }
         userResizeActive = false;
+        userResizeArmedUntil = Date.now() + 1500;
       });
       window.addEventListener('blur', function() {
+        if (userResizeActive) {
+          diag('resize: blur stop current=' + currentWinW + 'x' + currentWinH +
+               ' pref=' + (userPrefSize ? (userPrefSize.w + 'x' + userPrefSize.h) : 'none'));
+        }
         userResizeActive = false;
+        userResizeArmedUntil = Date.now() + 1500;
       });
     }
 
@@ -652,9 +722,10 @@
     try {
       var saved = JSON.parse(localStorage.getItem('bubble_pref') || 'null');
       if (saved && saved.w && saved.h) {
-        userPrefSize = { w: saved.w, h: saved.h };
+        userPrefSize = clampManualSize(saved.w, saved.h);
         // 不立即进入 manual 模式——等首次 show 时再应用
-        diag('resize: restored pref from localStorage w=' + saved.w + ' h=' + saved.h);
+        diag('resize: restored pref from localStorage w=' + saved.w + ' h=' + saved.h +
+             ' clamped=' + userPrefSize.w + 'x' + userPrefSize.h);
       }
     } catch (e) { /* ignore parse errors */ }
 

@@ -172,9 +172,12 @@ impl ActionBus {
             }
             Action::ScreenshotNow => {
                 info!(?source, action = "ScreenshotNow", "action dispatch");
-                if let Err(e) = crate::screenshot::do_screenshot_now(app) {
-                    warn!(error = %e, "screenshot action failed");
-                }
+                let app = app.clone();
+                std::thread::spawn(move || {
+                    if let Err(e) = crate::screenshot::do_screenshot_now(&app) {
+                        warn!(error = %e, "screenshot action failed");
+                    }
+                });
             }
             Action::Launch {
                 program,

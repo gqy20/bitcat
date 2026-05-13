@@ -164,10 +164,14 @@ fn truncate_event_preview(text: &str) -> String {
 }
 
 fn tool_result_preview(result: &RigToolResult) -> Option<String> {
-    result.content.iter().find_map(|content| match content {
-        ToolResultContent::Text(text) => Some(truncate_event_preview(&text.text)),
-        ToolResultContent::Image(_) => Some("[image]".to_string()),
-    })
+    result
+        .content
+        .iter()
+        .map(|content| match content {
+            ToolResultContent::Text(text) => truncate_event_preview(&text.text),
+            ToolResultContent::Image(_) => "[image]".to_string(),
+        })
+        .next()
 }
 
 fn result_tool_event(

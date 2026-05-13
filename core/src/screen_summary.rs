@@ -88,7 +88,7 @@ pub struct ActivityGroup {
 }
 
 /// 活动类别枚举，与 AI 输出的 JSON schema 对应。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ActivityCategory {
     Coding,
@@ -96,13 +96,8 @@ pub enum ActivityCategory {
     Communication,
     Entertainment,
     Documents,
+    #[default]
     Other,
-}
-
-impl Default for ActivityCategory {
-    fn default() -> Self {
-        Self::Other
-    }
 }
 
 impl ActivityCategory {

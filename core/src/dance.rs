@@ -214,7 +214,7 @@ fn collect_dance_names(dir: &Path, names: &mut BTreeSet<String>) {
 
     for entry in entries.flatten() {
         let path = entry.path();
-        if !path.extension().is_some_and(|ext| ext == "yaml") {
+        if path.extension().is_none_or(|ext| ext != "yaml") {
             continue;
         }
         if let Some(name) = entry

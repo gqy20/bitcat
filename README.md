@@ -1,17 +1,17 @@
 # ai-pad / 8Bit Cat
 
-蓝牙手柄驱动的桌面工具：8 位像素桌宠 + AI 对话（流式）+ Quicker 风格弹出面板 + 语音输入 + TTS 朗读 + 截图视觉分析 + 贴边吸附。
+蓝牙手柄驱动的桌面工具：8 位像素桌宠 + AI 对话（流式）+ Quicker 风格弹出面板 + 语音输入 + TTS 朗读 + 截图视觉分析 + 贴边吸附 + 迷你游戏。
 
-基于 Tauri 2.0 + SDL2，单 exe，无 Node.js 依赖。共 **250+ 个测试**（Rust workspace + Vitest 前端），接入 cargo-husky（pre-commit fmt / pre-push clippy+test）。
+基于 Tauri 2.0 + SDL2，单 exe，无 Node.js 依赖。共 **300+ 个测试**（Rust workspace + Vitest 前端），接入 cargo-husky（pre-commit fmt / pre-push clippy+test）。
 
 ## 快速开始
 
 ```bash
-# 开发运行（--debug 分配控制台窗口查看日志）
-cargo run -p ai-pad-app -- --debug
+# 开发运行（推荐；Makefile 会设置 Windows SDL2 所需环境变量）
+make run
 
 # Release 构建（体积优化：opt-level=z + LTO + strip）
-cargo build -p ai-pad-app --release
+make release
 
 # 打包为版本化 ZIP
 make dist
@@ -31,9 +31,11 @@ make dist
 | 手柄 Select | 切换睡眠/唤醒 |
 | 手柄 Y（按住） | 语音输入 → 显示录音条 → 识别文字 → 送 AI |
 | 手柄 Y（短按）/ 面板按钮 | 触发舞蹈播放（AI 编排或已保存舞步） |
-| 手柄 L1/R1/L2 | 按 `config/actions.yml` 绑定执行（hotkey/launch/voice/script） |
+| 手柄 L1/R1/L2 | 按 `config/actions.yml` 绑定执行（hotkey/launch/voice/script/screenshot） |
+| 手柄 R2 / `Ctrl+Alt+S` | 立即截图并用 Vision 分析当前屏幕 |
 | 拖拽宠物到边缘 | 贴边吸附，变精致发光竖条（弹簧缓动动画） |
 | 点击猫咪嘴巴 | 打开聊天输入框，键盘输入文字送 AI |
+| 双击猫咪左眼 | 立即截图并显示 Vision 分析结果 |
 | AI 回复后 | 自动 TTS 朗读 |
 | 系统托盘右键 | 截图/折叠/置顶/**设置窗口**/重载配置/退出 |
 | 后台（每 30s） | 截图 + Vision API 分析 + 屏幕活动摘要 |
@@ -58,7 +60,7 @@ make dist
 4. 流结束后发送 `bubble-end` 事件，前端启动自动隐藏定时器
 5. 前端初始化时通过 `cmd_consume_bubble_text` invoke 拉取已有文本（解决 emit 早于 listen 的竞态）
 
-气泡支持 Markdown 渲染（marked.js）、毛玻璃效果、动画光标、聊天输入框模式。
+气泡支持 Markdown 渲染（marked.js）、毛玻璃效果、动画光标、聊天输入框模式、手动拖拽调整大小，并会在 AI 调用工具时显示计划/完成/失败/被阻止等运行状态。
 
 ## 语音输入
 
@@ -81,7 +83,14 @@ make dist
 4. 屏幕活动摘要定时总结，**最近 10 条截图原始分析记录注入 AI prompt**
 5. **聊天输入聚焦时自动暂停截图**（避免浪费 Vision API 调用）
 6. 舞蹈播放期间同样暂停截图
-7. 支持多显示器水平拼接
+7. 支持多显示器按虚拟桌面坐标水平拼接
+
+手动截图入口：
+
+- 系统托盘右键「立即截图」
+- 手柄 R2（默认配置）
+- 全局热键 `Ctrl+Alt+S`（来自 `actions.yml` 的 `keyboard_shortcut`）
+- 双击宠物左眼
 
 ## 舞蹈系统
 
@@ -106,13 +115,23 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
 
 ## 贴边吸附
 
-拖拽宠物到屏幕左右边缘时：
+拖拽宠物到屏幕边缘时：
 
 1. 磁性预告条提示松手会吸附的位置
 2. 松手后宠物变为精致发光竖条（多层发光 + hover 展宽 + 品牌色）
 3. 点击竖条恢复宠物形态
 4. 气泡自动跟随吸附态定位
 5. 双窗口 Crossfade 过渡（150ms CSS 动画）
+6. 支持上/下/左/右四边吸附
+
+## 迷你游戏
+
+面板可启动内置 Snake 玩法「毛线球大作战」：
+
+1. 后端创建透明置顶 `game` 窗口并读取 `GameDef`
+2. 前端 `game_engine.js` 运行网格逻辑、键盘/手柄方向输入和胜负判定
+3. 游戏期间宠物进入 `GamePlay` 状态，结束后按 win / lose / cancel 切换表现
+4. `GameDef` 会校验网格尺寸、速度、胜利长度和主题枚举，防止异常配置导致越界或卡死
 
 ## 记忆系统（两层存储 + AI 画像）
 
@@ -143,6 +162,7 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
 - **动作绑定**：编辑 config/actions.yml 并实时重载
 - **提示词配置**：编辑 config/prompts.yml 并实时重载
 - **外观设置**：always_on_top / default_collapsed / tts_enabled / global_shortcut / screenshot_interval_sec
+- **Token 用量**：展示今日总量、最近 session、Chat/Vision/ScreenSummary/MemoryAggregation 分类统计
 - 设计原则：`~/.claude/settings.json` 只读，所有用户修改通过覆盖层
 - 支持按分类重置为默认值
 
@@ -185,6 +205,9 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
 │       ├── vision.rs       # Vision API 请求构建/响应解析
 │       ├── screenshot.rs   # 截图类型定义、dHash、resize/JPEG、存储 + 7天清理
 │       ├── screen_summary.rs # 屏幕活动摘要存储 + 最近 N 条截图注入 prompt
+│       ├── minigame.rs     # 迷你游戏 GameDef schema 与校验
+│       ├── tool_events.rs  # 工具运行时事件审计日志
+│       ├── token_tracker.rs # Token 用量 JSONL + session 聚合
 │       └── tools.rs        # AI Tool 实现（launch/shell/read_file/get_time/recent_screenshots/hotkey/clipboard/foreground/perform_dance/play_dance）
 └── app/                    # Tauri 2.0 应用
     ├── tauri.conf.json     # 窗口、权限、withGlobalTauri
@@ -193,6 +216,7 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
     │   ├── main.rs         # 入口（--debug 控制台），日志双写初始化
     │   ├── lib.rs          # Tauri Builder + gamepad_loop + chat_loop(独立线程) + bubble_follower(独立线程)
     │   ├── gamepad.rs      # PetEvent 序列化, PetCommand→前端事件转换, chat_loop 解耦
+    │   ├── game.rs         # 迷你游戏窗口与生命周期管理
     │   ├── commands.rs     # 共享状态 + Tauri command（snap_preview/crossfade/play_dance 等）
     │   ├── bubble.rs       # 独立气泡窗口, 流式 start/chunk/end 协议, bubble_follower 线程
     │   ├── voice.rs        # 语音输入窗口, 强制前台化, generation 防残留
@@ -205,13 +229,14 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
     └── frontend/           # 静态 HTML/JS/CSS + Vitest 前端测试
         ├── pet.html        # 宠物窗口（128×128 透明, Canvas 像素精灵 + 粒子 + 舞蹈播放器）
         ├── bubble.html     # 气泡窗口（流式文本 + Markdown + 毛玻璃）
+        ├── game.html       # 迷你游戏窗口（Snake Phase 1）
         ├── panel.html      # 面板窗口（480×320 玻璃风, 方向键导航, 舞蹈触发按钮）
         ├── voice.html      # 语音输入条（280×40, textarea 接收输入法注入）
         ├── glow.html       # 吸附竖条（发光动画）
         ├── settings.html   # 设置窗口（720×520, 分类 Tab, 实时预览）
-        ├── css/            # pet.css / bubble.css / panel.css / glow.css / settings.css
-        ├── js/             # app.js / bubble.js / panel.js / voice.js / glow.js / settings.js / particles.js / sprite.js / pet.js
-        ├── __tests__/      # Vitest 单元测试（6 个测试文件）
+        ├── css/            # pet.css / bubble.css / game.css / panel.css / glow.css / settings.css
+        ├── js/             # app.js / bubble.js / game_engine.js / panel.js / voice.js / glow.js / settings.js / particles.js / sprite.js / pet.js
+        ├── __tests__/      # Vitest 单元测试（7 个测试文件）
         └── vitest.config.ts
 ```
 
@@ -223,7 +248,7 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
 
 ### config/actions.yml — 按键动作
 
-支持四种动作类型：
+支持五种动作类型：
 
 ```yaml
 defaults:
@@ -256,6 +281,11 @@ actions:
   L2:
     type: hotkey
     trigger: ["ctrl", "tab"]
+
+  # screenshot: 立即截图并用 Vision 分析当前屏幕
+  R2:
+    type: screenshot
+    keyboard_shortcut: "CommandOrControl+Alt+S"
 
   # script: 执行 PowerShell 命令
   # A:
@@ -335,6 +365,8 @@ language: "zh-CN"         # 首选语言（空则自动判断）
 - 对话记忆**两层存储**：短期滚动窗口（默认 20 条）+ 长期关键词检索 + AI 聚合画像
 - 所有持久化到 `~/.ai-pad/memory/`
 - Agent 方法带 `#[instrument]` tracing span，完整记录工具调用链路
+- Token 用量写入 `~/.ai-pad/logs/token_usage.jsonl`，最近会话聚合写入 `~/.ai-pad/logs/token_sessions.json`
+- 工具运行时审计写入 `~/.ai-pad/logs/tool_events.jsonl`
 
 ## 通信架构
 
@@ -345,6 +377,7 @@ emit "pet-event"          ──────►  pet.js 监听 → Canvas 动画
 emit "pet-toggle-collapse" ─────►  pet.js 折叠/展开切换
 emit "bubble-update"      ──────►  bubble.js 全量刷新（bubble.rs）
 emit "bubble-chunk"       ──────►  bubble.js 追加文本（bubble.rs）
+emit "bubble-tool"        ──────►  bubble.js 工具运行状态（计划/完成/失败/被阻止）
 emit "bubble-end"         ──────►  bubble.js 启动自动隐藏（bubble.rs）
 emit "panel-nav"          ──────►  panel.js 方向键导航
 emit "panel-confirm"      ──────►  panel.js 确认
@@ -355,6 +388,7 @@ emit "voice-flush"        ──────►  voice.js 同步 textarea（voic
                               ◄───  invoke cmd_consume_bubble_text
                               ◄───  invoke cmd_voice_update_text
                               ◄───  invoke cmd_play_dance / cmd_settings_*
+                              ◄───  invoke cmd_start_game / cmd_screenshot_now
                               ◄───  emit "voice-ready" (mpsc 握手完成)
 ```
 
@@ -366,7 +400,8 @@ emit "voice-flush"        ──────►  voice.js 同步 textarea（voic
   ├── chat_loop (OS thread)       — 气泡输入消费 + 长期记忆聚合（独立于手柄）
   ├── screenshot_loop (OS thread) — 定时截图 + Vision API（聊天/舞蹈时暂停）
   ├── bubble_follower (OS thread) — 气泡跟随宠物窗口定位
-  └── dance_bridge (async task)   — mpsc channel 消费 play_dance 指令
+  ├── dance_bridge (async task)   — mpsc channel 消费 play_dance 指令
+  └── game window                 — 独立 WebView 运行迷你游戏前端逻辑
 ```
 
 Voice 同步采用 **mpsc channel 握手**：后端发 flush → 前端 invoke 写入 SharedVoice → 前端发 ready → 后端 channel 收到继续（3s 超时兜底）。
@@ -382,7 +417,7 @@ AI_PAD_DEBUG=1 cargo run -p ai-pad-app -- --debug
 
 ## 技术栈
 
-- **Tauri 2.0** — WebView 多窗口（pet/bubble/panel/voice/glow/settings），全局热键，托盘
+- **Tauri 2.0** — WebView 多窗口（pet/bubble/panel/voice/glow/settings/game），全局热键，托盘
 - **SDL2 (bundled)** — 手柄输入读取（DirectInput），热插拔检测
 - **rig-core** — AI Agent 抽象层（Anthropic SDK 兼容，streaming prompt + Tool 定义）
 - **tokio + futures** — 异步运行时 + 流式处理 + 多线程解耦
@@ -390,7 +425,7 @@ AI_PAD_DEBUG=1 cargo run -p ai-pad-app -- --debug
 - **windows-sys** — SendInput 键鼠模拟 + BitBlt 截图 + SAPI TTS + AttachThreadInput
 - **serde + serde_yaml** — 配置加载（嵌入 + 外部覆盖）
 - **cargo-husky** — Git hooks：pre-commit fmt / pre-push clippy+test
-- **Vitest + jsdom** — 前端单元测试（6 个测试文件）
+- **Vitest + jsdom** — 前端单元测试（7 个测试文件）
 - **Canvas + 粒子效果** — 像素精灵绘制 + 舞蹈窗口级动画，无打包工具
 
 ## License

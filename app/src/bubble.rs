@@ -470,7 +470,7 @@ pub fn position_above_pet(app: &AppHandle, bubble: &tauri::WebviewWindow) {
     let _ = bubble.set_position(PhysicalPosition::new(placement.x, placement.y));
     let arrow_side = if placement.above_pet { "bottom" } else { "top" };
     let arrow_css_x = (placement.arrow_x / scale.max(0.5)) - BUBBLE_INSET_X_LP;
-    let _ = bubble.eval(&format!(
+    let _ = bubble.eval(format!(
         "document.documentElement.style.setProperty('--bubble-arrow-x','{}px');\
          document.documentElement.classList.toggle('bubble-arrow-top', {});\
          document.documentElement.classList.toggle('bubble-arrow-bottom', {});",

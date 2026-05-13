@@ -88,18 +88,13 @@ pub struct GetTimeArgs {
 }
 
 /// `get_time` 输出格式。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum GetTimeFormat {
+    #[default]
     Full,
     Date,
     Time,
-}
-
-impl Default for GetTimeFormat {
-    fn default() -> Self {
-        Self::Full
-    }
 }
 
 impl GetTimeFormat {
