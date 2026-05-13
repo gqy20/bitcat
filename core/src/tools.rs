@@ -333,20 +333,20 @@ pub fn execute_foreground(args: &ForegroundArgs) -> ToolResult {
 
 // ---- 舞蹈工具 ----
 
-/// `perform_dance` 工具参数：AI 即时编排并播放的完整舞蹈定义。
+/// 编排并播放舞蹈。
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct PerformDanceArgs {
-    /// 舞蹈名称/文件名，只能使用英文、数字、下划线或短横线，例如 happy_twist。
+    /// 文件名：英文/数字/_/-。
     pub name: String,
-    /// 保存到 YAML 的默认循环设置，通常为 true。
+    /// 保存时循环。
     #[serde(default = "default_dance_loop")]
     pub loop_: bool,
-    /// 完整舞蹈步骤，按时间顺序执行。
+    /// 步骤，建议 3-8 步。
     pub steps: Vec<DanceStep>,
-    /// 播放轮数：不填或 1 = 单次；0 = 无限循环；>=2 = 固定轮数
+    /// 轮数：空/1 单次，0 无限，>=2 固定轮。
     #[serde(default)]
     pub loops: Option<u32>,
-    /// 硬上限毫秒数，到时强制停
+    /// 播放上限毫秒。
     #[serde(default)]
     pub duration_ms: Option<u32>,
 }
@@ -403,15 +403,15 @@ pub fn execute_perform_dance(args: &PerformDanceArgs) -> ToolResult {
 
 // ---- play_dance 工具 ----
 
-/// `play_dance` 工具参数：播放已保存的舞蹈，按名称查找。
+/// 播放已保存舞蹈。
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct PlayDanceArgs {
-    /// 舞蹈名称，必须已存在于 ~/.ai-pad/dances/。
+    /// 舞蹈名。
     pub name: String,
-    /// 播放轮数：不填或 1 = 单次；0 = 无限循环；>=2 = 固定轮数
+    /// 轮数：空/1 单次，0 无限，>=2 固定轮。
     #[serde(default)]
     pub loops: Option<u32>,
-    /// 硬上限毫秒数，到时强制停
+    /// 播放上限毫秒。
     #[serde(default)]
     pub duration_ms: Option<u32>,
 }

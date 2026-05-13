@@ -14,31 +14,31 @@ use tracing::{debug, info, warn};
 
 // ---- 数据定义 ----
 
-/// 舞蹈动作枚举，对应 sprite.js 中 SPRITES 字典的 key
+/// 动作。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DanceAction {
-    /// 跳跃（整体上移）
+    /// 跳。
     Jump,
-    /// 旋转（快速翻转朝向）
+    /// 转。
     Spin,
-    /// 挥手（前爪抬起）
+    /// 挥手。
     Wave,
-    /// 晃动（左右摇摆）
+    /// 晃。
     Shake,
-    /// 待机（回到 idle）
+    /// 停。
     Idle,
 }
 
-/// 舞蹈单步
+/// 舞蹈单步。
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DanceStep {
-    /// 舞蹈动作。
+    /// 动作。
     pub action: DanceAction,
-    /// 该动作持续毫秒数
+    /// 毫秒，80-5000。
     #[serde(rename = "duration_ms")]
     pub duration_ms: u32,
-    /// 重复次数（默认 1）
+    /// 重复，1-8。
     #[serde(default = "default_repeat")]
     pub repeat: u32,
 }
@@ -47,11 +47,11 @@ fn default_repeat() -> u32 {
     1
 }
 
-/// 舞蹈完整定义
+/// 舞蹈定义。
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DanceDef {
     pub name: String,
-    /// 是否循环播放
+    /// 循环。
     #[serde(default = "default_loop")]
     pub loop_: bool,
     pub steps: Vec<DanceStep>,

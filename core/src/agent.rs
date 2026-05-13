@@ -494,7 +494,7 @@ define_tool_sync!(
 define_tool_sync!(
     PerformDanceTool,
     "perform_dance",
-    "直接编排并立即播放一段完整舞蹈。适合用户让桌宠跳舞、表演、扭动、庆祝、安慰或表达情绪时调用。你需要给出完整 steps，不要只给 mood。动作只允许 jump/spin/wave/shake/idle；建议 3-8 步，每步 150-900ms。",
+    "编排并立即播放舞蹈。用户要跳舞/表演/庆祝时用。给完整 steps；动作限 jump/spin/wave/shake/idle，建议 3-8 步、每步 150-900ms。",
     PerformDanceArgs,
     tools::execute_perform_dance
 );
@@ -502,7 +502,7 @@ define_tool_sync!(
 define_tool_sync!(
     PlayDanceTool,
     "play_dance",
-    "立即播放一段已保存的舞蹈，桌宠会根据 YAML 中的 steps 序列表演。若用户要求你即兴编一段新舞，优先调用 perform_dance。",
+    "播放已保存舞蹈。即兴新舞用 perform_dance。",
     PlayDanceArgs,
     tools::execute_play_dance
 );

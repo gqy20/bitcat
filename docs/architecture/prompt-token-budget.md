@@ -10,10 +10,10 @@
 | Vision Prompt (截图分析) | 220 | ~63 | 6.7% | 截图观察时 |
 | Vision Multi-Monitor 后缀 | 54 | ~15 | 1.6% | 多屏拼接时追加 |
 | Screen Summary Prompt (屏幕摘要) | 173 | ~49 | 5.3% | 摘要聚合时 |
-| **Tools (x10)** (工具定义) | 待重新统计 | 待重新统计 | 主要开销 | 每次对话必带 |
+| **Tools (x10)** (工具定义) | 待用真实 tokenizer 复测 | 待用真实 tokenizer 复测 | 主要开销 | 每次对话必带 |
 | **总计** | **3,291** | **~940** | 100% | — |
 
-> 注：舞蹈工具已从 `create_dance(name, mood)` 改为 `perform_dance(name, steps...)`，下方旧统计仅作历史参考，实际 token 预算需重新跑脚本统计。
+> 注：舞蹈工具已从 `create_dance(name, mood)` 改为 `perform_dance(name, steps...)`，且 B4.4 已压缩舞蹈工具 description / schema 注释。下方旧统计仅作历史参考，实际 token 预算需重新跑脚本统计。
 
 ## 每次对话必带开销
 
@@ -33,13 +33,13 @@
 | `send_hotkey` | 322 | ~92 | 2 个参数：keys(数组) + hold |
 | `read_clipboard` | 140 | ~40 | 无参数 |
 | `force_foreground` | 201 | ~57 | 1 个参数：hwnd |
-| `perform_dance` | 待重新统计 | 待重新统计 | 完整 steps schema，当前最胖工具之一 |
-| `play_dance` | **438** | **~125** | 3 个参数，description 最长 |
+| `perform_dance` | 待重新统计 | 待重新统计 | 完整 steps schema，已压缩说明文本 |
+| `play_dance` | 待重新统计 | 待重新统计 | 3 个参数，已压缩 description |
 
 ### 最胖的工具 Top 3
 
-1. **perform_dance** — description + steps schema 较长，是下一轮工具裁剪重点
-2. **play_dance** (125 tok) — description 详细解释了 loops/duration_ms 语义
+1. **perform_dance** — description + steps schema 仍可能较长，B4.4 已先压缩文字，下一步需用真实 tokenizer 复测
+2. **play_dance** — B4.4 已压缩 description，下一步复测收益
 3. **launch_program** (102 tok) — 4 个参数字段，schema 较宽
 
 ## 各模块原始内容
