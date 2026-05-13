@@ -16,7 +16,6 @@ use rig::client::CompletionClient;
 use rig::providers::anthropic;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
 use tracing::{debug, info, warn};
@@ -135,8 +134,6 @@ pub struct ScreenSummaryConfig {
     pub max_recent_analyses: u32,
     #[serde(default = "default_screen_summary_prompt")]
     pub prompt: String,
-    #[serde(default = "default_max_summary_chars")]
-    pub max_summary_chars: usize,
     #[serde(default = "default_max_context_entries")]
     pub max_context_entries: usize,
     #[serde(default = "default_max_context_chars")]
@@ -148,9 +145,6 @@ fn default_interval_min() -> u32 {
 }
 fn default_max_recent_analyses() -> u32 {
     30
-}
-fn default_max_summary_chars() -> usize {
-    500
 }
 fn default_max_context_entries() -> usize {
     20
@@ -178,7 +172,6 @@ impl Default for ScreenSummaryConfig {
             interval_min: default_interval_min(),
             max_recent_analyses: default_max_recent_analyses(),
             prompt: default_screen_summary_prompt(),
-            max_summary_chars: default_max_summary_chars(),
             max_context_entries: default_max_context_entries(),
             max_context_chars: default_max_context_chars(),
         }
@@ -368,57 +361,6 @@ pub async fn generate_summary(
     Ok(response.data)
 }
 
-/// 从 Anthropic Messages API 响应中提取 text blocks。
-fn extract_text_response(response: &Value) -> Result<String, String> {
-    let content = response
-        .get("content")
-        .ok_or_else(|| "响应缺少 content 字段".to_string())?
-        .as_array()
-        .ok_or_else(|| "content 不是数组".to_string())?;
-
-    let texts: Vec<String> = content
-        .iter()
-        .filter_map(|block| {
-            if block.get("type").and_then(|t| t.as_str()) == Some("text") {
-                block.get("text").and_then(|t| t.as_str()).map(String::from)
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    if texts.is_empty() {
-        return Err("响应中没有文本内容".to_string());
-    }
-    Ok(texts.join(""))
-}
-
-/// 从 API 响应中提取文本并反序列化为 [`StructuredSummary`]，自动剥离 markdown 代码围栏。
-pub fn parse_structured_summary_response(response: &Value) -> Result<StructuredSummary, String> {
-    let text = extract_text_response(response)?;
-    let json_text = normalize_json_text(&text);
-    serde_json::from_str::<StructuredSummary>(json_text)
-        .map_err(|e| format!("解析结构化屏幕摘要失败: {e}"))
-}
-
-fn normalize_json_text(text: &str) -> &str {
-    let trimmed = text.trim();
-    let Some(after_opening) = trimmed.strip_prefix("```") else {
-        return trimmed;
-    };
-
-    let after_language = after_opening
-        .trim_start()
-        .strip_prefix("json")
-        .unwrap_or(after_opening)
-        .trim_start();
-
-    match after_language.rfind("```") {
-        Some(end) => after_language[..end].trim(),
-        None => after_language.trim(),
-    }
-}
-
 // ---- 测试 ----
 
 #[cfg(test)]
@@ -445,7 +387,6 @@ mod tests {
         let cfg = ScreenSummaryConfig::default();
         assert_eq!(cfg.interval_min, 15);
         assert_eq!(cfg.max_recent_analyses, 30);
-        assert_eq!(cfg.max_summary_chars, 500);
         assert_eq!(cfg.max_context_entries, 20);
         assert_eq!(cfg.max_context_chars, 2000);
         assert!(!cfg.prompt.is_empty());
@@ -685,83 +626,6 @@ mod tests {
             result.unwrap_err().contains("生成结构化屏幕摘要失败"),
             "应包含 rig extractor 错误信息"
         );
-    }
-
-    #[test]
-    fn test_extract_text_response_standard_format() {
-        let response = json!({
-            "content": [{
-                "type": "text",
-                "text": "- [编程] 在写代码"
-            }]
-        });
-        let result = extract_text_response(&response).unwrap();
-        assert_eq!(result, "- [编程] 在写代码");
-    }
-
-    #[test]
-    fn test_extract_text_response_multiple_blocks() {
-        let response = json!({
-            "content": [
-                { "type": "text", "text": "第一段。" },
-                { "type": "image", "source": {} },
-                { "type": "text", "text": "第二段。" }
-            ]
-        });
-        let result = extract_text_response(&response).unwrap();
-        assert_eq!(result, "第一段。第二段。");
-    }
-
-    #[test]
-    fn test_extract_text_response_empty_content() {
-        let response = json!({ "content": [] });
-        let result = extract_text_response(&response);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_extract_text_response_missing_content() {
-        let response = json!({});
-        let result = extract_text_response(&response);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_structured_summary_response() {
-        let response = json!({
-            "content": [{
-                "type": "text",
-                "text": r#"{
-                    "time_range":"14:00-14:15",
-                    "activities":[{
-                        "category":"coding",
-                        "time_range":"14:00-14:12",
-                        "items":["在 VS Code 中编写 Rust 代码","查看测试输出"]
-                    }],
-                    "notable_changes":["从浏览器切换到编辑器"]
-                }"#
-            }]
-        });
-        let summary = parse_structured_summary_response(&response).unwrap();
-        assert_eq!(summary.time_range, "14:00-14:15");
-        assert_eq!(summary.activities.len(), 1);
-        assert_eq!(summary.activities[0].category, ActivityCategory::Coding);
-        assert_eq!(summary.activities[0].items.len(), 2);
-        assert_eq!(summary.notable_changes, vec!["从浏览器切换到编辑器"]);
-    }
-
-    #[test]
-    fn test_parse_structured_summary_response_accepts_json_fence() {
-        let response = json!({
-            "content": [{
-                "type": "text",
-                "text": "```json\n{\"time_range\":\"15:00-15:15\",\"activities\":[{\"category\":\"browsing\",\"items\":[\"浏览 GitHub\"]}]}\n```"
-            }]
-        });
-        let summary = parse_structured_summary_response(&response).unwrap();
-        assert_eq!(summary.time_range, "15:00-15:15");
-        assert_eq!(summary.activities[0].category, ActivityCategory::Browsing);
-        assert_eq!(summary.activities[0].items, vec!["浏览 GitHub"]);
     }
 
     #[test]

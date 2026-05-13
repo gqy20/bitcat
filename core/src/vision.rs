@@ -15,7 +15,6 @@ use rig::message::{ImageDetail, ImageMediaType, UserContent};
 use rig::providers::anthropic;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 
 use crate::ai_config::AiConfig;
 use crate::prompts::VisionPromptConfig;
@@ -108,100 +107,6 @@ impl VisionState {
             Self::Unknown => "unknown",
         }
     }
-}
-
-// ---- 请求构建 ----
-
-/// 构建标准 Anthropic Messages API 请求体（含图片）。
-pub fn build_vision_request(model: &str, prompt: &str, base64_jpeg: &str) -> Value {
-    json!({
-        "model": model,
-        "max_tokens": 1024,
-        "messages": [{
-            "role": "user",
-            "content": [
-                { "type": "text", "text": prompt },
-                {
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": "image/jpeg",
-                        "data": base64_jpeg
-                    }
-                }
-            ]
-        }]
-    })
-}
-
-/// 多显示器变体：追加屏幕布局提示。
-pub fn build_vision_request_multi(
-    model: &str,
-    prompt: &str,
-    base64_jpeg: &str,
-    monitor_count: usize,
-    prompt_multi: &str,
-) -> Value {
-    let full_prompt = format!(
-        "{}\n{}当前有 {} 个显示器。",
-        prompt, prompt_multi, monitor_count
-    );
-    build_vision_request(model, &full_prompt, base64_jpeg)
-}
-
-// ---- 响应解析 ----
-
-/// 从 Anthropic Messages API 响应中提取文本。
-pub fn parse_vision_response(response: &Value) -> Result<String, String> {
-    let content = response
-        .get("content")
-        .ok_or_else(|| "响应缺少 content 字段".to_string())?
-        .as_array()
-        .ok_or_else(|| "content 不是数组".to_string())?;
-
-    let mut texts = Vec::new();
-    for block in content {
-        if block.get("type").and_then(|t| t.as_str()) == Some("text")
-            && let Some(text) = block.get("text").and_then(|t| t.as_str())
-        {
-            texts.push(text.to_string());
-        }
-    }
-    Ok(texts.join(""))
-}
-
-/// 从 API 响应中提取文本并反序列化为 [`VisionAnalysis`]。
-/// 自动剥离 markdown 代码围栏（```json ... ```）。
-pub fn parse_vision_analysis_response(response: &Value) -> Result<VisionAnalysis, String> {
-    let text = parse_vision_response(response)?;
-    let json_text = normalize_json_text(&text);
-    serde_json::from_str::<VisionAnalysis>(json_text)
-        .map_err(|e| format!("解析结构化视觉分析失败: {e}"))
-}
-
-/// 剥离 markdown 代码围栏（```json ... ```），返回纯 JSON 文本。
-fn normalize_json_text(text: &str) -> &str {
-    let trimmed = text.trim();
-    let Some(after_opening) = trimmed.strip_prefix("```") else {
-        return trimmed;
-    };
-
-    let after_language = after_opening
-        .trim_start()
-        .strip_prefix("json")
-        .unwrap_or(after_opening)
-        .trim_start();
-
-    match after_language.rfind("```") {
-        Some(end) => after_language[..end].trim(),
-        None => after_language.trim(),
-    }
-}
-
-/// 构建完整 API URL。
-pub fn build_api_url(config: &AiConfig) -> String {
-    let base = config.base_url.trim_end_matches('/');
-    format!("{}/v1/messages", base)
 }
 
 /// 发送视觉分析请求。返回结构化视觉分析。
@@ -307,31 +212,6 @@ mod tests {
         assert!(def.prompt.contains("120 字"), "应使用 YAML 中的字数限制");
     }
 
-    // ---- insta 快照测试：请求体结构 ----
-
-    #[test]
-    fn test_build_request_body_snapshot() {
-        let body = build_vision_request("claude-sonnet-4-20250514", "test prompt", "AA==");
-        insta::assert_yaml_snapshot!(body, {
-            ".messages[0].content[0].text" => "[prompt]"
-        });
-    }
-
-    #[test]
-    fn test_build_request_body_multi_snapshot() {
-        let def = VisionPromptConfig::default();
-        let body = build_vision_request_multi(
-            "claude-sonnet-4-20250514",
-            "test prompt",
-            "AA==",
-            2,
-            &def.prompt_multi,
-        );
-        insta::assert_yaml_snapshot!(body, {
-            ".messages[0].content[0].text" => "[prompt]"
-        });
-    }
-
     // ---- insta 快照测试：配置反序列化 ----
 
     #[test]
@@ -346,89 +226,6 @@ mod tests {
         let cfg = VisionConfig::default();
         assert!(cfg.vision_model.is_none());
         assert_eq!(cfg.vision_max_tokens, None);
-    }
-
-    // ---- 响应解析 ----
-
-    #[test]
-    fn test_parse_response_standard_format() {
-        let response = json!({
-            "content": [{
-                "type": "text",
-                "text": "用户正在使用 VS Code 编辑 Rust 代码。"
-            }]
-        });
-        let result = parse_vision_response(&response).unwrap();
-        assert_eq!(result, "用户正在使用 VS Code 编辑 Rust 代码。");
-    }
-
-    #[test]
-    fn test_parse_response_empty_content() {
-        let response = json!({ "content": [] });
-        let result = parse_vision_response(&response).unwrap();
-        assert_eq!(result, "");
-    }
-
-    #[test]
-    fn test_parse_response_missing_content() {
-        let response = json!({});
-        let result = parse_vision_response(&response);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_response_multiple_text_blocks() {
-        let response = json!({
-            "content": [
-                { "type": "text", "text": "第一段。" },
-                { "type": "image", "source": {} },
-                { "type": "text", "text": "第二段。" }
-            ]
-        });
-        let result = parse_vision_response(&response).unwrap();
-        assert_eq!(result, "第一段。第二段。");
-    }
-
-    #[test]
-    fn test_parse_vision_analysis_response() {
-        let response = json!({
-            "content": [{
-                "type": "text",
-                "text": r#"{
-                    "description":"用户正在 VS Code 中编写 Rust 代码",
-                    "apps":["VS Code"],
-                    "state":{"kind":"working","app":"VS Code"},
-                    "text_readable":true,
-                    "confidence":0.91
-                }"#
-            }]
-        });
-        let result = parse_vision_analysis_response(&response).unwrap();
-        assert_eq!(result.description, "用户正在 VS Code 中编写 Rust 代码");
-        assert_eq!(result.apps, vec!["VS Code"]);
-        assert_eq!(
-            result.state,
-            VisionState::Working {
-                app: "VS Code".into()
-            }
-        );
-        assert!(result.text_readable);
-        assert!((result.confidence - 0.91).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn test_parse_vision_analysis_response_accepts_json_fence() {
-        let response = json!({
-            "content": [{
-                "type": "text",
-                "text": "```json\n{\"description\":\"桌面空闲\",\"state\":{\"kind\":\"idle\"}}\n```"
-            }]
-        });
-        let result = parse_vision_analysis_response(&response).unwrap();
-        assert_eq!(result.description, "桌面空闲");
-        assert_eq!(result.state, VisionState::Idle);
-        assert!(result.apps.is_empty());
-        assert!(!result.text_readable);
     }
 
     #[test]
@@ -448,47 +245,6 @@ mod tests {
         assert!(context.contains("working"));
         assert!(context.contains("0.80"));
     }
-
-    // ---- API URL 构建 ----
-
-    #[test]
-    fn test_build_api_url_default() {
-        let config = AiConfig {
-            api_key: "test".into(),
-            base_url: "https://api.anthropic.com".into(),
-            model: "test".into(),
-        };
-        assert_eq!(
-            build_api_url(&config),
-            "https://api.anthropic.com/v1/messages"
-        );
-    }
-
-    #[test]
-    fn test_build_api_url_custom_base() {
-        let config = AiConfig {
-            api_key: "test".into(),
-            base_url: "https://proxy.example.com".into(),
-            model: "test".into(),
-        };
-        assert_eq!(
-            build_api_url(&config),
-            "https://proxy.example.com/v1/messages"
-        );
-    }
-
-    #[test]
-    fn test_build_api_url_trailing_slash() {
-        let config = AiConfig {
-            api_key: "test".into(),
-            base_url: "https://proxy.example.com/".into(),
-            model: "test".into(),
-        };
-        assert_eq!(
-            build_api_url(&config),
-            "https://proxy.example.com/v1/messages"
-        );
-    }
 }
 
 // ---- wiremock HTTP mock 测试 ----
@@ -497,6 +253,7 @@ mod tests {
 mod wiremock_tests {
     use super::*;
     use crate::prompts::VisionPromptConfig;
+    use serde_json::json;
     use wiremock::matchers::method;
     use wiremock::{Mock, MockServer, ResponseTemplate};
 

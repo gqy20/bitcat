@@ -53,7 +53,6 @@ memory_v2:
 screen_summary:
   interval_min: 15         # 摘要间隔（分钟）
   max_recent_analyses: 30  # 摘要时取最近 N 条截图分析记录
-  max_summary_chars: 500   # 单条摘要最大字符数（超长截断）
   max_context_entries: 20  # 注入 prompt 的最近 N 条摘要
   max_context_chars: 2000  # 注入 prompt 的摘要总字符预算
   prompt: |

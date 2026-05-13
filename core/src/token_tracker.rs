@@ -5,7 +5,6 @@
 //! 数据持久化到 ~/.ai-pad/logs/ 目录，供设置界面展示用量统计。
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -401,47 +400,9 @@ pub fn totals_for_date(path: &Path, date: chrono::NaiveDate) -> Result<TokenTota
     Ok(totals)
 }
 
-/// 从 Anthropic API 响应 JSON 中提取 usage 字段，映射为 TokenUsage
-pub fn parse_anthropic_usage(response: &Value) -> TokenUsage {
-    let Some(usage) = response.get("usage") else {
-        return TokenUsage::default();
-    };
-
-    let input_tokens = usage
-        .get("input_tokens")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let output_tokens = usage
-        .get("output_tokens")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let cache_read_tokens = usage
-        .get("cache_read_input_tokens")
-        .or_else(|| usage.get("cached_input_tokens"))
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let cache_write_tokens = usage
-        .get("cache_creation_input_tokens")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let total_tokens = usage
-        .get("total_tokens")
-        .and_then(Value::as_u64)
-        .unwrap_or(input_tokens + output_tokens);
-
-    TokenUsage {
-        input_tokens,
-        output_tokens,
-        total_tokens,
-        cache_read_tokens,
-        cache_write_tokens,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn token_record_snapshot() {
@@ -459,28 +420,6 @@ mod tests {
             extra: Some("turn=1".into()),
         };
         insta::assert_yaml_snapshot!(record);
-    }
-
-    #[test]
-    fn parse_anthropic_usage_reads_cache_fields() {
-        let response = json!({
-            "usage": {
-                "input_tokens": 100,
-                "output_tokens": 20,
-                "cache_read_input_tokens": 30,
-                "cache_creation_input_tokens": 40
-            }
-        });
-        assert_eq!(
-            parse_anthropic_usage(&response),
-            TokenUsage {
-                input_tokens: 100,
-                output_tokens: 20,
-                total_tokens: 120,
-                cache_read_tokens: 30,
-                cache_write_tokens: 40
-            }
-        );
     }
 
     #[test]

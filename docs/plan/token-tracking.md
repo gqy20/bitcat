@@ -13,7 +13,7 @@
 | 屏幕摘要聚合 | `screen_summary::generate_summary()` | rig Extractor | ✅ `ExtractionResponse.usage` | 已记录 |
 | 长期记忆聚合 | `memory::aggregate_profile()` | rig Extractor | ✅ `ExtractionResponse.usage` | 已记录 |
 
-> B3（Extractor 结构化输出）主链路已经完成。vision / screen_summary / memory aggregation 都应直接消费 rig usage；`parse_anthropic_usage()` 现在只属于旧 raw HTTP 路径的遗留解析器，下一步可随 cleanup 删除。
+> B3（Extractor 结构化输出）主链路与 cleanup 已完成。vision / screen_summary / memory aggregation 都直接消费 rig usage；旧 raw HTTP 路径的 `parse_anthropic_usage()` 已删除。
 
 **核心问题**：
 已解决的问题：
@@ -203,7 +203,7 @@ app/src/settings.rs
 
 当前调用链：`analyze_screenshot()` → rig `Extractor<VisionAnalysis>` → `VisionAnalysis` + `ExtractionResponse.usage` → `record_token_usage()`。
 
-下一步 cleanup：删除旧 raw request / response helper 和旧 usage parser 测试，保留 Extractor 协议的 wiremock 回归测试。
+cleanup 已完成：旧 raw request / response helper 和旧 usage parser 测试已删除，保留 Extractor 协议的 wiremock 回归测试。
 
 #### `core/src/screen_summary.rs`
 
@@ -264,7 +264,6 @@ Done 3: 设置页查询
   └ 最近会话 + 今日汇总 + 链路占比
 
 Next:
-  ├ 清理 parse_anthropic_usage 和旧 raw HTTP parser
   ├ 增加费用估算（可选，需要 provider price table）
   ├ 增加 7/30 天趋势查询
   └ 将真实统计反馈给工具 schema / context 注入优化

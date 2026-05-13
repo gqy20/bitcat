@@ -150,21 +150,19 @@ pub enum ActivityCategory {
 2. `aggregate_profile()` 通过 Extractor 获取结构化结果，再保留现有 `String` 返回契约。
 3. memory aggregation 的 token 记录改为读取 `ExtractionResponse.usage`。
 
-#### Phase 4: 清理遗留代码（下一步）
+#### Phase 4: 清理遗留代码
 
-主链路已经切换完成，下一步应删除只为旧实现服务的代码：
+已删除只为旧实现服务的代码：
 
-1. `core/src/vision.rs`：删除旧 raw request / response helper，例如 `build_vision_request()`、`build_vision_request_multi()`、`build_api_url()`、`parse_vision_response()`、`parse_vision_analysis_response()`、`normalize_json_text()` 及其旧测试。
-2. `core/src/screen_summary.rs`：删除旧文本解析 helper，例如 `extract_text_response()`、`parse_structured_summary_response()`、`normalize_json_text()` 及其旧测试。
-3. `core/src/token_tracker.rs`：确认无调用后删除 `parse_anthropic_usage()` 和对应测试；Extractor 链路已经直接消费 rig usage。
-4. `ScreenSummaryConfig::max_summary_chars`：现在摘要是结构化结果，这个字段不再截断实际输出，应从 struct、默认配置、`config/prompts.yml`、快照和配置文档中移除。
-5. 保留 wiremock 测试，但响应形态应继续使用 Anthropic `tool_use` + submit 工具的 Extractor 协议，而不是旧纯文本 content block。
+1. `core/src/vision.rs`：旧 raw request / response helper 与对应测试已删除。
+2. `core/src/screen_summary.rs`：旧文本解析 helper 与对应测试已删除。
+3. `core/src/token_tracker.rs`：`parse_anthropic_usage()` 和对应测试已删除；Extractor 链路直接消费 rig usage。
+4. `ScreenSummaryConfig::max_summary_chars`：已从 struct、默认配置、`config/prompts.yml`、快照和配置文档中移除。
+5. wiremock 测试继续使用 Anthropic `tool_use` + submit 工具的 Extractor 协议，而不是旧纯文本 content block。
 
 ### 工作量预估
 
-| 改造项 | 预计改动 |
-|------|---------:|
-主链路改造已经完成。剩余清理预计：
+主链路改造和 cleanup 已完成。cleanup 的实际效果以净删除为主：
 
 | 清理项 | 预计改动 |
 |------|---------:|
@@ -173,7 +171,7 @@ pub enum ActivityCategory {
 | `token_tracker.rs` 删除 Anthropic response parser 与测试 | -30 到 -70 行 |
 | `max_summary_chars` 配置/快照/文档清理 | -10 到 -30 行 |
 
-净删除约 **100-220 行**，触碰范围预计 4-7 个文件。风险低，主要风险是误删仍被测试覆盖的 helper。
+净删除为主，触碰范围集中在 core 代码、提示词配置、快照和 roadmap 文档。后续风险转移到 P1 工具 schema 单一事实源。
 
 ### 收益
 
@@ -310,7 +308,7 @@ rig 的 Embeddings / Pipeline.lookup 仍然是可用能力，但当前明确不�
              ├ Screen Summary 路径改造（StructuredSummary struct）
              └ Memory Aggregation 路径改造（ProfileAggregation struct + Extractor）
 
-0.5天      P0-cleanup: 清理 raw reqwest 遗留代码
+已完成      P0-cleanup: 清理 raw reqwest 遗留代码
              ├ 删除旧 request/parse helper 与测试
              ├ 删除 parse_anthropic_usage
              └ 移除 max_summary_chars 惰性配置

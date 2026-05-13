@@ -106,7 +106,7 @@
 
 ### B3. 结构化输出（Extractor 改造）
 
-已完成主链路：vision / screen_summary / memory aggregation 都已接入 rig `Extractor`，分别输出 `VisionAnalysis`、`StructuredSummary`、`ProfileAggregation`，token 用量也改为读取 `ExtractionResponse.usage`。下一步不再是继续“兼容旧接口”，而是做 P0 cleanup：删除旧 raw request / text parser / Anthropic usage parser，移除不再生效的 `screen_summary.max_summary_chars` 配置，并保留基于 Anthropic `tool_use` 协议的 wiremock 回归测试。
+已完成主链路与 cleanup：vision / screen_summary / memory aggregation 都已接入 rig `Extractor`，分别输出 `VisionAnalysis`、`StructuredSummary`、`ProfileAggregation`，token 用量也改为读取 `ExtractionResponse.usage`。旧 raw request / text parser / Anthropic usage parser 已删除，不再生效的 `screen_summary.max_summary_chars` 配置也已移除；保留基于 Anthropic `tool_use` 协议的 wiremock 回归测试。
 
 详细设计：[plan/rig-capability-roadmap.md](plan/rig-capability-roadmap.md) §P0
 
@@ -185,10 +185,6 @@
            │  测试入口/Makefile/xtask 稳定化        │
            └─────────────────────────────────────┘
                   ↓
-下一步      ┌─────────────────────────────────────┐
-0.5天      │  B3 cleanup                          │  ← 删除旧 raw helper / 惰性配置
-           └─────────────────────────────────────┘
-                  ↓
 短期        ┌─────────────────────────────────────┐
 1-3天      │  A2 迷你游戏引擎 MVP                  │  ← 复用 A1 的 YAML/Tool 模式
            │  B4 工具开销优化调研                  │  ← 只基于真实统计，不做匹配
@@ -242,7 +238,7 @@ A1+A2+C1 ──→ D1(Steam) MVP 功能完备
 | **A1** | 舞蹈系统 | 已完成 MVP | 0 | Done |
 | **B2** | Token 追踪 + 设置页统计 | 已完成 MVP | 0 | Done |
 | **B3** | Extractor 改造主链路 | 已完成 | 0 | Done |
-| **B3 cleanup** | 删除旧 raw helper / parser / 惰性配置 | 净删 ~100-220 行 | 0 | P0，0.5 天 |
+| **B3 cleanup** | 删除旧 raw helper / parser / 惰性配置 | 已完成，净删为主 | 0 | Done |
 | **A2** | 迷你游戏引擎 | ~450-700 行 | 0 | P1，1-3 天 |
 | **B4** | 工具开销优化 | ~50-200 行 | 0 | P1，先分析 0.5 天 |
 | **A3** | 内容扩展 | ~200-350 行/种 | 0 | P2，0.5-1 天/种 |
