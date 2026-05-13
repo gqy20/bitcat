@@ -33,6 +33,20 @@ html, body {
   z-index: 2;
 }
 
+#pet-root::after {
+  content: "";
+  position: absolute;
+  inset: 18px;
+  border: 2px solid rgba(170, 230, 255, 0);
+  box-shadow: 0 0 0 rgba(170, 230, 255, 0);
+  pointer-events: none;
+  z-index: 4;
+}
+
+body.screenshot-capturing #pet-root::after {
+  animation: screenshot-pulse 0.65s ease-out;
+}
+
 /* idle 状态下的呼吸节奏（轻微缩放） */
 body.state-idle #sprite {
   animation: breath 2.4s ease-in-out infinite;
@@ -66,6 +80,27 @@ body.state-sleep #sprite {
 @keyframes flash {
   0%   { opacity: 0.55; filter: brightness(1.4); }
   100% { opacity: 1;    filter: brightness(1.0); }
+}
+
+@keyframes screenshot-pulse {
+  0% {
+    opacity: 0;
+    border-color: rgba(170, 230, 255, 0);
+    box-shadow: 0 0 0 rgba(170, 230, 255, 0);
+    transform: scale(0.84);
+  }
+  18% {
+    opacity: 1;
+    border-color: rgba(170, 230, 255, 0.95);
+    box-shadow: 0 0 16px rgba(80, 210, 255, 0.65);
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    border-color: rgba(170, 230, 255, 0);
+    box-shadow: 0 0 2px rgba(80, 210, 255, 0);
+    transform: scale(1.12);
+  }
 }
 
 /* 精灵脚下的椭圆阴影 */

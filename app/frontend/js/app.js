@@ -38,6 +38,7 @@
 
   // 舞蹈播放器（非 null 时劫持渲染循环）
   let dancePlayer = null;  // { steps, index, repeatIndex, time, loop }
+  let screenshotFeedbackTimer = null;
 
   // Tauri 2 正确的 API 路径：getCurrentWindow() 不是 getCurrent()
   function getCurrentWin() {
@@ -234,7 +235,10 @@
 
       if (window.__TAURI__ && window.__TAURI__.core) {
         window.__TAURI__.core.invoke('cmd_pet_log', { msg: '✓ 左眼双击命中 → cmd_screenshot_now' }).catch(function() {});
-        try { await window.__TAURI__.core.invoke('cmd_screenshot_now'); }
+        try {
+          await window.__TAURI__.core.invoke('cmd_screenshot_now');
+          flashScreenshotFeedback();
+        }
         catch (err) {
           window.__TAURI__.core.invoke('cmd_pet_log', { msg: 'cmd_screenshot_now 失败: ' + err }).catch(function() {});
         }
@@ -683,6 +687,21 @@
     canvas.classList.remove('flash');
     void canvas.offsetWidth;
     canvas.classList.add('flash');
+  }
+
+  function flashScreenshotFeedback() {
+    flashSprite();
+    if (screenshotFeedbackTimer) {
+      clearTimeout(screenshotFeedbackTimer);
+      screenshotFeedbackTimer = null;
+    }
+    bodyEl.classList.remove('screenshot-capturing');
+    void bodyEl.offsetWidth;
+    bodyEl.classList.add('screenshot-capturing');
+    screenshotFeedbackTimer = setTimeout(function() {
+      bodyEl.classList.remove('screenshot-capturing');
+      screenshotFeedbackTimer = null;
+    }, 700);
   }
 
   // ========== 右键菜单已统一到系统托盘 ==========
