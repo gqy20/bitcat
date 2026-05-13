@@ -8,13 +8,30 @@
 //! `capture_all_screens` 和 `enumerate_displays` 使用 `static mut` 指针
 //! （`FRAMES_PTR` / `DISPLAYS_PTR`）在 `EnumDisplayMonitors` 回调中传递数据。
 //! 调用约定：进入回调前赋值为栈上 `Mutex` 的引用，回调返回后立即清零。
-//! **不得并发调用这两个函数**——当前只在截图主循环中串行使用，可保安全。
+//! **不得并发调用这两个函数**——所有截图入口必须先持有
+//! `SCREENSHOT_PIPELINE_LOCK`，确保 BitBlt 捕获和 Vision 分析串行。
 //!
 //! 与 [`crate::bubble`] 模块交互：分析结果通过 `show_bubble` 显示；
 //! 与 [`ai_pad_core::vision`] 模块交互：构建 Vision API 请求并解析响应。
 
 use ai_pad_core::screenshot::{CapturedFrame, ScreenInfo, ScreenshotTarget};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::Manager;
+
+static SCREENSHOT_PIPELINE_LOCK: Mutex<()> = Mutex::new(());
+static LAST_SCREENSHOT_FINISHED: Mutex<Option<Instant>> = Mutex::new(None);
+
+fn mark_screenshot_finished() {
+    *LAST_SCREENSHOT_FINISHED.lock().unwrap() = Some(Instant::now());
+}
+
+fn screenshot_finished_recently(interval_sec: u64) -> bool {
+    LAST_SCREENSHOT_FINISHED
+        .lock()
+        .unwrap()
+        .is_some_and(|last| last.elapsed() < Duration::from_secs(interval_sec))
+}
 
 // ---- Windows BitBlt 截图 ----
 
@@ -265,8 +282,6 @@ pub fn enumerate_displays() -> Vec<ScreenInfo> {
 
 // ---- 截图线程 ----
 
-use std::sync::Mutex;
-
 /// 截图线程共享状态：dHash 上次哈希值 + 启停开关。
 pub struct SharedScreenshotState {
     pub last_hash: Mutex<u64>,
@@ -344,6 +359,17 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
         if !*state.enabled.lock().unwrap() {
             continue;
         }
+
+        // 快速路径：刚完成过截图则跳过，避免无谓锁竞争
+        if screenshot_finished_recently(interval_sec / 2) {
+            trace!("[screenshot] 刚完成过截图，跳过本轮");
+            continue;
+        }
+
+        let Ok(_pipeline_guard) = SCREENSHOT_PIPELINE_LOCK.try_lock() else {
+            debug!("screenshot cycle skipped because another screenshot is running");
+            continue;
+        };
 
         // 跳舞期间跳过本轮：避免视觉分析回调打断舞蹈表演
         if ai_pad_core::dance::is_dancing() {
@@ -619,6 +645,8 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
                 }
             }
         }
+
+        mark_screenshot_finished();
     }
 }
 
@@ -627,6 +655,10 @@ pub fn do_screenshot_now(app: &tauri::AppHandle) -> Result<String, String> {
     use ai_pad_core::screenshot::{encode_jpeg, resize_bgra, ScreenshotConfig};
     use ai_pad_core::vision::{self, VisionConfig};
     use base64::Engine;
+
+    let _pipeline_guard = SCREENSHOT_PIPELINE_LOCK
+        .try_lock()
+        .map_err(|_| "已有截图分析正在进行中，请稍后再试".to_string())?;
 
     let config = ScreenshotConfig::default();
     let frame = capture_target(&config.target)?;
@@ -663,6 +695,7 @@ pub fn do_screenshot_now(app: &tauri::AppHandle) -> Result<String, String> {
     }
 
     let _ = crate::bubble::show_bubble(app, &analysis.description);
+    mark_screenshot_finished();
     Ok(analysis.description)
 }
 

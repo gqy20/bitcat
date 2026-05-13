@@ -44,7 +44,7 @@ html, body {
 }
 
 body.screenshot-capturing #pet-root::after {
-  animation: screenshot-pulse 0.65s ease-out;
+  animation: screenshot-pulse 1.3s ease-out;
 }
 
 /* idle 状态下的呼吸节奏（轻微缩放） */

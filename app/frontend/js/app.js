@@ -701,7 +701,7 @@
     screenshotFeedbackTimer = setTimeout(function() {
       bodyEl.classList.remove('screenshot-capturing');
       screenshotFeedbackTimer = null;
-    }, 700);
+    }, 1400);
   }
 
   // ========== 右键菜单已统一到系统托盘 ==========
