@@ -10,7 +10,7 @@
 #
 # 环境要求: cmake, $env:CMAKE_POLICY_VERSION_MINIMUM="3.5"（SDL2 编译）
 
-.PHONY: build release dist dist-upx test test-core test-app test-fast nextest run read check clippy clean \
+.PHONY: build release dist dist-upx test test-core test-app test-fast nextest run check clippy clean \
         install-hooks \
         py-read py-ctl py-test all
 
@@ -83,7 +83,7 @@ check:
 clippy:
 	cargo clippy -- -W clippy::all
 
-run read:
+run:
 	cargo run
 
 # ══════════════════════════════════════

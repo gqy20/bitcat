@@ -38,6 +38,8 @@ cargo insta accept     # 一键接受所有新快照
 
 跳过单次：`git commit --no-verify` / `git push --no-verify`。完全禁用安装：`CARGO_HUSKY_DONT_INSTALL_HOOKS=true cargo test`。
 
+**提交信息规范**：使用约定式提交，格式为 `<type>(<scope>): <summary>`；scope 可省略，但 type 必须清晰。优先沿用历史风格，例如 `feat(action-bus): ...`、`test(ai_config): ...`、`docs(changelog): ...`、`fix(clippy): ...`、`refactor(action-bus): ...`。常用 type：`feat`（功能）、`fix`（修复）、`test`（测试）、`docs`（文档）、`refactor`（重构）、`chore`（工程杂项）、`ci`（CI/发布流程）。summary 用简短祈使句或中文短句描述实际变化，避免无前缀的泛泛提交信息。
+
 **Windows SDL2 构建必须设置环境变量**（VS2026 + 新 CMake 兼容）：
 ```powershell
 $env:CMAKE_POLICY_VERSION_MINIMUM="3.5"; make build
