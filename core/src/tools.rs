@@ -12,6 +12,7 @@
 use crate::action::launch_program;
 use crate::dance::{DanceDef, DanceStep};
 use crate::logging::log_preview;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use thiserror::Error;
@@ -45,13 +46,17 @@ const MAX_OUTPUT_CHARS: usize = 8000;
 // ---- Tool 参数定义 ----
 
 /// `launch_program` 工具参数：程序名、参数、工作目录、是否在终端中启动。
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct LaunchArgs {
+    /// 要启动的程序名或路径。
     pub program: String,
+    /// 命令行参数。
     #[serde(default)]
     pub args: String,
+    /// 工作目录。
     #[serde(default)]
     pub workdir: String,
+    /// 是否在新终端窗口中打开。
     #[serde(default = "default_terminal")]
     pub terminal: bool,
 }
@@ -61,31 +66,56 @@ fn default_terminal() -> bool {
 }
 
 /// `shell` 工具参数：要执行的 PowerShell 命令。
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ShellArgs {
+    /// 要执行的 PowerShell 命令。
     pub command: String,
 }
 
 /// `read_file` 工具参数：要读取的文件绝对路径。
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ReadFileArgs {
+    /// 文件路径。
     pub path: String,
 }
 
 /// `get_time` 工具参数：时间格式（`full` / `date` / `time`），默认 `full`。
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct GetTimeArgs {
-    #[serde(default = "default_format")]
-    pub format: String,
+    /// 输出格式。
+    #[serde(default)]
+    pub format: GetTimeFormat,
 }
 
-fn default_format() -> String {
-    "full".into()
+/// `get_time` 输出格式。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum GetTimeFormat {
+    Full,
+    Date,
+    Time,
+}
+
+impl Default for GetTimeFormat {
+    fn default() -> Self {
+        Self::Full
+    }
+}
+
+impl GetTimeFormat {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Date => "date",
+            Self::Time => "time",
+        }
+    }
 }
 
 /// `recent_screenshots` 工具参数：返回最近 N 条截图分析记录，默认 3。
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct RecentScreenshotsArgs {
+    /// 返回的记录数量，默认 3。
     #[serde(default = "default_screenshot_count")]
     pub count: Option<u32>,
 }
@@ -198,12 +228,12 @@ pub fn execute_read_file(args: &ReadFileArgs) -> ToolResult {
 
 /// 获取当前时间
 pub fn execute_get_time(args: &GetTimeArgs) -> ToolResult {
-    info!(format = %args.format, "tool: get_time");
+    info!(format = %args.format.as_str(), "tool: get_time");
     let now = chrono::Local::now();
-    match args.format.as_str() {
-        "date" => ToolResult::ok(now.format("%Y-%m-%d").to_string()),
-        "time" => ToolResult::ok(now.format("%H:%M:%S").to_string()),
-        _ => ToolResult::ok(now.format("%Y-%m-%d %H:%M:%S %Z").to_string()),
+    match args.format {
+        GetTimeFormat::Date => ToolResult::ok(now.format("%Y-%m-%d").to_string()),
+        GetTimeFormat::Time => ToolResult::ok(now.format("%H:%M:%S").to_string()),
+        GetTimeFormat::Full => ToolResult::ok(now.format("%Y-%m-%d %H:%M:%S %Z").to_string()),
     }
 }
 
@@ -250,9 +280,11 @@ pub fn execute_recent_screenshots(
 // ---- 新增工具：Hotkey / Clipboard / Foreground ----
 
 /// `hotkey` 工具参数：要模拟的按键序列和可选的按住时长（秒）。
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct HotkeyArgs {
+    /// 按键列表，如 ["ctrl", "alt", "tab"]。
     pub keys: Vec<String>,
+    /// 按键保持时间（秒），默认 0。
     #[serde(default)]
     pub hold: f64,
 }
@@ -268,7 +300,7 @@ pub fn execute_hotkey(args: &HotkeyArgs) -> ToolResult {
 }
 
 /// `clipboard` 工具参数（当前无额外字段）。
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ClipboardArgs {}
 
 /// 读取剪贴板文本
@@ -284,8 +316,9 @@ pub fn execute_clipboard(_args: &ClipboardArgs) -> ToolResult {
 }
 
 /// `foreground` 工具参数：目标窗口句柄（HWND）。
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ForegroundArgs {
+    /// 目标窗口的句柄（整数）。
     pub hwnd: isize,
 }
 
@@ -301,11 +334,14 @@ pub fn execute_foreground(args: &ForegroundArgs) -> ToolResult {
 // ---- 舞蹈工具 ----
 
 /// `perform_dance` 工具参数：AI 即时编排并播放的完整舞蹈定义。
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct PerformDanceArgs {
+    /// 舞蹈名称/文件名，只能使用英文、数字、下划线或短横线，例如 happy_twist。
     pub name: String,
+    /// 保存到 YAML 的默认循环设置，通常为 true。
     #[serde(default = "default_dance_loop")]
     pub loop_: bool,
+    /// 完整舞蹈步骤，按时间顺序执行。
     pub steps: Vec<DanceStep>,
     /// 播放轮数：不填或 1 = 单次；0 = 无限循环；>=2 = 固定轮数
     #[serde(default)]
@@ -368,8 +404,9 @@ pub fn execute_perform_dance(args: &PerformDanceArgs) -> ToolResult {
 // ---- play_dance 工具 ----
 
 /// `play_dance` 工具参数：播放已保存的舞蹈，按名称查找。
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct PlayDanceArgs {
+    /// 舞蹈名称，必须已存在于 ~/.ai-pad/dances/。
     pub name: String,
     /// 播放轮数：不填或 1 = 单次；0 = 无限循环；>=2 = 固定轮数
     #[serde(default)]
@@ -456,7 +493,7 @@ mod tests {
     fn test_get_time_args_default_format() {
         let json = r#"{}"#;
         let args: GetTimeArgs = serde_json::from_str(json).unwrap();
-        assert_eq!(args.format, "full");
+        assert_eq!(args.format, GetTimeFormat::Full);
     }
 
     #[tokio::test]
@@ -500,7 +537,7 @@ mod tests {
     #[test]
     fn test_execute_get_time_full() {
         let args = GetTimeArgs {
-            format: "full".into(),
+            format: GetTimeFormat::Full,
         };
         let result = execute_get_time(&args);
         assert!(result.success);
@@ -510,7 +547,7 @@ mod tests {
     #[test]
     fn test_execute_get_time_date_only() {
         let args = GetTimeArgs {
-            format: "date".into(),
+            format: GetTimeFormat::Date,
         };
         let result = execute_get_time(&args);
         assert!(result.success);

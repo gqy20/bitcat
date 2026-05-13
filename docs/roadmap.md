@@ -112,7 +112,7 @@
 
 ### B4. 工具开销优化（谨慎，不做关键词意图识别）
 
-当前 10 个工具全量注册到每次对话（历史估算占 prompt token 大头），但不应为了省一点 token 引入脆弱的关键词匹配或“简单任务分类器”。新的原则是：**默认相信大模型自己选择工具**，先用 B2 的真实统计确认成本瓶颈，再做更优雅的优化：压缩工具 schema、拆分显式能力包、利用 prompt caching。
+当前 10 个工具全量注册到每次对话（历史估算占 prompt token 大头），但不应为了省一点 token 引入脆弱的关键词匹配或“简单任务分类器”。新的原则是：**默认相信大模型自己选择工具**。已开始第一轮低风险优化：工具参数 schema 从 `Args` 类型和 `JsonSchema` derive 生成，`agent.rs` 不再维护大块手写参数 JSON；下一步继续把范围、数量、枚举等约束沉到类型/schema 层，再用 B2 的真实统计决定是否需要进一步压缩工具描述、拆分显式能力包或利用 prompt caching。
 
 详细设计：[plan/rig-capability-roadmap.md](plan/rig-capability-roadmap.md) §P1
 

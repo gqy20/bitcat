@@ -33,7 +33,8 @@ use rig::completion::{Prompt, ToolDefinition};
 use rig::providers::anthropic;
 use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
 use rig::tool::Tool;
-use serde_json::json;
+use schemars::JsonSchema;
+use serde_json::Value;
 use tracing::{debug, info, instrument, trace};
 
 /// AI Agent 多轮工具调用的最大回合数。
@@ -176,9 +177,14 @@ impl PetAgent {
 
 // ---- 工具定义宏：消除样板代码 ----
 
+fn tool_schema<T: JsonSchema>() -> Value {
+    let schema = schemars::schema_for!(T);
+    serde_json::to_value(schema).expect("tool args schema should serialize")
+}
+
 /// 定义一个同步执行的 Tool（execute 函数返回 `ToolResult`）
 macro_rules! define_tool_sync {
-    ($name:ident, $tool_name:literal, $desc:literal, $args_ty:ty, $params:expr, $exec_fn:expr) => {
+    ($name:ident, $tool_name:literal, $desc:literal, $args_ty:ty, $exec_fn:expr) => {
         struct $name;
         impl Tool for $name {
             const NAME: &'static str = $tool_name;
@@ -190,7 +196,7 @@ macro_rules! define_tool_sync {
                 ToolDefinition {
                     name: $tool_name.into(),
                     description: $desc.into(),
-                    parameters: $params.clone(),
+                    parameters: tool_schema::<$args_ty>(),
                 }
             }
 
@@ -203,7 +209,7 @@ macro_rules! define_tool_sync {
 
 /// 定义一个异步执行的 Tool（execute 函数返回 `Result<ToolResult, ToolError>`）
 macro_rules! define_tool_async {
-    ($name:ident, $tool_name:literal, $desc:literal, $args_ty:ty, $params:expr, $exec_fn:expr) => {
+    ($name:ident, $tool_name:literal, $desc:literal, $args_ty:ty, $exec_fn:expr) => {
         struct $name;
         impl Tool for $name {
             const NAME: &'static str = $tool_name;
@@ -215,7 +221,7 @@ macro_rules! define_tool_async {
                 ToolDefinition {
                     name: $tool_name.into(),
                     description: $desc.into(),
-                    parameters: $params.clone(),
+                    parameters: tool_schema::<$args_ty>(),
                 }
             }
 
@@ -233,16 +239,6 @@ define_tool_sync!(
     "launch_program",
     "启动一个程序或应用",
     LaunchArgs,
-    json!({
-        "type": "object",
-        "properties": {
-            "program": { "type": "string", "description": "要启动的程序名或路径" },
-            "args": { "type": "string", "description": "命令行参数" },
-            "terminal": { "type": "boolean", "description": "是否在新终端窗口中打开" },
-            "workdir": { "type": "string", "description": "工作目录" }
-        },
-        "required": ["program"]
-    }),
     tools::execute_launch
 );
 
@@ -251,13 +247,6 @@ define_tool_async!(
     "shell",
     "执行 PowerShell 命令并返回输出（30s 超时，输出截断至 8000 字符）",
     ShellArgs,
-    json!({
-        "type": "object",
-        "properties": {
-            "command": { "type": "string", "description": "要执行的 PowerShell 命令" }
-        },
-        "required": ["command"]
-    }),
     tools::execute_shell
 );
 
@@ -266,13 +255,6 @@ define_tool_sync!(
     "read_file",
     "读取文件内容，支持文本文件（超过 8000 字符自动截断）",
     ReadFileArgs,
-    json!({
-        "type": "object",
-        "properties": {
-            "path": { "type": "string", "description": "文件路径" }
-        },
-        "required": ["path"]
-    }),
     tools::execute_read_file
 );
 
@@ -281,12 +263,6 @@ define_tool_sync!(
     "get_time",
     "获取当前日期和时间",
     GetTimeArgs,
-    json!({
-        "type": "object",
-        "properties": {
-            "format": { "type": "string", "enum": ["full", "date", "time"], "description": "输出格式" }
-        }
-    }),
     tools::execute_get_time
 );
 
@@ -295,12 +271,6 @@ define_tool_sync!(
     "recent_screenshots",
     "查询最近的截图视觉分析记录，了解用户最近在屏幕上做什么",
     RecentScreenshotsArgs,
-    json!({
-        "type": "object",
-        "properties": {
-            "count": { "type": "integer", "description": "返回的记录数量，默认 3" }
-        }
-    }),
     |args| tools::execute_recent_screenshots(args, None)
 );
 
@@ -309,14 +279,6 @@ define_tool_sync!(
     "send_hotkey",
     "模拟键盘快捷键组合（如 Alt+Tab 切窗口、Ctrl+C 复制）",
     HotkeyArgs,
-    json!({
-        "type": "object",
-        "properties": {
-            "keys": { "type": "array", "items": { "type": "string" }, "description": "按键列表，如 [\"ctrl\", \"alt\", \"tab\"]" },
-            "hold": { "type": "number", "description": "按键保持时间（秒），默认 0.02" }
-        },
-        "required": ["keys"]
-    }),
     tools::execute_hotkey
 );
 
@@ -325,11 +287,6 @@ define_tool_sync!(
     "read_clipboard",
     "读取系统剪贴板中的文本内容",
     ClipboardArgs,
-    json!({
-        "type": "object",
-        "properties": {},
-        "description": "无参数，直接读取剪贴板"
-    }),
     tools::execute_clipboard
 );
 
@@ -338,13 +295,6 @@ define_tool_sync!(
     "force_foreground",
     "将指定窗口强制提到前台（需要窗口句柄 hwnd）",
     ForegroundArgs,
-    json!({
-        "type": "object",
-        "properties": {
-            "hwnd": { "type": "number", "description": "目标窗口的句柄（整数）" }
-        },
-        "required": ["hwnd"]
-    }),
     tools::execute_foreground
 );
 
@@ -353,31 +303,6 @@ define_tool_sync!(
     "perform_dance",
     "直接编排并立即播放一段完整舞蹈。适合用户让桌宠跳舞、表演、扭动、庆祝、安慰或表达情绪时调用。你需要给出完整 steps，不要只给 mood。动作只允许 jump/spin/wave/shake/idle；建议 3-8 步，每步 150-900ms。",
     PerformDanceArgs,
-    json!({
-        "type": "object",
-        "properties": {
-            "name": { "type": "string", "description": "舞蹈名称/文件名，只能使用英文、数字、下划线或短横线，例如 happy_twist" },
-            "loop_": { "type": "boolean", "description": "保存到 YAML 的默认循环设置，通常为 true" },
-            "steps": {
-                "type": "array",
-                "description": "完整舞蹈步骤，按时间顺序执行",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "action": { "type": "string", "enum": ["jump", "spin", "wave", "shake", "idle"], "description": "舞蹈动作" },
-                        "duration_ms": { "type": "integer", "description": "该动作持续毫秒数，建议 150-900，允许 80-5000" },
-                        "repeat": { "type": "integer", "description": "重复次数，通常省略或设为 1，允许 1-8" }
-                    },
-                    "required": ["action", "duration_ms"]
-                },
-                "minItems": 1,
-                "maxItems": 24
-            },
-            "loops": { "type": "integer", "description": "本次播放轮数：不填或 1=单次，0=无限循环，>=2=固定轮数" },
-            "duration_ms": { "type": "integer", "description": "本次播放硬上限毫秒数，到时强制停止" }
-        },
-        "required": ["name", "steps"]
-    }),
     tools::execute_perform_dance
 );
 
@@ -386,15 +311,6 @@ define_tool_sync!(
     "play_dance",
     "立即播放一段已保存的舞蹈，桌宠会根据 YAML 中的 steps 序列表演。若用户要求你即兴编一段新舞，优先调用 perform_dance。",
     PlayDanceArgs,
-    json!({
-        "type": "object",
-        "properties": {
-            "name": { "type": "string", "description": "舞蹈名称，必须已存在于 ~/.ai-pad/dances/" },
-            "loops": { "type": "integer", "description": "播放轮数：不填或 1=单次，0=无限循环，>=2=固定轮数" },
-            "duration_ms": { "type": "integer", "description": "硬上限毫秒数，到时强制停止（优先级高于 loops）" }
-        },
-        "required": ["name"]
-    }),
     tools::execute_play_dance
 );
 
@@ -439,11 +355,10 @@ mod tests {
     async fn test_get_time_tool_definition() {
         let def = GetTimeTool.definition(String::new()).await;
         assert_eq!(def.name, "get_time");
-        let params = def.parameters.as_object().unwrap();
-        let props = params.get("properties").unwrap().as_object().unwrap();
-        let fmt = props.get("format").unwrap().as_object().unwrap();
-        let enum_vals = fmt.get("enum").unwrap().as_array().unwrap();
-        assert_eq!(enum_vals.len(), 3);
+        let schema = serde_json::to_string(&def.parameters).unwrap();
+        assert!(schema.contains("\"full\""));
+        assert!(schema.contains("\"date\""));
+        assert!(schema.contains("\"time\""));
     }
 
     #[tokio::test]
@@ -530,7 +445,7 @@ mod tests {
     #[tokio::test]
     async fn test_tool_call_get_time() {
         let args = GetTimeArgs {
-            format: "date".into(),
+            format: tools::GetTimeFormat::Date,
         };
         let result = GetTimeTool.call(args).await.unwrap();
         assert!(result.success);

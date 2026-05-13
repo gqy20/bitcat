@@ -3,6 +3,7 @@
 //! 舞蹈 = 按时间轴切换 sprite 动作帧的序列。AI 通过 perform_dance 工具
 //! 直接提交 DanceDef，序列化为 YAML 存入 ~/.ai-pad/dances/。
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -14,7 +15,7 @@ use tracing::{debug, info, warn};
 // ---- 数据定义 ----
 
 /// 舞蹈动作枚举，对应 sprite.js 中 SPRITES 字典的 key
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DanceAction {
     /// 跳跃（整体上移）
@@ -30,8 +31,9 @@ pub enum DanceAction {
 }
 
 /// 舞蹈单步
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DanceStep {
+    /// 舞蹈动作。
     pub action: DanceAction,
     /// 该动作持续毫秒数
     #[serde(rename = "duration_ms")]
@@ -46,7 +48,7 @@ fn default_repeat() -> u32 {
 }
 
 /// 舞蹈完整定义
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DanceDef {
     pub name: String,
     /// 是否循环播放

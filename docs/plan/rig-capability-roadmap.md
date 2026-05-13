@@ -223,9 +223,10 @@ pub enum ActivityCategory {
 
 1. **观测真实成本**：使用 B2 的 `cmd_get_token_stats` 和 `token_usage.jsonl` 判断工具 schema 是否真是瓶颈。
 2. **压缩工具 schema**：短描述、少废话、参数字段保持明确，减少每次固定 prompt 开销。
-3. **整理工具边界**：合并重复能力，删除已经过时或极少使用的工具。
-4. **显式能力包**：只有用户进入某种模式时启用一组低频能力，例如开发/系统控制/内容生成模式。
-5. **默认不做 dynamic_tools**：除非未来真实数据证明固定工具 schema 成为核心瓶颈，否则不引入动态工具裁剪。
+3. **单一事实源**：工具参数 schema 从 `Args` 类型和 `JsonSchema` derive 生成，避免 `Args` 与手写 `json!` 漂移。
+4. **整理工具边界**：合并重复能力，删除已经过时或极少使用的工具。
+5. **显式能力包**：只有用户进入某种模式时启用一组低频能力，例如开发/系统控制/内容生成模式。
+6. **默认不做 dynamic_tools**：除非未来真实数据证明固定工具 schema 成为核心瓶颈，否则不引入动态工具裁剪。
 
 ### Token 节省估算
 
@@ -240,12 +241,14 @@ pub enum ActivityCategory {
 
 ### 实现路径
 
-1. **先不改 AgentBuilder**：保持全量工具，避免功能回退。
-2. **统计工具使用率**：在 tool call 日志里记录 `tool`、`elapsed_ms`、成功/失败，不记录大文本。
-3. **压缩工具描述**：逐个审查 tool description 和 schema，删除冗余提示。
-4. **清理重复工具**：如果多个工具可以由一个更清晰的工具覆盖，优先合并。
-5. **评估显式模式**：例如“开发模式”启用 shell/read_file，“娱乐模式”启用 dance/game。
-6. **保留能力边界**：如果未来确实需要实验 dynamic_tools，必须 feature flag 可回滚，默认仍全量。
+1. **已完成：Args → JsonSchema 单一事实源**：`LaunchArgs` / `ShellArgs` / `ReadFileArgs` / `GetTimeArgs` / `RecentScreenshotsArgs` / `HotkeyArgs` / `ClipboardArgs` / `ForegroundArgs` / `PerformDanceArgs` / `PlayDanceArgs` 已 derive `JsonSchema`，`agent.rs` 不再维护大块手写参数 JSON。
+2. **已完成：类型级枚举约束**：`GetTimeArgs.format` 从自由字符串提升为 `GetTimeFormat` enum，schema 枚举和执行逻辑共用同一类型。
+3. **下一步：补齐约束语义**：把舞蹈动作、步骤数量、时长范围、窗口句柄整数类型等校验逐步沉到类型/schema 层，减少仅靠描述文字约束。
+4. **统计工具使用率**：在 tool call 日志里记录 `tool`、`elapsed_ms`、成功/失败，不记录大文本。
+5. **压缩工具描述**：逐个审查 tool description 和字段 doc comment，删除冗余提示。
+6. **清理重复工具**：如果多个工具可以由一个更清晰的工具覆盖，优先合并。
+7. **评估显式模式**：例如“开发模式”启用 shell/read_file，“娱乐模式”启用 dance/game。
+8. **保留能力边界**：如果未来确实需要实验 dynamic_tools，必须 feature flag 可回滚，默认仍全量。
 
 ### 风险与缓解
 
