@@ -52,9 +52,22 @@ AI 对话时会自动注入两个来源的屏幕信息：
 
 ## 手动截图
 
-除了自动定时截图，你还可以通过系统托盘菜单手动触发：
+除了自动定时截图，你还可以通过系统托盘菜单、手柄动作或全局快捷键手动触发：
 
 右键托盘图标 → **"立即截图"**
+
+默认按键绑定：
+
+- 手柄 `R2`
+- 键盘 `CommandOrControl+Alt+S`
+
+也可以在 `config/actions.yml` 中把任意按键配置为：
+
+```yaml
+R2:
+  type: screenshot
+  keyboard_shortcut: "CommandOrControl+Alt+S"
+```
 
 手动截图会立即执行一次完整的截图 + 分析流程，不受定时间隔限制。
 

@@ -6,13 +6,14 @@
 const { invoke } = window.__TAURI__.core;
 
 // 按键绑定类型：unbound 代表未绑定（保存时会从 actions.yml 中移除该按键）
-const ACTION_TYPES = ["unbound", "launch", "hotkey", "script", "voice"];
+const ACTION_TYPES = ["unbound", "launch", "hotkey", "script", "voice", "screenshot"];
 const ACTION_TYPE_LABELS = {
   unbound: "未绑定",
   launch: "启动程序",
   hotkey: "按键序列",
   script: "脚本命令",
   voice: "语音触发",
+  screenshot: "立即截图",
 };
 
 // 全量快照（来自后端）
@@ -178,6 +179,7 @@ function actionSummary(type, def) {
   if (type === "hotkey") return def.command || "按键序列";
   if (type === "script") return def.command || "脚本命令";
   if (type === "voice") return "语音触发";
+  if (type === "screenshot") return "立即截图分析";
   return ACTION_TYPE_LABELS[type] || type;
 }
 

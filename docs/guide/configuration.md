@@ -61,7 +61,7 @@
 
 ### config/actions.yml — 按键动作绑定
 
-定义每个手柄按键对应的动作。支持 5 种动作类型：
+定义每个手柄按键对应的动作。支持 6 种动作类型：
 
 ```yaml
 defaults:
@@ -98,8 +98,13 @@ actions:
     command: "python my_script.py"
     keyboard_shortcut: ""
 
-  # 未绑定
+  # 立即截图分析
   X:
+    type: screenshot
+    keyboard_shortcut: "CommandOrControl+Alt+S"
+
+  # 未绑定
+  R1:
     type: unbound
     keyboard_shortcut: ""
 ```
@@ -112,6 +117,7 @@ actions:
 | `hotkey` | trigger | 发送键盘组合键（Win32 SendInput） |
 | `voice` | voice.trigger, voice.delay | 按住触发语音输入，释放后取识别文本送 AI |
 | `script` | command | 通过 PowerShell 执行命令 |
+| `screenshot` | （无） | 立即截图并用 Vision 分析当前屏幕 |
 | `unbound` | （无） | 该按键不执行任何动作 |
 
 每个动作还可以配置 `keyboard_shortcut` 字段，为该动作绑定一个全局键盘快捷键（需重启生效）。

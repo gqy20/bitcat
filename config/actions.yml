@@ -33,3 +33,7 @@ actions:
   L2:
     type: hotkey
     trigger: ["ctrl", "tab"]      # 切换浏览器/应用标签页
+
+  R2:
+    type: screenshot              # 立即截图并用 Vision 分析当前屏幕
+    keyboard_shortcut: "CommandOrControl+Alt+S"

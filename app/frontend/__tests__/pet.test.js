@@ -261,6 +261,15 @@ function isMouthHotzone(x, y, canvasSize) {
   return x >= 32 * ratio && x <= 96 * ratio && y >= 56 * ratio && y <= 96 * ratio;
 }
 
+function isLeftEyeHotzone(x, y, canvasSize) {
+  if (typeof window !== 'undefined' && window.PetApp && window.PetApp.isLeftEyeHotzone) {
+    return window.PetApp.isLeftEyeHotzone(x, y, canvasSize);
+  }
+  var ratio = canvasSize / 128;
+  if (ratio <= 0) return false;
+  return x >= 22 * ratio && x <= 44 * ratio && y >= 44 * ratio && y <= 62 * ratio;
+}
+
 describe('嘴巴热区判定 isMouthHotzone', () => {
   describe('正常态 128×128', () => {
     it('嘴巴正中心 (64, 76) 在热区内', () => {
@@ -333,6 +342,43 @@ describe('嘴巴热区判定 isMouthHotzone', () => {
 
     it('canvasSize 为 0 时全部不在热区（ratio=0）', () => {
       expect(isMouthHotzone(50, 50, 0)).toBe(false);
+    });
+  });
+});
+
+describe('左眼热区判定 isLeftEyeHotzone', () => {
+  describe('正常态 128×128', () => {
+    it('左眼中心 (32, 52) 在热区内', () => {
+      expect(isLeftEyeHotzone(32, 52, 128)).toBe(true);
+    });
+
+    it('右眼中心 (88, 52) 不在热区', () => {
+      expect(isLeftEyeHotzone(88, 52, 128)).toBe(false);
+    });
+
+    it('嘴巴中心 (64, 76) 不在热区', () => {
+      expect(isLeftEyeHotzone(64, 76, 128)).toBe(false);
+    });
+
+    it('热区边界包含左上角和右下角', () => {
+      expect(isLeftEyeHotzone(22, 44, 128)).toBe(true);
+      expect(isLeftEyeHotzone(44, 62, 128)).toBe(true);
+    });
+  });
+
+  describe('折叠态 48×48（按比例缩放）', () => {
+    it('左眼中心 (12, 20) 在热区内', () => {
+      expect(isLeftEyeHotzone(12, 20, 48)).toBe(true);
+    });
+
+    it('右眼位置 (34, 20) 不在热区', () => {
+      expect(isLeftEyeHotzone(34, 20, 48)).toBe(false);
+    });
+  });
+
+  describe('边界安全', () => {
+    it('canvasSize 为 0 时全部不在热区', () => {
+      expect(isLeftEyeHotzone(32, 52, 0)).toBe(false);
     });
   });
 });

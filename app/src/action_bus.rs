@@ -122,6 +122,7 @@ impl ActionBus {
             }
             // voice 是物理按住态，需要 gamepad 层直接管理，不进 Bus
             "voice" => None,
+            "screenshot" | "screenshot_now" => Some(Action::ScreenshotNow),
             _ => None,
         }
     }
@@ -446,6 +447,12 @@ mod tests {
     fn from_def_voice_returns_none() {
         let d = def("voice");
         assert!(ActionBus::from_def(&d).is_none());
+    }
+
+    #[test]
+    fn from_def_screenshot() {
+        let d = def("screenshot");
+        assert_eq!(ActionBus::from_def(&d), Some(Action::ScreenshotNow));
     }
 
     #[test]
