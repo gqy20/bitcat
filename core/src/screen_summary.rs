@@ -10,12 +10,21 @@ use tracing::{debug, info, warn};
 
 // ---- 数据结构 ----
 
+const STRUCTURED_SUMMARY_OUTPUT_INSTRUCTIONS: &str = r#"
+
+只返回一个 JSON 对象，不要使用 Markdown，不要添加解释。字段：
+- time_range: 本次摘要覆盖的时间范围
+- activities: 活动分组数组，每项包含 category、time_range、items
+- category 只能是 coding / browsing / communication / entertainment / documents / other
+- notable_changes: 重要变化数组，不确定则 []
+"#;
+
 /// 单条屏幕活动摘要
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScreenSummaryEntry {
     pub timestamp: String,
     pub time_range: String,
-    pub summary: String,
+    pub summary: StructuredSummary,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -221,14 +230,17 @@ impl ScreenSummaryStore {
         }
     }
 
-    /// 记录新摘要：截断 + 全量追加
-    pub fn record(&mut self, time_range: &str, summary: &str, config: &ScreenSummaryConfig) {
+    /// 记录新摘要：全量追加
+    pub fn record(&mut self, time_range: &str, mut summary: StructuredSummary) {
         let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+        if summary.time_range.is_empty() {
+            summary.time_range = time_range.to_string();
+        }
 
         self.entries.push(ScreenSummaryEntry {
             timestamp,
             time_range: time_range.to_string(),
-            summary: truncate_chars(summary, config.max_summary_chars),
+            summary,
         });
     }
 
@@ -250,7 +262,7 @@ impl ScreenSummaryStore {
         let mut result = String::from(header);
 
         for entry in recent.iter().rev() {
-            let line = format!("[{}] {}\n", entry.time_range, entry.summary);
+            let line = format!("{}\n", entry.summary.to_context_text());
             if result.chars().count() + line.chars().count() > config.max_context_chars {
                 break;
             }
@@ -286,7 +298,7 @@ pub async fn generate_summary(
     descriptions: &[String],
     config: &ScreenSummaryConfig,
     ai_config: &AiConfig,
-) -> Result<String, String> {
+) -> Result<StructuredSummary, String> {
     if descriptions.is_empty() {
         return Err("没有可用的截图分析记录".to_string());
     }
@@ -304,7 +316,10 @@ pub async fn generate_summary(
         "messages": [
             {
                 "role": "user",
-                "content": format!("{}\n\n以下是截图观察记录：\n{}", config.prompt, user_content)
+                "content": format!(
+                    "{}{}\n\n以下是截图观察记录：\n{}",
+                    config.prompt, STRUCTURED_SUMMARY_OUTPUT_INSTRUCTIONS, user_content
+                )
             }
         ]
     });
@@ -312,7 +327,10 @@ pub async fn generate_summary(
     let url = format!("{}/v1/messages", ai_config.base_url.trim_end_matches('/'));
     debug!(model = %ai_config.model, url = %url, "开始生成屏幕摘要");
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .map_err(|e| format!("创建摘要 HTTP 客户端失败: {e}"))?;
     let start = std::time::Instant::now();
     let response = client
         .post(&url)
@@ -350,11 +368,11 @@ pub async fn generate_summary(
         .with_elapsed_ms(elapsed.as_millis() as u64),
     );
 
-    parse_text_response(&json)
+    parse_structured_summary_response(&json)
 }
 
-/// 从 Anthropic Messages API 响应中提取纯文本（无图片）。
-fn parse_text_response(response: &Value) -> Result<String, String> {
+/// 从 Anthropic Messages API 响应中提取 text blocks。
+fn extract_text_response(response: &Value) -> Result<String, String> {
     let content = response
         .get("content")
         .ok_or_else(|| "响应缺少 content 字段".to_string())?
@@ -379,7 +397,7 @@ fn parse_text_response(response: &Value) -> Result<String, String> {
 }
 
 pub fn parse_structured_summary_response(response: &Value) -> Result<StructuredSummary, String> {
-    let text = parse_text_response(response)?;
+    let text = extract_text_response(response)?;
     let json_text = normalize_json_text(&text);
     serde_json::from_str::<StructuredSummary>(json_text)
         .map_err(|e| format!("解析结构化屏幕摘要失败: {e}"))
@@ -403,49 +421,24 @@ fn normalize_json_text(text: &str) -> &str {
     }
 }
 
-/// 按 Unicode 字符截断，超长时追加 "..."
-fn truncate_chars(s: &str, max_chars: usize) -> String {
-    if s.chars().count() <= max_chars {
-        s.to_string()
-    } else {
-        let truncated: String = s.chars().take(max_chars.saturating_sub(3)).collect();
-        format!("{truncated}...")
-    }
-}
-
 // ---- 测试 ----
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wiremock::matchers::{header, method};
+    use wiremock::matchers::method;
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    fn test_client() -> reqwest::Client {
-        reqwest::Client::builder().no_proxy().build().unwrap()
-    }
-
-    #[test]
-    fn test_truncate_short_unchanged() {
-        assert_eq!(truncate_chars("hello", 10), "hello");
-    }
-
-    #[test]
-    fn test_truncate_exact_unchanged() {
-        assert_eq!(truncate_chars("hello", 5), "hello");
-    }
-
-    #[test]
-    fn test_truncate_long() {
-        assert_eq!(truncate_chars("abcdefghij", 7), "abcd...");
-    }
-
-    #[test]
-    fn test_truncate_multibyte_utf8() {
-        let s = "你好世界这是一个测试字符串";
-        let r = truncate_chars(s, 6);
-        assert_eq!(r.chars().count(), 6);
-        assert!(r.ends_with("..."));
+    fn summary_with_item(time_range: &str, item: impl Into<String>) -> StructuredSummary {
+        StructuredSummary {
+            time_range: time_range.into(),
+            activities: vec![ActivityGroup {
+                category: ActivityCategory::Other,
+                time_range: time_range.into(),
+                items: vec![item.into()],
+            }],
+            notable_changes: Vec::new(),
+        }
     }
 
     #[test]
@@ -465,27 +458,33 @@ mod tests {
         let mut store = ScreenSummaryStore {
             entries: Vec::new(),
         };
-        let cfg = ScreenSummaryConfig::default();
-        store.record("14:00-14:15", "用户在写代码", &cfg);
-        store.record("14:15-14:30", "用户在浏览网页", &cfg);
+        store.record(
+            "14:00-14:15",
+            summary_with_item("14:00-14:15", "用户在写代码"),
+        );
+        store.record(
+            "14:15-14:30",
+            summary_with_item("14:15-14:30", "用户在浏览网页"),
+        );
         assert_eq!(store.entries.len(), 2);
         assert_eq!(store.entries[0].time_range, "14:00-14:15");
         assert_eq!(store.entries[1].time_range, "14:15-14:30");
     }
 
     #[test]
-    fn test_record_truncates_long_summary() {
+    fn test_record_fills_empty_summary_time_range() {
         let mut store = ScreenSummaryStore {
             entries: Vec::new(),
         };
-        let cfg = ScreenSummaryConfig {
-            max_summary_chars: 10,
-            ..Default::default()
-        };
-        let long_summary = "这是一段非常非常长的摘要内容用于测试截断功能是否正常工作";
-        store.record("14:00-14:15", long_summary, &cfg);
-        assert_eq!(store.entries[0].summary.chars().count(), 10);
-        assert!(store.entries[0].summary.ends_with("..."));
+        store.record(
+            "14:00-14:15",
+            StructuredSummary {
+                time_range: String::new(),
+                activities: Vec::new(),
+                notable_changes: Vec::new(),
+            },
+        );
+        assert_eq!(store.entries[0].summary.time_range, "14:00-14:15");
     }
 
     #[test]
@@ -506,7 +505,7 @@ mod tests {
             entries: vec![ScreenSummaryEntry {
                 timestamp: "2025-01-01 14:15".into(),
                 time_range: "14:00-14:15".into(),
-                summary: "用户在 VS Code 中编写 Rust 代码".into(),
+                summary: summary_with_item("14:00-14:15", "用户在 VS Code 中编写 Rust 代码"),
             }],
         };
         let ctx = store.build_context(&ScreenSummaryConfig::default());
@@ -525,7 +524,10 @@ mod tests {
             store.entries.push(ScreenSummaryEntry {
                 timestamp: format!("2025-01-01 {:02}:{:02}", 14, i),
                 time_range: format!("{:02}:{:02}-{:02}:{:02}", 14, i, 14, i + 1),
-                summary: format!("摘要[{:03}]", i),
+                summary: summary_with_item(
+                    &format!("{:02}:{:02}-{:02}:{:02}", 14, i, 14, i + 1),
+                    format!("摘要[{i:03}]"),
+                ),
             });
         }
         let cfg = ScreenSummaryConfig {
@@ -554,7 +556,10 @@ mod tests {
             store.entries.push(ScreenSummaryEntry {
                 timestamp: "2025-01-01 14:00".into(),
                 time_range: "14:00-14:15".into(),
-                summary: "这是一条很长的摘要内容用于测试字符限制功能是否正常工作".into(),
+                summary: summary_with_item(
+                    "14:00-14:15",
+                    "这是一条很长的摘要内容用于测试字符限制功能是否正常工作",
+                ),
             });
         }
         let cfg = ScreenSummaryConfig {
@@ -571,13 +576,13 @@ mod tests {
             entries: vec![ScreenSummaryEntry {
                 timestamp: "2025-01-01 14:15".into(),
                 time_range: "14:00-14:15".into(),
-                summary: "用户在编程".into(),
+                summary: summary_with_item("14:00-14:15", "用户在编程"),
             }],
         };
         let json = serde_json::to_string(&store).unwrap();
         let back: ScreenSummaryStore = serde_json::from_str(&json).unwrap();
         assert_eq!(back.entries.len(), 1);
-        assert_eq!(back.entries[0].summary, "用户在编程");
+        assert_eq!(back.entries[0].summary.activities[0].items[0], "用户在编程");
     }
 
     #[test]
@@ -593,17 +598,23 @@ mod tests {
     async fn test_generate_summary_success() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(header("x-api-key", "test-key"))
             .respond_with(
                 ResponseTemplate::new(200).set_body_json(json!({
-                    "content": [{ "type": "text", "text": "- [编程] 14:00-14:15 在 VS Code 写 Rust 代码\n- [浏览] 14:05-14:12 浏览 GitHub" }]
+                    "content": [{
+                        "type": "text",
+                        "text": r#"{
+                            "time_range":"14:00-14:15",
+                            "activities":[
+                                {"category":"coding","time_range":"14:00-14:10","items":["在 VS Code 写 Rust 代码"]},
+                                {"category":"browsing","time_range":"14:10-14:15","items":["浏览 GitHub"]}
+                            ],
+                            "notable_changes":["从编辑器切换到浏览器"]
+                        }"#
+                    }]
                 })),
             )
             .mount(&server)
             .await;
-
-        let client = test_client();
-        let url = format!("{}/v1/messages", server.uri());
 
         let ai_config = AiConfig {
             api_key: "test-key".into(),
@@ -612,34 +623,18 @@ mod tests {
         };
 
         let config = ScreenSummaryConfig::default();
-        let _descriptions = vec![
+        let descriptions = vec![
             "用户正在使用 VS Code 编辑器".to_string(),
             "屏幕显示 GitHub 页面".to_string(),
         ];
 
-        // 直接调用内部逻辑验证 API 响应解析
-        let body = json!({
-            "model": ai_config.model,
-            "max_tokens": 1024,
-            "messages": [{
-                "role": "user",
-                "content": format!("{}\n\n以下是截图观察记录：\n{}", config.prompt, "1. 用户正在使用 VS Code 编辑器\n2. 屏幕显示 GitHub 页面")
-            }]
-        });
-        let response = client
-            .post(&url)
-            .header("x-api-key", &ai_config.api_key)
-            .header("anthropic-version", "2023-06-01")
-            .header("content-type", "application/json")
-            .json(&body)
-            .send()
+        let result = generate_summary(&descriptions, &config, &ai_config)
             .await
             .unwrap();
-
-        let json: Value = response.json().await.unwrap();
-        let result = parse_text_response(&json).unwrap();
-        assert!(result.contains("VS Code"));
-        assert!(result.contains("GitHub"));
+        assert_eq!(result.time_range, "14:00-14:15");
+        assert_eq!(result.activities.len(), 2);
+        assert_eq!(result.activities[0].category, ActivityCategory::Coding);
+        assert!(result.to_context_text().contains("GitHub"));
     }
 
     #[tokio::test]
@@ -679,19 +674,19 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_text_response_standard_format() {
+    fn test_extract_text_response_standard_format() {
         let response = json!({
             "content": [{
                 "type": "text",
                 "text": "- [编程] 在写代码"
             }]
         });
-        let result = parse_text_response(&response).unwrap();
+        let result = extract_text_response(&response).unwrap();
         assert_eq!(result, "- [编程] 在写代码");
     }
 
     #[test]
-    fn test_parse_text_response_multiple_blocks() {
+    fn test_extract_text_response_multiple_blocks() {
         let response = json!({
             "content": [
                 { "type": "text", "text": "第一段。" },
@@ -699,21 +694,21 @@ mod tests {
                 { "type": "text", "text": "第二段。" }
             ]
         });
-        let result = parse_text_response(&response).unwrap();
+        let result = extract_text_response(&response).unwrap();
         assert_eq!(result, "第一段。第二段。");
     }
 
     #[test]
-    fn test_parse_text_response_empty_content() {
+    fn test_extract_text_response_empty_content() {
         let response = json!({ "content": [] });
-        let result = parse_text_response(&response);
+        let result = extract_text_response(&response);
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_parse_text_response_missing_content() {
+    fn test_extract_text_response_missing_content() {
         let response = json!({});
-        let result = parse_text_response(&response);
+        let result = extract_text_response(&response);
         assert!(result.is_err());
     }
 
@@ -778,14 +773,16 @@ mod tests {
         let mut store = ScreenSummaryStore {
             entries: Vec::new(),
         };
-        let cfg = ScreenSummaryConfig::default();
-        store.record("14:00-14:15", "用户在编程", &cfg);
+        store.record(
+            "14:00-14:15",
+            summary_with_item("14:00-14:15", "用户在编程"),
+        );
 
         // 验证序列化/反序列化正确性（load 读真实路径，此处只验证 JSON roundtrip）
         let json = serde_json::to_string(&store).unwrap();
         let back: ScreenSummaryStore = serde_json::from_str(&json).unwrap();
         assert_eq!(back.entries.len(), 1);
-        assert_eq!(back.entries[0].summary, "用户在编程");
+        assert_eq!(back.entries[0].summary.activities[0].items[0], "用户在编程");
     }
 
     #[test]
@@ -794,7 +791,7 @@ mod tests {
             entries: vec![ScreenSummaryEntry {
                 timestamp: "2025-01-01 14:15".into(),
                 time_range: "14:00-14:15".into(),
-                summary: "重要数据".into(),
+                summary: summary_with_item("14:00-14:15", "重要数据"),
             }],
         };
         let json = serde_json::to_string(&store).unwrap();

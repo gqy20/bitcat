@@ -564,14 +564,15 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
                             &ai_config,
                         )) {
                             Ok(summary) => {
+                                let context_text = summary.to_context_text();
                                 info!(
-                                    chars = summary.chars().count(),
+                                    chars = context_text.chars().count(),
                                     time_range = %time_range,
                                     "屏幕摘要生成完成"
                                 );
                                 let mut store =
                                     ai_pad_core::screen_summary::ScreenSummaryStore::load();
-                                store.record(&time_range, &summary, summary_cfg);
+                                store.record(&time_range, summary);
                                 if let Err(e) = store.save() {
                                     warn!(error = %e, "保存屏幕摘要失败");
                                 }
