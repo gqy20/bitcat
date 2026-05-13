@@ -85,17 +85,18 @@ make dist
 
 ## 舞蹈系统
 
-AI 可通过 Tool 调用生成舞蹈编排，前端实时播放像素动画 + 窗口级大幅度位移。
+AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时播放像素动画 + 窗口级大幅度位移。
 
 ### 编排（AI 侧）
 
-1. AI 调用 `create_dance` Tool，输入 mood（如"开心"、"慵懒"）
-2. 后端根据 mood 生成 `DanceDef`（步序列：jump/spin/wave/shake + 时长），YAML 持久化到 `~/.ai-pad/dances/`
-3. 支持参数：`duration`（总时长）、自动计算步数和节奏
+1. AI 在普通对话中自行判断用户是否需要表演舞蹈
+2. AI 调用 `perform_dance` Tool，提交完整 `DanceDef`（`jump/spin/wave/shake/idle` + 时长 + repeat）
+3. 后端校验舞蹈名称、步数、单步时长和总时长后，YAML 持久化到 `~/.ai-pad/dances/`
+4. 项目内置默认舞蹈位于 `config/dances/`，用户/AI 生成舞蹈优先从 `~/.ai-pad/dances/` 读取
 
 ### 播放（前端）
 
-1. AI 调用 `play_dance` 或手柄 Y 短按/面板按钮触发 → 后端发送 `play-dance` 事件
+1. AI 调用 `perform_dance` / `play_dance`，或手柄 Y 短按/面板按钮触发 → 后端发送 `play-dance` 事件
 2. 前端舞蹈播放器逐帧渲染：
    - **精灵内动画**：jump 抛物线上移、spin 快速翻转、wave 浮动、shake 抖动
    - **窗口级移动**：基于屏幕百分比计算偏移量（跳跃上移 ~14% 屏幕高度，弹性缓动；旋转离心抖动等）
@@ -175,7 +176,7 @@ AI 可通过 Tool 调用生成舞蹈编排，前端实时播放像素动画 + �
 │       ├── action.rs       # 动作定义与加载（hotkey/launch/voice/script），配置嵌入 + 多路径查找
 │       ├── app_settings.rs # 设置覆盖层存储（app_settings.json），只读→可写桥接
 │       ├── config.rs       # YAML 配置加载（buttons.yml），配置嵌入 + 多路径查找
-│       ├── dance.rs        # 舞蹈编排生成：mood→DanceDef（步序列+时长），YAML 持久化
+│       ├── dance.rs        # 舞蹈定义、校验、用户/内置 YAML 双层加载
 │       ├── prompts.rs      # AI 提示词配置（agent/vision/memory/screen_summary），配置嵌入
 │       ├── device.rs       # SDL2 按键编号 → 名称映射
 │       ├── hotkey.rs       # Win32 SendInput 键鼠模拟 + force_foreground
@@ -184,7 +185,7 @@ AI 可通过 Tool 调用生成舞蹈编排，前端实时播放像素动画 + �
 │       ├── vision.rs       # Vision API 请求构建/响应解析
 │       ├── screenshot.rs   # 截图类型定义、dHash、resize/JPEG、存储 + 7天清理
 │       ├── screen_summary.rs # 屏幕活动摘要存储 + 最近 N 条截图注入 prompt
-│       └── tools.rs        # AI Tool 实现（8+ 工具：launch/shell/read_file/get_time/recent_screenshots/hotkey/clipboard/foreground/create_dance/play_dance）
+│       └── tools.rs        # AI Tool 实现（launch/shell/read_file/get_time/recent_screenshots/hotkey/clipboard/foreground/perform_dance/play_dance）
 └── app/                    # Tauri 2.0 应用
     ├── tauri.conf.json     # 窗口、权限、withGlobalTauri
     ├── capabilities/
@@ -327,7 +328,7 @@ language: "zh-CN"         # 首选语言（空则自动判断）
 | `hotkey` | 发送键盘组合键（SendInput） |
 | `clipboard` | 读取剪贴板文本 |
 | `foreground` | 按标题聚焦窗口 |
-| `create_dance` | AI 编排舞蹈（mood → DanceDef YAML） |
+| `perform_dance` | AI 直接提交完整 DanceDef，保存并立即播放 |
 | `play_dance` | 播放已保存的舞蹈 |
 
 - 按 Start 键触发对话，AI 回复关键词驱动桌宠状态切换（"哈哈"/"喵"→Happy, "错误"/"失败"→Confused, 舞蹈相关→Dance）

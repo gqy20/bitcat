@@ -1,6 +1,6 @@
 # Prompt Token 预算分析
 
-> 统计日期：2026-05-13 | 基于源码默认值（`core/src/prompts.rs` + `core/src/agent.rs`）
+> 统计日期：2026-05-13 | 基于源码默认值（`config/prompts.yml` + `core/src/agent.rs`）
 
 ## 概览
 
@@ -10,10 +10,10 @@
 | Vision Prompt (截图分析) | 220 | ~63 | 6.7% | 截图观察时 |
 | Vision Multi-Monitor 后缀 | 54 | ~15 | 1.6% | 多屏拼接时追加 |
 | Screen Summary Prompt (屏幕摘要) | 173 | ~49 | 5.3% | 摘要聚合时 |
-| **Tools (x10)** (工具定义) | **2,686** | **~767** | **81.6%** | 每次对话必带 |
+| **Tools (x10)** (工具定义) | 待重新统计 | 待重新统计 | 主要开销 | 每次对话必带 |
 | **总计** | **3,291** | **~940** | 100% | — |
 
-> Token 估算按 ~3.5 字符/token（中英混合文本），实际 Claude tokenization 偏差约 ±15%
+> 注：舞蹈工具已从 `create_dance(name, mood)` 改为 `perform_dance(name, steps...)`，下方旧统计仅作历史参考，实际 token 预算需重新跑脚本统计。
 
 ## 每次对话必带开销
 
@@ -33,12 +33,12 @@
 | `send_hotkey` | 322 | ~92 | 2 个参数：keys(数组) + hold |
 | `read_clipboard` | 140 | ~40 | 无参数 |
 | `force_foreground` | 201 | ~57 | 1 个参数：hwnd |
-| `create_dance` | **441** | **~126** | 3 个参数，description 最长 |
+| `perform_dance` | 待重新统计 | 待重新统计 | 完整 steps schema，当前最胖工具之一 |
 | `play_dance` | **438** | **~125** | 3 个参数，description 最长 |
 
 ### 最胖的工具 Top 3
 
-1. **create_dance** (126 tok) — description 包含使用说明"创建后如需立即播放，请接着调用 play_dance(name)"
+1. **perform_dance** — description + steps schema 较长，是下一轮工具裁剪重点
 2. **play_dance** (125 tok) — description 详细解释了 loops/duration_ms 语义
 3. **launch_program** (102 tok) — 4 个参数字段，schema 较宽
 
@@ -103,7 +103,7 @@
 
 | 方案 | 预估节省 | 难度 |
 |------|---------|------|
-| 精简 `create_dance` description（去掉跨工具调用提示） | ~25 tok | 低 |
+| 精简 `perform_dance` description / schema 文案 | 待测 | 低 |
 | 精简 `play_dance` description（语义移到参数 description） | ~25 tok | 低 |
 | 合并 `force_foreground` 到 `send_hotkey` 或 `shell`（hwnd 可通过 shell 获取） | ~57 tok | 中 |
 

@@ -1,17 +1,28 @@
-# 结构化输出设计：舞蹈 & 游戏（方案 B — rig TypedPrompt）
+# 结构化输出设计：舞蹈 & 游戏（Tool-native 结构化参数）
 
-> **决策**：舞蹈和游戏的内容生成采用 rig-core 的 `prompt_typed::<T>()` 路径，
-> 让 LLM 直接输出符合 `DanceDef` / `GameDef` JSON Schema 约束的结构化数据。
+> **当前决策**：舞蹈内容生成采用普通对话中的 Tool Call，
+> 让 LLM 在 `perform_dance` 的结构化参数中直接提交完整 `DanceDef`。
+> 不做关键词意图匹配，也不额外发起一次 `prompt_typed` 分类/生成请求。
 >
 > **核心优势**：AI 真正拥有创作权——动作序列的长度、节奏、组合全部由 LLM 决定，而非硬编码查表。
+
+## 当前实现状态（2026-05）
+
+- ✅ `perform_dance` 已注册为主舞蹈工具：模型直接提交完整 `steps`，后端保存并立即播放。
+- ✅ `create_dance(name, mood)` 已移除，不再向模型暴露 mood 查表工具。
+- ✅ `choreograph()` 查表模板已移除，默认舞蹈改为 `config/dances/*.yaml` 内置预设。
+- ✅ 跳舞期间 bubble 自动隐藏，截图管线跳过。
+- ✅ `dance::validate_dance_def()` 统一限制名称、步数、单步时长、repeat 和总时长。
+
+> 下文中关于 `prompt_typed::<DanceDef>()`、关键词意图分类、`choreograph()` 兜底的旧设计仅作为历史方案参考；当前 A1 主线以 `perform_dance` 为准。
 
 ---
 
 ## 一、背景与动机
 
-### 当前实现的缺陷
+### 旧实现的缺陷
 
-当前 `create_dance` 工具虽然注册在 AI Agent 上，但**实际编排逻辑是纯查表**：
+旧版 `create_dance` 工具虽然注册在 AI Agent 上，但**实际编排逻辑是纯查表**：
 
 ```rust
 // tools.rs:269 — execute_create_dance 的真实执行路径
@@ -20,101 +31,47 @@ let steps = crate::dance::choreograph(&args.mood);  // ← match 表，非 AI �
 
 ```
 Roadmap 承诺:  AI 编排动作序列 → 生成 YML → 播放
-当前实际:     AI 传 (name, mood) → Rust 侧 mood→固定模板 → 固定序列
+旧版实际:     AI 传 (name, mood) → Rust 侧 mood→固定模板 → 固定序列
+当前实际:     AI 调 perform_dance(name, steps...) → Rust 校验/保存/播放
 ```
 
 `choreograph()` 是一个硬编码的 `match` 表（`dance.rs:122-158`），"happy" 永远返回同样的 5 步，"angry" 永远返回同样的 5 步。**AI 没有任何创作空间**。
 
-### 为什么不用方案 A（Tool Call 扩展）
+### 为什么选择 Tool Call，而不是关键词分类 + TypedPrompt
 
-| 维度 | 方案 A（Tool Call 扩展） | **方案 B（TypedPrompt）** |
-|------|--------------------------|--------------------------|
-| 创作自由度 | 中等（受 tool arguments 大小限制 ~4KB） | 高（completion response 可达 max_tokens=256K） |
-| 输出质量 | LLM 在 tool parameters 中填字段 | LLM 直接输出完整结构体，思维链更完整 |
-| Schema 约束力 | 依赖模型遵循 tool definition | Provider 原生 strict mode 保证合规 |
-| 与现有流程关系 | 改造现有 Tool Call | 新增独立调用入口，不影响 chat_stream |
-| 复杂度 | 低（改 struct + if） | 中（新方法 + 意图检测 + 兜底） |
+| 维度 | Tool-native `perform_dance` | 关键词分类 + `prompt_typed` |
+|------|---------------------------|---------------------------|
+| 意图判断 | 交给模型原生工具选择 | 需要 Rust 侧匹配/分类 |
+| API 调用次数 | 一次普通对话内完成 | 分类/生成可能额外调用 |
+| 与现有流程关系 | 复用 `chat_stream` + Tool Call | 新增独立调用入口 |
+| Schema 约束力 | Tool parameters 约束 + Rust 校验 | Provider output schema + Rust 校验 |
+| 复杂度 | 低，贴合现有 agent | 中，需要双管线调度 |
 
-**结论**：舞蹈和游戏是本项目的**核心差异化功能**——"AI 动态生成可玩内容"。值得用更强的结构化输出方案来保证创作质量。
+**结论**：舞蹈请求属于模型擅长理解的简单任务，不应在 Rust 侧做关键词匹配。当前采用 `perform_dance`：模型负责判断和创作，Rust 负责强类型边界、校验、持久化和播放。
 
 ---
 
-## 二、技术原理
-
-### rig TypedPrompt API
-
-从 rig-core 0.36.0 源码确认的完整调用链：
-
-```rust
-// API 入口（rig-core/src/agent/completion.rs:409-417）
-fn prompt_typed<T>(&self, prompt: impl Into<Message> + WasmCompatSend)
-    -> TypedPromptRequest<T, Standard, M, P>
-where
-    T: schemars::JsonSchema + serde::de::DeserializeOwned + WasmCompatSend
-```
-
-### 完整数据流
+## 二、当前数据流
 
 ```
-agent.prompt_typed::<DanceDef>("设计一段开心的舞蹈")
+用户："跳个开心一点的舞"
   │
-  ├─ TypedPromptRequest::from_agent(agent, prompt)
-  │   ├─ 克隆 Agent: preamble / model / tools / PermissionHook
-  │   └─ inner.output_schema = Some(schema_for!(DanceDef))  // 编译期宏
+  ├─ PetAgent::chat_stream()
+  │   └─ AgentBuilder 注册 perform_dance / play_dance 等工具
   │
-  ├─ .await (IntoFuture → send())
-  │   ├─ inner.send() → build_completion_request()
-  │   │   └─ CompletionRequest { output_schema: Some(schema) }
-  │   │       └─ Provider 转换:
-  │   │           └─ Anthropic: sanitize_schema() → output_config.format.json_schema
-  │   │           └─ OpenAI: sanitize_schema() → response_format.json_schema
-  │   │           └─ Gemini: response_mime_type + response_json_schema
-  │   ├─ HTTP POST → LLM（受 Schema 约束输出 JSON 文本）
-  │   ├─ response.is_empty()? → Err(EmptyResponse)
-  │   └─ serde_json::from_str(&response)? → DanceDef  // 唯一解析点
+  ├─ LLM 自行选择 perform_dance
+  │   └─ args: { name, loop_, steps: [{ action, duration_ms, repeat }], loops?, duration_ms? }
   │
-  └─ Result<DanceDef, StructuredOutputError>
-```
-
-### Schema 传递细节（以 Anthropic 为例）
-
-Anthropic provider 对 schema 做 `sanitize_schema()` 清洗：
-
-1. 所有 object 强制加 `"additionalProperties": false`
-2. 所有 properties 自动加入 `"required"` 数组
-3. 移除数值约束：`minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`
-4. `oneOf` → `anyOf`（Anthropic 不支持 oneOf）
-5. 递归处理 `$defs`, `properties`, `items`, `anyOf`, `allOf`
-
-最终发给 Anthropic API 的请求体片段：
-
-```json
-{
-  "output_config": {
-    "format": {
-      "type": "json_schema",
-      "schema": { "<sanitized DanceDef schema>" }
-    }
-  }
-}
-```
-
-### Trait 约束检查清单
-
-类型 T 必须同时满足：
-
-| Trait | 来源 | 用途 |
-|-------|------|------|
-| `schemars::JsonSchema` | rig-core 间接引入（已满足） | 编译期生成 JSON Schema |
-| `serde::de::DeserializeOwned` | 已有 | 反序列化 LLM 输出 |
-| `WasmCompatSend` | rig-core 提供 | 异步兼容 |
-
-**`schemars` 无需新增依赖**——通过 `rig-core 0.36.0` 间接引入：
-
-```
-schemars v1.2.1
-└── rig-core v0.36.0
-    └── ai-pad-core v0.1.0
+  ├─ tools::execute_perform_dance()
+  │   ├─ DanceDef 组装
+  │   ├─ dance::validate_dance_def()
+  │   ├─ dance::save_dance() → ~/.ai-pad/dances/{name}.yaml
+  │   └─ dance::request_play_dance()
+  │
+  └─ app dance bridge
+      ├─ load_dance(): 用户目录优先，config/dances 内置预设兜底
+      ├─ emit("play-dance")
+      └─ 前端 dancePlayer 播放
 ```
 
 ---
@@ -285,6 +242,10 @@ impl PetAgent {
 ---
 
 ## 五、意图检测与调度
+
+> **当前结论：本节旧方案废弃。**
+>
+> 舞蹈请求不做 Rust 侧关键词匹配，也不额外调用模型做分类。普通对话 Agent 已注册 `perform_dance`，由模型自行决定何时调用工具。
 
 ### 核心问题
 
@@ -457,6 +418,12 @@ if let (Some(msg), Some(ag)) = (&agent_msg, get_agent(&agent)) {
 
 ## 七、错误处理与兜底链
 
+> **当前结论：`choreograph()` 兜底已删除。**
+>
+> - AI 即兴舞蹈：`perform_dance` 参数无效时返回工具错误，让模型自行修正或解释。
+> - 已保存舞蹈：`play_dance` 只播放用户目录或 `config/dances/` 中存在的 YAML。
+> - 默认/手柄舞蹈：依赖 `config/dances/happy_twist.yaml` 等内置预设。
+
 ```
 prompt_typed::<DanceDef>() 调用
   │
@@ -507,10 +474,10 @@ async fn generate_with_retry(agent: &PetAgent, prompt: &str) -> Result<DanceDef,
 | 组件 | 是否受影响 | 说明 |
 |------|-----------|------|
 | **PermissionHook** | 自动生效 | 同一个 Agent 实例，hook 拦截危险工具调用。但设置了 `output_schema` 后 LLM 倾向于直接输出 JSON 而非调工具，实际触发概率低 |
-| **MemoryStore** | 需手动注入 | `prompt_typed` 不自动携带上下文记忆。需在构造 prompt 时手动拼接 `memory.build_context()` |
+| **MemoryStore** | 自动沿用 | `perform_dance` 发生在普通对话工具调用中，沿用现有 `chat_stream` 上下文 |
 | **config/prompts.yml (preamble)** | 自动生效 | Agent 的 preamble 作为系统提示词发送，AI 知道自己是 8Bit Cat |
-| **create_dance Tool** | 降级/移除 | 方案 B 下不再需要通过 Tool Call 创建舞蹈。可保留给简单模式（只传 mood 走查表），或完全替换 |
-| **choreograph() 查表** | 降级为兜底 | 从主路径降级为 `prompt_typed` 失败时的 fallback |
+| **create_dance Tool** | 已移除 | 不再保留 mood 查表兼容工具 |
+| **choreograph() 查表** | 已移除 | 内置预设改为 `config/dances/*.yaml` |
 | **前端 dancePlayer** | 不变 | 无论 DanceDef 来源（AI 生成 or 查表），前端播放机制相同 |
 | **chat_stream 流式管道** | 不变 | 普通对话完全不受影响，两条管道并行 |
 
@@ -518,21 +485,19 @@ async fn generate_with_retry(agent: &PetAgent, prompt: &str) -> Result<DanceDef,
 
 ## 九、实施步骤
 
-### Phase 1：舞蹈（预计 1-2 天）
+### Phase 1：舞蹈（已完成）
 
 | 步骤 | 文件 | 改动 | 行数 |
 |------|------|------|------|
-| 1 | `core/src/dance.rs` | `DanceDef` / `DanceStep` / `DanceAction` 加 `JsonSchema` derive + schemars attributes | ~15 |
-| 2 | `core/Cargo.toml` | 确认无需新增依赖（schemars 通过 rig-core 引入） | 0 |
-| 3 | `core/src/agent.rs` | 新增 `generate_dance()` 方法 + import `TypedPrompt` + `DanceDef` | ~15 |
-| 4 | `app/src/intent.rs`（新建） | `Intent` enum + `classify_intent()` 函数 | ~30 |
-| 5 | `app/src/gamepad.rs` | 新增 `run_dance_generation()` 函数 + `gamepad_loop()` 中加 dispatch 分支 | ~70 |
-| 6 | `app/src/bubble.rs` | 新增 `show_static_bubble()` 辅助函数（非流式一次性显示） | ~15 |
-| 7 | `app/frontend/js/app.js` | dancePlayer 变量 + `updateDance(dt)` + 监听 `play-dance` 事件 + `loop()` 分支 | ~40 |
-| 8 | `app/frontend/js/sprite.js` | 4 个新动作帧 (jump/spin/wave/shake) 加入 SPRITES 字典 | ~30 |
-| 9 | 测试 | schema 合法性测试 + wiremock 集成测试 + 兜底路径测试 + intent 分类测试 | ~100 |
+| 1 | `core/src/tools.rs` | 新增 `perform_dance` 参数结构和执行函数 | 完成 |
+| 2 | `core/src/agent.rs` | 注册 `PerformDanceTool`，移除 `CreateDanceTool` | 完成 |
+| 3 | `core/src/dance.rs` | 新增 `validate_dance_def()`，删除 `choreograph()` | 完成 |
+| 4 | `config/dances/` | 内置默认舞蹈 YAML | 完成 |
+| 5 | `app/src/lib.rs` / `bubble.rs` | 跳舞期间隐藏气泡并阻止气泡重新显示 | 完成 |
+| 6 | 前端 | `dancePlayer` + `jump/spin/wave/shake` 动作帧 | 完成 |
+| 7 | 测试 | `perform_dance`、加载内置 YAML、舞蹈校验 | 完成 |
 
-**Phase 1 小计：~315 行新/改代码，零新依赖**
+**当前状态：A1 已进入可用状态，后续只需继续调 prompt/schema 文案和真实交互体验。**
 
 ### Phase 2：游戏（预计 2-3 天，复用同样模式）
 
@@ -553,7 +518,7 @@ async fn generate_with_retry(agent: &PetAgent, prompt: &str) -> Result<DanceDef,
 
 ### Phase 3：后续增强
 
-- **策略 2 升级**：关键词分类 → AI 两轮分类（更灵活的意图识别）
+- **工具参数体验**：继续优化 `perform_dance` description，让模型更稳定地产生短而有节奏的舞蹈
 - **重试机制**：`generate_with_retry()` 带指数退避
 - **prompt 工程**：针对舞蹈/游戏的专用 system prompt 注入（在 preamble 基础上追加领域指令）
 - **Steam Workshop**：分享/订阅 AI 生成的 DanceDef 和 GameDef YAML
@@ -667,8 +632,7 @@ fn fallback_choreograph_produces_valid_dance_def() {
 
 | 风险 | 影响 | 缓解措施 |
 |------|------|---------|
-| LLM 输出不符合 Schema | `DeserializationError` | Anthropic strict mode 概率极低；兜底查表保证不崩溃 |
-| `prompt_typed` 不支持流式 | 用户看不到"思考过程" | 用 `show_static_bubble("正在编排...")` 显示等待状态 |
-| 意图分类漏判 | 舞蹈请求走了普通对话 | 关键词列表持续积累；v2 升级到 AI 分类 |
+| LLM 输出非法 steps | `perform_dance` 返回工具错误 | `validate_dance_def()` 给出明确错误，让模型可自我修正 |
+| 模型没有调用舞蹈工具 | 舞蹈请求走了普通对话 | 优化 preamble 和 tool description，不做关键词匹配 |
 | Token 消耗增加 | 每次舞蹈生成是一次独立 completion | 舞蹈不是高频操作；可考虑缓存热门结果 |
 | Memory 上下文不自动注入 | AI 不知道之前的对话 | 手动拼接 `build_context()` 到 prompt |

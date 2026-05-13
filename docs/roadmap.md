@@ -11,7 +11,7 @@
 |------|------|
 | 6 状态像素精灵动画（idle/walk/sleep/talk/happy/confused） | 已有 |
 | AI 对话（Anthropic Claude via rig-core，流式输出） | 已有 |
-| 9 个内置工具（launch/shell/read_file/get_time/hotkey/clipboard/foreground/screenshots/create_dance） | 已有 |
+| 10 个内置工具（launch/shell/read_file/get_time/hotkey/clipboard/foreground/screenshots/perform_dance/play_dance） | 已有 |
 | SDL2 手柄输入（8BitDo Micro） | 已有 |
 | 多窗口模型（pet / bubble / panel / voice） | 已有 |
 | 截图观察 + Vision API 分析 | 已有 |
@@ -50,19 +50,19 @@
 
 ### A1. 舞蹈系统
 
-用户说 "跳个舞" → 意图检测 → AI 通过 `prompt_typed::<DanceDef>()` 直接编排完整舞蹈 → pet 窗口即刻播放。
+用户说 "跳个舞" → AI 在普通对话中自行决定调用 `perform_dance` → 提交完整 `DanceDef` → pet 窗口即刻播放。
 
-核心变化：从 Tool Call + `choreograph()` 查表模板，升级为 LLM 直接输出完整动作序列（步骤数、节奏、组合全部由 AI 决定）。
+核心变化：从旧的 `create_dance(name, mood)` + `choreograph()` 查表模板，升级为 LLM 通过 Tool Call 直接输出完整动作序列（步骤数、节奏、组合全部由 AI 决定）。Rust 只负责校验、保存和播放。
 
 - 新增 4 个 sprite 动作帧：jump / spin / wave / shake
 - 前端 dancePlayer 劫持渲染循环，播完交还控制权
-- 失败兜底：回退到现有查表模板，保证离线也能跳舞
+- 用户目录 `~/.ai-pad/dances/` 优先，内置预设 `config/dances/` 兜底
 
 详细设计：[plan/structured-output-design.md](plan/structured-output-design.md)
 
 ### A2. 迷你游戏引擎
 
-复用 A1 的模式：意图检测 → `prompt_typed::<GameDef>()` → panel 窗口运行游戏 → 结束联动 pet 状态。
+复用 A1 的模式：模型通过工具提交结构化 `GameDef` → panel 窗口运行游戏 → 结束联动 pet 状态。
 
 三种原型游戏共享同一个 GameEngine 类：
 
@@ -81,7 +81,7 @@
 - 更多游戏类型（节奏点击 / Quiz / 躲避障碍 / 2048）
 - 舞蹈编辑器（可视化时间轴，可选）
 - Steam Workshop 集成（分享/订阅 YAML）
-- 意图识别升级（关键词匹配 → AI 两轮分类）
+- 工具选择策略升级（固定全量工具 → 模型/上下文驱动的工具选择）
 
 ---
 

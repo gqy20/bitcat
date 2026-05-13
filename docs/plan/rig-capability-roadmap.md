@@ -172,7 +172,7 @@ pub enum ActivityCategory {
   总计:        ~940 tokens
 ```
 
-闲聊场景（"讲个笑话"、"现在几点了"）完全不需要 `launch_program`、`create_dance`、`play_dance` 等 6 个工具，但它们仍然占用 ~500+ tokens 的 context 空间。
+闲聊场景（"讲个笑话"、"现在几点了"）完全不需要 `launch_program`、`perform_dance`、`play_dance` 等 6 个工具，但它们仍然占用大量 context 空间。
 
 ### 方案
 
@@ -196,10 +196,11 @@ fn select_tools(message: &str) -> Vec<ToolSet> {
             ToolSet::new(RecentScreenshotsTool),
         ]
     }
-    // 舞蹈相关：给舞蹈工具 + 基础工具
+    // 旧示意：关键词裁剪会和当前"让模型自行选择工具"的产品方向冲突。
+    // 真要做 dynamic_tools，应优先用模型端或保守默认策略，而不是硬编码舞蹈关键词。
     else if msg_lower.contains("跳舞") || msg_lower.contains("舞蹈") || msg_lower.contains("dance") {
         vec![
-            ToolSet::new(CreateDanceTool),
+            ToolSet::new(PerformDanceTool),
             ToolSet::new(PlayDanceTool),
             ToolSet::new(GetTimeTool),
         ]
@@ -215,7 +216,7 @@ fn select_tools(message: &str) -> Vec<ToolSet> {
             ToolSet::new(HotkeyTool),
             ToolSet::new(ClipboardTool),
             ToolSet::new(ForegroundTool),
-            ToolSet::new(CreateDanceTool),
+            ToolSet::new(PerformDanceTool),
             ToolSet::new(PlayDanceTool),
         ]
     }
@@ -253,14 +254,14 @@ let agent = rig::agent::AgentBuilder::new(model)
 ### 实现路径
 
 1. **定义工具分组常量**：将 10 个工具按功能分为 `CASUAL_TOOLS`、`DANCE_TOOLS`、`FULL_TOOLSET`
-2. **实现意图分类函数**：基于关键词匹配（后续可升级为轻量分类器）
+2. **实现工具选择策略**：优先选择模型/上下文驱动或保守默认策略，避免把简单语义理解退化成硬编码关键词匹配
 3. **修改 AgentBuilder**：`.tool(x10)` → `.dynamic_tools(fn)`
 4. **添加 metrics**：记录每次对话选择的工具集大小，用于评估裁剪效果
 5. **A/B 对比**：先以 feature flag 控制，对比裁剪前后回复质量
 
 ### 进阶方案（P1.5）：LLM 驱动的工具选择
 
-关键词匹配的局限在于无法理解复杂语义（如"帮我搞一下这个"可能需要 shell）。进阶方案是用一个极小的分类模型（或复用已有 agent 的单轮判断）来决定工具集：
+硬编码匹配的局限在于无法理解复杂语义（如"帮我搞一下这个"可能需要 shell），也会和当前"由模型自行选择工具"的方向冲突。进阶方案是用一个极小的分类模型（或复用已有 agent 的单轮判断）来决定工具集：
 
 ```rust
 .dynamic_tools(|ctx| {
@@ -279,7 +280,7 @@ let agent = rig::agent::AgentBuilder::new(model)
 | 风险 | 缓解 |
 |------|------|
 | 裁剪过度导致 AI 无法执行用户想要的操作 | 默认不裁剪（full set）；只在**高置信度**闲聊场景裁剪；feature flag 可随时关闭 |
-| 关键词匹配误判 | 先用保守的关键词集合；收集误判案例后迭代；P1.5 升级为 LLM 分类 |
+| 硬编码匹配误判 | 不把关键词匹配作为主方案；优先保守默认全量工具或模型驱动分类 |
 | dynamic_tools 在 rig 中的性能开销 | 工具选择是同步函数（无 I/O），开销 < 1ms；远小于节省的 token 成本 |
 
 ### 依赖关系
