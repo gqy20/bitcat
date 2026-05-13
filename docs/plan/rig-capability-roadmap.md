@@ -425,7 +425,7 @@ UI 分层：
 | 设置页用量统计 | 快速判断今天是否值得优化 token |
 | 工具运行时事件日志 | 统计哪些工具长期没有被模型选择、耗时异常或失败率偏高 |
 
-### 实现路径
+### 当前落地状态
 
 1. **已完成：工具元信息雏形**：`ToolKind` / label 映射已进入 core，UI 不再直接暴露 `perform_dance` / `read_file` 这类内部名。
 2. **已完成：升级流式回调契约**：`chat_stream<F: FnMut(&str)>` 已改为产出 `AgentStreamEvent::Text | AgentStreamEvent::Tool`，并移除了正文中的 `[正在执行: ...]`。
@@ -435,12 +435,16 @@ UI 分层：
 6. **已完成：工具事件日志雏形**：`~/.ai-pad/logs/tool_events.jsonl` 追加稳定字段，如 `session_id`、`tool_name`、`phase`、`success`、`elapsed_ms`、`blocked`、`result_preview`；参数和结果只写短 preview。
 7. **已完成：Args → JsonSchema 单一事实源**：`LaunchArgs` / `ShellArgs` / `ReadFileArgs` / `GetTimeArgs` / `RecentScreenshotsArgs` / `HotkeyArgs` / `ClipboardArgs` / `ForegroundArgs` / `PerformDanceArgs` / `PlayDanceArgs` 已 derive `JsonSchema`，`agent.rs` 不再维护大块手写参数 JSON。
 8. **已完成：类型级枚举约束**：`GetTimeArgs.format` 从自由字符串提升为 `GetTimeFormat` enum，schema 枚举和执行逻辑共用同一类型。
-9. **补齐约束语义**：把舞蹈动作、步骤数量、时长范围、窗口句柄整数类型等校验逐步沉到类型/schema 层，减少仅靠描述文字约束。
-10. **新增语义工具雏形**：优先做 `set_pet_mood` / `remember` / `ask_user_confirmation`，因为它们能直接替代关键词规则和隐式权限流程。
-11. **压缩工具描述**：逐个审查 tool description 和字段 doc comment，删除冗余提示。
-12. **清理重复工具**：如果多个工具可以由一个更清晰的工具覆盖，优先合并。
-13. **评估显式模式**：例如“开发模式”启用 shell/read_file，“娱乐模式”启用 dance/game。
-14. **保留能力边界**：如果未来确实需要实验 dynamic_tools，必须 feature flag 可回滚，默认仍全量。
+9. **已完成首轮：压缩工具描述**：已先压缩 `perform_dance` / `play_dance` 的 description 和 schema doc comment，减少固定 prompt 文本。下一步不急着做预算工具，等真实工具规模继续增长后再复测。
+
+### 后续方向
+
+1. **游戏工具优先复用 B4 协议**：后续做游戏部分时，`start_game` / `play_game` / `submit_game_action` 等工具应直接产出同一套 `AgentStreamEvent::Tool`，并复用 `tool_events.jsonl` 记录耗时、成功/失败和短 preview。
+2. **互动型工具 UI 分层**：游戏不应走普通工具状态条的长期展示。bubble 只负责短提示，主视觉交给 game/panel/pet；必要时可在 `ToolKind` 上扩展 `Interactive`，但不要先做过度抽象。
+3. **补齐约束语义**：把舞蹈动作、步骤数量、时长范围、窗口句柄整数类型，以及未来游戏动作枚举等校验逐步沉到类型/schema 层，减少仅靠描述文字约束。
+4. **新增语义工具雏形**：`set_pet_mood` / `remember` / `ask_user_confirmation` 仍有价值，但排在游戏主线之后，因为它们主要替代旧关键词规则和隐式权限流程。
+5. **预算工具暂缓**：工具定义预算/真实 tokenizer 统计有用，但当前不是阻塞项。等游戏工具加入后，再用实际 schema 规模决定是否增加 xtask 或快照测试。
+6. **能力包 / dynamic_tools 暂缓**：当前默认仍全量工具。只有 `tool_events.jsonl` 和 token 数据证明固定工具 schema 成为核心瓶颈时，才以 feature flag 形式实验显式能力包。
 
 ### 风险与缓解
 
