@@ -12,6 +12,7 @@
   'use strict';
 
   const HIDE_AFTER_MS = 15000;
+  const PERFORMANCE_HIDE_AFTER_MS = 900;
   const POLL_INTERVAL_MS = 120;
   const MIN_H = 120;
   const MAX_H = 340;
@@ -21,6 +22,7 @@
   const PADDING_TOTAL = 60;   // body top(6) + bubble padding-top(14) + padding-bottom(14) + body bottom(22) + 余量(4)
   const INPUT_ROW_H = 42;     // input-row 额外高度（含 padding-top:8）
   let hideTimer = null;
+  let performanceHideTimer = null;
   let contentEl = null;
   let bodyEl = null;           // #contentBody：唯一被 innerHTML 覆盖的节点
   let toolStatusEl = null;
@@ -71,11 +73,20 @@
       clearTimeout(hideTimer);
       hideTimer = null;
     }
+    if (performanceHideTimer) {
+      clearTimeout(performanceHideTimer);
+      performanceHideTimer = null;
+    }
   }
 
   function startHideTimer() {
     clearHideTimer();
     hideTimer = setTimeout(hide, HIDE_AFTER_MS);
+  }
+
+  function startPerformanceHideTimer() {
+    clearHideTimer();
+    performanceHideTimer = setTimeout(hide, PERFORMANCE_HIDE_AFTER_MS);
   }
 
   function syncCssWidth(width) {
@@ -335,30 +346,48 @@
     }, 280);
   }
 
-  function setToolStatus(payload) {
-    if (!toolStatusEl) return;
+  function getToolStatusText(payload) {
     var label = payload && payload.label ? payload.label : '调用工具';
     var phase = payload && payload.phase ? payload.phase : 'planned';
     var kind = payload && payload.kind ? payload.kind : 'utility';
-    var text;
-    if (phase === 'blocked') {
-      text = label + '已拦截';
-    } else if (phase === 'failed') {
-      text = label + '失败';
-    } else if (phase === 'finished') {
-      text = label + '完成';
-    } else if (kind === 'performance') {
-      text = label + '中';
-    } else {
-      text = '准备' + label;
+    if (kind === 'performance') {
+      if (phase === 'blocked') {
+        return '表演已拦截';
+      }
+      if (phase === 'failed') {
+        return '编舞失败';
+      }
+      if (phase === 'finished' || (payload && payload.tool_name === 'play_dance')) {
+        return '准备开跳';
+      }
+      return '正在编舞';
     }
-    toolStatusEl.textContent = text;
+    if (phase === 'blocked') {
+      return label + '已拦截';
+    }
+    if (phase === 'failed') {
+      return label + '失败';
+    }
+    if (phase === 'finished') {
+      return label + '完成';
+    }
+    return '准备' + label;
+  }
+
+  function setToolStatus(payload) {
+    if (!toolStatusEl) return;
+    var phase = payload && payload.phase ? payload.phase : 'planned';
+    var kind = payload && payload.kind ? payload.kind : 'utility';
+    toolStatusEl.textContent = getToolStatusText(payload);
     toolStatusEl.dataset.kind = kind;
     toolStatusEl.dataset.phase = phase;
     toolStatusEl.style.display = 'block';
     hideThinking();
     ensureVisible();
     autoResize();
+    if (kind === 'performance' && phase === 'finished') {
+      startPerformanceHideTimer();
+    }
   }
 
   function onInputKeyDown(e) {
@@ -682,6 +711,7 @@
   // 暴露给 Rust eval 调用
   window.__bubble_showInput = showInput;
   window.__bubble_hideInput = hideInput;
+  window.__bubble_getToolStatusText = getToolStatusText;
   // emit_to 对 hide→show 窗口不可靠，Rust 端通过 eval 直接触发此函数拉取 pending_text
   window.__bubble_onShow = function() {
     pollPending().then(function(txt) {

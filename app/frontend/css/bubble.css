@@ -152,13 +152,19 @@ body.show .content {
 }
 
 .tool-status[data-kind="performance"] {
-  background: rgba(244, 114, 182, 0.13);
+  background: rgba(244, 114, 182, 0.16);
   color: #9d174d;
+  letter-spacing: 0;
 }
 
 .tool-status[data-phase="finished"] {
   background: rgba(15, 118, 110, 0.09);
   color: #475569;
+}
+
+.tool-status[data-kind="performance"][data-phase="finished"] {
+  background: rgba(245, 158, 11, 0.15);
+  color: #92400e;
 }
 
 .tool-status[data-phase="blocked"],

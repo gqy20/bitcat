@@ -496,6 +496,61 @@ describe('bubble streaming lifecycle', () => {
   });
 });
 
+describe('bubble tool status text', () => {
+  function getToolStatusText(payload) {
+    const label = payload && payload.label ? payload.label : '调用工具';
+    const phase = payload && payload.phase ? payload.phase : 'planned';
+    const kind = payload && payload.kind ? payload.kind : 'utility';
+    if (kind === 'performance') {
+      if (phase === 'blocked') return '表演已拦截';
+      if (phase === 'failed') return '编舞失败';
+      if (phase === 'finished' || (payload && payload.tool_name === 'play_dance')) return '准备开跳';
+      return '正在编舞';
+    }
+    if (phase === 'blocked') return label + '已拦截';
+    if (phase === 'failed') return label + '失败';
+    if (phase === 'finished') return label + '完成';
+    return '准备' + label;
+  }
+
+  it('uses stage copy for performance tools', () => {
+    expect(getToolStatusText({
+      kind: 'performance',
+      phase: 'planned',
+      tool_name: 'perform_dance',
+      label: '编排舞蹈',
+    })).toBe('正在编舞');
+
+    expect(getToolStatusText({
+      kind: 'performance',
+      phase: 'finished',
+      tool_name: 'perform_dance',
+      label: '编排舞蹈',
+    })).toBe('准备开跳');
+
+    expect(getToolStatusText({
+      kind: 'performance',
+      phase: 'planned',
+      tool_name: 'play_dance',
+      label: '播放舞蹈',
+    })).toBe('准备开跳');
+  });
+
+  it('keeps utility tool copy explicit', () => {
+    expect(getToolStatusText({
+      kind: 'utility',
+      phase: 'planned',
+      label: '读取文件',
+    })).toBe('准备读取文件');
+
+    expect(getToolStatusText({
+      kind: 'system',
+      phase: 'blocked',
+      label: '执行命令',
+    })).toBe('执行命令已拦截');
+  });
+});
+
 describe('bubble resize preference lifecycle', () => {
   function maybePersistResize(state, w, h) {
     state.currentWinW = w;
