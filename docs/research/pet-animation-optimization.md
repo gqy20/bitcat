@@ -1107,7 +1107,7 @@ pub enum PetState {
 #### Step 1: PetState 加入 Dancing
 
 ```rust
-// core/src/pet.rs
+// 📄 core/src/pet.rs  — 改造后：PetState 加入 Dancing
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum PetState {
     #[default]
@@ -1145,7 +1145,7 @@ Dance 的帧数据同样来自 manifest（而不是硬编码的单帧 + 渲染�
 #### Step 3: 统一渲染路径
 
 ```javascript
-// app.js — 主循环简化为单一路径
+// 📄 app.js  — 改造后：主循环合并为单一路径（无 dance/normal 分支）
 function loop(now) {
     const dt = now - lastTime;
     lastTime = now;
@@ -1230,44 +1230,65 @@ Phase 4 (2-3 天):  #5 + #6 — Idle variants + Dance 统一
 
 ## 附录：Codex 关键源码索引
 
-| 文件 | 行号 | 功能 |
-|------|------|------|
-| `codex-rs/tui/src/pets/model.rs` | 32-52 | `AnimationFrame` / `Animation` 结构体定义 |
-| `codex-rs/tui/src/pets/model.rs` | 61-72 | `Pet` 结构体定义 |
-| `codex-rs/tui/src/pets/model.rs` | 148-183 | `load_builtin_pet()` — 从缓存目录加载 |
-| `codex-rs/tui/src/pets/model.rs` | 388-452 | `load_animations()` — 从 JSON spec 构建 Animation |
-| `codex-rs/tui/src/pets/model.rs` | 484-582 | `default_animations()` — 14 个内置动画轨道 |
-| `codex-rs/tui/src/pets/model.rs` | 584-596 | `idle_animation()` — 非均匀呼吸帧 |
-| `codex-rs/tui/src/pets/model.rs` | 598-627 | `app_state_animation()` — 三遍+回落工厂函数 |
-| `codex-rs/tui/src/pets/ambient.rs` | 46-90 | `PetNotificationKind` + 生命周期 |
-| `codex-rs/tui/src/pets/ambient.rs` | 92-111 | `PetNotification` + 过期检测 |
-| `codex-rs/tui/src/pets/ambient.rs` | 126-346 | `AmbientPet` — 运行时动画状态机 |
-| `codex-rs/tui/src/pets/ambient.rs` | 283-301 | `current_animation()` — 通知→动画查找 |
-| `codex-rs/tui/src/pets/ambient.rs` | 376-412 | `current_animation_frame()` — 核心时间轴查表 |
-| `codex-rs/tui/src/pets/catalog.rs` | 18-67 | 8 个内置宠物目录 |
-| `codex-rs/tui/src/pets/frames.rs` | 全文 | 精灵表切片为独立 PNG |
-| `codex-rs/tui/src/pets/asset_pack.rs` | 全文 | CDN 资产下载与缓存 |
+> 路径相对于 `../codex/codex-rs/tui/src/`，即 `pets/` 目录的父目录。
+
+| 📄 相对路径 | 行号 | 功能 | 本文引用章节 |
+|------|------|------|-------------|
+| **pets/model.rs** | | **核心数据模型** | §1.4, §2.1, §3.2, §5.2 |
+| ↳ `model.rs` | 32-52 | `AnimationFrame` / `Animation` 结构体 | 数据模型差异 |
+| ↳ `model.rs` | 61-72 | `Pet` 结构体（id/spritesheet/animations） | 数据模型差异 |
+| ↳ `model.rs` | 102-111 | `frame_cache_key()` — SHA256 缓存键 | §5.2 资产管线 |
+| ↳ `model.rs` | 148-183 | `load_builtin_pet()` — 从缓存加载 Pet | 加载流程 |
+| ↳ `model.rs` | 388-452 | `load_animations()` — JSON spec → Animation | 自定义宠物 |
+| ↳ `model.rs` | 484-582 | `default_animations()` — 14 个内置动画轨道 | 动画全集 |
+| ↳ `model.rs` | **584-596** | **`idle_animation()` — 非均匀呼吸帧 [1680,660,660,840,840,1920]** | **§2.1 核心参考** |
+| ↳ `model.rs` | **598-627** | **`app_state_animation()` — 三遍+回落工厂函数** | **§3.2 核心参考** |
+| **pets/ambient.rs** | | **运行时状态机** | §1.3, §4.2 |
+| ↳ `ambient.rs` | **46-90** | **`PetNotificationKind` + lifetime() 语义化时长** | **§4.2 核心参考** |
+| ↳ `ambient.rs` | **92-111** | **`PetNotification` + `is_expired()` 过期检测** | **§4.2 核心参考** |
+| ↳ `ambient.rs` | 126-346 | `AmbientPet` 完整结构体（load/draw_request/notification） | 架构全貌 |
+| ↳ `ambient.rs` | **283-301** | **`current_animation()` — 通知→动画查找+一次性回落** | **状态切换逻辑** |
+| ↳ `ambient.rs` | **376-412** | **`current_animation_frame()` — ★ 核心时间轴查表函数** | **§2.1 核心参考** |
+| **pets/catalog.rs** | 18-67 | 8 个内置宠物 ID/名称/描述/精灵表文件 | 宠物目录 |
+| **pets/frames.rs** | 全文 | 精灵表 webp → 独立 frame_NNN.png 切片 | 资产管线 |
+| **pets/asset_pack.rs** | 全文 | CDN 下载 → SHA256 校验 → 原子写入缓存 | 资产管线 |
+| **pets/image_protocol.rs** | 全文 | Kitty/Sixel 协议检测与选择 | 渲染（8Bit 不需要） |
+| **pets/sixel.rs** | 全文 | RGB332 Sixel 编码器 | 渲染（8Bit 不需要） |
 
 ## 附录：8Bit 关键源码索引
 
-| 文件 | 行号 | 功能 |
-|------|------|------|
-| `core/src/pet.rs` | 10-24 | `PetState` enum（6 个状态） |
-| `core/src/pet.rs` | 26-61 | `frame_count()` / `frame_duration_ms()` / `auto_idle_timeout_ms()` |
-| `core/src/pet.rs` | 66-81 | `Pet` 结构体 |
-| `core/src/pet.rs` | 109-139 | `update()` — 帧计数器累加逻辑 |
-| `core/src/pet.rs` | 142-153 | `set_state()` — 状态切换与重置 |
-| `app/frontend/js/sprite.js` | 7-14 | `PALETTE` — 6 色调色板 |
-| `app/frontend/js/sprite.js` | 17-34 | `IDLE_BASE` — 256 像素基底帧 |
-| `app/frontend/js/sprite.js` | 37-43 | `cloneSprite()` — 帧派生工具 |
-| `app/frontend/js/sprite.js` | 46-195 | 所有帧定义 + `SPRITES` 映射表 |
-| `app/frontend/js/sprite.js` | 206-234 | `renderSprite()` — Canvas 渲染 |
-| `app/frontend/js/pet.js` | 4-10 | `STATE_CONFIG` — 状态参数（均匀帧长） |
-| `app/frontend/js/pet.js` | 12-83 | `PetStateMachine` 类 |
-| `app/frontend/js/pet.js` | 42-69 | `update()` — JS 侧帧计数器 |
-| `app/frontend/js/app.js` | 409-436 | `loop()` — 主渲染循环 |
-| `app/frontend/js/app.js` | 414-430 | dance/normal 分支判断 |
-| `app/frontend/js/app.js` | 473-517 | `updateDance()` — 独立舞蹈播放器 |
-| `core/src/dance.rs` | 17-30 | `DanceAction` enum（5 个动作） |
-| `core/src/dance.rs` | 33-43 | `DanceStep` / `DanceDef` |
-| `core/src/dance.rs` | 77-124 | `validate_dance_def()` — 校验逻辑 |
+> 路径相对于项目根目录 `D:\C\Desktop\ai\8bit\`。
+
+| 📄 相对路径 | 行号 | 功能 | 本文引用章节 |
+|------|------|------|-------------|
+| **core/src/pet.rs** | | **Rust 状态机（与 pet.js 镜像）** | §1.2, §1.3, §7.1 |
+| ↳ `pet.rs` | **10-24** | **`PetState` enum: Idle/Walk/Sleep/Talk/Happy/Confused (缺 Dancing)** | **数据模型差异** |
+| ↳ `pet.rs` | 26-61 | `frame_count()` / `frame_duration_ms()` / `auto_idle_timeout_ms()` | 状态参数 |
+| ↳ `pet.rs` | 66-81 | `Pet` 结构体（state/x/y/facing/frame/frame_time/state_time/target） | 数据模型 |
+| ↳ `pet.rs` | **109-139** | **`update()` — 帧计数器累加（while loop 扣 duration）** | **§1.2 对比目标** |
+| ↳ `pet.rs` | 142-153 | `set_state()` — 切状态重置帧+计时器 | 状态切换 |
+| **core/src/dance.rs** | | **舞蹈系统** | §1.2, §7.1 |
+| ↳ `dance.rs` | 17-30 | `DanceAction`: Jump/Spin/Wave/Shake/Idle | 舞蹈动作 |
+| ↳ `dance.rs` | 33-43 | `DanceStep` {action, duration_ms, repeat} / `DanceDef {name, loop_, steps} | 舞蹈数据 |
+| ↳ `dance.rs` | 77-124 | `validate_dance_def()` — 名称/步骤/时长/总时长校验 | 校验逻辑 |
+| **core/src/bridge.rs** | (全文) | `PetCommand` / `handle_button_press` / `resolve_agent_response` | IPC 桥接 |
+| **app/frontend/js/sprite.js** | | **像素数据 + 渲染** | §1.4, §5.1 |
+| ↳ `sprite.js` | 7-14 | `PALETTE` — 6 色 (透明/轮廓/肤色/高光/眼睛/腮红) | 调色板 |
+| ↳ `sprite.js` | **17-34** | **`IDLE_BASE` — 256 个 int[16×16] palette index** | **数据模型差异** |
+| ↳ `sprite.js` | **37-43** | **`cloneSprite(base, mods)` — 像素级帧派生** | **痛点：改帧必须用这个** |
+| ↳ `sprite.js` | 46-195 | 所有帧定义 (`IDLE_*`, `WALK_*`, `SLEEP_*`, `TALK_*`, `HAPPY_*`, `CONFUSED_*`, `JUMP/SPIN/WAVE/SHAKE`) | 全部帧数据 |
+| ↳ `sprite.js` | **183-195** | **`SPRITES` 字典: state名 → 帧数组映射** | **状态→帧索引** |
+| ↳ `sprite.js` | **98-105** | **`HAPPY_BASE` 示例 — 手敲 12 个像素坐标** | **§5.1 痛点示例** |
+| ↳ `sprite.js` | 206-234 | `renderSprite(ctx, state, frame, facingRight, scale, opts)` — Canvas fillRect 渲染 | 渲染管线 |
+| ↳ `sprite.js` | 237-262 | `renderMini(ctx, state)` — 折叠态 48×48 头部渲染 | 折叠态 |
+| **app/frontend/js/pet.js** | | **JS 状态机（与 pet.rs 镜像）** | §1.2, §1.3, §2.1 |
+| ↳ `pet.js` | **4-10** | **`STATE_CONFIG` — {frameCount, frameDuration, autoIdleTimeout}** | **§1.3 对比目标** |
+| ↳ `pet.js` | 12-83 | `PetStateMachine` 类（setState/walkTo/update/applyEvent） | 状态机全貌 |
+| ↳ `pet.js` | **42-51** | **`update(dtMs)` — JS 侧帧计数器（while loop 扣 frameDuration）** | **§1.2 对比目标** |
+| ↳ `pet.js` | **65-68** | **自动超时回落: `if (stateTimeMs >= autoIdleTimeout) setState('idle')`** | **§1.3 对比目标** |
+| **app/frontend/js/app.js** | | **主循环 + 交互** | §1.2, §4.3, §7.1 |
+| ↳ `app.js` | **409-436** | **`loop(now)` — requestAnimationFrame 主循环** | **渲染入口** |
+| ↳ `app.js` | **414-416** | **`if (dancePlayer) { updateDance(dt) } else { pet.update(dt) }` — 双分支分裂点** | **§7.1 问题诊断** |
+| ↳ `app.js` | 473-517 | `updateDance(dt)` — 独立舞蹈播放器（步进/窗口移动/渲染偏移） | 舞蹈播放器 |
+| ↳ `app.js` | 520-565 | `applyDanceWindowMove()` — 窗口级大幅度动画（屏幕百分比偏移） | 窗口动画 |
+| ↳ `app.js` | 692-731 | `setupTauriEvents()` — pet-event / play-dance / collapse 事件监听 | 事件绑定 |

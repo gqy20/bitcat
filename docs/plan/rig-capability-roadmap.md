@@ -13,6 +13,7 @@
 | stream_prompt / prompt | Embeddings（明确不采用，见取舍文档） |
 | PermissionHook + HookAction | dynamic_tools（动态工具集） |
 | MultiTurnStreamItem 流式消费 | .context() / .dynamic_context() |
+| PromptHook 工具生命周期钩子（部分使用） | 结构化工具事件 UI / 审计 |
 | FinalResponse.usage() | output_schema（输出约束） |
 | Extractor（vision / screen_summary / memory aggregation） | Pipeline.lookup（向量检索，当前不采用） |
 
@@ -199,7 +200,7 @@ pub enum ActivityCategory {
 
 ---
 
-## P1: 工具开销优化 — 先统计，后优化，不做关键词意图识别
+## P1: 工具运行时与开销优化 — 先规范生命周期，再基于统计优化
 
 ### 问题
 
@@ -215,18 +216,66 @@ pub enum ActivityCategory {
 
 闲聊场景（"讲个笑话"、"现在几点了"）完全不需要 `launch_program`、`perform_dance`、`play_dance` 等 6 个工具，但它们仍然占用大量 context 空间。
 
+另一个更直接的体验问题是：当前工具调用提示仍混在正文流里。`agent.rs` 在收到 `StreamedAssistantContent::ToolCall` 时追加类似 `[正在执行: shell...]` 的普通文本，bubble 前端再按 Markdown 渲染。这样工具生命周期没有独立语义，无法区分执行中、成功、失败、被权限策略拦截，也无法为舞蹈/游戏这类“表演型工具”提供专门状态。
+
 ### 方案
 
-不做“关键词匹配式意图识别”，也不为了简单任务额外发一次小模型分类请求。当前产品方向是：**大模型足够聪明，应该让它看到能力并自行决定是否调用工具**。因此 P1 从“dynamic_tools 裁剪”调整为“工具开销优化”，并按真实统计驱动。
+不做“关键词匹配式意图识别”，也不为了简单任务额外发一次小模型分类请求。当前产品方向是：**大模型足够聪明，应该让它看到能力并自行决定是否调用工具**。因此 P1 从“dynamic_tools 裁剪”调整为“工具运行时与开销优化”：先把工具调用生命周期规范化，再按真实统计驱动 token/schema 优化。
+
+rig v0.36 已经提供足够的原生支点：
+
+| rig 能力 | 用法 |
+|------|------|
+| `StreamedAssistantContent::ToolCall` | 模型决定调用工具时，产生 `tool_call` 和 `internal_call_id` |
+| `StreamedUserContent::ToolResult` | 工具结果返回给模型时，可关联同一个 `internal_call_id` |
+| `PromptHook::on_tool_call` | 工具执行前做权限、审计、`started/allowed/blocked` 事件 |
+| `PromptHook::on_tool_result` | 工具执行后做 `finished/failed` 事件和耗时统计 |
+| `PromptHook::on_tool_call_delta` | 可选：展示“正在组织工具参数”这类更细状态 |
+| `ToolCallHookAction::{Continue, Skip, Terminate}` | 原生表达允许、拒绝、终止，并把拒绝原因返回给模型 |
+
+统一事件建议：
+
+```rust
+pub enum ToolPhase {
+    Planned,
+    Started,
+    Allowed,
+    Blocked,
+    Finished,
+    Failed,
+}
+
+pub struct ToolRuntimeEvent {
+    pub session_id: String,
+    pub tool_name: String,
+    pub label: String,
+    pub kind: ToolKind,
+    pub call_id: Option<String>,
+    pub internal_call_id: String,
+    pub phase: ToolPhase,
+    pub args_preview: Option<String>,
+    pub result_preview: Option<String>,
+    pub success: Option<bool>,
+    pub elapsed_ms: Option<u64>,
+}
+```
+
+UI 分层：
+
+- 普通工具（`shell/read_file/get_time/recent_screenshots/hotkey/clipboard/foreground`）：bubble 中显示低干扰状态行，完成后淡出或折叠。
+- 表演型工具（`perform_dance/play_dance`，未来 `start_game`）：bubble 只短暂显示“正在编舞/准备开跳”，随后退场，让 pet/panel 成为主视觉。
+- 被拦截工具：显示清晰但不恐吓的安全提示，并让模型继续基于 skip reason 解释或改用其他方案。
 
 优先级从高到低：
 
-1. **观测真实成本**：使用 B2 的 `cmd_get_token_stats` 和 `token_usage.jsonl` 判断工具 schema 是否真是瓶颈。
-2. **压缩工具 schema**：短描述、少废话、参数字段保持明确，减少每次固定 prompt 开销。
-3. **单一事实源**：工具参数 schema 从 `Args` 类型和 `JsonSchema` derive 生成，避免 `Args` 与手写 `json!` 漂移。
-4. **整理工具边界**：合并重复能力，删除已经过时或极少使用的工具。
-5. **显式能力包**：只有用户进入某种模式时启用一组低频能力，例如开发/系统控制/内容生成模式。
-6. **默认不做 dynamic_tools**：除非未来真实数据证明固定工具 schema 成为核心瓶颈，否则不引入动态工具裁剪。
+1. **生命周期事件协议**：把工具调用从正文流中拆出，建立 `ToolRuntimeEvent`。
+2. **工具状态 UI**：bubble/pet/panel 根据 `ToolKind` 展示不同状态，尤其区分普通工具与表演型工具。
+3. **工具统计**：记录次数、成功率、失败原因、耗时、被安全策略拦截次数，不记录大文本。
+4. **单一事实源**：工具参数 schema 从 `Args` 类型和 `JsonSchema` derive 生成，避免 `Args` 与手写 `json!` 漂移。
+5. **压缩工具 schema**：短描述、少废话、参数字段保持明确，减少每次固定 prompt 开销。
+6. **整理工具边界**：合并重复能力，删除已经过时或极少使用的工具。
+7. **显式能力包**：只有用户进入某种模式时启用一组低频能力，例如开发/系统控制/内容生成模式。
+8. **默认不做 dynamic_tools**：除非未来真实数据证明固定工具 schema 成为核心瓶颈，否则不引入动态工具裁剪。
 
 ### Token 节省估算
 
@@ -237,18 +286,23 @@ pub enum ActivityCategory {
 | `token_usage.jsonl` | 看 chat 与 vision/summary/memory 的真实占比 |
 | `token_sessions.json` | 看最近会话是否有异常高消耗 |
 | 设置页用量统计 | 快速判断今天是否值得优化 token |
-| 未来工具调用日志 | 统计哪些工具长期没有被模型选择 |
+| 工具运行时事件日志 | 统计哪些工具长期没有被模型选择、耗时异常或失败率偏高 |
 
 ### 实现路径
 
-1. **已完成：Args → JsonSchema 单一事实源**：`LaunchArgs` / `ShellArgs` / `ReadFileArgs` / `GetTimeArgs` / `RecentScreenshotsArgs` / `HotkeyArgs` / `ClipboardArgs` / `ForegroundArgs` / `PerformDanceArgs` / `PlayDanceArgs` 已 derive `JsonSchema`，`agent.rs` 不再维护大块手写参数 JSON。
-2. **已完成：类型级枚举约束**：`GetTimeArgs.format` 从自由字符串提升为 `GetTimeFormat` enum，schema 枚举和执行逻辑共用同一类型。
-3. **下一步：补齐约束语义**：把舞蹈动作、步骤数量、时长范围、窗口句柄整数类型等校验逐步沉到类型/schema 层，减少仅靠描述文字约束。
-4. **统计工具使用率**：在 tool call 日志里记录 `tool`、`elapsed_ms`、成功/失败，不记录大文本。
-5. **压缩工具描述**：逐个审查 tool description 和字段 doc comment，删除冗余提示。
-6. **清理重复工具**：如果多个工具可以由一个更清晰的工具覆盖，优先合并。
-7. **评估显式模式**：例如“开发模式”启用 shell/read_file，“娱乐模式”启用 dance/game。
-8. **保留能力边界**：如果未来确实需要实验 dynamic_tools，必须 feature flag 可回滚，默认仍全量。
+1. **新增工具元信息表**：为每个工具定义 `label`、`kind`、`risk`、`ui_visibility`，避免 UI 直接暴露 `perform_dance` / `read_file` 这类内部名。
+2. **升级流式回调契约**：将 `chat_stream<F: FnMut(&str)>` 改为产出 `AgentStreamEvent::Text | AgentStreamEvent::Tool | AgentStreamEvent::Final`，移除正文中的 `[正在执行: ...]`。
+3. **扩展 PermissionHook**：保留现有 shell 安全策略，同时在 `on_tool_call` / `on_tool_result` 发出 `ToolRuntimeEvent`；被 `Skip` 的工具要产生 `Blocked` 事件。
+4. **app 层桥接事件**：新增 `bubble-tool-event` 或统一 `agent-event`，由 `bubble.rs`/聊天循环发送到前端。
+5. **bubble/pet UI**：普通工具显示安静状态条；`perform_dance/play_dance` 进入舞台状态，bubble 短暂提示后退场。
+6. **工具事件日志**：写稳定字段，如 `session_id`、`tool`、`phase`、`success`、`elapsed_ms`、`blocked`、`error_kind`；参数和结果只写短 preview。
+7. **已完成：Args → JsonSchema 单一事实源**：`LaunchArgs` / `ShellArgs` / `ReadFileArgs` / `GetTimeArgs` / `RecentScreenshotsArgs` / `HotkeyArgs` / `ClipboardArgs` / `ForegroundArgs` / `PerformDanceArgs` / `PlayDanceArgs` 已 derive `JsonSchema`，`agent.rs` 不再维护大块手写参数 JSON。
+8. **已完成：类型级枚举约束**：`GetTimeArgs.format` 从自由字符串提升为 `GetTimeFormat` enum，schema 枚举和执行逻辑共用同一类型。
+9. **补齐约束语义**：把舞蹈动作、步骤数量、时长范围、窗口句柄整数类型等校验逐步沉到类型/schema 层，减少仅靠描述文字约束。
+10. **压缩工具描述**：逐个审查 tool description 和字段 doc comment，删除冗余提示。
+11. **清理重复工具**：如果多个工具可以由一个更清晰的工具覆盖，优先合并。
+12. **评估显式模式**：例如“开发模式”启用 shell/read_file，“娱乐模式”启用 dance/game。
+13. **保留能力边界**：如果未来确实需要实验 dynamic_tools，必须 feature flag 可回滚，默认仍全量。
 
 ### 风险与缓解
 
@@ -258,11 +312,14 @@ pub enum ActivityCategory {
 | 关键词匹配误判 | 明确禁止作为方案；简单任务交给模型自己理解 |
 | 额外分类调用反而更贵 | 不做“先分类再对话”的双调用路径 |
 | dynamic_tools 实验影响体验 | 必须 feature flag，可随时回退全量工具 |
+| 工具事件与正文流竞态 | 事件只表达状态，不参与正文累积；前端以 `internal_call_id` 合并更新 |
+| UI 过度打扰 | 默认低干扰、短暂显示；表演型工具让 bubble 退场 |
 
 ### 依赖关系
 
-- **不依赖 P0/P2**：可独立实施
+- **不依赖 P2**：可独立实施
 - **与 P0 协同**：P0 改造后工具定义更清晰，分组更合理
+- **与 A1/A2 协同**：舞蹈和迷你游戏提供两类真实内容型工具样本，适合验证普通工具/表演型工具的 UI 分层
 
 ---
 
@@ -316,9 +373,11 @@ rig 的 Embeddings / Pipeline.lookup 仍然是可用能力，但当前明确不�
              ├ 删除 parse_anthropic_usage
              └ 移除 max_summary_chars 惰性配置
 
-0.5天      P1: 工具开销优化调研
-             ├ 基于 token_usage.jsonl 看真实占比
-             ├ 审查工具 schema 和描述长度
+1-2天      P1: 工具运行时与开销优化
+             ├ 建立工具生命周期事件协议
+             ├ bubble/pet 工具状态 UI
+             ├ 工具调用统计：次数、成功率、耗时、拦截
+             ├ 基于真实数据压缩 schema 和描述
              └ 决定是否需要 feature-flag 实验
 
 1-3天      P2: grep-first 文本记忆
@@ -333,7 +392,7 @@ rig 的 Embeddings / Pipeline.lookup 仍然是可用能力，但当前明确不�
 ```
 P0 (Extractor) ──→ 结构化数据质量提升 ──→ P2 文本更容易 grep
                                       ↘
-P1 (工具开销优化) ──→ 降低固定 prompt 成本 ──→ 给 P2 候选上下文留预算
+P1 (工具运行时) ──→ 工具事件可观测 + 降低固定 prompt 成本 ──→ 给 P2 候选上下文留预算
                                               ↘
                                             净 token 成本更可控 + 回复质量提升
 ```
