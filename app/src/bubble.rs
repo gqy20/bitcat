@@ -1,3 +1,19 @@
+//! 气泡窗口模块：流式 AI 文本渲染 + 动态高度调整 + 实时跟随宠物。
+//!
+//! 核心协议是三段式流式推送：`start_streaming_bubble` → `append_bubble_chunk`×N →
+//! `finalize_bubble`。前端通过 `bubble-chunk` / `bubble-end` 事件接收文本，
+//! 并在 `bubble-end` 后启动自动隐藏定时器。
+//!
+//! **动态高度**：气泡窗口默认 120px，前端根据文本量调整 CSS 高度后通过
+//! `cmd_reposition_bubble` 通知 Rust 端重新计算窗口尺寸和位置，最大 680px。
+//! 超长内容由前端内部滚轮翻阅（Win32 子类转发 `WM_MOUSEWHEEL`）。
+//!
+//! **follower 机制**：`spawn_bubble_follower` 启动独立线程，50ms 轮询宠物窗口位置，
+//! 气泡可见时自动对齐到宠物上方/下方（空间不足时翻边），与手柄循环解耦。
+//!
+//! **chat 优先级**：`chat_active` 标记阻止截图摘要覆盖正在进行的聊天。
+//! 截图线程在发起 Vision API 前检查此标记，避免打断对话。
+
 use std::sync::Mutex;
 use tracing::{debug, info};
 
@@ -20,6 +36,7 @@ const PET_GAP_LP: f64 = 8.0;
 const ARROW_MARGIN_LP: f64 = 26.0;
 const BUBBLE_INSET_X_LP: f64 = 8.0;
 
+/// 整数矩形，用于屏幕坐标下的位置和碰撞计算。
 #[derive(Clone, Copy, Debug)]
 struct RectI {
     x: i32,
@@ -55,6 +72,7 @@ impl RectI {
     }
 }
 
+/// 气泡放置结果：位置、高度、箭头偏移、是否在宠物上方。
 #[derive(Clone, Copy, Debug)]
 struct BubblePlacement {
     x: i32,
@@ -64,10 +82,12 @@ struct BubblePlacement {
     above_pet: bool,
 }
 
+/// 将逻辑像素乘以 DPI 缩放因子，向下取整为整数像素。
 fn scaled_px(value: f64, scale: f64) -> i32 {
     (value * scale.max(0.5)).round().max(1.0) as i32
 }
 
+/// 将整数限制在 [min, max] 范围内，min > max 时返回 min。
 fn clamp_i32(value: i32, min: i32, max: i32) -> i32 {
     if min > max {
         min
@@ -76,6 +96,10 @@ fn clamp_i32(value: i32, min: i32, max: i32) -> i32 {
     }
 }
 
+/// 计算气泡窗口在屏幕上的最佳放置位置。
+///
+/// 综合考虑宠物位置、DPI 缩放、安全边距，优先放在宠物上方，
+/// 空间不足时翻到下方，同时计算箭头指示器的水平偏移。
 fn compute_bubble_placement(
     monitor: RectI,
     pet: RectI,
@@ -129,8 +153,10 @@ fn compute_bubble_placement(
     }
 }
 
-/// 后端待消费文本：首次创建窗口时 emit 时机早于前端 listen 注册，
-/// 因此把文本存这里，前端 init 时主动 invoke 拉一次。
+/// 气泡共享状态：待消费文本 + chat 模式标记。
+///
+/// 首次创建窗口时 emit 时机可能早于前端 listen 注册，
+/// 因此把文本暂存于 `pending_text`，前端 init 时主动 invoke 拉取。
 pub struct SharedBubble {
     pub pending_text: Mutex<Option<String>>,
     /// chat 模式标记：输入框展开或正在流式回复时为 true
@@ -175,8 +201,9 @@ struct BubbleChunkPayload {
     chunk: String,
 }
 
-/// 显示气泡：按需创建窗口、定位到 pet 上方、写入待消费文本 + emit
-/// 优先级：chat_active 时跳过（不覆盖正在进行的聊天/输入）
+/// 显示气泡：按需创建窗口、定位到宠物上方、写入待消费文本 + emit。
+///
+/// 跳过条件：跳舞中或 `chat_active` 为 true 时仅更新 pending 文本不显示。
 pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
     let state: State<SharedBubble> = app.state();
 
@@ -236,8 +263,10 @@ pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// 应用启动时预创建气泡窗口(hidden),让 JS 在启动时完成初始化
-/// 避免首次流式时 emit 事件早于 listen 注册的竞态
+/// 应用启动时预创建气泡窗口（hidden），让 JS 在启动时完成初始化。
+///
+/// 避免首次流式回复时 emit 事件早于前端 listen 注册的竞态。
+/// 同时安装 Win32 子类以转发 `WM_MOUSEWHEEL` 到 WebView2 子窗口。
 pub fn precreate_bubble_window(app: &AppHandle) -> Result<(), tauri::Error> {
     if app.get_webview_window("bubble").is_some() {
         return Ok(());
@@ -276,9 +305,10 @@ pub fn precreate_bubble_window(app: &AppHandle) -> Result<(), tauri::Error> {
     Ok(())
 }
 
-/// 流式开始: 清空 pending、确保窗口显示
-/// 注意: 不 emit 事件,因为 WebView2 首次 show() 后 JS 可能还没加载完
-/// 前端 init 时通过 cmd_consume_bubble_text 拉取已有累积文本
+/// 流式回复开始：清空 pending、设置 `chat_active`、确保窗口可见并定位。
+///
+/// 不 emit 事件（WebView2 首次 show 后 JS 可能未加载完），
+/// 前端 init 时通过 `cmd_consume_bubble_text` 拉取已有累积文本。
 pub fn start_streaming_bubble(app: &AppHandle) -> Result<(), String> {
     let state: State<SharedBubble> = app.state();
     *state.pending_text.lock().map_err(|e| e.to_string())? = Some(String::new());
@@ -295,7 +325,7 @@ pub fn start_streaming_bubble(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 流式追加: 累加到 pending(给晚到的 listener 用)、emit "bubble-chunk"
+/// 流式追加：累加到 `pending_text`（给晚到的 listener 用）+ emit `bubble-chunk`。
 pub fn append_bubble_chunk(app: &AppHandle, chunk: &str) -> Result<(), String> {
     let state: State<SharedBubble> = app.state();
     if let Ok(mut g) = state.pending_text.lock() {
@@ -315,7 +345,7 @@ pub fn append_bubble_chunk(app: &AppHandle, chunk: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// 流式结束: emit "bubble-end" → 前端启动自动隐藏定时器 + 退出 chat 模式
+/// 流式结束：emit `bubble-end` → 前端启动自动隐藏定时器 + 退出 chat 模式。
 pub fn finalize_bubble(app: &AppHandle) -> Result<(), String> {
     let state: State<SharedBubble> = app.state();
     state.set_chat_active(false); // 回复截图写 bubble
@@ -361,7 +391,10 @@ pub fn spawn_bubble_follower(app: AppHandle) {
     });
 }
 
-/// 把 bubble 窗口对齐到 pet 窗口正上方，带屏幕边界检测
+/// 将气泡窗口对齐到宠物窗口上方（空间不足时翻到下方）。
+///
+/// 支持折叠态（`pet-mini`）和吸附态（`pet-snap`）宠物窗口，
+/// 计算时考虑 DPI 缩放和屏幕安全边距。
 pub fn position_above_pet(app: &AppHandle, bubble: &tauri::WebviewWindow) {
     // 优先查找可见的宠物窗口（支持折叠态 + 吸附态）
     let pet = app
@@ -428,6 +461,7 @@ pub fn position_above_pet(app: &AppHandle, bubble: &tauri::WebviewWindow) {
     ));
 }
 
+/// 按需创建气泡窗口（不可见、置顶、透明），用于首次 show 前的懒初始化。
 pub fn create_bubble_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
     WebviewWindowBuilder::new(app, "bubble", WebviewUrl::App("bubble.html".into()))
         .title("8Bit Bubble")
@@ -516,7 +550,7 @@ pub async fn cmd_hide_bubble(app: AppHandle) -> Result<(), String> {
     hide_bubble_window(&app)
 }
 
-/// Recompute bubble placement from Rust after the frontend changes its size.
+/// 前端调整自身尺寸后调用，重新计算气泡窗口位置和高度。
 #[tauri::command]
 pub async fn cmd_reposition_bubble(app: AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("bubble") {
@@ -525,6 +559,7 @@ pub async fn cmd_reposition_bubble(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// 隐藏气泡窗口（前端自动隐藏定时器到期时调用）。
 pub fn hide_bubble_window(app: &AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("bubble") {
         w.hide().map_err(|e| e.to_string())?;

@@ -1,3 +1,14 @@
+//! 手柄轮询、AI 对话循环与共享业务状态管理。
+//!
+//! 本模块是应用运行期的中枢：80ms 手柄轮询主循环（[`gamepad_loop`]）读取 SDL2 输入，
+//! 独立的 [`chat_loop`] 消费前端提交的聊天消息并定时聚合长期记忆，
+//! 两者通过 [`SharedChatCore`] 共享对话记忆、用户画像等业务状态。
+//!
+//! 设计上将手柄物理层（按钮检测、按住态）与 AI 对话链（上下文构建 → agent 调用 → 流式输出）
+//! 解耦，确保无手柄或手柄断开时对话链仍可正常运行。
+//! 对外通过 Tauri IPC 命令（`cmd_submit_chat` / `cmd_open_chat` 等）接收前端事件，
+//! 对内通过 `pet-event` 通知前端宠物状态变化。
+
 use crate::bubble;
 use crate::commands::SharedWindowState;
 use crate::joystick::{self, SdlGamepad};
@@ -22,6 +33,9 @@ use tracing::{debug, error, info, instrument, trace, warn};
 // PetEvent：前端事件
 // ========================================================================
 
+/// 前端宠物事件 payload，通过 `pet-event` 通道发送给 pet 窗口。
+///
+/// 每个字段都是 `Option`，一次事件可同时携带状态切换、气泡文本和行走坐标。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PetEvent {
     pub state: Option<String>,
@@ -30,6 +44,7 @@ pub struct PetEvent {
 }
 
 impl PetEvent {
+    /// 构造一个状态切换事件（如 "talk"、"happy"、"idle"）。
     pub fn set_state(state: &str) -> Self {
         Self {
             state: Some(state.to_string()),
@@ -37,6 +52,7 @@ impl PetEvent {
             walk_to: None,
         }
     }
+    /// 构造一个气泡文本事件，让宠物窗口弹出消息。
     pub fn bubble(text: &str) -> Self {
         Self {
             state: None,
@@ -44,6 +60,7 @@ impl PetEvent {
             walk_to: None,
         }
     }
+    /// 构造一个行走事件，宠物将移动到指定的 X 坐标（像素）。
     pub fn walk_to(x: f32) -> Self {
         Self {
             state: None,
@@ -51,6 +68,7 @@ impl PetEvent {
             walk_to: Some(x),
         }
     }
+    /// 构造一个空事件（所有字段为 `None`）。
     pub fn empty() -> Self {
         Self {
             state: None,
@@ -60,6 +78,7 @@ impl PetEvent {
     }
 }
 
+/// 将桥层命令列表转换为前端事件列表，过滤掉不需要前端处理的命令。
 pub fn commands_to_events(cmds: &[PetCommand]) -> Vec<PetEvent> {
     cmds.iter()
         .filter_map(|cmd| match cmd {
@@ -74,6 +93,7 @@ pub fn commands_to_events(cmds: &[PetCommand]) -> Vec<PetEvent> {
         .collect()
 }
 
+/// 根据按钮索引生成宠物事件（状态切换 + 气泡）。
 pub fn process_button(button_index: u32) -> Vec<PetEvent> {
     let (_agent_msg, pet_cmd) = handle_button_press(button_index, "");
     let mut events = Vec::new();
@@ -83,14 +103,18 @@ pub fn process_button(button_index: u32) -> Vec<PetEvent> {
     events
 }
 
+/// 解析 AI 回复文本中的情绪/动作指令，生成对应的前端事件。
 pub fn process_agent_response(reply: &str) -> Vec<PetEvent> {
     commands_to_events(&resolve_agent_response(reply))
 }
 
 // ========================================================================
-// 聊天输入系统（前端提交 → gamepad_loop 消费）
+// 聊天输入系统（前端提交 → chat_loop 消费）
 // ========================================================================
 
+/// 单槽消息队列：前端 `cmd_submit_chat` 写入，[`chat_loop`] 每 80ms 轮询消费。
+///
+/// 后写入的消息会覆盖先前的，确保只有最新的一条用户输入被发送给 AI。
 pub struct SharedPendingChat {
     pending: Mutex<Option<String>>,
 }
@@ -115,6 +139,7 @@ impl Default for SharedPendingChat {
     }
 }
 
+/// 前端触发的"提交聊天消息"命令，通过 ActionBus 写入 [`SharedPendingChat`]。
 #[tauri::command]
 pub async fn cmd_submit_chat(app: AppHandle, text: String) -> Result<(), String> {
     let trimmed = text.trim().to_string();
@@ -131,6 +156,7 @@ pub async fn cmd_submit_chat(app: AppHandle, text: String) -> Result<(), String>
     Ok(())
 }
 
+/// 原子性地取出并清空待消费的聊天消息，返回 `None` 表示无新消息。
 pub fn take_pending_chat(state: &State<'_, SharedPendingChat>) -> Option<String> {
     state.pending.lock().ok().and_then(|mut g| g.take())
 }
@@ -140,11 +166,30 @@ pub fn take_pending_chat(state: &State<'_, SharedPendingChat>) -> Option<String>
 // 从 gamepad_loop 解耦，使无手柄时对话链仍可运行
 // ========================================================================
 
+/// AI 对话链的共享业务状态，内含 5 个独立 Mutex。
+///
+/// 读写字段时各持短锁，**不要**同时持有两个以上的锁以避免死锁。
+/// 当前所有访问点都遵循"获取 → 克隆/读取 → 立即释放"的模式。
+///
+/// # 线程模型
+///
+/// | 字段 | 写入线程 | 读取线程 |
+/// |------|---------|---------|
+/// | `memory` | chat_loop、gamepad_loop（run_ai_chat） | 同左 |
+/// | `long_term` | chat_loop（run_ai_chat 写入 + 聚合标记） | gamepad_loop（run_ai_chat 读取） |
+/// | `profile` | chat_loop（聚合更新） | gamepad_loop（run_ai_chat 读取） |
+/// | `user_profile` | 仅初始化时写入（config/user.yml） | gamepad_loop、chat_loop |
+/// | `last_aggregation` | chat_loop（聚合后更新） | chat_loop（定时检查） |
 pub struct SharedChatCore {
+    /// 短期对话记忆（滚动窗口），由 `chat_loop` 和 `gamepad_loop` 读写。
     pub memory: Mutex<MemoryStore>,
+    /// 长期记忆条目，由 `chat_loop` 聚合并写入，`gamepad_loop` 检索。
     pub long_term: Mutex<LongTermMemory>,
+    /// 自动聚合的用户画像，优先级低于 `user_profile`。
     pub profile: Mutex<ProfileStore>,
+    /// 用户显式声明的身份信息（config/user.yml），为空时回退到 `profile`。
     pub user_profile: Mutex<UserProfile>,
+    /// 上次画像聚合时间戳，`chat_loop` 用于判断是否触发定时聚合。
     pub last_aggregation: Mutex<std::time::Instant>,
 }
 
@@ -180,8 +225,10 @@ impl Default for SharedChatCore {
     }
 }
 
-/// 延迟初始化的 AI Agent。
-/// 任何线程首次调用 `get_or_init` 时初始化；失败记录 None，后续直接返回 None。
+/// 延迟初始化的 AI Agent，基于 `OnceLock` 实现线程安全的一次性创建。
+///
+/// 任何线程首次调用 `get_or_init` 时触发初始化（读取 API key、构建 HTTP client）；
+/// 初始化失败则记录 `None`，后续调用直接返回 `None`（对话不可用）。
 pub struct SharedAgent {
     inner: std::sync::OnceLock<Option<PetAgent>>,
 }
@@ -215,6 +262,7 @@ impl Default for SharedAgent {
     }
 }
 
+/// 前端调试日志桥接：将前端的 console 输出转发到 Rust 日志系统。
 #[tauri::command]
 pub async fn cmd_pet_log(msg: String) -> Result<(), String> {
     let preview = log_preview(&msg, 80);
@@ -226,6 +274,7 @@ pub async fn cmd_pet_log(msg: String) -> Result<(), String> {
     Ok(())
 }
 
+/// 前端触发的"退出对话"命令，通过 ActionBus 统一调度。
 #[tauri::command]
 pub async fn cmd_exit_chat(app: AppHandle) -> Result<(), String> {
     crate::action_bus::ActionBus::dispatch(
@@ -255,6 +304,7 @@ pub async fn cmd_enter_chat(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// 前端触发的"打开对话"命令，通过 ActionBus 创建/定位 bubble 窗口并显示输入框。
 #[tauri::command]
 pub async fn cmd_open_chat(app: AppHandle) -> Result<(), String> {
     crate::action_bus::ActionBus::dispatch(
@@ -271,6 +321,11 @@ pub async fn cmd_open_chat(app: AppHandle) -> Result<(), String> {
 // 手柄选择 + 主循环 + AI 对话 + 动作执行
 // ========================================================================
 
+/// 从 SDL2 枚举到的设备列表中选出一个真正的游戏手柄。
+///
+/// 依次按优先级筛选：排除键鼠接收器等伪设备 → 优先匹配已知手柄名称
+/// （Xbox / DualSense / 8BitDo 等）→ 按帽子/轴数量兜底 → 取过滤后第一个。
+/// 全部不满足时返回 `None`，主循环会在下一秒重试。
 fn choose_gamepad(pads: &[joystick::GamepadInfo]) -> Option<&joystick::GamepadInfo> {
     let is_kbm_like = |name: &str| {
         let n = name.to_lowercase();
@@ -307,6 +362,11 @@ fn choose_gamepad(pads: &[joystick::GamepadInfo]) -> Option<&joystick::GamepadIn
     filtered.first().copied()
 }
 
+/// 手柄轮询主循环，80ms tick。
+///
+/// 外层循环枚举 SDL2 设备并通过 [`choose_gamepad`] 筛选手柄；内层循环读取按钮/帽子状态，
+/// 经 bridge 映射为宠物事件和 AI 对话触发，同时处理面板导航、语音按住态、热键动作等。
+/// 手柄断开后自动回到外层重新枚举，不会退出线程。
 #[instrument(skip(app))]
 pub fn gamepad_loop(app: &tauri::AppHandle) {
     debug!("[gamepad] gamepad_loop 开始");
@@ -780,14 +840,18 @@ pub fn chat_loop(app: &tauri::AppHandle) {
     }
 }
 
-/// RAII guard：进入 AI 对话时置 chat_active=true，drop 时自动还原 false。
-/// 保证即使 panic / early return / early continue，截屏线程也能在下一轮恢复。
+/// RAII 守卫：创建时将 `chat_active` 置为 `true`，`Drop` 时自动还原为 `false`。
+///
+/// **设计意图**：AI 对话期间截屏线程应跳过 Vision 分析（避免并发 token 消耗和
+/// 内容冲突）。无论 `run_ai_chat` 通过正常返回、`?` 提前退出还是 panic 退出，
+/// 守卫的 `Drop` 都会执行，保证截图线程在下一轮恢复工作。
 struct ChatActiveGuard {
     app: tauri::AppHandle,
     log_prefix: String,
 }
 
 impl ChatActiveGuard {
+    /// 创建守卫并立即将 `chat_active` 置为 `true`，锁定截图线程。
     fn new(app: &tauri::AppHandle, log_prefix: &str) -> Self {
         let bubble_state: tauri::State<'_, bubble::SharedBubble> = app.state();
         bubble_state.set_chat_active(true);
@@ -972,6 +1036,10 @@ pub fn run_ai_chat(
     }
 }
 
+/// 执行原始动作定义（未迁移到 ActionBus 的遗留路径）。
+///
+/// 处理 launch / script / hotkey / voice 四种类型。`ModifierTab` 按住态的按键
+/// 状态由 `alt_tab` / `ctrl_tab` 参数维护，不经过 ActionBus。
 fn execute_action(
     action: &ActionDef,
     defaults: &ai_pad_core::action::Defaults,
@@ -1027,6 +1095,10 @@ fn execute_action(
 
 // ---- 辅助结构体 ----
 
+/// Alt / Ctrl 等修饰键的按住态管理器。
+///
+/// 首次 `press()` 发送 key_down 并标记 held；后续 `press()` 只发送 Tab 按键。
+/// `release()` 仅在 held 时发送 key_up，方向键按下时也会强制释放。
 pub(crate) struct HeldModifier {
     vk: u16,
     held: bool,
@@ -1052,6 +1124,10 @@ impl HeldModifier {
     }
 }
 
+/// 输入法语音热键组合的按住态管理器。
+///
+/// 按下时发送配置的虚拟按键组合（激活输入法语音模式），松开时逆序释放。
+/// `detect()` 方法根据按钮状态变化返回 `(just_pressed, just_released)` 元组。
 pub struct HeldCombo {
     vks: Vec<u16>,
     held: bool,
@@ -1110,6 +1186,7 @@ impl HeldCombo {
     }
 }
 
+/// 将按钮名称（"A" / "B" / "L1" 等）映射到 SDL2 按钮位索引。
 fn name_to_bit(name: &str) -> Option<u32> {
     match name {
         "A" => Some(0),

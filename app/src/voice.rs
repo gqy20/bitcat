@@ -12,6 +12,16 @@
 //   cmd_voice_update_text 写入时附带当前 generation
 //   take_voice_text 只接受匹配当前 generation 的文本（拒绝旧会话残留）
 
+//! 语音输入模块：通过手柄 voice 键触发系统输入法语音识别，将文字送入 AI 对话。
+//!
+//! 设计核心是 **generation 防残留机制**——每次按下 voice 键递增全局计数器，
+//! `take_voice_text` 只接受与当前 generation 匹配的文本，旧会话残留会被丢弃。
+//! 这解决了输入法异步注入跨越松键时序窗口的问题。
+//!
+//! 窗口采用"预创建 + 屏幕外隐藏"策略：启动时即创建 280×40 透明窗口
+//! （visible: true 以便成为合法焦点目标），按下时移入屏幕，松开后归位。
+//! 所有操作均在手柄主循环线程上同步执行。
+
 use std::sync::Mutex;
 
 use tauri::{
@@ -24,13 +34,16 @@ const VOICE_W: u32 = 280;
 const VOICE_H: u32 = 40;
 const OFFSCREEN: i32 = -10000;
 
-/// 带版本号的文本条目
+/// 带版本号的文本条目，generation 用于防残留校验。
+///
+/// 写入时附带当前 generation，取走时只接受与全局 generation 匹配的条目。
 #[derive(Debug, Clone, Default)]
 struct VoiceEntry {
     text: String,
     generation: u64,
 }
 
+/// 语音输入共享状态，由 `Mutex` 保护，在手柄循环和 Tauri 命令间传递。
 pub struct SharedVoice {
     entry: Mutex<VoiceEntry>,
     /// 全局递增计数，每次 open_voice_capture 时 +1
@@ -55,7 +68,9 @@ impl Default for SharedVoice {
     }
 }
 
-/// 启动时预创建 voice 窗口,放在屏幕外 (visible:true 才能成为合法焦点目标)
+/// 启动时预创建 voice 窗口，放在屏幕外（visible: true 才能成为合法焦点目标）。
+///
+/// 避免首次按下 voice 键时创建窗口导致输入法抢不到焦点的时序竞态。
 pub fn precreate_voice_window(app: &AppHandle) -> Result<(), tauri::Error> {
     if app.get_webview_window("voice").is_some() {
         return Ok(());
@@ -79,7 +94,8 @@ pub fn precreate_voice_window(app: &AppHandle) -> Result<(), tauri::Error> {
     Ok(())
 }
 
-/// voice 按下: 递增 generation + 清空状态 + 移到屏幕中下 + 强制前台化 + 通知前端清空 textarea
+/// voice 按下处理：递增 generation + 清空状态 + 窗口移到屏幕中下 +
+/// `AttachThreadInput` 强制前台化 + 通知前端清空 textarea。
 pub fn open_voice_capture(app: &AppHandle) -> Result<(), String> {
     let state: State<SharedVoice> = app.state();
     // 新会话: 递增 generation + 清空文本
@@ -134,7 +150,10 @@ pub fn open_voice_capture(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// voice 释放: eval 取值+清空 → 等待完成 → 校验 generation → 取走 → 归位
+/// voice 释放处理：eval 取值 + 等待注入完成 + generation 校验 + 取走文本 + 窗口归位。
+///
+/// 如果首次取值为空且 eval 成功，会短暂等待后重试一次，以应对输入法延迟注入。
+/// generation 不匹配的旧文本会被丢弃并记录 warn 日志。
 pub fn take_voice_text(app: &AppHandle) -> Result<String, String> {
     let mut eval_ok = true;
 
@@ -221,6 +240,7 @@ pub fn take_voice_text(app: &AppHandle) -> Result<String, String> {
     Ok(text)
 }
 
+/// 前端通过 eval 注入调用：将当前输入法文本写入共享状态，附带当前 generation。
 #[tauri::command]
 pub async fn cmd_voice_update_text(
     state: State<'_, SharedVoice>,
@@ -234,6 +254,7 @@ pub async fn cmd_voice_update_text(
     Ok(())
 }
 
+/// 前端读取当前语音文本（不消费），调试用。
 #[tauri::command]
 pub async fn cmd_voice_get_text(state: State<'_, SharedVoice>) -> Result<String, String> {
     let entry = state.entry.lock().map_err(|e| e.to_string())?;

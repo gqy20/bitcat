@@ -1,3 +1,12 @@
+//! 面板窗口模块：480×320 玻璃面板，3×2 网格 action 映射与方向键独占导航。
+//!
+//! 面板是按需创建的 WebView2 窗口，通过手柄方向键和 A/B 按钮进行独占导航
+//! （导航期间手柄事件不传递给宠物状态机）。面板动作从 `config/actions.yml`
+//! 加载，支持 `launch`（启动程序）和 `script`（PowerShell 脚本）两种类型。
+//!
+//! 面板定位在宠物窗口附近（优先右下），超出屏幕时自动翻边。
+//! 通过全局热键或 Home 键触发 `toggle_panel` 切换显示/隐藏。
+
 use tauri::{AppHandle, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 use tracing::{info, warn};
 
@@ -50,6 +59,7 @@ pub async fn cmd_panel_log(msg: String) -> Result<(), String> {
     Ok(())
 }
 
+/// 显示面板窗口并定位到宠物附近，由前端导航按键触发。
 #[tauri::command]
 pub async fn cmd_show_panel(app: AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("panel") {
@@ -60,6 +70,7 @@ pub async fn cmd_show_panel(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// 隐藏面板窗口，由前端导航取消或 B 按钮触发。
 #[tauri::command]
 pub async fn cmd_hide_panel(app: AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("panel") {

@@ -1,9 +1,15 @@
-//! 设置窗口：独立 Tauri 窗口，由托盘菜单"设置…"触发。
+//! 设置窗口 IPC 命令集：前端设置界面与后端配置之间的桥梁。
 //!
 //! 设计要点（见 plan `Settings_UI_Design_Plan`）：
 //! - `~/.claude/settings.json` 仅读，**永不写入**；AI 覆盖写入 `app_settings.json`
 //! - config/actions.yml / config/prompts.yml / config/user.yml 就地写回（注释会被覆盖，保存前自动备份 `.bak`）
 //! - 保存后仅 set 原子 flag，由 gamepad_loop 下 tick 自动 reload（复用现有机制）
+//!
+//! 安全设计：API Key 在前后端之间不以明文传递；`AiView.has_effective_key` 仅返回布尔值，
+//! 加载快照时用占位符代替真实 Key，防止 WebView2 DevTools 泄露凭证。
+//!
+//! 与以下模块交互：`ai_config`（AI 配置加载）、`action`（按键绑定）、
+//! `prompts`（提示词）、`user_profile`（用户画像）、`app_settings`（持久化）、`token_tracker`（用量统计）。
 
 use crate::commands::SharedWindowState;
 use ai_pad_core::action::{ActionConfig, ActionDef, Defaults};
@@ -195,12 +201,14 @@ fn token_session_view(session: &TokenSession) -> TokenSessionView {
 
 // ---- 命令 ----
 
+/// 托盘菜单 / 快捷键触发的设置窗口显示命令。
 #[tauri::command]
 pub async fn cmd_settings_show(app: AppHandle) -> Result<(), String> {
     toggle_settings(&app);
     Ok(())
 }
 
+/// 隐藏设置窗口（不销毁，保留 WebView 状态）。
 #[tauri::command]
 pub async fn cmd_settings_hide(app: AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window(WINDOW_LABEL) {
@@ -209,6 +217,7 @@ pub async fn cmd_settings_hide(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// 关闭（隐藏）设置窗口，行为同 `cmd_settings_hide`。
 #[tauri::command]
 pub async fn cmd_settings_close(app: AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window(WINDOW_LABEL) {
@@ -314,6 +323,7 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
     })
 }
 
+/// 返回 Token 用量统计：今日汇总 + 最近 10 个 session 明细。
 #[tauri::command]
 pub async fn cmd_get_token_stats() -> Result<TokenStatsView, String> {
     let usage_path = token_usage_path()?;

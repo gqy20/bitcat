@@ -1,9 +1,11 @@
-//! ActionBus：三路输入归一层
+//! ActionBus：三路输入归一层。
 //!
-//! 手柄 / 键盘全局热键 / 前端命令三路只负责"触发"，业务语义统一在 Bus 里落地。
+//! 手柄按钮、键盘全局热键、前端 Tauri 命令三路输入只负责"触发"，
+//! 业务语义统一在 [`ActionBus::dispatch`] 中落地（开面板、发消息、截图、启动程序等）。
 //!
-//! 当前 B1 阶段仅提供类型骨架 + `dispatch` 日志，**不接入**任何调用方。
-//! B2-B4 会把各输入源接到 [`ActionBus::dispatch`]。
+//! 这样设计是为了让 gamepad_loop 不再直接耦合各业务的实现细节，新增动作类型时
+//! 只需扩展 [`Action`] 枚举和 `dispatch` 的 match 分支。
+//! 各输入源通过 [`ActionSource`] 标记来源，便于日志审计和问题排查。
 
 use ai_pad_core::action::ActionDef;
 use ai_pad_core::logging::log_preview;
@@ -58,7 +60,10 @@ pub enum Action {
     Custom(String),
 }
 
-/// 动作触发源。用于日志 / 审计。
+/// 动作触发源。用于日志审计和问题排查。
+///
+/// 每个 `dispatch` 调用都会携带来源信息，便于追溯某个动作是手柄按钮触发、
+/// 键盘热键触发、前端命令触发还是内部系统触发。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActionSource {
     Gamepad {
@@ -76,7 +81,10 @@ pub enum ActionSource {
 
 // ---- Bus 本体 ----
 
-/// 动作总线（当前无状态，留作后续审计队列的扩展点）。
+/// 动作总线：三路输入的统一调度入口。
+///
+/// 当前无内部状态，所有路由逻辑在 [`dispatch`](ActionBus::dispatch) 中完成。
+/// 预留为后续审计队列或动作重放机制的扩展点。
 pub struct ActionBus;
 
 impl ActionBus {
@@ -116,9 +124,10 @@ impl ActionBus {
         }
     }
 
-    /// 分发一个动作。
+    /// 分发一个动作：根据 [`Action`] 变体执行对应的业务逻辑。
     ///
-    /// B1 阶段仅打日志；后续 Task（B2-B5）逐步接入真实路由。
+    /// 每个 match 分支负责一种动作类型：面板切换、对话开启/退出、截图、
+    /// 程序启动、脚本执行、热键触发等。所有分支都会记录带 `source` 的结构化日志。
     #[allow(unused_variables)]
     pub fn dispatch(app: &AppHandle, action: Action, source: ActionSource) {
         debug!(?source, ?action, "action dispatch");
@@ -216,6 +225,7 @@ impl ActionBus {
 
 // ---- 私有实现（把既有 cmd 的业务逻辑抽到 Bus） ----
 
+/// 将聊天文本写入 [`SharedPendingChat`]，由 [`chat_loop`](crate::gamepad::chat_loop) 消费。
 fn submit_chat_impl(app: &AppHandle, text: String) {
     let trimmed = text.trim().to_string();
     if trimmed.is_empty() {
@@ -228,6 +238,11 @@ fn submit_chat_impl(app: &AppHandle, text: String) {
     }
 }
 
+/// 打开对话输入：创建/获取 bubble 窗口，定位到宠物上方，并调用 JS 显示输入框。
+///
+/// `window.eval()` 调用有固有的脆弱性——WebView2 的 JS 上下文可能尚未就绪
+/// （窗口刚创建、DOM 未完成渲染）。因此采用重试策略：最多尝试 10 次，每次间隔 30ms，
+/// 直到 `__bubble_showInput` 函数存在并成功执行。超过重试次数后仅记录 warn 日志。
 fn open_chat_impl(app: &AppHandle) {
     use tauri::Manager;
 
@@ -267,6 +282,7 @@ fn open_chat_impl(app: &AppHandle) {
     warn!("bubble input eval failed after retries");
 }
 
+/// 播放指定名称的舞蹈动画，先校验舞蹈文件存在再发起播放请求。
 fn play_dance_impl(dance_name: String) {
     if ai_pad_core::dance::load_dance(&dance_name).is_err() {
         warn!(dance = %dance_name, "dance action target missing");

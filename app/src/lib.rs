@@ -1,3 +1,20 @@
+//! app crate —— Tauri 2.0 应用壳，连接 core 逻辑与平台窗口/输入。
+//!
+//! 本模块是整个桌宠应用的运行入口。它负责创建 Tauri 窗口（pet / bubble /
+//! panel / voice / settings）、注册 IPC 命令、加载 `.env` 与配置文件，
+//! 并 spawn 手柄轮询、聊天循环、截图观察、气泡跟随等多个后台线程。
+//! 核心业务逻辑全部在 `ai-pad-core` crate 中，app 只做胶水和平台集成。
+//!
+//! 与 core crate 的交互点：调用 `bridge`、`agent`、`memory`、`action`、
+//! `dance`、`vision` 等模块的公共 API，把它们的输出通过 Tauri emit 推送到前端。
+//! 与前端的交互点：通过 `app.emit()` 向 WebView2 窗口发送结构化事件，
+//! 通过 `#[tauri::command]` 接收前端的 invoke 调用。
+//!
+//! ## unsafe 安全不变量
+//!
+//! 本文件自身不直接包含 unsafe 块，但它调用的子模块（`tray`、`screenshot` 等）
+//! 使用了 Win32 API。这些 unsafe 的安全前提在各子模块的 `//!` 中单独说明。
+
 pub mod action_bus;
 pub mod bubble;
 pub mod commands;
@@ -16,10 +33,13 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tracing::{debug, info, warn};
 
+/// 应用主入口。构建 Tauri Builder，注册插件/状态/IPC 命令，在 setup 闭包中
+/// 完成全部初始化（.env、托盘、热键、后台线程），最后启动事件循环。
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        // ── 共享状态注册 ──
         .manage(commands::SharedPet::default())
         .manage(commands::SharedWindowState::default())
         .manage(bubble::SharedBubble::new())
@@ -28,6 +48,7 @@ pub fn run() {
         .manage(SharedPendingChat::new())
         .manage(SharedChatCore::new())
         .manage(SharedAgent::new())
+        // ── IPC 命令注册 ──
         .invoke_handler(tauri::generate_handler![
             commands::cmd_set_state,
             commands::cmd_walk_to,
@@ -71,6 +92,8 @@ pub fn run() {
             settings::cmd_settings_reset,
             settings::cmd_settings_apply,
         ])
+        // ── 窗口事件处理 ──
+        // panel 失焦自动隐藏；settings 关闭时拦截并隐藏而非销毁。
         .on_window_event(|window, event| {
             if window.label() == "panel" {
                 if let tauri::WindowEvent::Focused(false) = event {
@@ -85,7 +108,8 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            // 加载 .env
+            // ── .env 多级加载 ──
+            // 优先级：exe 同目录 → CWD（dotenv）→ 项目根目录（兜底）→ 放弃
             let mut env_loaded = false;
             if let Some(exe_dir) = app
                 .path()
@@ -122,11 +146,13 @@ pub fn run() {
                 warn!(".env 未找到，将使用 ~/.claude/settings.json 或默认配置");
             }
 
+            // ── 系统托盘 ──
             tray::create_tray(app.handle())?;
 
-            // 桥接 core 的舞蹈播放事件 → 前端 pet 窗口的 play-dance 事件
-            // AI 工具 execute_play_dance 往 channel 发请求，这里消费并 emit，
-            // 同时维护 is_dancing 状态（供截图循环跳过本轮用）。
+            // ── 舞蹈桥接线程 ──
+            // 消费 core 发来的 PlayDanceRequest，序列化 DanceDef 后
+            // 通过 Tauri emit 推送给 pet 窗口的前端动画引擎。
+            // 同时维护 IS_DANCING 全局标志（供截图循环跳过本轮）。
             let (dance_tx, mut dance_rx) =
                 tokio::sync::mpsc::unbounded_channel::<ai_pad_core::dance::PlayDanceRequest>();
             if let Err(e) = ai_pad_core::dance::set_play_dance_sender(dance_tx) {
@@ -203,6 +229,7 @@ pub fn run() {
                 warn!("[dance-bridge] channel 已关闭，消费任务退出");
             });
 
+            // ── 预创建窗口 ──
             if let Err(e) = snap::precreate_pet_windows(app.handle()) {
                 warn!(error = %e, "预创建 pet 窗口失败");
             }
@@ -211,6 +238,7 @@ pub fn run() {
                 warn!(error = %e, "预创建 voice 窗口失败");
             }
 
+            // ── 全局热键：面板切换 ──
             let app_handle = app.handle().clone();
             let hotkey_str = "CommandOrControl+Alt+Space";
             info!(hotkey = %hotkey_str, "准备注册全局热键");
@@ -242,9 +270,9 @@ pub fn run() {
                 Err(e) => warn!(error = %e, hotkey = %hotkey_str, "✗ 解析失败"),
             }
 
-            // 批量注册 actions.yml 里 keyboard_shortcut 字段声明的全局热键。
-            // 每条成功注册的热键都会通过 ActionBus 以 Keyboard source 分发对应 Action。
-            // 老配置无此字段 → 跳过，完全向后兼容。
+            // ── 全局热键：actions.yml 键盘别名 ──
+            // 批量注册 actions.yml 里 keyboard_shortcut 字段声明的热键，
+            // 通过 ActionBus 以 Keyboard source 分发对应 Action。
             match ai_pad_core::action::ActionConfig::load("config/actions.yml") {
                 Ok(cfg) => {
                     let mut registered = 0usize;
@@ -301,26 +329,32 @@ pub fn run() {
                 Err(e) => warn!(error = %e, "加载 actions.yml 用于键盘别名注册失败"),
             }
 
+            // ── 后台线程 ──
+
+            // 手柄轮询线程：SDL2 80ms tick，处理按键→命令→AI 对话。
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 gamepad::gamepad_loop(&handle);
             });
 
-            // 业务循环（独立于手柄）：消费 bubble 聊天输入 + 定时聚合长期记忆
+            // 聊天业务线程：消费 bubble 聊天输入 + 定时聚合长期记忆。
             let chat_handle = app.handle().clone();
             std::thread::spawn(move || {
                 gamepad::chat_loop(&chat_handle);
             });
 
-            // 气泡跟随独立线程：脱离手柄循环，确保无手柄时也能实时跟随
+            // 气泡跟随线程：脱离手柄循环，确保无手柄时也能实时跟随。
             bubble::spawn_bubble_follower(app.handle().clone());
 
+            // 截图观察线程：定时 BitBlt 截屏 + Vision API 分析。
             let ss_handle = app.handle().clone();
             std::thread::spawn(move || {
                 debug!("[screenshot] 截图线程已 spawn");
                 screenshot::screenshot_loop(&ss_handle);
             });
 
+            // ── Debug 辅助 ──
+            // AI_PAD_DEBUG=1 时自动弹出 panel 并模拟导航操作，用于开发调试。
             if std::env::var("AI_PAD_DEBUG").is_ok() {
                 let dbg_app = app.handle().clone();
                 std::thread::spawn(move || {

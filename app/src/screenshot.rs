@@ -1,8 +1,26 @@
+//! 截图观察模块：定时截屏 → 去重 → Vision API 分析 → 气泡展示。
+//!
+//! 截图管线在独立线程上运行（`screenshot_loop`），使用单线程 tokio runtime
+//! 驱动异步 Vision API 调用。手柄主循环（`gamepad_loop`）不参与截图流程。
+//!
+//! ## unsafe 安全不变量
+//!
+//! `capture_all_screens` 和 `enumerate_displays` 使用 `static mut` 指针
+//! （`FRAMES_PTR` / `DISPLAYS_PTR`）在 `EnumDisplayMonitors` 回调中传递数据。
+//! 调用约定：进入回调前赋值为栈上 `Mutex` 的引用，回调返回后立即清零。
+//! **不得并发调用这两个函数**——当前只在截图主循环中串行使用，可保安全。
+//!
+//! 与 [`crate::bubble`] 模块交互：分析结果通过 `show_bubble` 显示；
+//! 与 [`ai_pad_core::vision`] 模块交互：构建 Vision API 请求并解析响应。
+
 use ai_pad_core::screenshot::{CapturedFrame, ScreenInfo, ScreenshotTarget};
 use tauri::Manager;
 
 // ---- Windows BitBlt 截图 ----
 
+/// 根据截取目标（主屏 / 全部屏幕）执行 BitBlt 截屏。
+///
+/// 返回 BGRA 像素缓冲区及尺寸；非 Windows 平台直接返回错误。
 #[cfg(target_os = "windows")]
 pub fn capture_target(target: &ScreenshotTarget) -> Result<CapturedFrame, String> {
     match target {
@@ -11,6 +29,7 @@ pub fn capture_target(target: &ScreenshotTarget) -> Result<CapturedFrame, String
     }
 }
 
+/// 截取主显示器画面（BitBlt + GetDIBits → BGRA 像素缓冲区）。
 #[cfg(target_os = "windows")]
 fn capture_primary() -> Result<CapturedFrame, String> {
     use windows_sys::Win32::Graphics::Gdi::{
@@ -89,6 +108,10 @@ fn capture_primary() -> Result<CapturedFrame, String> {
     }
 }
 
+/// 截取所有显示器并水平拼接为一帧。
+///
+/// 使用 `static mut FRAMES_PTR` 将栈上 `Mutex` 传递给 `EnumDisplayMonitors` 回调。
+/// 安全约束：赋值 → 调用 → 立即清零，且调用期间不可并发。
 #[cfg(target_os = "windows")]
 fn capture_all_screens() -> Result<CapturedFrame, String> {
     use ai_pad_core::screenshot::stitch_horizontal;
@@ -185,6 +208,10 @@ fn capture_all_screens() -> Result<CapturedFrame, String> {
     Ok(stitch_horizontal(&refs))
 }
 
+/// 枚举所有显示器的位置和尺寸信息。
+///
+/// 同样使用 `static mut DISPLAYS_PTR` + `EnumDisplayMonitors` 回调模式，
+/// 调用约定与 `capture_all_screens` 一致。
 #[cfg(target_os = "windows")]
 pub fn enumerate_displays() -> Vec<ScreenInfo> {
     use windows_sys::Win32::Foundation::{LPARAM, RECT};
@@ -240,6 +267,7 @@ pub fn enumerate_displays() -> Vec<ScreenInfo> {
 
 use std::sync::Mutex;
 
+/// 截图线程共享状态：dHash 上次哈希值 + 启停开关。
 pub struct SharedScreenshotState {
     pub last_hash: Mutex<u64>,
     pub enabled: Mutex<bool>,
@@ -254,7 +282,11 @@ impl Default for SharedScreenshotState {
     }
 }
 
-/// 截图观察线程主循环。
+/// 截图观察线程主循环（在独立线程上运行）。
+///
+/// 每轮流程：sleep → 检查启停/跳舞/熄屏/聊天状态 → BitBlt 截屏 →
+/// 全黑帧采样 → 缩放 JPEG → Vision API 分析 → 保存文件 → 气泡展示 →
+/// 定时生成屏幕活动摘要。使用单线程 tokio runtime 驱动异步 HTTP 调用。
 pub fn screenshot_loop(app: &tauri::AppHandle) {
     use ai_pad_core::screenshot::{encode_jpeg, resize_bgra, ScreenshotConfig};
     use ai_pad_core::vision::{self, VisionConfig};
