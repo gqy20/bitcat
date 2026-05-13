@@ -99,7 +99,7 @@ fn capture_all_screens() -> Result<CapturedFrame, String> {
         DIB_RGB_COLORS, HDC, HMONITOR, SRCCOPY,
     };
 
-    static mut FRAMES_PTR: *const std::sync::Mutex<Vec<CapturedFrame>> = std::ptr::null();
+    static mut FRAMES_PTR: *const std::sync::Mutex<Vec<(i32, CapturedFrame)>> = std::ptr::null();
 
     unsafe extern "system" fn monitor_callback(
         _hmonitor: HMONITOR,
@@ -143,16 +143,19 @@ fn capture_all_screens() -> Result<CapturedFrame, String> {
         DeleteObject(hbitmap);
         DeleteDC(hdc_mem);
 
-        (*FRAMES_PTR).lock().unwrap().push(CapturedFrame {
-            pixels,
-            width: w,
-            height: h,
-        });
+        (*FRAMES_PTR).lock().unwrap().push((
+            rect.left,
+            CapturedFrame {
+                pixels,
+                width: w,
+                height: h,
+            },
+        ));
 
         1
     }
 
-    let frames: std::sync::Mutex<Vec<CapturedFrame>> = std::sync::Mutex::new(Vec::new());
+    let frames: std::sync::Mutex<Vec<(i32, CapturedFrame)>> = std::sync::Mutex::new(Vec::new());
 
     unsafe {
         FRAMES_PTR = &frames;
@@ -174,10 +177,11 @@ fn capture_all_screens() -> Result<CapturedFrame, String> {
         return Err("未找到显示器".into());
     }
     if frames.len() == 1 {
-        return Ok(frames.remove(0));
+        return Ok(frames.remove(0).1);
     }
 
-    let refs: Vec<&CapturedFrame> = frames.iter().collect();
+    frames.sort_by_key(|(left, _)| *left);
+    let refs: Vec<&CapturedFrame> = frames.iter().map(|(_, f)| f).collect();
     Ok(stitch_horizontal(&refs))
 }
 

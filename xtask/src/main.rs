@@ -24,12 +24,79 @@ fn main() -> Result<()> {
     let mut args = env::args().skip(1);
     match args.next().as_deref() {
         Some("package-portable") => package_portable(parse_package_args(args.collect())?),
+        Some("copy-config") => copy_config_cmd(parse_copy_config_args(args.collect())?),
+        Some("clean-dist") => clean_dist(),
+        Some("test") => run_nextest(["--workspace"], None),
+        Some("test-core") => run_nextest(["-p", "ai-pad-core"], None),
+        Some("test-app") => run_nextest(["-p", "ai-pad-app"], None),
+        Some("test-fast") => run_nextest(
+            ["-p", "ai-pad-core", "-E", "not test(/prop_/)"],
+            Some(("PROPTEST_CASES", "32")),
+        ),
         Some("-h") | Some("--help") | None => {
             print_help();
             Ok(())
         }
         Some(cmd) => Err(format!("unknown xtask command: {cmd}").into()),
     }
+}
+
+fn parse_copy_config_args(args: Vec<String>) -> Result<PathBuf> {
+    let mut out_dir = None;
+    let mut iter = args.into_iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--out-dir" => out_dir = Some(PathBuf::from(required_value(&mut iter, "--out-dir")?)),
+            "-h" | "--help" => {
+                print_help();
+                std::process::exit(0);
+            }
+            _ => return Err(format!("unknown copy-config option: {arg}").into()),
+        }
+    }
+
+    out_dir.ok_or_else(|| "copy-config requires --out-dir <path>".into())
+}
+
+fn copy_config_cmd(out_dir: PathBuf) -> Result<()> {
+    let repo_root = env::current_dir()?;
+    copy_config(
+        &repo_root.join("config"),
+        &repo_root.join(out_dir).join("config"),
+    )?;
+    Ok(())
+}
+
+fn clean_dist() -> Result<()> {
+    let repo_root = env::current_dir()?;
+    for entry in fs::read_dir(&repo_root)? {
+        let entry = entry?;
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if name.starts_with("ai-pad-") && name.ends_with(".zip") {
+            fs::remove_file(path)?;
+        }
+    }
+    Ok(())
+}
+
+fn run_nextest<const N: usize>(args: [&str; N], env_var: Option<(&str, &str)>) -> Result<()> {
+    copy_config_cmd(PathBuf::from("core"))?;
+
+    let mut cmd = Command::new("cargo");
+    cmd.args(["nextest", "run"]);
+    cmd.args(args);
+    if let Some((key, value)) = env_var {
+        cmd.env(key, value);
+    }
+
+    let status = cmd.status()?;
+    if !status.success() {
+        return Err(format!("cargo nextest failed with status: {status}").into());
+    }
+    Ok(())
 }
 
 fn parse_package_args(args: Vec<String>) -> Result<PackageOptions> {
@@ -228,6 +295,9 @@ fn print_help() {
         "\
 xtask commands:
   package-portable [options]
+  copy-config --out-dir <path>
+  clean-dist
+  test | test-core | test-app | test-fast
 
 package-portable options:
   --version <value>          Release version/tag. Defaults to git describe.
