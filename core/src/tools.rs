@@ -127,7 +127,7 @@ fn default_screenshot_count() -> Option<u32> {
 // ---- Tool 执行结果 ----
 
 /// 工具执行结果：`output` 为可读文本，`success` 标记成功或失败。
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ToolResult {
     pub output: String,
     pub success: bool,

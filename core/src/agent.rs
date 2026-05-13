@@ -5,8 +5,8 @@
 //! 用户指令。
 //!
 //! 设计上采用 rig-core 的 Agent + StreamingPrompt 模式：文本 chunk 通过
-//! `on_chunk` 回调实时传递给 app 层的 bubble 窗口渲染，工具调用和最终响应
-//! 统计通过 `MultiTurnStreamItem` 枚举分别处理，避免阻塞流式输出。
+//! [`AgentStreamEvent::Text`] 实时传递给 app 层的 bubble 窗口渲染，工具调用通过
+//! [`AgentStreamEvent::Tool`] 形成独立状态事件，避免混进正文流。
 //!
 //! 工具注册使用 `define_tool_sync!` / `define_tool_async!` 两个宏消除样板代码，
 //! 每个工具只需提供名称、描述、参数 schema 和执行函数即可自动实现 `Tool` trait。
@@ -30,10 +30,12 @@ use rig::agent::Agent;
 use rig::agent::MultiTurnStreamItem;
 use rig::client::CompletionClient;
 use rig::completion::{Prompt, ToolDefinition};
+use rig::message::{ToolResult as RigToolResult, ToolResultContent};
 use rig::providers::anthropic;
-use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
+use rig::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingPrompt};
 use rig::tool::Tool;
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{debug, info, instrument, trace};
 
@@ -44,6 +46,150 @@ use tracing::{debug, info, instrument, trace};
 /// perform_dance → 再总结 ≈ 4 turn，带搜索记忆/读文件的链路可达 10+。
 /// 16 留足余量又不会让异常循环无限跑（每轮至少数秒，满轮约等于几分钟超时兜底）。
 const MAX_AGENT_TURNS: usize = 16;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolPhase {
+    Planned,
+    Finished,
+    Failed,
+}
+
+impl ToolPhase {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Planned => "planned",
+            Self::Finished => "finished",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolKind {
+    Utility,
+    System,
+    Performance,
+}
+
+impl ToolKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Utility => "utility",
+            Self::System => "system",
+            Self::Performance => "performance",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolRuntimeEvent {
+    pub tool_name: String,
+    pub label: String,
+    pub kind: ToolKind,
+    pub phase: ToolPhase,
+    pub call_id: Option<String>,
+    pub internal_call_id: String,
+    pub result_preview: Option<String>,
+    pub success: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AgentStreamEvent {
+    Text { text: String },
+    Tool { event: ToolRuntimeEvent },
+}
+
+fn tool_label(tool_name: &str) -> String {
+    match tool_name {
+        "launch_program" => "启动程序",
+        "shell" => "执行命令",
+        "read_file" => "读取文件",
+        "get_time" => "查看时间",
+        "recent_screenshots" => "查看屏幕记录",
+        "send_hotkey" => "发送快捷键",
+        "read_clipboard" => "读取剪贴板",
+        "force_foreground" => "切换窗口",
+        "perform_dance" => "编排舞蹈",
+        "play_dance" => "播放舞蹈",
+        other => other,
+    }
+    .to_string()
+}
+
+fn tool_kind(tool_name: &str) -> ToolKind {
+    match tool_name {
+        "perform_dance" | "play_dance" => ToolKind::Performance,
+        "launch_program" | "shell" | "send_hotkey" | "force_foreground" => ToolKind::System,
+        _ => ToolKind::Utility,
+    }
+}
+
+fn planned_tool_event(
+    tool_name: String,
+    call_id: Option<String>,
+    internal_call_id: String,
+) -> ToolRuntimeEvent {
+    ToolRuntimeEvent {
+        label: tool_label(&tool_name),
+        kind: tool_kind(&tool_name),
+        tool_name,
+        phase: ToolPhase::Planned,
+        call_id,
+        internal_call_id,
+        result_preview: None,
+        success: None,
+    }
+}
+
+fn truncate_event_preview(text: &str) -> String {
+    const MAX_PREVIEW_CHARS: usize = 120;
+    let count = text.chars().count();
+    if count <= MAX_PREVIEW_CHARS {
+        text.to_string()
+    } else {
+        format!(
+            "{}...",
+            text.chars().take(MAX_PREVIEW_CHARS).collect::<String>()
+        )
+    }
+}
+
+fn tool_result_preview(result: &RigToolResult) -> Option<String> {
+    result.content.iter().find_map(|content| match content {
+        ToolResultContent::Text(text) => Some(truncate_event_preview(&text.text)),
+        ToolResultContent::Image(_) => Some("[image]".to_string()),
+    })
+}
+
+fn result_tool_event(
+    mut planned: ToolRuntimeEvent,
+    result: &RigToolResult,
+    internal_call_id: String,
+) -> ToolRuntimeEvent {
+    let preview = tool_result_preview(result);
+    let success = preview
+        .as_deref()
+        .and_then(|text| serde_json::from_str::<tools::ToolResult>(text).ok())
+        .map(|result| result.success);
+
+    planned.phase = if success == Some(false) {
+        ToolPhase::Failed
+    } else {
+        ToolPhase::Finished
+    };
+    planned.call_id = result
+        .call_id
+        .clone()
+        .or(planned.call_id)
+        .or(Some(result.id.clone()));
+    planned.internal_call_id = internal_call_id;
+    planned.result_preview = preview;
+    planned.success = success;
+    planned
+}
 
 /// 桌宠 AI Agent，封装 rig-core Agent 和运行时配置。
 ///
@@ -99,11 +245,11 @@ impl PetAgent {
             .map_err(|e| format!("AI 对话失败: {e}"))
     }
 
-    /// 流式对话: 每收到文本块通过 on_chunk 回调发出, 返回累积的完整回复
-    #[instrument(skip(self, message, on_chunk), fields(msg_chars = message.chars().count()))]
-    pub async fn chat_stream<F>(&self, message: &str, mut on_chunk: F) -> Result<String, String>
+    /// 流式对话：文本和工具调用都通过结构化事件发出，返回累积的完整回复。
+    #[instrument(skip(self, message, on_event), fields(msg_chars = message.chars().count()))]
+    pub async fn chat_stream<F>(&self, message: &str, mut on_event: F) -> Result<String, String>
     where
-        F: FnMut(&str),
+        F: FnMut(AgentStreamEvent),
     {
         let session_id = new_session_id();
         let mut stream = self
@@ -116,23 +262,35 @@ impl PetAgent {
         let mut chunk_count = 0u32;
         let mut tool_call_count = 0u32;
         let mut final_response_count = 0u32;
+        let mut tool_events = std::collections::HashMap::<String, ToolRuntimeEvent>::new();
         while let Some(item) = stream.next().await {
             match item {
                 Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(
                     text,
                 ))) => {
                     accumulated.push_str(&text.text);
-                    on_chunk(&text.text);
+                    on_event(AgentStreamEvent::Text {
+                        text: text.text.clone(),
+                    });
                     chunk_count += 1;
                     trace!(chunk_chars = text.text.chars().count(), "text chunk");
                 }
                 Ok(MultiTurnStreamItem::StreamAssistantItem(
-                    StreamedAssistantContent::ToolCall { tool_call, .. },
+                    StreamedAssistantContent::ToolCall {
+                        tool_call,
+                        internal_call_id,
+                        ..
+                    },
                 )) => {
                     tool_call_count += 1;
-                    info!(tool = %tool_call.function.name, "tool call");
-                    // 通知用户 AI 正在调用工具
-                    on_chunk(&format!("[正在执行: {}...]", tool_call.function.name));
+                    let event = planned_tool_event(
+                        tool_call.function.name.clone(),
+                        tool_call.call_id.or(Some(tool_call.id)),
+                        internal_call_id,
+                    );
+                    info!(tool = %event.tool_name, phase = ?event.phase, "tool call planned");
+                    tool_events.insert(event.internal_call_id.clone(), event.clone());
+                    on_event(AgentStreamEvent::Tool { event });
                 }
                 Ok(MultiTurnStreamItem::FinalResponse(res)) => {
                     final_response_count += 1;
@@ -156,8 +314,22 @@ impl PetAgent {
                         "final response"
                     );
                 }
-                Ok(MultiTurnStreamItem::StreamUserItem(_)) => {
-                    debug!("user item (工具结果)");
+                Ok(MultiTurnStreamItem::StreamUserItem(StreamedUserContent::ToolResult {
+                    tool_result,
+                    internal_call_id,
+                })) => {
+                    if let Some(planned) = tool_events.remove(&internal_call_id) {
+                        let event = result_tool_event(planned, &tool_result, internal_call_id);
+                        info!(
+                            tool = %event.tool_name,
+                            phase = ?event.phase,
+                            success = ?event.success,
+                            "tool call result"
+                        );
+                        on_event(AgentStreamEvent::Tool { event });
+                    } else {
+                        debug!(internal_call_id, "tool result without planned event");
+                    }
                 }
                 Ok(other) => {
                     debug!(item = ?other, "其他 stream item");
@@ -326,6 +498,23 @@ mod tests {
         assert!(!cfg.agent.preamble.is_empty());
         assert!(cfg.agent.preamble.contains("8Bit"));
         assert!(cfg.agent.preamble.contains("猫"));
+    }
+
+    #[test]
+    fn test_planned_tool_event_metadata() {
+        let event = planned_tool_event(
+            "perform_dance".to_string(),
+            Some("provider-call".to_string()),
+            "rig-call".to_string(),
+        );
+        assert_eq!(event.tool_name, "perform_dance");
+        assert_eq!(event.label, "编排舞蹈");
+        assert_eq!(event.kind, ToolKind::Performance);
+        assert_eq!(event.kind.as_str(), "performance");
+        assert_eq!(event.phase, ToolPhase::Planned);
+        assert_eq!(event.phase.as_str(), "planned");
+        assert_eq!(event.call_id.as_deref(), Some("provider-call"));
+        assert_eq!(event.internal_call_id, "rig-call");
     }
 
     #[tokio::test]

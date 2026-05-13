@@ -128,6 +128,44 @@ body.show .content {
   outline: none;
 }
 
+.tool-status {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  margin: 0 0 6px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(20, 184, 166, 0.12);
+  color: #0f5f58;
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 600;
+}
+
+.tool-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.tool-status[data-kind="performance"] {
+  background: rgba(244, 114, 182, 0.13);
+  color: #9d174d;
+}
+
+.tool-status[data-phase="finished"] {
+  background: rgba(15, 118, 110, 0.09);
+  color: #475569;
+}
+
+.tool-status[data-phase="failed"] {
+  background: rgba(239, 68, 68, 0.11);
+  color: #991b1b;
+}
+
 /* ========== 滚动条三态 ========== */
 
 .content::-webkit-scrollbar { width: 6px; }

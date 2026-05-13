@@ -23,6 +23,7 @@
   let hideTimer = null;
   let contentEl = null;
   let bodyEl = null;           // #contentBody：唯一被 innerHTML 覆盖的节点
+  let toolStatusEl = null;
   let cursorEl = null;         // #typingCursor：常驻 DOM，仅通过 content 的 streaming class 控制
   let pollTimer = null;
   let currentWinH = MIN_H;
@@ -334,6 +335,30 @@
     }, 280);
   }
 
+  function setToolStatus(payload) {
+    if (!toolStatusEl) return;
+    var label = payload && payload.label ? payload.label : '调用工具';
+    var phase = payload && payload.phase ? payload.phase : 'planned';
+    var kind = payload && payload.kind ? payload.kind : 'utility';
+    var text;
+    if (phase === 'failed') {
+      text = label + '失败';
+    } else if (phase === 'finished') {
+      text = label + '完成';
+    } else if (kind === 'performance') {
+      text = label + '中';
+    } else {
+      text = '准备' + label;
+    }
+    toolStatusEl.textContent = text;
+    toolStatusEl.dataset.kind = kind;
+    toolStatusEl.dataset.phase = phase;
+    toolStatusEl.style.display = 'block';
+    hideThinking();
+    ensureVisible();
+    autoResize();
+  }
+
   function onInputKeyDown(e) {
     diag('keydown key=' + e.key + ' code=' + e.code +
          ' composing=' + isComposing +
@@ -455,6 +480,7 @@
   function init() {
     contentEl = document.getElementById('content');
     bodyEl = document.getElementById('contentBody');
+    toolStatusEl = document.getElementById('toolStatus');
     cursorEl = document.getElementById('typingCursor');
     inputRowEl = document.getElementById('inputRow');
     inputEl = document.getElementById('chatInput');
@@ -624,6 +650,10 @@
       setText(text);
       ensureVisible();
       startHideTimer();
+    });
+
+    listen('bubble-tool-event', (event) => {
+      setToolStatus(event.payload || {});
     });
 
     // 双击宠物 / cmd_open_chat → 展开输入框

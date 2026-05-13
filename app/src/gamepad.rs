@@ -16,7 +16,7 @@ use crate::panel;
 use crate::tts;
 use crate::voice;
 use ai_pad_core::action::{ActionConfig, ActionDef};
-use ai_pad_core::agent::PetAgent;
+use ai_pad_core::agent::{AgentStreamEvent, PetAgent};
 use ai_pad_core::bridge::{handle_button_press, resolve_agent_response, PetCommand};
 use ai_pad_core::device::button_name;
 use ai_pad_core::hotkey;
@@ -979,12 +979,34 @@ pub fn run_ai_chat(
     let app_for_chunks = app.clone();
     let prefix = log_prefix.to_string();
     let prefix_for_log = prefix.clone();
-    let stream_result = rt.block_on(agent.chat_stream(&enriched_msg, move |chunk| {
-        trace!(
-            chunk_chars = chunk.chars().count(),
-            "{prefix_for_log}{tag}AI chunk"
-        );
-        let _ = bubble::append_bubble_chunk(&app_for_chunks, chunk);
+    let stream_result = rt.block_on(agent.chat_stream(&enriched_msg, move |event| match event {
+        AgentStreamEvent::Text { text } => {
+            trace!(
+                chunk_chars = text.chars().count(),
+                "{prefix_for_log}{tag}AI chunk"
+            );
+            let _ = bubble::append_bubble_chunk(&app_for_chunks, &text);
+        }
+        AgentStreamEvent::Tool { event } => {
+            debug!(
+                tool = %event.tool_name,
+                phase = ?event.phase,
+                "{prefix_for_log}{tag}AI tool event"
+            );
+            let _ = bubble::emit_tool_event(
+                &app_for_chunks,
+                bubble::BubbleToolPayload {
+                    tool_name: event.tool_name,
+                    label: event.label,
+                    kind: event.kind.as_str().to_string(),
+                    phase: event.phase.as_str().to_string(),
+                    call_id: event.call_id,
+                    internal_call_id: event.internal_call_id,
+                    result_preview: event.result_preview,
+                    success: event.success,
+                },
+            );
+        }
     }));
     let _ = bubble::finalize_bubble(app);
 

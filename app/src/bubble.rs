@@ -201,6 +201,18 @@ struct BubbleChunkPayload {
     chunk: String,
 }
 
+#[derive(serde::Serialize, Clone)]
+pub struct BubbleToolPayload {
+    pub tool_name: String,
+    pub label: String,
+    pub kind: String,
+    pub phase: String,
+    pub call_id: Option<String>,
+    pub internal_call_id: String,
+    pub result_preview: Option<String>,
+    pub success: Option<bool>,
+}
+
 /// 显示气泡：按需创建窗口、定位到宠物上方、写入待消费文本 + emit。
 ///
 /// 跳过条件：跳舞中或 `chat_active` 为 true 时仅更新 pending 文本不显示。
@@ -342,6 +354,12 @@ pub fn append_bubble_chunk(app: &AppHandle, chunk: &str) -> Result<(), String> {
             chunk: chunk.to_string(),
         },
     );
+    Ok(())
+}
+
+/// 发送工具运行时事件。工具状态独立于正文，不写入 pending_text。
+pub fn emit_tool_event(app: &AppHandle, payload: BubbleToolPayload) -> Result<(), String> {
+    let _ = app.emit_to("bubble", "bubble-tool-event", payload);
     Ok(())
 }
 
@@ -613,6 +631,25 @@ mod tests {
         let json = serde_json::to_string(&p).unwrap();
         assert!(json.contains("chunk"));
         assert!(json.contains("片段") || json.contains("\\u"));
+    }
+
+    #[test]
+    fn test_tool_payload_serializes() {
+        let p = BubbleToolPayload {
+            tool_name: "perform_dance".into(),
+            label: "编排舞蹈".into(),
+            kind: "performance".into(),
+            phase: "planned".into(),
+            call_id: Some("provider-call".into()),
+            internal_call_id: "rig-call".into(),
+            result_preview: None,
+            success: None,
+        };
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(json.contains("perform_dance"));
+        assert!(json.contains("performance"));
+        assert!(json.contains("planned"));
+        assert!(json.contains("rig-call"));
     }
 
     // ---- chat_active 状态 ----
