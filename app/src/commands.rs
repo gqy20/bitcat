@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
-use tracing::{debug, info};
+use tracing::info;
 
 /// 共享宠物状态
 pub struct SharedPet {
@@ -135,36 +135,26 @@ pub fn cmd_tick(shared: tauri::State<'_, SharedPet>, dt_ms: u64) -> Result<PetSt
     Ok(tick(&mut pet, dt_ms))
 }
 
-/// 播放舞蹈：加载 YML 定义 → 通过 bridge 转发播放请求
+/// 播放舞蹈：通过 ActionBus 归一分发，底层复用 dance-bridge 管线
 #[tauri::command]
 pub async fn cmd_play_dance(
-    _shared: tauri::State<'_, SharedPet>,
+    shared: tauri::State<'_, SharedPet>,
     dance_name: String,
-    #[allow(unused_variables)] app: tauri::AppHandle,
+    app: tauri::AppHandle,
 ) -> Result<PetStatus, String> {
     info!(dance = %dance_name, "[cmd] 播放舞蹈请求");
 
-    let def =
-        ai_pad_core::dance::load_dance(&dance_name).map_err(|e| format!("加载舞蹈失败: {e}"))?;
-
-    debug!(
-        steps = def.steps.len(),
-        total_ms = def.total_duration_ms(),
-        loop_ = def.loop_,
-        "[cmd] 舞蹈定义已加载，通过 bridge 转发"
+    crate::action_bus::ActionBus::dispatch(
+        &app,
+        crate::action_bus::Action::PlayDance(dance_name),
+        crate::action_bus::ActionSource::Frontend {
+            cmd: "cmd_play_dance".into(),
+        },
     );
 
-    // 走 bridge 统一管线，确保 is_dancing 状态正确
-    let req = ai_pad_core::dance::PlayDanceRequest {
-        name: dance_name.clone(),
-        loops: Some(1), // 面板按钮默认单次
-        duration_ms: None,
-    };
-    ai_pad_core::dance::request_play_dance(req).map_err(|e| format!("发送舞蹈事件失败: {e}"))?;
-
     // 返回当前 pet 状态（舞蹈播放由前端接管渲染）
-    let pet = _shared.pet.lock().map_err(|e| e.to_string())?;
-    let bubble = _shared.bubble.lock().map_err(|e| e.to_string())?;
+    let pet = shared.pet.lock().map_err(|e| e.to_string())?;
+    let bubble = shared.bubble.lock().map_err(|e| e.to_string())?;
     Ok(get_status(&pet, &bubble))
 }
 

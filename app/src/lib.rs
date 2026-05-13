@@ -1,3 +1,4 @@
+pub mod action_bus;
 pub mod bubble;
 pub mod commands;
 pub mod gamepad;
@@ -218,7 +219,13 @@ pub fn run() {
                                 if sc == &shortcut_for_handler
                                     && evt.state() == ShortcutState::Pressed
                                 {
-                                    panel::toggle_panel(&handler_app);
+                                    action_bus::ActionBus::dispatch(
+                                        &handler_app,
+                                        action_bus::Action::TogglePanel,
+                                        action_bus::ActionSource::Keyboard {
+                                            shortcut: "CommandOrControl+Alt+Space".into(),
+                                        },
+                                    );
                                 }
                             });
                     match result {
@@ -227,6 +234,65 @@ pub fn run() {
                     }
                 }
                 Err(e) => warn!(error = %e, hotkey = %hotkey_str, "✗ 解析失败"),
+            }
+
+            // 批量注册 actions.yml 里 keyboard_shortcut 字段声明的全局热键。
+            // 每条成功注册的热键都会通过 ActionBus 以 Keyboard source 分发对应 Action。
+            // 老配置无此字段 → 跳过，完全向后兼容。
+            match ai_pad_core::action::ActionConfig::load("config/actions.yml") {
+                Ok(cfg) => {
+                    let mut registered = 0usize;
+                    for (name, def) in &cfg.actions {
+                        let Some(sc_str) = def.keyboard_shortcut.clone() else {
+                            continue;
+                        };
+                        let sc = match sc_str
+                            .parse::<tauri_plugin_global_shortcut::Shortcut>()
+                        {
+                            Ok(s) => s,
+                            Err(e) => {
+                                warn!(error = %e, shortcut = %sc_str, button = %name, "解析键盘热键失败");
+                                continue;
+                            }
+                        };
+                        let Some(action_tpl) = action_bus::ActionBus::from_def(def) else {
+                            warn!(button = %name, action_type = %def.action_type, "动作类型无法归一为 Action，跳过键盘热键注册");
+                            continue;
+                        };
+                        let sc_expected = sc;
+                        let lbl = sc_str.clone();
+                        let btn = name.clone();
+                        let handler_app = app_handle.clone();
+                        let result = app.global_shortcut().on_shortcut(
+                            sc,
+                            move |_app, matched, evt| {
+                                if matched == &sc_expected
+                                    && evt.state() == ShortcutState::Pressed
+                                {
+                                    debug!(button = %btn, shortcut = %lbl, "键盘别名触发");
+                                    action_bus::ActionBus::dispatch(
+                                        &handler_app,
+                                        action_tpl.clone(),
+                                        action_bus::ActionSource::Keyboard {
+                                            shortcut: lbl.clone(),
+                                        },
+                                    );
+                                }
+                            },
+                        );
+                        match result {
+                            Ok(_) => {
+                                registered += 1;
+                                info!(button = %name, shortcut = %sc_str, "✓ 键盘别名已注册");
+                            }
+                            Err(e) => warn!(error = %e, button = %name, shortcut = %sc_str, "✗ 键盘别名注册失败"),
+                        }
+                    }
+                    if registered > 0 {
+                        info!(count = registered, "键盘别名共注册 {registered} 条");
+                    }
+                }
+                Err(e) => warn!(error = %e, "加载 actions.yml 用于键盘别名注册失败"),
             }
 
             let handle = app.handle().clone();

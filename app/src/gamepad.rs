@@ -100,6 +100,12 @@ impl SharedPendingChat {
             pending: Mutex::new(None),
         }
     }
+
+    /// 置入一条待消费的聊天文本（由 chat_loop 拉取）。
+    pub fn set(&self, text: String) -> Result<(), String> {
+        *self.pending.lock().map_err(|e| e.to_string())? = Some(text);
+        Ok(())
+    }
 }
 
 impl Default for SharedPendingChat {
@@ -109,15 +115,18 @@ impl Default for SharedPendingChat {
 }
 
 #[tauri::command]
-pub async fn cmd_submit_chat(
-    state: State<'_, SharedPendingChat>,
-    text: String,
-) -> Result<(), String> {
+pub async fn cmd_submit_chat(app: AppHandle, text: String) -> Result<(), String> {
     let trimmed = text.trim().to_string();
     if trimmed.is_empty() {
         return Err("消息不能为空".into());
     }
-    *state.pending.lock().map_err(|e| e.to_string())? = Some(trimmed);
+    crate::action_bus::ActionBus::dispatch(
+        &app,
+        crate::action_bus::Action::SubmitChat(trimmed),
+        crate::action_bus::ActionSource::Frontend {
+            cmd: "cmd_submit_chat".into(),
+        },
+    );
     Ok(())
 }
 
@@ -213,9 +222,13 @@ pub async fn cmd_pet_log(msg: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn cmd_exit_chat(app: AppHandle) -> Result<(), String> {
-    let state: State<bubble::SharedBubble> = app.state();
-    state.set_chat_active(false);
-    info!("[cmd_exit_chat] chat 模式结束，截图恢复写 bubble");
+    crate::action_bus::ActionBus::dispatch(
+        &app,
+        crate::action_bus::Action::ExitChat,
+        crate::action_bus::ActionSource::Frontend {
+            cmd: "cmd_exit_chat".into(),
+        },
+    );
     Ok(())
 }
 
@@ -238,33 +251,13 @@ pub async fn cmd_enter_chat(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn cmd_open_chat(app: AppHandle) -> Result<(), String> {
-    info!("[cmd_open_chat] 开始");
-
-    let window = match app.get_webview_window("bubble") {
-        Some(w) => w,
-        None => bubble::create_bubble_window(&app).map_err(|e| e.to_string())?,
-    };
-
-    let state: State<bubble::SharedBubble> = app.state();
-    *state.pending_text.lock().map_err(|e| e.to_string())? = Some(String::new());
-    state.set_chat_active(true);
-
-    bubble::position_above_pet(&app, &window);
-    let _ = window.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
-    let _ = window.show();
-
-    for attempt in 0..10u8 {
-        std::thread::sleep(std::time::Duration::from_millis(30));
-        if window.eval(
-            "if(typeof __bubble_showInput==='function'){__bubble_showInput();'ok'}else{'no-fn'}"
-        ).is_ok() {
-            info!(attempt = attempt, "[cmd_open_chat] ✓ eval showInput 成功");
-            return Ok(());
-        }
-        info!(attempt = attempt, "[cmd_open_chat] eval 重试中...");
-    }
-
-    warn!("[cmd_open_chat] eval showInput 失败（10 次重试均未成功）");
+    crate::action_bus::ActionBus::dispatch(
+        &app,
+        crate::action_bus::Action::OpenChat,
+        crate::action_bus::ActionSource::Frontend {
+            cmd: "cmd_open_chat".into(),
+        },
+    );
     Ok(())
 }
 
@@ -505,12 +498,36 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                         if let Some(ref config) = action_config {
                             if let Some(action_def) = config.actions.get(name) {
                                 info!(name = name, action_type = %action_def.action_type, "→ {} ({})", name, action_def.action_type);
-                                execute_action(
-                                    action_def,
-                                    &config.defaults,
-                                    &mut alt_tab,
-                                    &mut ctrl_tab,
-                                );
+                                if let Some(action) =
+                                    crate::action_bus::ActionBus::from_def(action_def)
+                                {
+                                    // ModifierTab 按住态需要 gamepad 物理层直接维护
+                                    // HeldModifier；Bus 只发日志，真正按键仍走 execute_action。
+                                    if matches!(action, crate::action_bus::Action::ModifierTab(_)) {
+                                        execute_action(
+                                            action_def,
+                                            &config.defaults,
+                                            &mut alt_tab,
+                                            &mut ctrl_tab,
+                                        );
+                                    } else {
+                                        crate::action_bus::ActionBus::dispatch(
+                                            app,
+                                            action,
+                                            crate::action_bus::ActionSource::Gamepad {
+                                                button: name.to_string(),
+                                            },
+                                        );
+                                    }
+                                } else {
+                                    // from_def 返回 None（如 voice 或未知类型）→ 走原 execute_action 兜底
+                                    execute_action(
+                                        action_def,
+                                        &config.defaults,
+                                        &mut alt_tab,
+                                        &mut ctrl_tab,
+                                    );
+                                }
                             }
                         }
                     }

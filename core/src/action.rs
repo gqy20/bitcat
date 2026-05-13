@@ -44,6 +44,12 @@ pub struct ActionDef {
     pub voice: Option<VoiceConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trigger: Option<Vec<String>>,
+    /// 可选：为该动作绑定一个键盘全局热键（形如 `"Ctrl+Alt+D"`）。
+    ///
+    /// 若指定，启动时会注册全局热键 → 触发时通过 ActionBus 以
+    /// `ActionSource::Keyboard` 分发对应的 Action（与手柄按键等价）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keyboard_shortcut: Option<String>,
 }
 
 fn is_false(b: &bool) -> bool {

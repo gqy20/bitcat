@@ -631,9 +631,19 @@ pub fn do_screenshot_now(app: &tauri::AppHandle) -> Result<String, String> {
 }
 
 /// 手动触发截图分析的 Tauri 命令。
+///
+/// 前端目前未消费返回值（仅 tray 直接调 `do_screenshot_now`），
+/// 故此处归一走 ActionBus，返回描述由 Bus 内部自行处理（通过 bubble 展示）。
 #[tauri::command]
 pub async fn cmd_screenshot_now(app: tauri::AppHandle) -> Result<String, String> {
-    do_screenshot_now(&app)
+    crate::action_bus::ActionBus::dispatch(
+        &app,
+        crate::action_bus::Action::ScreenshotNow,
+        crate::action_bus::ActionSource::Frontend {
+            cmd: "cmd_screenshot_now".into(),
+        },
+    );
+    Ok(String::new())
 }
 
 #[cfg(test)]

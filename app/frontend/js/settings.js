@@ -198,6 +198,8 @@ function renderActionBody(body, def) {
     mk("语音触发键 trigger (逗号分隔)", "voice-trigger", trig);
     mk("延迟 delay (秒)", "voice-delay", delay, "number");
   }
+  // 所有非 unbound 动作都可额外绑定一个键盘全局热键（改后需重启生效）
+  mk("键盘热键 keyboard_shortcut (可选，如 Ctrl+Alt+D，需重启生效)", "kbd", def.keyboard_shortcut || "");
 }
 
 function collectActions() {
@@ -234,6 +236,9 @@ function collectActions() {
       const delay = parseFloat(getVal("voice-delay")) || 1.0;
       def.voice = { trigger: trig, delay };
     }
+    // 键盘热键（可选，所有动作类型都可绑定）
+    const kbd = (getVal("kbd") || "").trim();
+    if (kbd) def.keyboard_shortcut = kbd;
     actions[key] = def;
   });
   return { defaults, actions };
