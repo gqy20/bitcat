@@ -5,6 +5,9 @@ use std::path::PathBuf;
 use tracing::{debug, info, warn};
 
 use crate::ai_config::AiConfig;
+use crate::token_tracker::{
+    TokenCategory, TokenRecord, new_session_id, parse_anthropic_usage, record_token_usage,
+};
 
 // ---- 数据结构 ----
 
@@ -541,6 +544,17 @@ pub async fn aggregate_profile(
 
     let elapsed = start.elapsed();
     debug!(elapsed_ms = elapsed.as_millis(), "用户画像聚合完成");
+
+    let usage = parse_anthropic_usage(&json);
+    record_token_usage(
+        &TokenRecord::new(
+            new_session_id(),
+            TokenCategory::MemoryAggregation,
+            ai_config.model.clone(),
+            usage,
+        )
+        .with_elapsed_ms(elapsed.as_millis() as u64),
+    );
 
     parse_aggregation_response(&json)
 }

@@ -16,6 +16,7 @@ pub mod screen_summary;
 pub mod screenshot;
 #[cfg(test)]
 mod screenshot_tests;
+pub mod token_tracker;
 pub mod tools;
 pub mod user_profile;
 pub mod vision;

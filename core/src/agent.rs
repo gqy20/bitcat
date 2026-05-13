@@ -1,6 +1,9 @@
 use crate::ai_config::AiConfig;
 use crate::permission_hook::PermissionHook;
 use crate::prompts::PromptsConfig;
+use crate::token_tracker::{
+    TokenCategory, TokenRecord, TokenUsage, new_session_id, record_token_usage,
+};
 use crate::tools::{
     self, ClipboardArgs, ForegroundArgs, GetTimeArgs, HotkeyArgs, LaunchArgs, PerformDanceArgs,
     PlayDanceArgs, ReadFileArgs, RecentScreenshotsArgs, ShellArgs, ToolError,
@@ -78,6 +81,7 @@ impl PetAgent {
     where
         F: FnMut(&str),
     {
+        let session_id = new_session_id();
         let mut stream = self
             .agent
             .stream_prompt(message.to_string())
@@ -87,6 +91,7 @@ impl PetAgent {
         let mut accumulated = String::new();
         let mut chunk_count = 0u32;
         let mut tool_call_count = 0u32;
+        let mut final_response_count = 0u32;
         while let Some(item) = stream.next().await {
             match item {
                 Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(
@@ -106,9 +111,24 @@ impl PetAgent {
                     on_chunk(&format!("[正在执行: {}...]", tool_call.function.name));
                 }
                 Ok(MultiTurnStreamItem::FinalResponse(res)) => {
+                    final_response_count += 1;
+                    let usage = TokenUsage::from(res.usage());
+                    record_token_usage(
+                        &TokenRecord::new(
+                            session_id.clone(),
+                            TokenCategory::Chat,
+                            self.config.model.clone(),
+                            usage.clone(),
+                        )
+                        .with_extra(format!("turn={final_response_count}")),
+                    );
                     info!(
                         chars = res.response().len(),
-                        tokens = res.usage().total_tokens,
+                        input_tokens = usage.input_tokens,
+                        output_tokens = usage.output_tokens,
+                        total_tokens = usage.total_tokens,
+                        cache_read_tokens = usage.cache_read_tokens,
+                        cache_write_tokens = usage.cache_write_tokens,
                         "final response"
                     );
                 }

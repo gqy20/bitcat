@@ -1,0 +1,15 @@
+---
+source: core/src/token_tracker.rs
+expression: record
+---
+timestamp: "2026-05-13T12:00:00+08:00"
+session_id: session-1
+category: Chat
+model: claude-sonnet-4-20250514
+input_tokens: 100
+output_tokens: 20
+total_tokens: 120
+cache_read_tokens: 80
+cache_write_tokens: 5
+elapsed_ms: 1234
+extra: turn=1

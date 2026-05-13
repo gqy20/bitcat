@@ -3,6 +3,9 @@ use serde_json::{Value, json};
 
 use crate::ai_config::AiConfig;
 use crate::prompts::VisionPromptConfig;
+use crate::token_tracker::{
+    TokenCategory, TokenRecord, new_session_id, parse_anthropic_usage, record_token_usage,
+};
 use tracing::{debug, warn};
 
 // ---- 配置 ----
@@ -86,6 +89,7 @@ async fn send_vision_request(
     client: &reqwest::Client,
     url: &str,
     api_key: &str,
+    model: &str,
     body: &Value,
 ) -> Result<String, String> {
     let start = std::time::Instant::now();
@@ -115,6 +119,12 @@ async fn send_vision_request(
         elapsed_ms = elapsed.as_millis(),
         chars = json.to_string().chars().count(),
         "视觉分析完成"
+    );
+
+    let usage = parse_anthropic_usage(&json);
+    record_token_usage(
+        &TokenRecord::new(new_session_id(), TokenCategory::Vision, model, usage)
+            .with_elapsed_ms(elapsed.as_millis() as u64),
     );
 
     parse_vision_response(&json)
@@ -149,7 +159,7 @@ pub async fn analyze_screenshot(
     debug!(model, url, "视觉分析请求");
 
     let client = reqwest::Client::new();
-    send_vision_request(&client, &url, &config.api_key, &body).await
+    send_vision_request(&client, &url, &config.api_key, model, &body).await
 }
 
 #[cfg(test)]
@@ -322,7 +332,7 @@ mod wiremock_tests {
         let client = test_client();
         let url = format!("{}/v1/messages", server.uri());
         let body = build_vision_request("test-model", "prompt", "AA==");
-        let result = send_vision_request(&client, &url, "test-key", &body).await;
+        let result = send_vision_request(&client, &url, "test-key", "test-model", &body).await;
         assert_eq!(result.unwrap(), "VS Code 编辑器");
     }
 
@@ -339,7 +349,7 @@ mod wiremock_tests {
         let client = test_client();
         let url = format!("{}/v1/messages", server.uri());
         let body = build_vision_request("test-model", "prompt", "AA==");
-        let result = send_vision_request(&client, &url, "key", &body).await;
+        let result = send_vision_request(&client, &url, "key", "test-model", &body).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("429"));
     }

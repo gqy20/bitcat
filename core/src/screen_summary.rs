@@ -1,4 +1,7 @@
 use crate::ai_config::AiConfig;
+use crate::token_tracker::{
+    TokenCategory, TokenRecord, new_session_id, parse_anthropic_usage, record_token_usage,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::fs;
@@ -251,6 +254,17 @@ pub async fn generate_summary(
 
     let elapsed = start.elapsed();
     debug!(elapsed_ms = elapsed.as_millis(), "屏幕摘要生成完成");
+
+    let usage = parse_anthropic_usage(&json);
+    record_token_usage(
+        &TokenRecord::new(
+            new_session_id(),
+            TokenCategory::ScreenSummary,
+            ai_config.model.clone(),
+            usage,
+        )
+        .with_elapsed_ms(elapsed.as_millis() as u64),
+    );
 
     parse_text_response(&json)
 }
