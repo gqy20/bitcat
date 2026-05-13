@@ -460,3 +460,38 @@ describe('bubble cursor lifecycle', () => {
     expect(document.querySelectorAll('.typing-cursor').length).toBe(1);
   });
 });
+
+describe('bubble streaming lifecycle', () => {
+  it('does not finish streaming just because polling text is stable', () => {
+    let streaming = true;
+    let stopped = false;
+    let inputShown = false;
+    let rendered = '';
+
+    const onPollResult = (txt) => {
+      if (!streaming) return;
+
+      const len = (txt || '').length;
+      if (len === 0) return;
+      rendered = txt;
+    };
+
+    const stopPolling = () => { stopped = true; };
+    const showInput = () => { inputShown = true; };
+
+    for (let i = 0; i < 20; i++) {
+      onPollResult('tool call started');
+    }
+
+    expect(streaming).toBe(true);
+    expect(stopped).toBe(false);
+    expect(inputShown).toBe(false);
+    expect(rendered).toBe('tool call started');
+
+    streaming = false;
+    stopPolling();
+    showInput();
+    expect(stopped).toBe(true);
+    expect(inputShown).toBe(true);
+  });
+});
