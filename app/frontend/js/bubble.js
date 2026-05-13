@@ -39,6 +39,8 @@
   // ---- Resize 状态 ----
   let resizeMode = 'auto';      // 'auto' | 'manual'
   let userPrefSize = null;      // { w, h } 用户手动设定的偏好尺寸
+  let userResizeActive = false;
+  let programmaticResize = false;
 
   // ---- 诊断日志（通过 Rust cmd_pet_log 输出到后端 tracing） ----
   function diag(msg) {
@@ -92,6 +94,7 @@
     if (!window.__TAURI__ || !window.__TAURI__.window) return Promise.resolve(false);
 
     var win = window.__TAURI__.window.getCurrentWindow();
+    programmaticResize = true;
     return win.setSize(new window.__TAURI__.window.LogicalSize(targetW, targetH))
       .then(function() {
         currentWinW = targetW;
@@ -103,6 +106,9 @@
       .catch(function(e) {
         diag('resize failed: w=' + targetW + ' h=' + targetH + ' err=' + e);
         return false;
+      })
+      .finally(function() {
+        setTimeout(function() { programmaticResize = false; }, 250);
       });
   }
 
@@ -540,6 +546,7 @@
         e.preventDefault();
         e.stopPropagation();
         resizeMode = 'manual';
+        userResizeActive = true;
         win.startResizeDragging('SouthEast').catch(function(e) {
           diag('startResizeDragging failed: ' + e);
         });
@@ -550,30 +557,37 @@
         e.preventDefault();
         e.stopPropagation();
         resizeMode = 'auto';
+        userResizeActive = false;
         userPrefSize = null;
         localStorage.removeItem('bubble_pref');
         diag('resize: double-click → reset to auto');
         autoResize();
       });
 
-      // 窗口尺寸变化时更新 userPrefSize（拖拽中/拖拽后）
+      // Window size can change either from user dragging or from auto content sizing.
+      // Only user dragging should overwrite the persisted preference.
       win.onResized(function() {
-        if (resizeMode === 'manual') {
-          win.innerSize().then(function(size) {
-            var w = Math.round(size.width);
-            var h = Math.round(size.height);
+        win.innerSize().then(function(size) {
+          var w = Math.round(size.width);
+          var h = Math.round(size.height);
+          currentWinW = w;
+          currentWinH = h;
+          syncCssWidth(w);
+          repositionBubbleWindow();
+          if (resizeMode === 'manual' && userResizeActive && !programmaticResize) {
             userPrefSize = { w: w, h: h };
-            currentWinW = w;
-            currentWinH = h;
             localStorage.setItem('bubble_pref', JSON.stringify(userPrefSize));
-            // CSS 跟随宽度变化
-            syncCssWidth(w);
-            diag('resize: manual size updated w=' + w + ' h=' + h);
-            repositionBubbleWindow();
-          }).catch(function(e) {
-            diag('manual resize read failed: ' + e);
-          });
-        }
+            diag('resize: manual pref saved w=' + w + ' h=' + h);
+          }
+        }).catch(function(e) {
+          diag('resize read failed: ' + e);
+        });
+      });
+      window.addEventListener('mouseup', function() {
+        userResizeActive = false;
+      });
+      window.addEventListener('blur', function() {
+        userResizeActive = false;
       });
     }
 

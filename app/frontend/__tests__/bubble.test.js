@@ -495,3 +495,46 @@ describe('bubble streaming lifecycle', () => {
     expect(inputShown).toBe(true);
   });
 });
+
+describe('bubble resize preference lifecycle', () => {
+  function maybePersistResize(state, w, h) {
+    state.currentWinW = w;
+    state.currentWinH = h;
+
+    if (state.resizeMode === 'manual' && state.userResizeActive && !state.programmaticResize) {
+      state.userPrefSize = { w, h };
+      state.storage.bubble_pref = JSON.stringify(state.userPrefSize);
+    }
+  }
+
+  it('persists resize preference only during user drag', () => {
+    const state = {
+      resizeMode: 'manual',
+      userResizeActive: true,
+      programmaticResize: false,
+      userPrefSize: null,
+      storage: {},
+    };
+
+    maybePersistResize(state, 340, 260);
+
+    expect(state.userPrefSize).toEqual({ w: 340, h: 260 });
+    expect(JSON.parse(state.storage.bubble_pref)).toEqual({ w: 340, h: 260 });
+  });
+
+  it('does not overwrite preference during programmatic content resize', () => {
+    const state = {
+      resizeMode: 'manual',
+      userResizeActive: false,
+      programmaticResize: true,
+      userPrefSize: { w: 320, h: 220 },
+      storage: { bubble_pref: JSON.stringify({ w: 320, h: 220 }) },
+    };
+
+    maybePersistResize(state, 320, 500);
+
+    expect(state.currentWinH).toBe(500);
+    expect(state.userPrefSize).toEqual({ w: 320, h: 220 });
+    expect(JSON.parse(state.storage.bubble_pref)).toEqual({ w: 320, h: 220 });
+  });
+});
