@@ -6,6 +6,7 @@
 //! B2-B4 会把各输入源接到 [`ActionBus::dispatch`]。
 
 use ai_pad_core::action::ActionDef;
+use ai_pad_core::logging::log_preview;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use tauri::AppHandle;
@@ -120,34 +121,41 @@ impl ActionBus {
     /// B1 阶段仅打日志；后续 Task（B2-B5）逐步接入真实路由。
     #[allow(unused_variables)]
     pub fn dispatch(app: &AppHandle, action: Action, source: ActionSource) {
-        debug!(?source, ?action, "[action-bus] dispatch");
+        debug!(?source, ?action, "action dispatch");
         match &action {
             Action::TogglePanel => {
-                info!(?source, "[action-bus] → TogglePanel");
+                info!(?source, action = "TogglePanel", "action dispatch");
                 crate::panel::toggle_panel(app);
             }
             Action::ExitChat => {
-                info!(?source, "[action-bus] → ExitChat");
+                info!(?source, action = "ExitChat", "action dispatch");
                 let state: tauri::State<'_, crate::bubble::SharedBubble> =
                     tauri::Manager::state(app);
                 state.set_chat_active(false);
             }
             Action::OpenChat => {
-                info!(?source, "[action-bus] → OpenChat");
+                info!(?source, action = "OpenChat", "action dispatch");
                 open_chat_impl(app);
             }
             Action::SubmitChat(text) => {
-                info!(?source, len = text.len(), "[action-bus] → SubmitChat");
+                let text_preview = log_preview(text, 80);
+                info!(
+                    ?source,
+                    action = "SubmitChat",
+                    text_chars = text.chars().count(),
+                    text_preview = %text_preview,
+                    "action dispatch"
+                );
                 submit_chat_impl(app, text.clone());
             }
             Action::PlayDance(name) => {
-                info!(?source, dance = %name, "[action-bus] → PlayDance");
+                info!(?source, action = "PlayDance", dance = %name, "action dispatch");
                 play_dance_impl(name.clone());
             }
             Action::ScreenshotNow => {
-                info!(?source, "[action-bus] → ScreenshotNow");
+                info!(?source, action = "ScreenshotNow", "action dispatch");
                 if let Err(e) = crate::screenshot::do_screenshot_now(app) {
-                    warn!(error = %e, "[action-bus] 截图失败");
+                    warn!(error = %e, "screenshot action failed");
                 }
             }
             Action::Launch {
@@ -156,7 +164,7 @@ impl ActionBus {
                 workdir,
                 terminal,
             } => {
-                info!(?source, program = %program, "[action-bus] → Launch");
+                info!(?source, action = "Launch", program = %program, "action dispatch");
                 if let Err(e) = ai_pad_core::action::launch_program(
                     program,
                     args,
@@ -164,40 +172,43 @@ impl ActionBus {
                     *terminal,
                     "powershell",
                 ) {
-                    warn!(error = %e, "[action-bus] 启动程序失败");
+                    warn!(error = %e, "launch action failed");
                 }
             }
             Action::Script(cmd) => {
-                info!(?source, "[action-bus] → Script");
+                let command_preview = log_preview(cmd, 80);
+                info!(
+                    ?source,
+                    action = "Script",
+                    command_chars = cmd.chars().count(),
+                    command_preview = %command_preview,
+                    "action dispatch"
+                );
                 if let Err(e) = std::process::Command::new("powershell")
                     .args(["-Command", cmd])
                     .spawn()
                 {
-                    warn!(error = %e, "[action-bus] 启动脚本失败");
+                    warn!(error = %e, "script action failed");
                 }
             }
             Action::Hotkey(keys) => {
-                info!(?source, keys = ?keys, "[action-bus] → Hotkey");
+                info!(?source, action = "Hotkey", keys = ?keys, "action dispatch");
                 let refs: Vec<&str> = keys.iter().map(|s| s.as_str()).collect();
                 if let Err(e) = ai_pad_core::hotkey::trigger_hotkey(&refs, 0.02) {
-                    warn!(error = %e, "[action-bus] 热键触发失败");
+                    warn!(error = %e, "hotkey action failed");
                 }
             }
             Action::ModifierTab(kind) => {
                 // 按住态由 gamepad 物理层管理，Bus 只留日志（不做实际按键）。
-                info!(
-                    ?source,
-                    ?kind,
-                    "[action-bus] → ModifierTab（由调用方接管按住态）"
-                );
+                info!(?source, ?kind, action = "ModifierTab", "action dispatch");
             }
             Action::StartVoice => {
                 // 语音录音条开启由 gamepad 物理层管理（HeldCombo 按住态）；
                 // Bus 仅作为预留扩展点，后续如果加"前端/键盘触发一次按住态"再实现。
-                info!(?source, "[action-bus] → StartVoice（预留）");
+                info!(?source, action = "StartVoice", "action dispatch");
             }
             Action::Custom(tag) => {
-                info!(?source, tag = %tag, "[action-bus] → Custom");
+                info!(?source, action = "Custom", tag = %tag, "action dispatch");
             }
         }
     }
@@ -208,12 +219,12 @@ impl ActionBus {
 fn submit_chat_impl(app: &AppHandle, text: String) {
     let trimmed = text.trim().to_string();
     if trimmed.is_empty() {
-        warn!("[action-bus] SubmitChat 文本为空，跳过");
+        warn!("empty SubmitChat action skipped");
         return;
     }
     let state: tauri::State<'_, crate::gamepad::SharedPendingChat> = tauri::Manager::state(app);
     if let Err(e) = state.set(trimmed) {
-        warn!(error = %e, "[action-bus] SharedPendingChat 写入失败");
+        warn!(error = %e, "SharedPendingChat write failed");
     }
 }
 
@@ -225,7 +236,7 @@ fn open_chat_impl(app: &AppHandle) {
         None => match crate::bubble::create_bubble_window(app) {
             Ok(w) => w,
             Err(e) => {
-                warn!(error = %e, "[action-bus] 创建 bubble 窗口失败");
+                warn!(error = %e, "create bubble window failed");
                 return;
             }
         },
@@ -249,16 +260,16 @@ fn open_chat_impl(app: &AppHandle) {
             )
             .is_ok()
         {
-            info!(attempt, "[action-bus] ✓ eval showInput 成功");
+            debug!(attempt, "bubble input eval succeeded");
             return;
         }
     }
-    warn!("[action-bus] eval showInput 失败（10 次重试均未成功）");
+    warn!("bubble input eval failed after retries");
 }
 
 fn play_dance_impl(dance_name: String) {
     if ai_pad_core::dance::load_dance(&dance_name).is_err() {
-        warn!(dance = %dance_name, "[action-bus] 舞蹈不存在，无法播放");
+        warn!(dance = %dance_name, "dance action target missing");
         return;
     }
 
@@ -268,7 +279,7 @@ fn play_dance_impl(dance_name: String) {
         duration_ms: None,
     };
     if let Err(e) = ai_pad_core::dance::request_play_dance(req) {
-        warn!(error = %e, "[action-bus] request_play_dance 失败");
+        warn!(error = %e, "request_play_dance failed");
     }
 }
 

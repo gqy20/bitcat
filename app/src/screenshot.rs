@@ -332,7 +332,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
         {
             let bubble: tauri::State<crate::bubble::SharedBubble> = app.state();
             if bubble.is_chat_active() {
-                info!("[screenshot] 对话进行中，跳过本轮截图（chat_active=true)");
+                debug!("screenshot cycle skipped while chat is active");
                 continue;
             }
         }
@@ -341,7 +341,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
         trace!("[screenshot] 开始捕获");
         let frame = match capture_target(&config.target) {
             Ok(f) => {
-                info!("截图周期: 捕获成功 {}x{}", f.width, f.height);
+                debug!(width = f.width, height = f.height, "screenshot captured");
                 // 全黑帧检测（覆盖屏保/锁屏等 SM_MONITORISOFF 未覆盖的场景）
                 let sample_count = 256;
                 let step = (f.pixels.len() / 4).max(1) / sample_count.max(1);
@@ -428,12 +428,12 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             {
                 let bubble: tauri::State<crate::bubble::SharedBubble> = app.state();
                 if bubble.is_chat_active() {
-                    info!("[screenshot] Vision 前发现 chat_active=true，本轮放弃分析");
+                    debug!("vision skipped because chat became active");
                     break;
                 }
             }
 
-            info!(model = %vision_model, "视觉分析: 开始请求");
+            debug!(model = %vision_model, "vision request started");
             let description = match rt.block_on(vision::analyze_screenshot(
                 &ai_config,
                 &VisionConfig::default(),
@@ -499,13 +499,13 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
                         "喵~ 看不太清屏幕内容，可能需要检查 API 配置",
                     );
                 } else {
-                    info!(
+                    debug!(
                         chars = description.chars().count(),
-                        "[screenshot] 调用 show_bubble"
+                        "show screenshot bubble"
                     );
                     match crate::bubble::show_bubble(app, &description) {
-                        Ok(()) => info!("[screenshot] show_bubble 成功"),
-                        Err(e) => warn!(error = %e, "[screenshot] show_bubble 失败"),
+                        Ok(()) => debug!("screenshot bubble shown"),
+                        Err(e) => warn!(error = %e, "screenshot bubble failed"),
                     }
                 }
             } else {

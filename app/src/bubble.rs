@@ -1,5 +1,5 @@
 use std::sync::Mutex;
-use tracing::info;
+use tracing::{debug, info};
 
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindowBuilder,
@@ -67,18 +67,18 @@ pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
     let state: State<SharedBubble> = app.state();
 
     if ai_pad_core::dance::is_dancing() {
-        info!(
+        debug!(
             text_len = text.chars().count(),
-            "[show_bubble] 跳过（is_dancing=true，跳舞期间隐藏气泡）"
+            "bubble skipped while dancing"
         );
         return Ok(());
     }
 
     // chat 模式优先级：截图摘要不覆盖聊天内容
     if state.is_chat_active() {
-        info!(
+        debug!(
             text_len = text.chars().count(),
-            "[show_bubble] 跳过（chat_active=true，截图不覆盖聊天）"
+            "bubble deferred while chat is active"
         );
         // 只更新 pending 文本，不显示/不 emit（等 chat 结束后自然消费）
         *state.pending_text.lock().map_err(|e| e.to_string())? = Some(text.to_string());
@@ -91,11 +91,11 @@ pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
     // 取或创建窗口
     let window = match app.get_webview_window("bubble") {
         Some(w) => {
-            info!("[show_bubble] 复用已有窗口");
+            debug!("reuse bubble window");
             w
         }
         None => {
-            info!("[show_bubble] 窗口不存在，创建新窗口");
+            debug!("create bubble window");
             create_bubble_window(app).map_err(|e| e.to_string())?
         }
     };
@@ -105,10 +105,10 @@ pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
 
     let _ = window.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
     let _ = window.show();
-    info!("[show_bubble] window.show() 已调用");
+    debug!("bubble window show called");
     // eval 直接触发 JS 拉取 pending_text：emit_to 对 hide→show 窗口不可靠
     let _ = window.eval("if(window.__bubble_onShow)window.__bubble_onShow();");
-    info!("[show_bubble] eval __bubble_onShow 已调用");
+    debug!("bubble onShow eval called");
     // emit 兜底：窗口首次创建或未被 hide 过时可能仍有效
     let _ = app.emit_to(
         "bubble",
@@ -117,10 +117,7 @@ pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
             text: text.to_string(),
         },
     );
-    info!(
-        text_len = text.chars().count(),
-        "[show_bubble] emit bubble-update 完成"
-    );
+    info!(text_len = text.chars().count(), "bubble shown");
 
     Ok(())
 }

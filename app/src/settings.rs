@@ -165,7 +165,12 @@ pub async fn cmd_settings_close(app: AppHandle) -> Result<(), String> {
 /// 前端调试日志桥
 #[tauri::command]
 pub async fn cmd_settings_log(msg: String) -> Result<(), String> {
-    info!("[settings-js] {msg}");
+    let preview = ai_pad_core::logging::log_preview(&msg, 80);
+    info!(
+        msg_chars = msg.chars().count(),
+        msg_preview = %preview,
+        "settings frontend log"
+    );
     Ok(())
 }
 

@@ -84,7 +84,7 @@ clippy:
 	cargo clippy -- -W clippy::all
 
 run:
-	cargo run
+	cargo run -p ai-pad-app --bin ai-pad-app
 
 # ══════════════════════════════════════
 #  清理

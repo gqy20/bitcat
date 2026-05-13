@@ -2,6 +2,8 @@ use rig::agent::PromptHook;
 use rig::agent::ToolCallHookAction;
 use tracing::{info, warn};
 
+use crate::logging::log_preview;
+
 #[derive(Clone)]
 pub struct PermissionHook;
 
@@ -17,13 +19,22 @@ impl<M: rig::completion::CompletionModel> PromptHook<M> for PermissionHook {
         async move {
             match tool_name {
                 "shell" => {
+                    let command_preview = log_preview(args, 120);
                     if is_dangerous_command(&cmd_lower) {
-                        warn!(command = %args, "工具调用被安全策略拦截");
+                        warn!(
+                            command_chars = args.chars().count(),
+                            command_preview = %command_preview,
+                            "tool call blocked by policy"
+                        );
                         ToolCallHookAction::Skip {
                             reason: "此命令被安全策略阻止，可能造成数据丢失或系统损坏".into(),
                         }
                     } else {
-                        info!(command = %args, "shell 工具调用通过安全检查");
+                        info!(
+                            command_chars = args.chars().count(),
+                            command_preview = %command_preview,
+                            "shell tool call allowed"
+                        );
                         ToolCallHookAction::Continue
                     }
                 }

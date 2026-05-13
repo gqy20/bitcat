@@ -217,7 +217,12 @@ impl Default for SharedAgent {
 
 #[tauri::command]
 pub async fn cmd_pet_log(msg: String) -> Result<(), String> {
-    info!("[pet-diag] {msg}");
+    let preview = log_preview(&msg, 80);
+    info!(
+        msg_chars = msg.chars().count(),
+        msg_preview = %preview,
+        "pet frontend log"
+    );
     Ok(())
 }
 

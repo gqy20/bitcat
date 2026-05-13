@@ -1,5 +1,6 @@
 use crate::action::launch_program;
 use crate::dance::{DanceDef, DanceStep};
+use crate::logging::log_preview;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use thiserror::Error;
@@ -120,7 +121,12 @@ pub fn execute_launch(args: &LaunchArgs) -> ToolResult {
 
 /// 执行 shell 命令（async，带超时和输出截断）
 pub async fn execute_shell(args: &ShellArgs) -> Result<ToolResult, ToolError> {
-    debug!(command = %args.command, "AI 执行 shell 命令");
+    let command_preview = log_preview(&args.command, 120);
+    debug!(
+        command_chars = args.command.chars().count(),
+        command_preview = %command_preview,
+        "AI executes shell command"
+    );
     let result = tokio::time::timeout(
         Duration::from_secs(SHELL_TIMEOUT_SECS),
         tokio::process::Command::new("powershell")

@@ -1,68 +1,65 @@
 # Logging Rules
 
-All logging uses the `tracing` crate. Never use `eprintln!`/`println!` outside `#[test]`.
+All production logging uses the `tracing` crate. Do not use `println!` or `eprintln!`
+outside tests.
 
-## Level Definitions
+## Levels
 
-| Level | Purpose | Frequency | Example |
-|-------|---------|-----------|---------|
-| `error!` | Unrecoverable failure, needs human intervention | Almost never in healthy run | Agent init failed, thread crashed |
-| `warn!` | Degraded success, auto-recoverable anomaly | Occasional | File parse failure → empty fallback, API non-200, lock poisoned |
-| `info!` | Business lifecycle markers, one line per event | Per user action | App started, chat complete, screenshot cycle done |
-| `debug!` | Internal state snapshot for troubleshooting | Default on for core crate | Memory entries loaded, context composition, persistence summary |
-| `trace!` | High-frequency per-chunk/per-tick/per-frame | Default off (`RUST_LOG=trace`) | Stream chunk, gamepad tick, screenshot frame dHash |
+| Level | Purpose | Frequency |
+| --- | --- | --- |
+| `error!` | Unrecoverable failure that needs human attention | Almost never in a healthy run |
+| `warn!` | Degraded success or recoverable anomaly | Occasional |
+| `info!` | Product timeline event | Per user action or lifecycle event |
+| `debug!` | Internal state snapshot for troubleshooting | Default-on diagnostics |
+| `trace!` | High-frequency tick, frame, chunk, or loop detail | Default-off diagnostics |
 
-## Large Text Rule
+## Large Text
 
-**Never put dynamic text longer than 80 chars directly into a log message body.** Always truncate to a preview:
+Never write raw user text, AI output, prompts, shell commands, file contents, API
+responses, or frontend forwarded messages directly to a log line. Use character
+counts plus `ai_pad_core::logging::log_preview()`.
 
 ```rust
-// Correct
+let preview = log_preview(&reply, 80);
 info!(
-    chars = reply.chars().count(),
-    preview = %reply.chars().take(60).collect::<String>(),
+    reply_chars = reply.chars().count(),
+    reply_preview = %preview,
     "ai response complete"
 );
-
-// Wrong
-info!(reply = %reply, "AI said: {reply}");
-info!(msg = %msg, "user said: {msg}");
 ```
 
-This applies to: AI replies, user messages, voice recognition text, file contents, any LLM output.
+Use `*_chars` for counts and `*_preview` for shortened text. Count with
+`.chars().count()`, not `.len()`, when the field describes text length.
 
 ## Structured Fields
 
-- Use named fields, not string interpolation: `info!(model = %m, chars = n, "...")`
-- Message body is a short operation name, not a sentence template
-- Keep message body under 80 chars
-- Use `%` (Display) for readable types, `?` (Debug) for complex types, `?path` for PathBuf
+- Prefer named fields over string interpolation.
+- Keep the message body short and stable, for example `"chat complete"`.
+- Put values in fields, not in the message body.
+- Use `%` for readable display values and `?` for structured debug values.
+- Keep high-cardinality or sensitive values as previews only.
 
-## `#[instrument]` Rules
+## `#[instrument]`
 
-- Always `skip` large parameters (full prompts, reply text, closures)
-- Add summary fields via `fields()`: `fields(msg_len = msg.chars().count())`
-- Never let a multi-KB string become part of the span name
-
-```rust
-// Correct
-#[instrument(skip(self, on_chunk, message), fields(msg_len = message.chars().count()))]
-
-// Wrong — message pollutes span name
-#[instrument(skip(self, on_chunk), fields(msg_len = message.chars().count()))]
-```
+- Always `skip` large parameters such as prompts, messages, replies, closures,
+  and callback functions.
+- Add summary fields explicitly with `fields(msg_chars = message.chars().count())`.
+- Never let a multi-KB string become part of a span.
 
 ## Forbidden Patterns
 
-- `eprintln!` / `println!` in non-test code — use `debug!` or `trace!`
-- Logging raw user input (PII risk) — use length + truncated preview
-- Logging full API responses — use status code + char count
-- `info!` for per-chunk/per-iteration events — use `trace!`
+- `info!("AI said: {reply}")`
+- `info!(msg = %msg, "...")`
+- `debug!(command = %command, "...")`
+- `warn!(response = %api_response, "...")`
+- `info!` for stream chunks, screenshot frames, gamepad ticks, or retry loops
 
-## Checklist (before adding a log line)
+## Checklist
 
-1. Is the level correct per the table above?
-2. Is the message body under 80 chars?
-3. Does any dynamic field exceed 80 chars? → truncate it
-4. Is this a high-frequency call (>10x per second)? → should be `trace!`
-5. Is this inside `#[test]`? → `eprintln!` is OK there
+Before adding a log line:
+
+1. Is the level correct?
+2. Is this high-frequency? If yes, use `trace!` or `debug!`.
+3. Could any field contain user, AI, shell, file, prompt, or API text?
+4. If yes, did you log `*_chars` and `*_preview` instead?
+5. Is the message body stable enough to search across versions?
