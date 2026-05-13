@@ -37,7 +37,7 @@ pub struct AppearanceSettings {
     pub always_on_top: bool,
     #[serde(default)]
     pub default_collapsed: bool,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub tts_enabled: bool,
     #[serde(default = "default_shortcut")]
     pub global_shortcut: String,
@@ -62,7 +62,7 @@ impl Default for AppearanceSettings {
         Self {
             always_on_top: true,
             default_collapsed: false,
-            tts_enabled: true,
+            tts_enabled: false,
             global_shortcut: default_shortcut(),
             screenshot_interval_sec: default_screenshot_interval_sec(),
         }
@@ -119,7 +119,7 @@ mod tests {
         let a = AppearanceSettings::default();
         assert!(a.always_on_top);
         assert!(!a.default_collapsed);
-        assert!(a.tts_enabled);
+        assert!(!a.tts_enabled);
         assert_eq!(a.global_shortcut, "CommandOrControl+Alt+Space");
         assert_eq!(a.screenshot_interval_sec, 30);
     }

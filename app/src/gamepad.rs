@@ -954,9 +954,14 @@ pub fn run_ai_chat(
                 "{prefix}AI chat completed"
             );
             let reply_for_tts = reply.clone();
-            std::thread::spawn(move || {
-                tts::speak(&reply_for_tts);
-            });
+            let tts_on = ai_pad_core::app_settings::AppSettings::load()
+                .appearance
+                .tts_enabled;
+            if tts_on {
+                std::thread::spawn(move || {
+                    tts::speak(&reply_for_tts);
+                });
+            }
 
             let ai_events = process_agent_response(&reply);
             for evt in &ai_events {
