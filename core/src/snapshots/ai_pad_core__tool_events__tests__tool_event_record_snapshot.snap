@@ -1,0 +1,16 @@
+---
+source: core/src/tool_events.rs
+expression: record
+---
+timestamp: "2026-05-13T12:00:00+08:00"
+session_id: session-1
+tool_name: shell
+label: 执行命令
+kind: system
+phase: blocked
+success: false
+blocked: true
+elapsed_ms: 12
+call_id: provider-call
+internal_call_id: rig-call
+result_preview: blocked

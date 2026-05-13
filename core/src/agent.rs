@@ -22,6 +22,7 @@ use crate::prompts::PromptsConfig;
 use crate::token_tracker::{
     TokenCategory, TokenRecord, TokenUsage, new_session_id, record_token_usage,
 };
+use crate::tool_events::{ToolEventRecord, record_tool_event};
 use crate::tools::{
     self, ClipboardArgs, ForegroundArgs, GetTimeArgs, HotkeyArgs, LaunchArgs, PerformDanceArgs,
     PlayDanceArgs, ReadFileArgs, RecentScreenshotsArgs, ShellArgs, ToolError,
@@ -96,6 +97,7 @@ pub struct ToolRuntimeEvent {
     pub internal_call_id: String,
     pub result_preview: Option<String>,
     pub success: Option<bool>,
+    pub elapsed_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -144,6 +146,7 @@ fn planned_tool_event(
         internal_call_id,
         result_preview: None,
         success: None,
+        elapsed_ms: None,
     }
 }
 
@@ -171,6 +174,7 @@ fn result_tool_event(
     mut planned: ToolRuntimeEvent,
     result: &RigToolResult,
     internal_call_id: String,
+    elapsed_ms: Option<u64>,
 ) -> ToolRuntimeEvent {
     let preview = tool_result_preview(result);
     let blocked = preview
@@ -196,6 +200,7 @@ fn result_tool_event(
     planned.internal_call_id = internal_call_id;
     planned.result_preview = preview;
     planned.success = if blocked { Some(false) } else { success };
+    planned.elapsed_ms = elapsed_ms;
     planned
 }
 
@@ -270,7 +275,8 @@ impl PetAgent {
         let mut chunk_count = 0u32;
         let mut tool_call_count = 0u32;
         let mut final_response_count = 0u32;
-        let mut tool_events = std::collections::HashMap::<String, ToolRuntimeEvent>::new();
+        let mut tool_events =
+            std::collections::HashMap::<String, (ToolRuntimeEvent, std::time::Instant)>::new();
         while let Some(item) = stream.next().await {
             match item {
                 Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(
@@ -297,7 +303,10 @@ impl PetAgent {
                         internal_call_id,
                     );
                     info!(tool = %event.tool_name, phase = ?event.phase, "tool call planned");
-                    tool_events.insert(event.internal_call_id.clone(), event.clone());
+                    tool_events.insert(
+                        event.internal_call_id.clone(),
+                        (event.clone(), std::time::Instant::now()),
+                    );
                     on_event(AgentStreamEvent::Tool { event });
                 }
                 Ok(MultiTurnStreamItem::FinalResponse(res)) => {
@@ -326,14 +335,18 @@ impl PetAgent {
                     tool_result,
                     internal_call_id,
                 })) => {
-                    if let Some(planned) = tool_events.remove(&internal_call_id) {
-                        let event = result_tool_event(planned, &tool_result, internal_call_id);
+                    if let Some((planned, started_at)) = tool_events.remove(&internal_call_id) {
+                        let elapsed_ms = started_at.elapsed().as_millis().try_into().ok();
+                        let event =
+                            result_tool_event(planned, &tool_result, internal_call_id, elapsed_ms);
                         info!(
                             tool = %event.tool_name,
                             phase = ?event.phase,
                             success = ?event.success,
+                            elapsed_ms = ?event.elapsed_ms,
                             "tool call result"
                         );
+                        record_tool_event(&ToolEventRecord::from_event(session_id.clone(), &event));
                         on_event(AgentStreamEvent::Tool { event });
                     } else {
                         debug!(internal_call_id, "tool result without planned event");
@@ -525,6 +538,7 @@ mod tests {
         assert_eq!(event.internal_call_id, "rig-call");
         assert_eq!(event.result_preview, None);
         assert_eq!(event.success, None);
+        assert_eq!(event.elapsed_ms, None);
     }
 
     #[tokio::test]

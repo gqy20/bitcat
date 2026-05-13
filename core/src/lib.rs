@@ -26,6 +26,7 @@
 //! - `logging` — 日志工具函数（log_preview 等）
 //! - `permission_hook` — rig-core 工具调用的权限拦截钩子
 //! - `screen_summary` — 截图摘要注入 prompt 构建
+//! - `tool_events` — 工具运行时事件审计日志
 //! - `token_tracker` — Token 用量统计与持久化
 //! - `tools` — 内置工具的参数类型与执行逻辑
 
@@ -48,6 +49,7 @@ pub mod screenshot;
 #[cfg(test)]
 mod screenshot_tests;
 pub mod token_tracker;
+pub mod tool_events;
 pub mod tools;
 pub mod user_profile;
 pub mod vision;

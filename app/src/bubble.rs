@@ -211,6 +211,7 @@ pub struct BubbleToolPayload {
     pub internal_call_id: String,
     pub result_preview: Option<String>,
     pub success: Option<bool>,
+    pub elapsed_ms: Option<u64>,
 }
 
 /// 显示气泡：按需创建窗口、定位到宠物上方、写入待消费文本 + emit。
@@ -644,6 +645,7 @@ mod tests {
             internal_call_id: "rig-call".into(),
             result_preview: None,
             success: None,
+            elapsed_ms: None,
         };
         let json = serde_json::to_string(&p).unwrap();
         assert!(json.contains("perform_dance"));

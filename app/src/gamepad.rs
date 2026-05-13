@@ -1004,6 +1004,7 @@ pub fn run_ai_chat(
                     internal_call_id: event.internal_call_id,
                     result_preview: event.result_preview,
                     success: event.success,
+                    elapsed_ms: event.elapsed_ms,
                 },
             );
         }
