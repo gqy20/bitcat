@@ -41,7 +41,12 @@ pub async fn cmd_execute_panel_action(id: String) -> Result<(), String> {
 /// 调试用：前端通过此命令把日志转发到后端 stderr
 #[tauri::command]
 pub async fn cmd_panel_log(msg: String) -> Result<(), String> {
-    info!(msg = %msg, "[panel-js]");
+    let preview = ai_pad_core::logging::log_preview(&msg, 80);
+    info!(
+        msg_chars = msg.chars().count(),
+        msg_preview = %preview,
+        "[panel-js]"
+    );
     Ok(())
 }
 

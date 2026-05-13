@@ -9,13 +9,14 @@ use ai_pad_core::agent::PetAgent;
 use ai_pad_core::bridge::{handle_button_press, resolve_agent_response, PetCommand};
 use ai_pad_core::device::button_name;
 use ai_pad_core::hotkey;
+use ai_pad_core::logging::log_preview;
 use ai_pad_core::memory::{should_store, LongTermMemory, MemoryStore, ProfileStore};
 use ai_pad_core::user_profile::UserProfile;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 // ========================================================================
 // PetEvent：前端事件
@@ -303,7 +304,7 @@ fn choose_gamepad(pads: &[joystick::GamepadInfo]) -> Option<&joystick::GamepadIn
 
 #[instrument(skip(app))]
 pub fn gamepad_loop(app: &tauri::AppHandle) {
-    eprintln!("[GP-DBG] gamepad_loop 开始");
+    debug!("[gamepad] gamepad_loop 开始");
     let sdl = match SdlGamepad::init() {
         Ok(s) => s,
         Err(e) => {
@@ -484,7 +485,12 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                             let agent_state: State<SharedAgent> = app.state();
                             if let Some(ag) = agent_state.get_or_init() {
                                 let core: State<SharedChatCore> = app.state();
-                                info!(msg = %msg, "→ AI: {msg}");
+                                let preview = log_preview(msg, 60);
+                                info!(
+                                    msg_chars = msg.chars().count(),
+                                    msg_preview = %preview,
+                                    "gamepad chat requested"
+                                );
                                 run_ai_chat(&rt, ag, app, msg, "", &core, &memory_config);
                             }
                         }
@@ -567,7 +573,12 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                         if text.is_empty() {
                             warn!("[voice] 虚拟输入框为空 (识别可能失败或焦点被抢走)");
                         } else {
-                            info!(text = %text, len = text.chars().count(), "[voice] 识别全文: {text}");
+                            let preview = log_preview(&text, 60);
+                            info!(
+                                voice_chars = text.chars().count(),
+                                voice_preview = %preview,
+                                "[voice] 识别完成"
+                            );
                             let agent_state: State<SharedAgent> = app.state();
                             if let Some(ag) = agent_state.get_or_init() {
                                 let core: State<SharedChatCore> = app.state();
@@ -650,10 +661,20 @@ pub fn chat_loop(app: &tauri::AppHandle) {
             let agent_state: State<SharedAgent> = app.state();
             if let Some(ag) = agent_state.get_or_init() {
                 let core: State<SharedChatCore> = app.state();
-                info!(msg = %msg, "[chat] → AI 对话 (bubble 输入)");
+                let preview = log_preview(&msg, 60);
+                info!(
+                    msg_chars = msg.chars().count(),
+                    msg_preview = %preview,
+                    "[chat] bubble input received"
+                );
                 run_ai_chat(&rt, ag, app, &msg, "[chat]", &core, &memory_config);
             } else {
-                warn!(msg = %msg, "[chat] AI Agent 未就绪，消息被丢弃");
+                let preview = log_preview(&msg, 60);
+                warn!(
+                    msg_chars = msg.chars().count(),
+                    msg_preview = %preview,
+                    "[chat] AI Agent 未就绪，消息被丢弃"
+                );
             }
         }
 
@@ -802,7 +823,13 @@ pub fn run_ai_chat(
     memory_config: &ai_pad_core::memory::MemoryConfig,
 ) {
     let tag = if log_prefix.is_empty() { "" } else { " " };
-    info!(model = %agent.config.model, msg = %msg, "{log_prefix}→ AI 对话开始");
+    let msg_preview = log_preview(msg, 60);
+    info!(
+        model = %agent.config.model,
+        msg_chars = msg.chars().count(),
+        msg_preview = %msg_preview,
+        "{log_prefix}AI chat started"
+    );
 
     // RAII 锁：整个 chat 期间阻止截屏线程进入 Vision 分析；panic 或 early return 时自动释放
     let _chat_guard = ChatActiveGuard::new(app, log_prefix);
@@ -868,13 +895,26 @@ pub fn run_ai_chat(
     } else {
         format!("{}\n用户说: {msg}", context_parts.join("\n"))
     };
+    debug!(
+        user_profile_ctx_chars = user_profile_ctx.chars().count(),
+        profile_ctx_chars = profile_ctx.chars().count(),
+        long_term_ctx_chars = long_term_ctx.chars().count(),
+        memory_ctx_chars = ctx.chars().count(),
+        recent_ctx_chars = recent_ctx.chars().count(),
+        summary_ctx_chars = summary_ctx.chars().count(),
+        enriched_msg_chars = enriched_msg.chars().count(),
+        "{log_prefix}chat context assembled"
+    );
 
     // ---- 流式 IO：不持锁 ----
     let app_for_chunks = app.clone();
     let prefix = log_prefix.to_string();
     let prefix_for_log = prefix.clone();
     let stream_result = rt.block_on(agent.chat_stream(&enriched_msg, move |chunk| {
-        debug!(len = chunk.len(), "{prefix_for_log}{tag}AI chunk");
+        trace!(
+            chunk_chars = chunk.chars().count(),
+            "{prefix_for_log}{tag}AI chunk"
+        );
         let _ = bubble::append_bubble_chunk(&app_for_chunks, chunk);
     }));
     let _ = bubble::finalize_bubble(app);
@@ -901,12 +941,13 @@ pub fn run_ai_chat(
                 }
             }
 
-            if prefix.is_empty() {
-                let preview: String = reply.chars().take(60).collect();
-                info!(model = %agent.config.model, preview = %preview, "← AI: {preview}");
-            } else {
-                info!(model = %agent.config.model, chars = reply.chars().count(), reply = %reply, "{prefix} AI 回复全文 ({reply})");
-            }
+            let reply_preview = log_preview(&reply, 80);
+            info!(
+                model = %agent.config.model,
+                reply_chars = reply.chars().count(),
+                reply_preview = %reply_preview,
+                "{prefix}AI chat completed"
+            );
             let reply_for_tts = reply.clone();
             std::thread::spawn(move || {
                 tts::speak(&reply_for_tts);

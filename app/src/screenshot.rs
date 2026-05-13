@@ -255,7 +255,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
     use ai_pad_core::screenshot::{encode_jpeg, resize_bgra, ScreenshotConfig};
     use ai_pad_core::vision::{self, VisionConfig};
     use base64::Engine;
-    use tracing::{debug, error, info, warn};
+    use tracing::{debug, error, info, trace, warn};
 
     let rt = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -291,19 +291,19 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
     );
 
     let mut cycle_count: u32 = 0;
-    eprintln!("[SS-DBG] 进入主循环");
+    debug!("[screenshot] 进入主循环");
     loop {
         // 每轮重新读取间隔，用户前端调整后下一轮即生效
         let interval_sec = ai_pad_core::app_settings::AppSettings::load()
             .appearance
             .screenshot_interval_sec
             .clamp(5, 3600);
-        eprintln!("[SS-DBG] 开始 sleep {}s", interval_sec);
+        trace!(interval_sec, "[screenshot] sleep begin");
         std::thread::sleep(std::time::Duration::from_secs(interval_sec));
         cycle_count += 1;
-        eprintln!("[SS-DBG] sleep 结束, cycle={}", cycle_count);
+        trace!(cycle = cycle_count, "[screenshot] sleep end");
 
-        eprintln!("[SS-DBG] 获取 state");
+        trace!("[screenshot] 获取 state");
         let state: tauri::State<SharedScreenshotState> = app.state();
         if !*state.enabled.lock().unwrap() {
             continue;
@@ -311,7 +311,6 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
 
         // 跳舞期间跳过本轮：避免视觉分析回调打断舞蹈表演
         if ai_pad_core::dance::is_dancing() {
-            eprintln!("[SS-DBG] 正在跳舞，跳过本轮截图");
             debug!(
                 cycle = cycle_count,
                 "[screenshot] is_dancing=true，跳过本轮"
@@ -320,11 +319,11 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
         }
 
         // 熄屏检测
-        eprintln!("[SS-DBG] 检查熄屏");
+        trace!("[screenshot] 检查熄屏");
         {
             use windows_sys::Win32::UI::WindowsAndMessaging::GetSystemMetrics;
             if unsafe { GetSystemMetrics(0x8000) } != 0 {
-                eprintln!("[SS-DBG] 显示器关闭，跳过");
+                debug!("[screenshot] 显示器关闭，跳过");
                 continue;
             }
         }
@@ -339,7 +338,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
         }
 
         // 截图
-        eprintln!("[SS-DBG] 开始捕获");
+        trace!("[screenshot] 开始捕获");
         let frame = match capture_target(&config.target) {
             Ok(f) => {
                 info!("截图周期: 捕获成功 {}x{}", f.width, f.height);

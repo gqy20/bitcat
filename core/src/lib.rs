@@ -7,6 +7,7 @@ pub mod config;
 pub mod dance;
 pub mod device;
 pub mod hotkey;
+pub mod logging;
 pub mod memory;
 pub mod permission_hook;
 pub mod pet;

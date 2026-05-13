@@ -14,7 +14,7 @@ use rig::providers::anthropic;
 use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
 use rig::tool::Tool;
 use serde_json::json;
-use tracing::{debug, info, instrument};
+use tracing::{debug, info, instrument, trace};
 
 /// AI Agent 多轮工具调用的最大回合数。
 ///
@@ -73,7 +73,7 @@ impl PetAgent {
     }
 
     /// 流式对话: 每收到文本块通过 on_chunk 回调发出, 返回累积的完整回复
-    #[instrument(skip(self, on_chunk), fields(msg_len = message.chars().count()))]
+    #[instrument(skip(self, message, on_chunk), fields(msg_chars = message.chars().count()))]
     pub async fn chat_stream<F>(&self, message: &str, mut on_chunk: F) -> Result<String, String>
     where
         F: FnMut(&str),
@@ -95,7 +95,7 @@ impl PetAgent {
                     accumulated.push_str(&text.text);
                     on_chunk(&text.text);
                     chunk_count += 1;
-                    debug!(len = text.text.len(), "text chunk");
+                    trace!(chunk_chars = text.text.chars().count(), "text chunk");
                 }
                 Ok(MultiTurnStreamItem::StreamAssistantItem(
                     StreamedAssistantContent::ToolCall { tool_call, .. },

@@ -314,7 +314,7 @@ pub fn run() {
 
             let ss_handle = app.handle().clone();
             std::thread::spawn(move || {
-                eprintln!("[SS-DBG] 截图线程已 spawn");
+                debug!("[screenshot] 截图线程已 spawn");
                 screenshot::screenshot_loop(&ss_handle);
             });
 
