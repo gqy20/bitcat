@@ -1,32 +1,42 @@
 # Rig 原生能力提升路线图
 
-> 日期：2026-05-13 | 状态：草案 | 目标：逐步引入 rig 框架未使用的高价值能力
+> 日期：2026-05-13 | 状态：P0 主链路已落地，进入清理阶段 | 目标：逐步引入 rig 框架未使用的高价值能力
 
 ## 背景
 
-当前项目（8Bit Cat）使用 `rig` v0.36.0 框架构建 AI Agent，但仅覆盖了其能力子集：
+当前项目（8Bit Cat）使用 `rig` v0.36.0 框架构建 AI Agent。经过 P0 改造后，chat / vision / screen_summary / memory aggregation 已经统一回到 rig 生态；剩余工作主要是清理旧的 raw Anthropic 辅助代码，并继续引入更低风险的能力。
 
 | 已用 | 未用 |
 |------|------|
-| AgentBuilder + preamble | Extractor（结构化提取） |
-| Tool trait + 10 个工具定义 | Pipeline（链式处理） |
+| AgentBuilder + preamble | Pipeline（链式处理） |
+| Tool trait + 10 个工具定义 | TypedPrompt（提示词类型化） |
 | stream_prompt / prompt | Embeddings（明确不采用，见取舍文档） |
 | PermissionHook + HookAction | dynamic_tools（动态工具集） |
 | MultiTurnStreamItem 流式消费 | .context() / .dynamic_context() |
 | FinalResponse.usage() | output_schema（输出约束） |
+| Extractor（vision / screen_summary / memory aggregation） | Pipeline.lookup（向量检索，当前不采用） |
 
 本文档按优先级排列，规划如何分阶段引入这些能力。
 
 ---
 
+## 当前实现快照（2026-05-13）
+
+P0 主链路已完成：
+
+- `vision::analyze_screenshot()` 已使用 rig `Extractor<VisionAnalysis>`；图片通过 `UserContent::image_base64()` 进入 rig message，token 用量来自 `ExtractionResponse.usage`。
+- `screen_summary::generate_summary()` 已使用 rig `Extractor<StructuredSummary>`；`ScreenSummaryEntry.summary` 存储结构体，prompt 注入通过 `StructuredSummary::to_context_text()` 派生。
+- `memory::aggregate_profile()` 已使用 rig `Extractor<ProfileAggregation>`；外部 API 暂保持 `String` 结果，内部不再手写 Anthropic 请求和 JSON fence 修复。
+- core 侧业务主链路已经没有新的 raw Anthropic `reqwest` 调用；剩余 raw helper 主要是迁移前的请求构建、响应解析和 usage 解析测试资产。
+
 ## P0: Extractor — 结构化输出替代纯文本解析
 
 ### 问题
 
-当前 `vision.rs` 和 `screen_summary.rs` 绕过 rig，直接用 `reqwest` 调 Anthropic Messages API，返回 `Result<String, String>` 纯文本。下游消费者需要**二次解析**文本才能获得结构化数据。
+改造前 `vision.rs` 和 `screen_summary.rs` 绕过 rig，直接用 `reqwest` 调 Anthropic Messages API，返回 `Result<String, String>` 纯文本。下游消费者需要**二次解析**文本才能获得结构化数据。
 
 ```
-现状：
+改造前：
   vision.rs ──→ reqwest POST ──→ parse_vision_response() ──→ String（自由格式文本）
   screen_summary.rs ──→ reqwest POST ──→ parse_text_response() ──→ String（自由格式文本）
 
@@ -104,7 +114,7 @@ pub enum ActivityCategory {
 }
 ```
 
-### 实现路径
+### 已完成实现
 
 #### 改造原则
 
@@ -116,48 +126,54 @@ pub enum ActivityCategory {
 
 #### Phase 1: Vision 路径改造
 
-1. 新增 `VisionAnalysis` / `VisionState` 结构体（含 `JsonSchema` derive）
-2. 创建专用 Extractor agent（独立于 PetAgent，因为 vision 不需要 10 个工具）：
-   ```rust
-   use rig::extractor::Extractor;
+已完成：
 
-   let vision_agent = rig::agent::AgentBuilder::new(model)
-       .preamble(&prompts.vision.prompt)
-       .max_tokens(1024)
-       .build();
-
-   let extractor = Extractor::new(vision_agent);
-   let analysis: VisionAnalysis = extractor.extract(prompt_with_image).await?;
-   ```
-3. `analyze_screenshot()` 返回值从 `Result<String, String>` 改为 `Result<VisionAnalysis, String>`
-4. bubble 显示层取 `analysis.description`，存储层只存新结构体
+1. `VisionAnalysis` / `VisionState` 补齐 `JsonSchema` derive。
+2. `analyze_screenshot()` 通过 rig Extractor 提交图片 message。
+3. 返回值改为 `Result<VisionAnalysis, String>`。
+4. app 截图观察路径使用 `analysis.description` 显示 bubble，并把结构化分析写入截图记录。
 
 #### Phase 2: Screen Summary 路径改造
 
-1. 新增 `StructuredSummary` / `ActivityGroup` / `ActivityCategory`
-2. 同样用 Extractor 替代 raw reqwest
-3. `generate_summary()` 返回值改为 `Result<StructuredSummary, String>`
-4. `ScreenSummaryEntry` 直接改为结构化字段；如需要给 prompt 注入纯文本，由 `StructuredSummary::to_context_text()` 之类 helper 派生生成，不再把字符串摘要作为唯一事实来源
+已完成：
 
-#### Phase 3: 清理遗留代码
+1. 新增 `StructuredSummary` / `ActivityGroup` / `ActivityCategory`。
+2. `generate_summary()` 使用 Extractor 替代 raw reqwest。
+3. 返回值改为 `Result<StructuredSummary, String>`。
+4. `ScreenSummaryEntry` 直接存结构化字段，prompt 注入由 `StructuredSummary::to_context_text()` 派生。
 
-1. 删除 `parse_vision_response()` 和 `parse_text_response()`。
-2. 删除 `send_vision_request()` 和 `generate_summary()` 中重复的 raw reqwest 调用。
-3. 如果 Extractor 图片输入不稳定，可临时保留 `build_vision_request()` / `build_vision_request_multi()`，但它们只服务于结构化 JSON 响应，不再输出自由文本。
-4. 移除旧数据兼容分支、`structured: Option<_>` 过渡字段和旧格式读取逻辑。
+#### Phase 3: Memory Aggregation 路径改造
+
+已完成：
+
+1. 新增 `ProfileAggregation` 作为用户画像聚合的 Extractor 输出目标。
+2. `aggregate_profile()` 通过 Extractor 获取结构化结果，再保留现有 `String` 返回契约。
+3. memory aggregation 的 token 记录改为读取 `ExtractionResponse.usage`。
+
+#### Phase 4: 清理遗留代码（下一步）
+
+主链路已经切换完成，下一步应删除只为旧实现服务的代码：
+
+1. `core/src/vision.rs`：删除旧 raw request / response helper，例如 `build_vision_request()`、`build_vision_request_multi()`、`build_api_url()`、`parse_vision_response()`、`parse_vision_analysis_response()`、`normalize_json_text()` 及其旧测试。
+2. `core/src/screen_summary.rs`：删除旧文本解析 helper，例如 `extract_text_response()`、`parse_structured_summary_response()`、`normalize_json_text()` 及其旧测试。
+3. `core/src/token_tracker.rs`：确认无调用后删除 `parse_anthropic_usage()` 和对应测试；Extractor 链路已经直接消费 rig usage。
+4. `ScreenSummaryConfig::max_summary_chars`：现在摘要是结构化结果，这个字段不再截断实际输出，应从 struct、默认配置、`config/prompts.yml`、快照和配置文档中移除。
+5. 保留 wiremock 测试，但响应形态应继续使用 Anthropic `tool_use` + submit 工具的 Extractor 协议，而不是旧纯文本 content block。
 
 ### 工作量预估
 
 | 改造项 | 预计改动 |
 |------|---------:|
-| 公共 AI request / usage 收口（如需要） | 80-120 行 |
-| `vision.rs` 强类型返回与解析 | 100-170 行 |
-| `screen_summary.rs` 强类型返回与存储 | 120-200 行 |
-| app/core 调用点同步 | 80-160 行 |
-| 删除旧文本解析和兼容代码 | -60 到 -120 行 |
-| 测试重写与快照更新 | 150-280 行 |
+主链路改造已经完成。剩余清理预计：
 
-净增约 **250-400 行（MVP）**，做完整测试和调用点整理约 **400-650 行**。触碰范围预计 5-8 个文件。
+| 清理项 | 预计改动 |
+|------|---------:|
+| `vision.rs` 删除旧请求/解析 helper 与测试 | -80 到 -160 行 |
+| `screen_summary.rs` 删除旧文本解析 helper 与测试 | -40 到 -90 行 |
+| `token_tracker.rs` 删除 Anthropic response parser 与测试 | -30 到 -70 行 |
+| `max_summary_chars` 配置/快照/文档清理 | -10 到 -30 行 |
+
+净删除约 **100-220 行**，触碰范围预计 4-7 个文件。风险低，主要风险是误删仍被测试覆盖的 helper。
 
 ### 收益
 
@@ -173,14 +189,14 @@ pub enum ActivityCategory {
 
 | 风险 | 缓解 |
 |------|------|
-| Extractor 对图片输入的支持需验证 | rig 的 `Prompt` trait 支持 content block；若不支持图片，保留 `build_vision_request` 构造 body 后手动调用 Extractor 的底层 submit_tool 机制 |
-| JsonSchema derive 与 serde 冲突 | 使用 `schemars` crate（rig 已依赖），确保 `#[serde(rename)]` 和 `#[schemars(rename)]` 一致 |
-| 大模型偶尔返回不符合 schema 的 JSON | Extractor 内部有 repair 机制；极端情况返回错误并记录 warn，不降级为旧自由文本主路径 |
+| 误删测试仍依赖的旧 helper | 先用 `rg` 确认调用点，再删除测试专用旧路径 |
+| 某些 proxy provider 的 Extractor/tool_use 协议不完整 | 保持 wiremock 协议测试；真实 provider 异常只记录 warn，不恢复自由文本主路径 |
+| 大模型偶尔返回不符合 schema 的 JSON | Extractor 内部有 repair 机制；极端情况返回错误并记录 warn |
 | 旧本地截图/摘要数据读不回 | 本阶段明确不做迁移；开发期可清空或忽略旧数据 |
 
 ### 依赖关系
 
-- **依赖 token-tracking 方案（P0 并行）**：Extractor 返回的 Usage 需要写入 TokenTracker
+- **已接入 token-tracking 方案**：Extractor 返回的 Usage 已写入 TokenTracker
 - **不依赖 P1/P2**：可独立实施
 
 ---
@@ -289,10 +305,15 @@ rig 的 Embeddings / Pipeline.lookup 仍然是可用能力，但当前明确不�
 ## 优先级总结与时间线
 
 ```
-0.5-1.5天  P0: Extractor 结构化输出
+已完成      P0: Extractor 结构化输出主链路
              ├ Vision 路径改造（VisionAnalysis struct + Extractor）
              ├ Screen Summary 路径改造（StructuredSummary struct）
-             └ 清理 raw reqwest 遗留代码
+             └ Memory Aggregation 路径改造（ProfileAggregation struct + Extractor）
+
+0.5天      P0-cleanup: 清理 raw reqwest 遗留代码
+             ├ 删除旧 request/parse helper 与测试
+             ├ 删除 parse_anthropic_usage
+             └ 移除 max_summary_chars 惰性配置
 
 0.5天      P1: 工具开销优化调研
              ├ 基于 token_usage.jsonl 看真实占比

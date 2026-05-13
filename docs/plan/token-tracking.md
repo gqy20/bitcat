@@ -9,17 +9,17 @@
 | 调用路径 | 方法 | 框架/协议 | usage 可获取？ | 当前状态 |
 |---------|------|----------|--------------|---------|
 | AI 对话（流式） | `agent.chat_stream()` | rig Agent (stream) | ✅ `FinalResponse.usage()` | 已记录 |
-| 截图视觉分析 | `vision::analyze_screenshot()` | raw reqwest → Anthropic API | ✅ 响应体含 `usage` 字段 | 已解析并记录 |
-| 屏幕摘要聚合 | `screen_summary::generate_summary()` | raw reqwest → Anthropic API | ✅ 响应体含 `usage` 字段 | 已解析并记录 |
-| 长期记忆聚合 | `memory::aggregate_profile()` | raw reqwest → Anthropic API | ✅ 响应体含 `usage` 字段 | 已解析并记录 |
+| 截图视觉分析 | `vision::analyze_screenshot()` | rig Extractor | ✅ `ExtractionResponse.usage` | 已记录 |
+| 屏幕摘要聚合 | `screen_summary::generate_summary()` | rig Extractor | ✅ `ExtractionResponse.usage` | 已记录 |
+| 长期记忆聚合 | `memory::aggregate_profile()` | rig Extractor | ✅ `ExtractionResponse.usage` | 已记录 |
 
-> B3（Extractor 结构化输出）会把 vision / screen_summary 的主接口改为强类型返回，并直接清理旧自由文本解析路径。若最终改为 rig Extractor，usage 来源应从 `FinalResponse` / Extractor 返回值接入；若短期仍保留 Anthropic-compatible HTTP，请继续复用 `parse_anthropic_usage()`，不要恢复旧 `String` 解析主线。
+> B3（Extractor 结构化输出）主链路已经完成。vision / screen_summary / memory aggregation 都应直接消费 rig usage；`parse_anthropic_usage()` 现在只属于旧 raw HTTP 路径的遗留解析器，下一步可随 cleanup 删除。
 
 **核心问题**：
 已解决的问题：
 
 1. chat_stream 记录 input/output/cache 明细；
-2. vision / screen_summary / memory aggregation 解析 Anthropic usage；
+2. vision / screen_summary / memory aggregation 记录 Extractor usage；
 3. 明细持久化为 append-only JSONL；
 4. 最近会话维护独立汇总文件；
 5. 设置页可查询今日消耗、最近会话、各链路占比。
@@ -46,9 +46,9 @@
 |------|------|
 | `core/src/token_tracker.rs` | `TokenRecord` / `TokenSession` / `TokenTotals`、JSONL 写入、会话汇总、按日查询 |
 | `core/src/agent.rs` | chat `FinalResponse.usage()` 落盘 |
-| `core/src/vision.rs` | Vision API usage 解析并落盘 |
-| `core/src/screen_summary.rs` | 屏幕摘要 usage 解析并落盘 |
-| `core/src/memory.rs` | 记忆聚合 usage 解析并落盘 |
+| `core/src/vision.rs` | Vision Extractor usage 落盘 |
+| `core/src/screen_summary.rs` | 屏幕摘要 Extractor usage 落盘 |
+| `core/src/memory.rs` | 记忆聚合 Extractor usage 落盘 |
 | `app/src/settings.rs` | `cmd_get_token_stats` 查询今日统计和最近会话 |
 | `app/frontend/settings.html/js/css` | 设置页“用量统计”tab |
 
@@ -156,15 +156,15 @@ core/src/agent.rs
       └── TokenRecord(category=Chat) → token_tracker::record_token_usage()
 
 core/src/vision.rs
-  └── response["usage"]
+  └── Extractor<VisionAnalysis>::extract()
       └── TokenRecord(category=Vision) → token_tracker::record_token_usage()
 
 core/src/screen_summary.rs
-  └── response["usage"]
+  └── Extractor<StructuredSummary>::extract()
       └── TokenRecord(category=ScreenSummary) → token_tracker::record_token_usage()
 
 core/src/memory.rs
-  └── aggregate_profile() response["usage"]
+  └── Extractor<ProfileAggregation>::extract()
       └── TokenRecord(category=MemoryAggregation) → token_tracker::record_token_usage()
 
 core/src/token_tracker.rs
@@ -199,28 +199,23 @@ app/src/settings.rs
 
 #### `core/src/vision.rs`
 
-**改动点 C — 解析 Anthropic usage**
+**改动点 C — 记录 Extractor usage**
 
-新增 `parse_usage(response: &Value) -> Usage` 函数：
-```rust
-fn parse_usage(response: &Value) -> Usage {
-    response.get("usage").map(|u| Usage {
-        input_tokens: u["input_tokens"].as_u64().unwrap_or(0),
-        output_tokens: u["output_tokens"].as_u64().unwrap_or(0),
-        // ...
-    }).unwrap_or_default()
-}
-```
+当前调用链：`analyze_screenshot()` → rig `Extractor<VisionAnalysis>` → `VisionAnalysis` + `ExtractionResponse.usage` → `record_token_usage()`。
 
-当前调用链：`analyze_screenshot()` → `send_vision_request()` → 解析 usage → `record_token_usage()`。
-
-B3 后调用链应变为：`analyze_screenshot()` → 结构化模型调用（Extractor 或结构化 HTTP）→ `VisionAnalysis` + usage → `record_token_usage()`。
+下一步 cleanup：删除旧 raw request / response helper 和旧 usage parser 测试，保留 Extractor 协议的 wiremock 回归测试。
 
 #### `core/src/screen_summary.rs`
 
-**改动点 D — `generate_summary()` usage 解析**
+**改动点 D — `generate_summary()` usage 记录**
 
-与 vision 同理。B3 后 `generate_summary()` 返回 `StructuredSummary`，usage 记录仍归入 `TokenCategory::ScreenSummary`。
+与 vision 同理。`generate_summary()` 返回 `StructuredSummary`，usage 记录仍归入 `TokenCategory::ScreenSummary`。
+
+#### `core/src/memory.rs`
+
+**改动点 E — `aggregate_profile()` usage 记录**
+
+`aggregate_profile()` 已使用 `Extractor<ProfileAggregation>`，usage 记录归入 `TokenCategory::MemoryAggregation`。外部返回值暂保持 `String`，用于兼容当前 `ProfileStore` 写入契约。
 
 #### `core/src/lib.rs`（或 mod.rs）
 
@@ -235,8 +230,9 @@ B3 后调用链应变为：`analyze_screenshot()` → 结构化模型调用（Ex
 | 测试类型 | 文件 | 内容 |
 |---------|------|------|
 | unit | `token_tracker.rs` tests | TokenRecord 序列化/反序列化、TokenSession 累加、按日统计 |
-| unit | `vision.rs` tests | `parse_usage()` 正常/缺失/部分字段、wiremock 响应含 usage 的端到端 |
+| unit | `vision.rs` tests | wiremock 模拟 Anthropic `tool_use` 响应，断言结构体结果和 token side-effect |
 | unit | `screen_summary.rs` tests | 同上 |
+| unit | `memory.rs` tests | 同上，覆盖 `ProfileAggregation` 输出 |
 | unit | `settings.rs` tests | TokenSession → 设置页视图转换 |
 | snapshot | snapshots/ | TokenRecord 的 insta 快照 |
 
@@ -258,9 +254,9 @@ Done 1: 基础设施（core/src/token_tracker.rs）
 
 Done 2: API 路径打通
   ├ Chat: FinalResponse usage 记录
-  ├ Vision: Anthropic usage 解析
-  ├ ScreenSummary: Anthropic usage 解析
-  └ MemoryAggregation: Anthropic usage 解析
+  ├ Vision: Extractor usage 记录
+  ├ ScreenSummary: Extractor usage 记录
+  └ MemoryAggregation: Extractor usage 记录
 
 Done 3: 设置页查询
   ├ app/src/settings.rs: cmd_get_token_stats
@@ -268,6 +264,7 @@ Done 3: 设置页查询
   └ 最近会话 + 今日汇总 + 链路占比
 
 Next:
+  ├ 清理 parse_anthropic_usage 和旧 raw HTTP parser
   ├ 增加费用估算（可选，需要 provider price table）
   ├ 增加 7/30 天趋势查询
   └ 将真实统计反馈给工具 schema / context 注入优化
