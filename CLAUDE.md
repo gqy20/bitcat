@@ -164,6 +164,7 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 - **配置**：`config/actions.yml`、`config/buttons.yml`、`config/prompts.yml` 运行时从 exe 同目录/config/ 加载，构建时需 cp 到 target/config/
 - **意图理解**：大模型擅长的简单任务不要做关键词匹配、正则分类或“小分类器”前置判断；让模型在普通对话里自行选择工具，Rust 只负责 schema、校验、权限和执行。
 - **记忆检索**：默认用可 grep 的结构化文本，不做 Embeddings / Vector RAG。若未来有人想重新评估，必须先更新 `docs/architecture/design-tradeoffs.md` 说明收益大于复杂度。
+- **临时产物**：浏览器自动化截图/快照等会话级临时文件放在 `.playwright-cli/`（已 gitignore）。调研等需要留存的文档放 `docs/research/`，不要散落在项目根目录。`--filename` 参数的 playwright-cli 快照输出到 `.playwright-cli/` 目录内，不要写到项目根。
 
 ## 测试规范
 

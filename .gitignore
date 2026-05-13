@@ -52,4 +52,6 @@ app/config/
 .claude/worktrees/
 
 .playwright*
+# playwright-cli snapshot outputs (use --filename=.playwright-cli/xxx.yml)
+/*.snapshot.yml
 *.zip
