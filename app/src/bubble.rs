@@ -131,13 +131,15 @@ pub fn precreate_bubble_window(app: &AppHandle) -> Result<(), tauri::Error> {
     WebviewWindowBuilder::new(app, "bubble", WebviewUrl::App("bubble.html".into()))
         .title("8Bit Bubble")
         .inner_size(BUBBLE_W, BUBBLE_H)
+        .min_inner_size(240.0, 120.0)
+        .max_inner_size(420.0, 680.0)
         .decorations(false)
         .transparent(true)
         .background_color(tauri::webview::Color(0, 0, 0, 0))
         .shadow(false)
         .always_on_top(true)
         .skip_taskbar(true)
-        .resizable(false)
+        .resizable(true)
         .focused(false)
         .visible(false)
         .build()?;
@@ -273,8 +275,12 @@ pub fn position_above_pet(app: &AppHandle, bubble: &tauri::WebviewWindow) {
     let monitor_pos = monitor.position();
 
     let scale = bubble.scale_factor().unwrap_or(1.0);
-    let bubble_w_px = BUBBLE_W * scale;
-    let bubble_h_px = BUBBLE_H * scale;
+    let bubble_size = bubble.inner_size().unwrap_or(tauri::PhysicalSize::new(
+        (BUBBLE_W * scale) as u32,
+        (BUBBLE_H * scale) as u32,
+    ));
+    let bubble_w_px = bubble_size.width as f64;
+    let bubble_h_px = bubble_size.height as f64;
 
     // 默认：水平居中于 pet 上方
     let pet_center_x = pet_pos.x as f64 + pet_size.width as f64 / 2.0;
@@ -301,13 +307,15 @@ pub fn create_bubble_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tau
     WebviewWindowBuilder::new(app, "bubble", WebviewUrl::App("bubble.html".into()))
         .title("8Bit Bubble")
         .inner_size(BUBBLE_W, BUBBLE_H)
+        .min_inner_size(240.0, 120.0)
+        .max_inner_size(420.0, 680.0)
         .decorations(false)
         .transparent(true)
         .background_color(tauri::webview::Color(0, 0, 0, 0))
         .shadow(false)
         .always_on_top(true)
         .skip_taskbar(true)
-        .resizable(false)
+        .resizable(true)
         .focused(false)
         .visible(false)
         .build()

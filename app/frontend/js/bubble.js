@@ -15,6 +15,9 @@
   const POLL_INTERVAL_MS = 120;
   const MIN_H = 140;
   const MAX_H = 340;
+  const MIN_W = 240;
+  const MAX_W = 420;
+  const ABS_MAX_H = 680;      // 用户手动拖拽时的绝对最大高度
   const PADDING_TOTAL = 60;   // body top(6) + bubble padding-top(14) + padding-bottom(14) + body bottom(22) + 余量(4)
   const INPUT_ROW_H = 42;     // input-row 额外高度（含 padding-top:8）
   // 防御性清理：连续 N 次 poll 文本长度无变化 → 视为流结束（兜底 Tauri bubble-end 事件丢失）
@@ -27,15 +30,21 @@
   let cursorEl = null;         // #typingCursor：常驻 DOM，仅通过 content 的 streaming class 控制
   let pollTimer = null;
   let currentWinH = MIN_H;
+  let currentWinW = 280;
   let lastRawText = '';       // 记录最近一次原始文本，用于最终渲染去光标
   let inputRowEl = null;
   let inputEl = null;
   let sendBtnEl = null;
+  let resizeGripEl = null;      // resize 手柄元素
   let isComposing = false;    // IME 组合状态标记
   let userScrolledUp = false;  // 用户是否手动向上滚动了（锁定自动跟底）
   let streaming = false;        // 是否处于流式输出中（bubble-end 后为 false 拦截迟到的轮询）
   let lastPollLen = -1;         // 上一次 poll 到的文本长度（用于稳定检测）
   let stableTicks = 0;          // 连续无变化的 tick 计数
+
+  // ---- Resize 状态 ----
+  let resizeMode = 'auto';      // 'auto' | 'manual'
+  let userPrefSize = null;      // { w, h } 用户手动设定的偏好尺寸
 
   // ---- 诊断日志（通过 Rust cmd_pet_log 输出到后端 tracing） ----
   function diag(msg) {
@@ -48,6 +57,20 @@
   function ensureVisible() {
     document.body.classList.remove('hidden');
     void document.body.offsetWidth;
+    // 首次 show 时，如果有保存的偏好尺寸，先应用
+    if (resizeMode === 'auto' && userPrefSize && window.__TAURI__ && window.__TAURI__.window) {
+      resizeMode = 'manual';
+      var win = window.__TAURI__.window.getCurrentWindow();
+      win.setSize(new window.__TAURI__.window.LogicalSize(
+        Math.max(MIN_W, Math.min(MAX_W, userPrefSize.w)),
+        Math.max(MIN_H, Math.min(ABS_MAX_H, userPrefSize.h))
+      )).then(function() {
+        currentWinW = userPrefSize.w;
+        currentWinH = userPrefSize.h;
+        document.documentElement.style.width = userPrefSize.w + 'px';
+        document.body.style.width = userPrefSize.w + 'px';
+      }).catch(function() {});
+    }
     document.body.classList.add('show');
   }
 
@@ -64,24 +87,35 @@
   }
 
   /// 根据实际渲染高度动态调整窗口高度
+  /// MANUAL 模式下：不收缩到用户设定以下，但内容多时仍可扩展
   function autoResize() {
     if (!contentEl) return;
     var contentH = contentEl.scrollHeight;
     var inputExtra = (inputRowEl && inputRowEl.style.display !== 'none') ? INPUT_ROW_H : 0;
     var neededH = Math.min(MAX_H, Math.max(MIN_H, contentH + PADDING_TOTAL + inputExtra));
-    var newH = Math.round(neededH);
 
-    if (newH !== currentWinH && window.__TAURI__ && window.__TAURI__.window) {
-      var delta = newH - currentWinH;
+    // MANUAL 模式：以用户偏好为下界，绝对最大高度也放宽
+    var targetW = 280;
+    if (resizeMode === 'manual' && userPrefSize) {
+      neededH = Math.max(neededH, userPrefSize.h);
+      neededH = Math.min(ABS_MAX_H, neededH);
+      targetW = Math.max(MIN_W, Math.min(MAX_W, userPrefSize.w));
+    }
+
+    var newH = Math.round(neededH);
+    var sizeChanged = (newH !== currentWinH || targetW !== currentWinW);
+
+    if (sizeChanged && window.__TAURI__ && window.__TAURI__.window) {
+      var deltaH = newH - currentWinH;
       currentWinH = newH;
+      currentWinW = targetW;
       var win = window.__TAURI__.window.getCurrentWindow();
-      win.setSize(new window.__TAURI__.window.LogicalSize(280, newH))
+      win.setSize(new window.__TAURI__.window.LogicalSize(targetW, newH))
         .then(function() {
-          // 窗口变高了 → 整体上移，保持底部对齐宠物顶部
-          if (delta !== 0) {
+          if (deltaH !== 0) {
             return win.outerPosition().then(function(pos) {
               return win.setPosition(
-                new window.__TAURI__.window.LogicalPosition(pos.x, pos.y - delta)
+                new window.__TAURI__.window.LogicalPosition(pos.x, pos.y - deltaH)
               );
             });
           }
@@ -140,12 +174,15 @@
   function hide() {
     stopPolling();
     hideInput('hide-bubble'); // 隐藏时一并收起输入框
-    // 隐藏前恢复默认高度
-    if (currentWinH !== MIN_H && window.__TAURI__ && window.__TAURI__.window) {
+    // 隐藏时重置为 AUTO 模式 + 恢复默认尺寸（不清除 localStorage 偏好）
+    resizeMode = 'auto';
+    // 隐藏前恢复默认尺寸
+    if (window.__TAURI__ && window.__TAURI__.window) {
       window.__TAURI__.window.getCurrentWindow()
         .setSize(new window.__TAURI__.window.LogicalSize(280, MIN_H))
         .catch(() => {});
       currentWinH = MIN_H;
+      currentWinW = 280;
     }
     document.body.classList.remove('show');
     document.body.classList.add('hidden');
@@ -427,6 +464,7 @@
     inputEl = document.getElementById('chatInput');
     sendBtnEl = document.getElementById('chatSend');
     thinkingEl = document.getElementById('thinking');
+    resizeGripEl = document.getElementById('resizeGrip');
 
     // marked.js 配置：窄栏必须 breaks:true
     if (typeof marked !== 'undefined') {
@@ -502,6 +540,58 @@
         submitChat();
       });
     }
+
+    // ---- Resize Grip 交互 ----
+    if (resizeGripEl && window.__TAURI__ && window.__TAURI__.window) {
+      var win = window.__TAURI__.window.getCurrentWindow();
+
+      // mousedown → 原生 resize 拖拽
+      resizeGripEl.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        resizeMode = 'manual';
+        win.startResizeDragging('SouthEast').catch(function() {});
+      });
+
+      // 双击 grip → 回到 AUTO 模式
+      resizeGripEl.addEventListener('dblclick', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        resizeMode = 'auto';
+        userPrefSize = null;
+        localStorage.removeItem('bubble_pref');
+        diag('resize: double-click → reset to auto');
+        autoResize();
+      });
+
+      // 窗口尺寸变化时更新 userPrefSize（拖拽中/拖拽后）
+      win.onResized(function() {
+        if (resizeMode === 'manual') {
+          win.innerSize().then(function(size) {
+            var w = Math.round(size.width);
+            var h = Math.round(size.height);
+            userPrefSize = { w: w, h: h };
+            currentWinW = w;
+            currentWinH = h;
+            localStorage.setItem('bubble_pref', JSON.stringify(userPrefSize));
+            // CSS 跟随宽度变化
+            document.documentElement.style.width = w + 'px';
+            document.body.style.width = w + 'px';
+            diag('resize: manual size updated w=' + w + ' h=' + h);
+          }).catch(function() {});
+        }
+      });
+    }
+
+    // 从 localStorage 恢复用户偏好
+    try {
+      var saved = JSON.parse(localStorage.getItem('bubble_pref') || 'null');
+      if (saved && saved.w && saved.h) {
+        userPrefSize = { w: saved.w, h: saved.h };
+        // 不立即进入 manual 模式——等首次 show 时再应用
+        diag('resize: restored pref from localStorage w=' + saved.w + ' h=' + saved.h);
+      }
+    } catch (e) { /* ignore parse errors */ }
 
     if (!window.__TAURI__) return;
     var listen = window.__TAURI__.event.listen;

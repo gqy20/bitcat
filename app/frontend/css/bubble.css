@@ -371,3 +371,35 @@ body.show .content {
 
 .input-row button:hover { background: #4f46e5; }
 .input-row button:active { background: #4338ca; transform: scale(0.97); }
+
+/* ========== Resize Grip（右下角拖拽手柄） ========== */
+
+.resize-grip {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 14px;
+  height: 14px;
+  opacity: 0;
+  cursor: nwse-resize;
+  pointer-events: auto;
+  transition: opacity 0.2s ease;
+  z-index: 10;
+  /* 对角线纹理：两道细线 */
+  background:
+    linear-gradient(135deg,
+      transparent 30%,
+      rgba(100, 100, 120, 0.3) 30%, rgba(100, 100, 120, 0.3) 35%,
+      transparent 35%, transparent 55%,
+      rgba(100, 100, 120, 0.3) 55%, rgba(100, 100, 120, 0.3) 60%,
+      transparent 60%
+    );
+}
+
+.bubble:hover .resize-grip {
+  opacity: 0.5;
+}
+
+.resize-grip:hover {
+  opacity: 0.8 !important;
+}
