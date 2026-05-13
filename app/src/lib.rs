@@ -35,6 +35,7 @@ pub fn run() {
             commands::cmd_get_status,
             commands::cmd_tick,
             commands::cmd_play_dance,
+            commands::cmd_dance_finished,
             commands::cmd_get_window_state,
             panel::cmd_show_panel,
             panel::cmd_hide_panel,

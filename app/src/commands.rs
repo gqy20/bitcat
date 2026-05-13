@@ -129,6 +129,17 @@ pub fn cmd_get_status(shared: tauri::State<'_, SharedPet>) -> Result<PetStatus, 
     Ok(get_status(&pet, &bubble))
 }
 
+/// 前端舞蹈播放器结束时回报，用于精确复位后端舞蹈状态。
+#[tauri::command]
+pub fn cmd_dance_finished(reason: Option<String>) -> Result<(), String> {
+    ai_pad_core::dance::set_dancing(false);
+    info!(
+        reason = reason.as_deref().unwrap_or("finished"),
+        "[cmd] 舞蹈播放结束"
+    );
+    Ok(())
+}
+
 #[tauri::command]
 pub fn cmd_tick(shared: tauri::State<'_, SharedPet>, dt_ms: u64) -> Result<PetStatus, String> {
     let mut pet = shared.pet.lock().map_err(|e| e.to_string())?;
@@ -765,6 +776,13 @@ mod tests {
         // 不存在的舞蹈名应返回错误
         let result = ai_pad_core::dance::load_dance("nonexistent_dance_xyz");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dance_finished_resets_dancing_flag() {
+        ai_pad_core::dance::set_dancing(true);
+        cmd_dance_finished(Some("finished".into())).unwrap();
+        assert!(!ai_pad_core::dance::is_dancing());
     }
 }
 

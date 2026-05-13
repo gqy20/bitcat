@@ -29,7 +29,7 @@
   let isSnapWindow = false;
 
   // 舞蹈播放器（非 null 时劫持渲染循环）
-  let dancePlayer = null;  // { steps, index, time, loop }
+  let dancePlayer = null;  // { steps, index, repeatIndex, time, loop }
 
   // Tauri 2 正确的 API 路径：getCurrentWindow() 不是 getCurrent()
   function getCurrentWin() {
@@ -435,6 +435,41 @@
     requestAnimationFrame(loop);
   }
 
+  function stepRepeat(step) {
+    var repeat = Number(step && step.repeat);
+    if (!Number.isFinite(repeat) || repeat < 1) return 1;
+    return Math.max(1, Math.floor(repeat));
+  }
+
+  function advanceDanceStep() {
+    var step = dancePlayer.steps[dancePlayer.index];
+    var repeat = stepRepeat(step);
+
+    if (dancePlayer.repeatIndex + 1 < repeat) {
+      dancePlayer.repeatIndex++;
+      console.log('[dance] 重复步骤', dancePlayer.index, 'repeat', dancePlayer.repeatIndex + 1, '/', repeat);
+      return true;
+    }
+
+    dancePlayer.repeatIndex = 0;
+    dancePlayer.index++;
+    console.log('[dance] 切换到步骤', dancePlayer.index, '/', dancePlayer.steps.length);
+
+    if (dancePlayer.index < dancePlayer.steps.length) {
+      return true;
+    }
+
+    if (dancePlayer.loop_) {
+      dancePlayer.index = 0;
+      console.log('[dance] 循环，从头开始');
+      return true;
+    }
+
+    console.log('[dance] 舞蹈播放完毕');
+    resetDancePosition('finished');
+    return false;
+  }
+
   function updateDance(dt) {
     dancePlayer.time += dt;
     dancePlayer.elapsed += dt;
@@ -442,28 +477,18 @@
     // 硬上限：总累计时长超过 max_duration_ms 则停止，即便 loop_ 为 true
     if (dancePlayer.maxDurationMs != null && dancePlayer.elapsed >= dancePlayer.maxDurationMs) {
       console.log('[dance] 达到 max_duration_ms=' + dancePlayer.maxDurationMs + '，停止');
-      resetDancePosition();
+      resetDancePosition('max_duration');
       return;
     }
 
     var step = dancePlayer.steps[dancePlayer.index];
-    if (dancePlayer.time >= step.duration_ms) {
-      dancePlayer.time = 0;
-      dancePlayer.index++;
-      console.log('[dance] 切换到步骤', dancePlayer.index, '/', dancePlayer.steps.length);
-      if (dancePlayer.index >= dancePlayer.steps.length) {
-        if (dancePlayer.loop_) {
-          dancePlayer.index = 0;
-          console.log('[dance] 循环，从头开始');
-        } else {
-          console.log('[dance] 舞蹈播放完毕');
-          resetDancePosition();
-          return;
-        }
-      }
+    while (step && dancePlayer.time >= step.duration_ms) {
+      dancePlayer.time -= step.duration_ms;
+      if (!advanceDanceStep()) return;
+      step = dancePlayer.steps[dancePlayer.index];
     }
 
-    var currentAction = dancePlayer.steps[dancePlayer.index].action;
+    var currentAction = step.action;
     var progress = dancePlayer.time / step.duration_ms;  // 0..1 当前步骤内进度
     var opts = {};
 
@@ -540,18 +565,40 @@
   }
 
   /// 舞舞结束：平滑归位到基准位置
-  async function resetDancePosition() {
-    var m = dancePlayer ? dancePlayer.metrics : null;
+  async function notifyDanceFinished(reason) {
+    if (!window.__TAURI__ || !window.__TAURI__.core) return;
+    try {
+      await window.__TAURI__.core.invoke('cmd_dance_finished', {
+        reason: reason || 'finished'
+      });
+    } catch (err) {
+      console.warn('[dance] 通知后端舞蹈结束失败:', err);
+    }
+  }
+
+  async function resetDancePosition(reason) {
+    if (!dancePlayer) return;
+
+    var m = dancePlayer.metrics;
     dancePlayer = null;
     bodyEl.classList.remove('dancing');
 
-    if (!m) return;
+    if (!m) {
+      notifyDanceFinished(reason);
+      return;
+    }
 
     var win = getCurrentWin();
-    if (!win) return;
+    if (!win) {
+      notifyDanceFinished(reason);
+      return;
+    }
 
     // 获取当前实际位置作为起点（舞蹈过程中可能已漂移）
-    try { var curPos = await win.outerPosition(); } catch (_) { return; }
+    try { var curPos = await win.outerPosition(); } catch (_) {
+      notifyDanceFinished(reason);
+      return;
+    }
 
     var Pos = window.__TAURI__.window.PhysicalPosition;
     var duration = 250;
@@ -566,7 +613,11 @@
         Math.round(fromX + (toX - fromX) * e),
         Math.round(fromY + (toY - fromY) * e)
       ));
-      if (t < 1) requestAnimationFrame(frame);
+      if (t < 1) {
+        requestAnimationFrame(frame);
+      } else {
+        notifyDanceFinished(reason);
+      }
     }
     requestAnimationFrame(frame);
   }
@@ -667,6 +718,7 @@
       dancePlayer = {
         steps: payload.steps,
         index: 0,
+        repeatIndex: 0,
         time: 0,
         elapsed: 0,
         maxDurationMs: typeof payload.max_duration_ms === 'number' ? payload.max_duration_ms : null,
