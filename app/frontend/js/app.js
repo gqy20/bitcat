@@ -23,7 +23,7 @@
 
   // 吸附状态
   let isSnapped = false;
-  let snapEdge = null;  // 'left' | 'right'
+  let snapEdge = null;  // 'left' | 'right' | 'top' | 'bottom'
 
   // 当前窗口是否为吸附竖条窗口
   let isSnapWindow = false;
@@ -129,8 +129,11 @@
     }
 
     function setEdge(edge) {
-      bar.classList.remove('direction-left', 'direction-right');
-      bar.classList.add(edge === 'right' ? 'direction-right' : 'direction-left');
+      var normalized = ['left', 'right', 'top', 'bottom'].includes(edge) ? edge : 'left';
+      bar.classList.remove('direction-left', 'direction-right', 'direction-top', 'direction-bottom');
+      bar.classList.add('direction-' + normalized);
+      document.body.classList.remove('snap-left', 'snap-right', 'snap-top', 'snap-bottom');
+      document.body.classList.add('snap-' + normalized);
     }
     setEdge(initialEdge || 'left');
     bar.hidden = false;

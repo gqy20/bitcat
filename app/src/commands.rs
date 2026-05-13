@@ -198,7 +198,7 @@ pub fn cmd_get_window_state(
 /// 磁性预告结果
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SnapPreview {
-    pub edge: String, // "left" | "right" | "none"
+    pub edge: String, // "left" | "right" | "top" | "bottom" | "none"
     pub x: i32,       // 预告条左上角 X（物理像素）
     pub y: i32,       // 预告条左上角 Y（物理像素）
     pub visible: bool,
@@ -217,38 +217,75 @@ pub struct SnapPreview {
 #[allow(clippy::too_many_arguments)]
 pub fn calc_snap_preview(
     cursor_x: i32,
+    cursor_y: i32,
     work_left: i32,
+    work_top: i32,
     work_right: i32,
     work_bottom: i32,
     pet_w: i32,
+    pet_h: i32,
     snap_w: i32,
     snap_h: i32,
     threshold: i32,
 ) -> SnapPreview {
     let left_dist = (cursor_x - work_left).max(0);
     let right_dist = (work_right - pet_w - cursor_x).max(0);
+    let top_dist = (cursor_y - work_top).max(0);
+    let bottom_dist = (work_bottom - pet_h - cursor_y).max(0);
 
-    if left_dist <= right_dist && left_dist <= threshold {
-        SnapPreview {
-            edge: "left".to_string(),
-            x: work_left,
-            y: work_bottom - snap_h,
-            visible: true,
-        }
-    } else if right_dist <= threshold {
-        SnapPreview {
-            edge: "right".to_string(),
-            x: work_right - snap_w,
-            y: work_bottom - snap_h,
-            visible: true,
-        }
-    } else {
-        SnapPreview {
+    let candidates = [
+        ("left", left_dist),
+        ("right", right_dist),
+        ("top", top_dist),
+        ("bottom", bottom_dist),
+    ];
+
+    let (edge, dist) = candidates
+        .iter()
+        .min_by_key(|(_, dist)| *dist)
+        .copied()
+        .unwrap_or(("none", threshold + 1));
+
+    if dist > threshold {
+        return SnapPreview {
             edge: "none".to_string(),
             x: cursor_x,
-            y: work_bottom,
+            y: cursor_y,
             visible: false,
-        }
+        };
+    }
+
+    match edge {
+        "left" => SnapPreview {
+            edge: "left".to_string(),
+            x: work_left,
+            y: cursor_y.clamp(work_top, work_bottom - snap_h),
+            visible: true,
+        },
+        "right" => SnapPreview {
+            edge: "right".to_string(),
+            x: work_right - snap_w,
+            y: cursor_y.clamp(work_top, work_bottom - snap_h),
+            visible: true,
+        },
+        "top" => SnapPreview {
+            edge: "top".to_string(),
+            x: cursor_x.clamp(work_left, work_right - snap_h),
+            y: work_top,
+            visible: true,
+        },
+        "bottom" => SnapPreview {
+            edge: "bottom".to_string(),
+            x: cursor_x.clamp(work_left, work_right - snap_h),
+            y: work_bottom - snap_w,
+            visible: true,
+        },
+        _ => SnapPreview {
+            edge: "none".to_string(),
+            x: cursor_x,
+            y: cursor_y,
+            visible: false,
+        },
     }
 }
 
@@ -476,32 +513,51 @@ mod tests {
 
     // ===== 磁性预告 calc_snap_preview（Task 5）=====
 
-    fn preview_at(x: i32) -> SnapPreview {
+    fn preview_at(x: i32, y: i32) -> SnapPreview {
         // 典型工作区 1920x1080，宠物 128x128，阈值 80，snap 24x100
-        calc_snap_preview(x, 0, 1920, 1040, 128, 24, 100, 80)
+        calc_snap_preview(x, y, 0, 0, 1920, 1040, 128, 128, 24, 100, 80)
     }
 
     #[test]
     fn test_preview_left_edge_triggers() {
-        let p = preview_at(10);
+        let p = preview_at(10, 500);
         assert_eq!(p.edge, "left");
         assert!(p.visible);
         assert_eq!(p.x, 0);
-        assert_eq!(p.y, 1040 - 100);
+        assert_eq!(p.y, 500);
     }
 
     #[test]
     fn test_preview_right_edge_triggers() {
         // 1920 - 128 - 10 = 1782，距右 10px
-        let p = preview_at(1782);
+        let p = preview_at(1782, 500);
         assert_eq!(p.edge, "right");
         assert!(p.visible);
         assert_eq!(p.x, 1920 - 24);
+        assert_eq!(p.y, 500);
+    }
+
+    #[test]
+    fn test_preview_top_edge_triggers() {
+        let p = preview_at(900, 10);
+        assert_eq!(p.edge, "top");
+        assert!(p.visible);
+        assert_eq!(p.x, 900);
+        assert_eq!(p.y, 0);
+    }
+
+    #[test]
+    fn test_preview_bottom_edge_triggers() {
+        let p = preview_at(900, 902);
+        assert_eq!(p.edge, "bottom");
+        assert!(p.visible);
+        assert_eq!(p.x, 900);
+        assert_eq!(p.y, 1040 - 24);
     }
 
     #[test]
     fn test_preview_center_no_trigger() {
-        let p = preview_at(900);
+        let p = preview_at(900, 500);
         assert_eq!(p.edge, "none");
         assert!(!p.visible);
     }
@@ -509,7 +565,7 @@ mod tests {
     #[test]
     fn test_preview_left_boundary_exact_threshold() {
         // x=80 → left_dist=80，等于阈值 → 应触发
-        let p = preview_at(80);
+        let p = preview_at(80, 500);
         assert_eq!(p.edge, "left");
         assert!(p.visible);
     }
@@ -517,7 +573,7 @@ mod tests {
     #[test]
     fn test_preview_left_boundary_just_outside_threshold() {
         // x=81 → left_dist=81 > 80 → 不触发（若 right 也远则 none）
-        let p = preview_at(81);
+        let p = preview_at(81, 500);
         assert_eq!(p.edge, "none");
         assert!(!p.visible);
     }
@@ -525,21 +581,27 @@ mod tests {
     #[test]
     fn test_preview_prefers_closer_edge() {
         // 距左 60px、距右 (1920-128-60)=1732 → 偏左
-        let p = preview_at(60);
+        let p = preview_at(60, 500);
         assert_eq!(p.edge, "left");
     }
 
     #[test]
     fn test_preview_right_when_left_far() {
         // x=1790 → left_dist=1790, right_dist=1920-128-1790=2
-        let p = preview_at(1790);
+        let p = preview_at(1790, 500);
         assert_eq!(p.edge, "right");
+    }
+
+    #[test]
+    fn test_preview_prefers_closest_vertical_edge() {
+        let p = preview_at(60, 10);
+        assert_eq!(p.edge, "top");
     }
 
     #[test]
     fn test_preview_negative_cursor_clamped() {
         // x 越界到负值（窗口被拖出屏幕外）：left_dist 被 max(0) 钳制为 0，应触发 left
-        let p = preview_at(-50);
+        let p = preview_at(-50, 500);
         assert_eq!(p.edge, "left");
         assert!(p.visible);
     }
@@ -547,7 +609,7 @@ mod tests {
     #[test]
     fn test_preview_cursor_beyond_right_clamped() {
         // x=2000 超过工作区：right_dist=(1920-128-2000).max(0)=0，触发 right
-        let p = preview_at(2000);
+        let p = preview_at(2000, 500);
         assert_eq!(p.edge, "right");
         assert!(p.visible);
     }

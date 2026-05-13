@@ -288,6 +288,81 @@ body.collapsed .particles {
   right: calc(var(--bar-width) + 4px);
 }
 
+/* ---- top/bottom: use the same snap window as a horizontal bar ---- */
+#snap-bar.direction-top,
+#snap-bar.direction-bottom {
+  width: 100px;
+  height: 24px;
+}
+
+#snap-bar.direction-top > *,
+#snap-bar.direction-bottom > * {
+  left: 4px;
+  right: 4px;
+  top: auto;
+  bottom: auto;
+  width: auto;
+}
+
+#snap-bar.direction-top .snap-layer-outer,
+#snap-bar.direction-bottom .snap-layer-outer { height: var(--outer-width); }
+#snap-bar.direction-top .snap-layer-mid,
+#snap-bar.direction-bottom .snap-layer-mid { height: var(--mid-width); }
+#snap-bar.direction-top .snap-core,
+#snap-bar.direction-bottom .snap-core {
+  height: var(--bar-width);
+  width: auto;
+  background: linear-gradient(90deg,
+    rgba(165, 180, 252, 0.85) 0%,
+    rgba(139, 92, 246, 0.95) 50%,
+    rgba(165, 180, 252, 0.85) 100%);
+  transition: height 0.18s ease, box-shadow 0.18s ease;
+}
+
+#snap-bar.direction-top .snap-layer-outer,
+#snap-bar.direction-top .snap-layer-mid,
+#snap-bar.direction-top .snap-core { top: 0; }
+#snap-bar.direction-top .snap-layer-outer {
+  background: linear-gradient(180deg,
+    rgba(99, 102, 241, 0.35) 0%,
+    rgba(99, 102, 241, 0.14) 50%,
+    rgba(99, 102, 241, 0) 100%);
+}
+#snap-bar.direction-top .snap-layer-mid {
+  background: linear-gradient(180deg,
+    rgba(139, 92, 246, 0.55) 0%,
+    rgba(139, 92, 246, 0.18) 60%,
+    rgba(139, 92, 246, 0) 100%);
+}
+#snap-bar.direction-top .snap-dot {
+  top: calc(var(--bar-width) + 4px);
+  left: 50%;
+  margin-left: -1.5px;
+  margin-top: 0;
+}
+
+#snap-bar.direction-bottom .snap-layer-outer,
+#snap-bar.direction-bottom .snap-layer-mid,
+#snap-bar.direction-bottom .snap-core { bottom: 0; }
+#snap-bar.direction-bottom .snap-layer-outer {
+  background: linear-gradient(0deg,
+    rgba(99, 102, 241, 0.35) 0%,
+    rgba(99, 102, 241, 0.14) 50%,
+    rgba(99, 102, 241, 0) 100%);
+}
+#snap-bar.direction-bottom .snap-layer-mid {
+  background: linear-gradient(0deg,
+    rgba(139, 92, 246, 0.55) 0%,
+    rgba(139, 92, 246, 0.18) 60%,
+    rgba(139, 92, 246, 0) 100%);
+}
+#snap-bar.direction-bottom .snap-dot {
+  bottom: calc(var(--bar-width) + 4px);
+  left: 50%;
+  margin-left: -1.5px;
+  margin-top: 0;
+}
+
 /* ---- hover：核心展宽 + 指示点浮现 + 整体提亮 ---- */
 #snap-bar.hovered {
   filter: brightness(1.18);
@@ -297,6 +372,11 @@ body.collapsed .particles {
   box-shadow:
     0 0 8px rgba(139, 92, 246, 0.8),
     0 0 14px rgba(99, 102, 241, 0.5);
+}
+#snap-bar.hovered.direction-top .snap-core,
+#snap-bar.hovered.direction-bottom .snap-core {
+  width: auto;
+  height: 6px;
 }
 #snap-bar.hovered .snap-dot {
   opacity: 1;
@@ -322,6 +402,8 @@ body.snap-mode #sprite,
 body.snap-mode .shadow,
 body.snap-mode .particles { display: none; }
 body.snap-mode { width: 24px !important; height: 100px !important; }
+body.snap-mode.snap-top,
+body.snap-mode.snap-bottom { width: 100px !important; height: 24px !important; }
 
 /* ==========================================================================
    Crossfade（Task 4）：双窗口切换时消除双闪
