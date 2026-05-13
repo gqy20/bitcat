@@ -1,5 +1,5 @@
 use crate::commands::{self, SharedWindowState};
-use tauri::{Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
 use tracing::{info, warn};
 
 use std::sync::atomic::Ordering;
@@ -60,7 +60,7 @@ pub struct SnapResult {
 
 /// 贴边吸附：计算宠物窗口的吸附目标位置
 #[tauri::command]
-pub async fn cmd_snap_pet(app: tauri::AppHandle, x: i32, _y: i32) -> Result<SnapResult, String> {
+pub async fn cmd_snap_pet(app: tauri::AppHandle, x: i32, y: i32) -> Result<SnapResult, String> {
     let win = app
         .get_webview_window("pet")
         .filter(|w| w.is_visible().unwrap_or(false))
@@ -73,11 +73,14 @@ pub async fn cmd_snap_pet(app: tauri::AppHandle, x: i32, _y: i32) -> Result<Snap
     let scale = win.scale_factor().unwrap_or(1.0);
     let snap_h_px = (SNAP_H as f64 * scale) as i32;
     let snap_w_px = (SNAP_W * scale) as i32;
+    let horizontal_snap_w_px = snap_h_px;
+    let horizontal_snap_h_px = snap_w_px;
 
     let work = get_work_area_for_window(&win);
     info!(
         snap_cmd = true,
         input_x = x,
+        input_y = y,
         work_left = work.left,
         work_right = work.right,
         work_top = work.top,
@@ -89,20 +92,52 @@ pub async fn cmd_snap_pet(app: tauri::AppHandle, x: i32, _y: i32) -> Result<Snap
         "cmd_snap_pet: 工作区信息"
     );
 
-    let snap_threshold = (80.0 * scale) as u32;
-    let left_dist = (x - work.left).unsigned_abs();
-    let right_dist = (work.right - pw - x).unsigned_abs();
+    let snap_threshold = (80.0 * scale) as i32;
+    let left_dist = (x - work.left).max(0);
+    let right_dist = (work.right - pw - x).max(0);
+    let top_dist = (y - work.top).max(0);
+    let bottom_dist = (work.bottom - ph - y).max(0);
+    let candidates = [
+        ("left", left_dist),
+        ("right", right_dist),
+        ("top", top_dist),
+        ("bottom", bottom_dist),
+    ];
 
-    let snap_result = if left_dist <= right_dist && left_dist <= snap_threshold {
-        ("left", work.left, work.bottom - snap_h_px)
-    } else if right_dist <= snap_threshold {
-        ("right", work.right - snap_w_px, work.bottom - snap_h_px)
-    } else {
-        return Ok(SnapResult {
-            edge: "none".to_string(),
-            x,
-            y: work.bottom - ph,
-        });
+    let (edge, dist) = candidates
+        .iter()
+        .min_by_key(|(_, dist)| *dist)
+        .copied()
+        .unwrap_or(("none", snap_threshold + 1));
+
+    let snap_result = match edge {
+        "left" if dist <= snap_threshold => (
+            "left",
+            work.left,
+            y.clamp(work.top, work.bottom - snap_h_px),
+        ),
+        "right" if dist <= snap_threshold => (
+            "right",
+            work.right - snap_w_px,
+            y.clamp(work.top, work.bottom - snap_h_px),
+        ),
+        "top" if dist <= snap_threshold => (
+            "top",
+            x.clamp(work.left, work.right - horizontal_snap_w_px),
+            work.top,
+        ),
+        "bottom" if dist <= snap_threshold => (
+            "bottom",
+            x.clamp(work.left, work.right - horizontal_snap_w_px),
+            work.bottom - horizontal_snap_h_px,
+        ),
+        _ => {
+            return Ok(SnapResult {
+                edge: "none".to_string(),
+                x,
+                y,
+            });
+        }
     };
 
     let (edge, target_x, target_y) = snap_result;
@@ -110,8 +145,11 @@ pub async fn cmd_snap_pet(app: tauri::AppHandle, x: i32, _y: i32) -> Result<Snap
     info!(
         snap_cmd = true,
         input_x = x,
+        input_y = y,
         left_dist = left_dist,
         right_dist = right_dist,
+        top_dist = top_dist,
+        bottom_dist = bottom_dist,
         edge = %edge,
         target_x = target_x,
         target_y = target_y,
@@ -130,7 +168,7 @@ pub async fn cmd_snap_pet(app: tauri::AppHandle, x: i32, _y: i32) -> Result<Snap
 pub async fn cmd_get_snap_preview(
     app: tauri::AppHandle,
     x: i32,
-    _y: i32,
+    y: i32,
 ) -> Result<commands::SnapPreview, String> {
     let win = app
         .get_webview_window("pet")
@@ -140,6 +178,7 @@ pub async fn cmd_get_snap_preview(
 
     let pet_size = win.outer_size().map_err(|e| e.to_string())?;
     let pw = pet_size.width as i32;
+    let ph = pet_size.height as i32;
     let scale = win.scale_factor().unwrap_or(1.0);
     let snap_h_px = (SNAP_H as f64 * scale) as i32;
     let snap_w_px = (SNAP_W * scale) as i32;
@@ -149,10 +188,13 @@ pub async fn cmd_get_snap_preview(
 
     Ok(commands::calc_snap_preview(
         x,
+        y,
         work.left,
+        work.top,
         work.right,
         work.bottom,
         pw,
+        ph,
         snap_w_px,
         snap_h_px,
         threshold,
@@ -169,6 +211,11 @@ pub async fn cmd_snap_transform(
 ) -> Result<(), String> {
     let ws: tauri::State<'_, SharedWindowState> = app.state();
     let on_top = ws.always_on_top.load(Ordering::SeqCst);
+    let (snap_width, snap_height) = match edge.as_str() {
+        "left" | "right" => (SNAP_W as u32, SNAP_H as u32),
+        "top" | "bottom" => (SNAP_H as u32, SNAP_W as u32),
+        _ => return Err(format!("invalid snap edge: {edge}")),
+    };
 
     *ws.is_snapped.lock().map_err(|e| e.to_string())? = true;
     *ws.snap_edge.lock().map_err(|e| e.to_string())? = Some(edge.clone());
@@ -191,6 +238,7 @@ pub async fn cmd_snap_transform(
         .get_webview_window("pet-snap")
         .ok_or("pet-snap window not found")?;
 
+    let _ = snap_win.set_size(PhysicalSize::new(snap_width, snap_height));
     let _ = snap_win.set_position(PhysicalPosition::new(x, y));
     let _ = snap_win.set_always_on_top(on_top);
     snap_win.show().map_err(|e| e.to_string())?;
@@ -238,13 +286,15 @@ pub async fn cmd_unsnap_transform(app: tauri::AppHandle) -> Result<(), String> {
         .ok_or(format!("window '{}' not found", target))?;
 
     if let Some(pos) = snap_pos {
-        let offset = if ws.snap_edge.lock().ok().and_then(|e| e.clone()).as_deref() == Some("left")
-        {
-            80
-        } else {
-            -80
+        let edge = ws.snap_edge.lock().ok().and_then(|e| e.clone());
+        let (x, y) = match edge.as_deref() {
+            Some("left") => (pos.x + 80, pos.y),
+            Some("right") => (pos.x - 80, pos.y),
+            Some("top") => (pos.x, pos.y + 80),
+            Some("bottom") => (pos.x, pos.y - 80),
+            _ => (pos.x, pos.y),
         };
-        let _ = win.set_position(PhysicalPosition::new(pos.x + offset, pos.y));
+        let _ = win.set_position(PhysicalPosition::new(x, y));
     }
 
     let _ = win.set_always_on_top(on_top);
