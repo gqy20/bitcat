@@ -25,10 +25,12 @@ EXE_NAME    = ai-pad-app.exe
 # ══════════════════════════════════════
 
 build:
-	cargo build && mkdir -p $(DEBUG_DIR)/config && cp config/*.yml $(DEBUG_DIR)/config/
+	cargo build
+	cargo run -p xtask -- copy-config --out-dir "$(DEBUG_DIR)"
 
 release:
-	cargo build --release && mkdir -p $(RELEASE_DIR)/config && cp config/*.yml $(RELEASE_DIR)/config/
+	cargo build --release
+	cargo run -p xtask -- copy-config --out-dir "$(RELEASE_DIR)"
 
 # ══════════════════════════════════════
 #  打包：exe + yml → 版本化 ZIP
@@ -50,23 +52,23 @@ dist-upx:
 
 # 拷贝配置文件到 core/（测试需要这些 yml）
 _copy-fixtures:
-	@mkdir -p core/config && cp config/*.yml core/config/
+	@cargo run -p xtask -- copy-config --out-dir core
 
 # 完整测试：整个 workspace（core + app）。app crate 依赖 SDL2/Tauri，编译较慢。
-test: _copy-fixtures
-	cargo nextest run --workspace
+test:
+	cargo run -p xtask -- test
 
 # 日常快速反馈：只跑 core（~20s），跳过 SDL2/Tauri 编译
-test-core: _copy-fixtures
-	cargo nextest run -p ai-pad-core
+test-core:
+	cargo run -p xtask -- test-core
 
 # 只跑 app 测试
-test-app: _copy-fixtures
-	cargo nextest run -p ai-pad-app
+test-app:
+	cargo run -p xtask -- test-app
 
 # 最快反馈：core + 跳过 proptest（proptest 默认每块 256 cases）
-test-fast: _copy-fixtures
-	PROPTEST_CASES=32 cargo nextest run -p ai-pad-core -E 'not test(/prop_/)'
+test-fast:
+	cargo run -p xtask -- test-fast
 
 nextest: test
 
@@ -92,7 +94,7 @@ run:
 
 clean:
 	cargo clean
-	rm -f ai-pad-*.zip
+	cargo run -p xtask -- clean-dist
 
 # ══════════════════════════════════════
 #  Python（预留）

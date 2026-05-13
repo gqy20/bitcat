@@ -30,6 +30,15 @@ cargo insta review     # 交互式审查，逐个接受/拒绝快照变更
 cargo insta accept     # 一键接受所有新快照
 ```
 
+**Windows/PowerShell 兼容性**：`make test` / `make test-core` / `make test-fast` / `make test-app` 不再直接使用 `mkdir -p`、`cp`、`PROPTEST_CASES=32 cargo ...` 这类 POSIX shell 写法；Makefile 会委托 `xtask` 执行跨平台的配置复制与测试命令。因此在 Windows PowerShell、cmd、Git Bash 下都应优先继续使用 `make`。如果需要绕过 Makefile，可直接运行等价命令：
+
+```powershell
+cargo run -p xtask -- test-core
+cargo run -p xtask -- test-fast
+cargo run -p xtask -- test-app
+cargo run -p xtask -- test
+```
+
 **nextest 配置**：见 [.config/nextest.toml](.config/nextest.toml)。`default` profile 用于本地（安静输出 + slow-timeout 保护），`ci` profile 用于 GitHub Actions（JUnit 输出 + fail-fast）。`PROPTEST_CASES` 环境变量可覆盖 proptest 用例数（默认 256，CI 用 64）。
 
 **Git hooks（cargo-husky）**：首次 `cargo test` 或 `make install-hooks` 会自动把 [.cargo-husky/hooks/](.cargo-husky/hooks/) 里的脚本写入 `.git/hooks/`：
@@ -68,10 +77,13 @@ cargo check -p ai-pad-app
 仓库使用 `xtask` 承载项目级维护命令，避免把发布逻辑散落在 shell/PowerShell 里。
 
 ```bash
+cargo run -p xtask -- copy-config --out-dir target/debug
+cargo run -p xtask -- test-core
+cargo run -p xtask -- test-fast
 cargo run -p xtask -- package-portable --version v0.1.0 --release-dir target/release --out-dir .
 ```
 
-`make dist`、`make dist-upx` 和 GitHub Release workflow 都必须调用这条 Rust 工具链路径；不要新增第二套 zip 复制逻辑。
+`make build` / `make release` 的配置复制、`make test*` 的测试入口、`make clean` 的 dist 清理、`make dist` / `make dist-upx` 和 GitHub Release workflow 都必须调用这条 Rust 工具链路径；不要新增第二套 shell/PowerShell 复制或 zip 逻辑。
 
 ## 架构
 
@@ -200,7 +212,7 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 1. **日常只跑 core**：`make test-core`（~20s），app crate 依赖 SDL2/Tauri 编译慢，提交前再跑 `make test`。
 2. **async 测试用 `#[tokio::test]`**，不要手动 `Runtime::new().unwrap().block_on(...)`——每个测试新建 runtime 有额外开销，代码也更冗长。
 3. **nextest fail-fast 默认开启**：本地调试失败时加 `--no-fail-fast` 看全部失败，别误以为"只有一个测试失败"。
-4. **proptest 用例数可配**：本地 `PROPTEST_CASES=32 make test-fast`，CI 默认 64，完整回归 256（默认）。
+4. **proptest 用例数可配**：本地 `make test-fast` 会通过 `xtask` 设置 `PROPTEST_CASES=32`；CI 默认 64，完整回归 256（默认）。需要手动覆盖时按当前 shell 设置环境变量后直接跑 `cargo nextest`。
 5. **改了 `wiremock` 相关测试记得 `.no_proxy()`**：Windows 系统代理会劫持 `localhost`，不加会 hang。
 6. **环境变量相关测试自动进串行组**：[.config/nextest.toml](.config/nextest.toml) 的 `serial-env` test-group 已经把 `*from_env*` / `*env_overrides*` 的测试串行化，新增此类测试会自动受益，无需手动加 `#[serial]`。
 

@@ -470,9 +470,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_call_launch() {
+        let (program, args) = if cfg!(windows) {
+            ("cmd", "/C echo test")
+        } else {
+            ("echo", "test")
+        };
         let args = LaunchArgs {
-            program: "echo".into(),
-            args: "test".into(),
+            program: program.into(),
+            args: args.into(),
             workdir: String::new(),
             terminal: false,
         };
