@@ -14,6 +14,7 @@
 //! - `bridge` — 手柄按键 → Agent 命令 → 宠物动画的桥接映射
 //! - `pet` — 宠物状态机（6 状态、帧动画）
 //! - `memory` — 滚动窗口对话记忆
+//! - `minigame` — 迷你游戏定义、参数边界和预设
 //! - `vision` / `screenshot` — 截图捕获与 Vision API 分析
 //! - `prompts` — 统一提示词配置
 //! - `user_profile` — 用户画像
@@ -41,6 +42,7 @@ pub mod device;
 pub mod hotkey;
 pub mod logging;
 pub mod memory;
+pub mod minigame;
 pub mod permission_hook;
 pub mod pet;
 pub mod prompts;

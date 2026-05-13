@@ -708,7 +708,7 @@ mod tests {
         let mut pet = test_pet();
         assert_eq!(pet.frame, 0);
 
-        tick(&mut pet, 499);
+        tick(&mut pet, 1499);
         assert_eq!(pet.frame, 0);
 
         tick(&mut pet, 1);

@@ -47,6 +47,9 @@ pub enum PetStateName {
     Talk,
     Happy,
     Confused,
+    GamePlay,
+    GameWin,
+    GameLose,
 }
 
 impl From<PetStateName> for crate::pet::PetState {
@@ -58,6 +61,9 @@ impl From<PetStateName> for crate::pet::PetState {
             PetStateName::Talk => crate::pet::PetState::Talk,
             PetStateName::Happy => crate::pet::PetState::Happy,
             PetStateName::Confused => crate::pet::PetState::Confused,
+            PetStateName::GamePlay => crate::pet::PetState::GamePlay,
+            PetStateName::GameWin => crate::pet::PetState::GameWin,
+            PetStateName::GameLose => crate::pet::PetState::GameLose,
         }
     }
 }
@@ -71,6 +77,9 @@ impl From<crate::pet::PetState> for PetStateName {
             crate::pet::PetState::Talk => PetStateName::Talk,
             crate::pet::PetState::Happy => PetStateName::Happy,
             crate::pet::PetState::Confused => PetStateName::Confused,
+            crate::pet::PetState::GamePlay => PetStateName::GamePlay,
+            crate::pet::PetState::GameWin => PetStateName::GameWin,
+            crate::pet::PetState::GameLose => PetStateName::GameLose,
         }
     }
 }
@@ -379,6 +388,9 @@ mod tests {
             PetState::Talk,
             PetState::Happy,
             PetState::Confused,
+            PetState::GamePlay,
+            PetState::GameWin,
+            PetState::GameLose,
         ] {
             let name = PetStateName::from(s);
             let back: PetState = name.into();

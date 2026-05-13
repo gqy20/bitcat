@@ -9,6 +9,9 @@ const STATE_CONFIG = {
   talk:     { frameCount: 3, frameDuration: 300, autoIdleTimeout: 5000 },
   happy:    { frameCount: 3, frameDuration: 200, autoIdleTimeout: 2000 },
   confused: { frameCount: 2, frameDuration: 400, autoIdleTimeout: 3000 },
+  gameplay: { frameCount: 2, frameDuration: 300, autoIdleTimeout: null },
+  gamewin:  { frameCount: 3, frameDuration: 200, autoIdleTimeout: 3000 },
+  gamelose: { frameCount: 2, frameDuration: 400, autoIdleTimeout: 3000 },
 };
 
 class PetStateMachine {
@@ -200,6 +203,24 @@ describe('PetStateMachine', () => {
       pet.update(1999);
       expect(pet.state).toBe('happy');
       pet.update(1);
+      expect(pet.state).toBe('idle');
+    });
+
+    it('gameplay 不自动回 idle', () => {
+      pet.setState('gameplay');
+      pet.update(100000);
+      expect(pet.state).toBe('gameplay');
+    });
+
+    it('gamewin 和 gamelose 3000ms 后回 idle', () => {
+      pet.setState('gamewin');
+      pet.update(2999);
+      expect(pet.state).toBe('gamewin');
+      pet.update(1);
+      expect(pet.state).toBe('idle');
+
+      pet.setState('gamelose');
+      pet.update(3000);
       expect(pet.state).toBe('idle');
     });
   });

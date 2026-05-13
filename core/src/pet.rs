@@ -24,6 +24,12 @@ pub enum PetState {
     Happy,
     /// 困惑（出错时）
     Confused,
+    /// 游戏进行中
+    GamePlay,
+    /// 游戏胜利
+    GameWin,
+    /// 游戏失败
+    GameLose,
 }
 
 impl PetState {
@@ -44,13 +50,16 @@ impl PetState {
             Self::Talk => &[(0, 300), (1, 300), (2, 400)],
             Self::Happy => &[(0, 250), (1, 120), (0, 230)],
             Self::Confused => &[(0, 400), (1, 400)],
+            Self::GamePlay => &[(0, 300), (1, 300)],
+            Self::GameWin => &[(0, 250), (1, 120), (0, 230)],
+            Self::GameLose => &[(0, 400), (1, 400)],
         }
     }
 
     /// 是否为循环态（无限播放）
     #[allow(dead_code)]
     fn loops(self) -> bool {
-        matches!(self, Self::Idle | Self::Walk | Self::Sleep)
+        matches!(self, Self::Idle | Self::Walk | Self::Sleep | Self::GamePlay)
     }
 
     /// 瞬态重复次数：播 N 遍后回落到 fallback
@@ -59,6 +68,8 @@ impl PetState {
             Self::Talk => Some(3),
             Self::Happy => Some(3),
             Self::Confused => Some(2),
+            Self::GameWin => Some(5),
+            Self::GameLose => Some(4),
             _ => None,
         }
     }
@@ -66,7 +77,9 @@ impl PetState {
     /// 瞬态回落目标状态
     fn fallback(self) -> Option<PetState> {
         match self {
-            Self::Talk | Self::Happy | Self::Confused => Some(PetState::Idle),
+            Self::Talk | Self::Happy | Self::Confused | Self::GameWin | Self::GameLose => {
+                Some(PetState::Idle)
+            }
             _ => None,
         }
     }
@@ -85,6 +98,9 @@ impl PetState {
             Self::Talk => 2,
             Self::Happy => 2,
             Self::Confused => 1,
+            Self::GamePlay => 1,
+            Self::GameWin => 2,
+            Self::GameLose => 1,
         }
     }
 
@@ -237,6 +253,11 @@ impl Pet {
     /// 进入睡眠状态
     pub fn fall_asleep(&mut self) {
         self.set_state(PetState::Sleep);
+    }
+
+    /// 进入小游戏进行中状态。
+    pub fn start_gameplay(&mut self) {
+        self.set_state(PetState::GamePlay);
     }
 }
 
@@ -454,6 +475,9 @@ mod tests {
 
         pet.fall_asleep();
         assert_eq!(pet.state, PetState::Sleep);
+
+        pet.start_gameplay();
+        assert_eq!(pet.state, PetState::GamePlay);
     }
 
     #[test]
@@ -478,6 +502,10 @@ mod tests {
 
         let confused_tl = PetState::Confused.timeline();
         assert_eq!(confused_tl.len(), 2);
+
+        assert_eq!(PetState::GamePlay.timeline().len(), 2);
+        assert_eq!(PetState::GameWin.timeline().len(), 3);
+        assert_eq!(PetState::GameLose.timeline().len(), 2);
     }
 
     #[test]
@@ -486,14 +514,19 @@ mod tests {
         assert!(PetState::Idle.loops());
         assert!(PetState::Walk.loops());
         assert!(PetState::Sleep.loops());
+        assert!(PetState::GamePlay.loops());
         assert!(!PetState::Talk.loops());
         assert!(!PetState::Happy.loops());
         assert!(!PetState::Confused.loops());
+        assert!(!PetState::GameWin.loops());
+        assert!(!PetState::GameLose.loops());
 
         // 瞬态 repeat count
         assert_eq!(PetState::Talk.repeat_count(), Some(3));
         assert_eq!(PetState::Happy.repeat_count(), Some(3));
         assert_eq!(PetState::Confused.repeat_count(), Some(2));
+        assert_eq!(PetState::GameWin.repeat_count(), Some(5));
+        assert_eq!(PetState::GameLose.repeat_count(), Some(4));
         assert_eq!(PetState::Idle.repeat_count(), None);
         assert_eq!(PetState::Walk.repeat_count(), None);
 
@@ -501,7 +534,34 @@ mod tests {
         assert_eq!(PetState::Talk.fallback(), Some(PetState::Idle));
         assert_eq!(PetState::Happy.fallback(), Some(PetState::Idle));
         assert_eq!(PetState::Confused.fallback(), Some(PetState::Idle));
+        assert_eq!(PetState::GameWin.fallback(), Some(PetState::Idle));
+        assert_eq!(PetState::GameLose.fallback(), Some(PetState::Idle));
         assert_eq!(PetState::Idle.fallback(), None);
+    }
+
+    #[test]
+    fn test_gameplay_does_not_auto_idle() {
+        let mut pet = Pet::default();
+        pet.set_state(PetState::GamePlay);
+        pet.update(100_000);
+        assert_eq!(pet.state, PetState::GamePlay);
+    }
+
+    #[test]
+    fn test_game_result_states_fallback_to_idle() {
+        let mut win = Pet::default();
+        win.set_state(PetState::GameWin);
+        win.update(2999);
+        assert_eq!(win.state, PetState::GameWin);
+        win.update(1);
+        assert_eq!(win.state, PetState::Idle);
+
+        let mut lose = Pet::default();
+        lose.set_state(PetState::GameLose);
+        lose.update(3199);
+        assert_eq!(lose.state, PetState::GameLose);
+        lose.update(1);
+        assert_eq!(lose.state, PetState::Idle);
     }
 
     #[test]
@@ -546,6 +606,9 @@ mod prop_tests {
             Just(PetState::Talk),
             Just(PetState::Happy),
             Just(PetState::Confused),
+            Just(PetState::GamePlay),
+            Just(PetState::GameWin),
+            Just(PetState::GameLose),
         ]
     }
 
@@ -555,6 +618,8 @@ mod prop_tests {
             Just(PetState::Talk),
             Just(PetState::Happy),
             Just(PetState::Confused),
+            Just(PetState::GameWin),
+            Just(PetState::GameLose),
         ]
     }
 
@@ -726,7 +791,7 @@ mod prop_tests {
     proptest! {
         #[test]
         fn looping_states_stay_put(dt_ms in 1u64..100_000u64) {
-            for &state in &[PetState::Idle, PetState::Sleep] {
+            for &state in &[PetState::Idle, PetState::Sleep, PetState::GamePlay] {
                 let mut pet = Pet::default();
                 pet.set_state(state);
                 pet.update(dt_ms);

@@ -41,6 +41,8 @@ pub enum Action {
     StartVoice,
     /// 播放舞蹈
     PlayDance(String),
+    /// 启动默认迷你游戏
+    PlayGameDefault,
     /// 立即截图 + Vision 分析
     ScreenshotNow,
     /// 启动程序（launch 动作）
@@ -160,6 +162,12 @@ impl ActionBus {
             Action::PlayDance(name) => {
                 info!(?source, action = "PlayDance", dance = %name, "action dispatch");
                 play_dance_impl(name.clone());
+            }
+            Action::PlayGameDefault => {
+                info!(?source, action = "PlayGameDefault", "action dispatch");
+                if let Err(e) = crate::game::start_default_game(app) {
+                    warn!(error = %e, "play game action failed");
+                }
             }
             Action::ScreenshotNow => {
                 info!(?source, action = "ScreenshotNow", "action dispatch");
@@ -328,6 +336,7 @@ mod tests {
             Action::ExitChat,
             Action::SubmitChat("你好".into()),
             Action::PlayDance("happy".into()),
+            Action::PlayGameDefault,
             Action::ScreenshotNow,
             Action::Launch {
                 program: "code".into(),

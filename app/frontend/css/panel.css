@@ -19,7 +19,7 @@ html, body {
   height: 100%;
   background: rgba(32, 32, 38, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
+  border-radius: 8px;
   backdrop-filter: blur(24px) saturate(1.2);
   -webkit-backdrop-filter: blur(24px) saturate(1.2);
   box-shadow:
@@ -56,7 +56,7 @@ html, body {
   flex: 1;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(2, 1fr);
+  grid-template-rows: repeat(3, 1fr);
   gap: 8px;
   -webkit-app-region: no-drag;
 }
@@ -68,7 +68,7 @@ html, body {
   justify-content: center;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 10px;
+  border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease, box-shadow 0.12s ease;
   padding: 8px;
@@ -94,8 +94,8 @@ html, body {
 }
 
 .cell .icon {
-  font-size: 28px;
-  margin-bottom: 6px;
+  font-size: 24px;
+  margin-bottom: 5px;
   line-height: 1;
 }
 

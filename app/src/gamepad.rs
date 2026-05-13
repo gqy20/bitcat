@@ -485,6 +485,7 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                 .get_webview_window("panel")
                 .and_then(|w| w.is_visible().ok())
                 .unwrap_or(false);
+            let game_active = crate::game::is_game_active(app);
 
             let buttons = gamepad.read_buttons();
             let new_presses = (buttons ^ prev_buttons) & buttons;
@@ -499,6 +500,32 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                         if (alt_tab.held && name != "L1") || (ctrl_tab.held && name != "L2") {
                             alt_tab.release();
                             ctrl_tab.release();
+                        }
+
+                        if game_active {
+                            match name {
+                                "A" => {
+                                    info!("→ 游戏确认");
+                                    let _ = app.emit(
+                                        "game-input",
+                                        serde_json::json!({ "type": "confirm" }),
+                                    );
+                                }
+                                "B" => {
+                                    info!("→ 游戏取消");
+                                    let _ = app.emit(
+                                        "game-input",
+                                        serde_json::json!({ "type": "cancel" }),
+                                    );
+                                }
+                                "Start" => {
+                                    info!("→ 游戏暂停");
+                                    let _ = app
+                                        .emit("game-input", serde_json::json!({ "type": "pause" }));
+                                }
+                                _ => {}
+                            }
+                            continue;
                         }
 
                         if name == "Home" {
@@ -664,7 +691,21 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
 
             // 方向键
             let hat = gamepad.read_hat(0);
-            if panel_visible {
+            if game_active {
+                if hat != prev_hat {
+                    if let Some((dx, dy)) = hat {
+                        info!(dx = dx, dy = dy, "→ 游戏方向");
+                        let _ = app.emit(
+                            "game-input",
+                            serde_json::json!({
+                                "type": "direction",
+                                "dx": dx,
+                                "dy": -dy,
+                            }),
+                        );
+                    }
+                }
+            } else if panel_visible {
                 if hat != prev_hat {
                     if let Some((dx, dy)) = hat {
                         info!(dx = dx, dy = dy, "→ 面板导航");
@@ -1234,7 +1275,6 @@ fn name_to_bit(name: &str) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ai_pad_core::bridge::PetStateName;
 
     #[test]
     fn test_event_set_state() {

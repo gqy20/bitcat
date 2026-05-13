@@ -18,6 +18,7 @@
 pub mod action_bus;
 pub mod bubble;
 pub mod commands;
+pub mod game;
 pub mod gamepad;
 pub mod joystick;
 pub mod panel;
@@ -45,6 +46,7 @@ pub fn run() {
         .manage(bubble::SharedBubble::new())
         .manage(voice::SharedVoice::new())
         .manage(screenshot::SharedScreenshotState::default())
+        .manage(game::SharedGame::default())
         .manage(SharedPendingChat::new())
         .manage(SharedChatCore::new())
         .manage(SharedAgent::new())
@@ -58,6 +60,11 @@ pub fn run() {
             commands::cmd_play_dance,
             commands::cmd_dance_finished,
             commands::cmd_get_window_state,
+            game::cmd_start_game,
+            game::cmd_start_game_with_def,
+            game::cmd_get_current_game,
+            game::cmd_game_end,
+            game::cmd_game_log,
             panel::cmd_show_panel,
             panel::cmd_hide_panel,
             panel::cmd_execute_panel_action,

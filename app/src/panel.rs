@@ -1,4 +1,4 @@
-//! 面板窗口模块：480×320 玻璃面板，3×2 网格 action 映射与方向键独占导航。
+//! 面板窗口模块：480×420 玻璃面板，3×3 网格 action 映射与方向键独占导航。
 //!
 //! 面板是按需创建的 WebView2 窗口，通过手柄方向键和 A/B 按钮进行独占导航
 //! （导航期间手柄事件不传递给宠物状态机）。面板动作从 `config/actions.yml`
@@ -80,7 +80,7 @@ pub async fn cmd_hide_panel(app: AppHandle) -> Result<(), String> {
 }
 
 const PANEL_W: f64 = 480.0;
-const PANEL_H: f64 = 320.0;
+const PANEL_H: f64 = 420.0;
 const GAP: f64 = 10.0;
 
 /// 把 panel 窗口定位到宠物附近（优先右下，超出屏幕则自动换边）
@@ -166,7 +166,7 @@ pub fn toggle_panel(app: &AppHandle) {
 fn create_panel_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
     WebviewWindowBuilder::new(app, "panel", WebviewUrl::App("panel.html".into()))
         .title("8Bit Panel")
-        .inner_size(480.0, 320.0)
+        .inner_size(480.0, 420.0)
         .decorations(false)
         .transparent(true)
         .background_color(tauri::webview::Color(0, 0, 0, 0))
@@ -181,8 +181,6 @@ fn create_panel_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri::E
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_load_panel_actions_from_yml() {
         let config = ai_pad_core::action::ActionConfig::load("config/actions.yml").unwrap();

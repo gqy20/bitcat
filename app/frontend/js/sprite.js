@@ -187,6 +187,9 @@ const SPRITES = {
   talk:     [TALK_SMALL, TALK_LARGE, TALK_CLOSED],
   happy:    [HAPPY_BASE, HAPPY_BLINK, HAPPY_BASE],
   confused: [CONFUSED_LEFT, CONFUSED_RIGHT],
+  gameplay: [HAPPY_BASE, HAPPY_BLINK],
+  gamewin:  [HAPPY_BASE, HAPPY_BLINK, HAPPY_BASE],
+  gamelose: [CONFUSED_LEFT, CONFUSED_RIGHT],
   // 舞蹈动作（单帧，由舞蹈播放器控制时长）
   jump:     [JUMP_SPRITE],
   spin:     [SPIN_SPRITE],

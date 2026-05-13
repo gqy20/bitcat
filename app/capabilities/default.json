@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "default permissions for the app",
-  "windows": ["main", "pet", "pet-mini", "pet-snap", "bubble", "panel", "voice", "settings"],
+  "windows": ["main", "pet", "pet-mini", "pet-snap", "bubble", "panel", "voice", "settings", "game"],
   "permissions": [
     "core:default",
     "core:window:default",

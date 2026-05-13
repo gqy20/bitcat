@@ -6,10 +6,13 @@ const ACTIONS = [
   { id: 'powershell', icon: '⚡', label: 'PowerShell' },
   { id: 'notepad',    icon: '📝', label: '记事本' },
   { id: 'dance',      icon: '💃', label: '跳舞' },
+  { id: 'game',       icon: '🎮', label: '游戏' },
+  { id: 'settings',   icon: '⚙️', label: '设置' },
+  { id: 'chat',       icon: '💬', label: '聊天' },
 ];
 
 const COLS = 3;
-const ROWS = 2;
+const ROWS = 3;
 
 const invoke = window.__TAURI__?.core?.invoke;
 const listen = window.__TAURI__?.event?.listen;
@@ -68,6 +71,22 @@ async function activateSelected() {
     if (a.id === 'dance') {
       console.log('[panel] 💃 触发舞蹈播放');
       await invoke('cmd_play_dance', { danceName: 'happy_twist' });
+      await invoke('cmd_hide_panel');
+      return;
+    }
+    if (a.id === 'game') {
+      console.log('[panel] 🎮 启动小游戏');
+      await invoke('cmd_start_game');
+      await invoke('cmd_hide_panel');
+      return;
+    }
+    if (a.id === 'settings') {
+      await invoke('cmd_settings_show');
+      await invoke('cmd_hide_panel');
+      return;
+    }
+    if (a.id === 'chat') {
+      await invoke('cmd_open_chat');
       await invoke('cmd_hide_panel');
       return;
     }

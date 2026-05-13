@@ -57,6 +57,30 @@ const STATE_CONFIG = {
     repeat: 2,
     fallback: 'idle',
   },
+  gameplay: {
+    frames: [
+      { sprite: 0, duration: 300 },
+      { sprite: 1, duration: 300 },
+    ],
+    loop: true,
+  },
+  gamewin: {
+    frames: [
+      { sprite: 0, duration: 250 },
+      { sprite: 1, duration: 120 },
+      { sprite: 0, duration: 230 },
+    ],
+    repeat: 5,
+    fallback: 'idle',
+  },
+  gamelose: {
+    frames: [
+      { sprite: 0, duration: 400 },
+      { sprite: 1, duration: 400 },
+    ],
+    repeat: 4,
+    fallback: 'idle',
+  },
 };
 
 class PetStateMachine {
