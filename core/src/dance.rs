@@ -412,10 +412,13 @@ mod tests {
 
     #[test]
     fn load_dance_reads_bundled_preset() {
-        let def = load_dance("happy_twist").unwrap();
+        let path = bundled_dance_dir().join("happy_twist.yaml");
+        let def = load_dance_from_path(&path).unwrap();
         assert_eq!(def.name, "happy_twist");
-        assert_eq!(def.steps.len(), 5);
+        assert_eq!(def.steps.len(), 8);
         assert_eq!(def.steps[0].action, DanceAction::Jump);
+        assert_eq!(def.steps[1].repeat, 3);
+        assert_eq!(def.steps[3].repeat, 2);
     }
 
     #[test]
