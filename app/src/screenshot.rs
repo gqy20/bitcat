@@ -438,33 +438,33 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             }
 
             debug!(model = %vision_model, "vision request started");
-            let description = match rt.block_on(vision::analyze_screenshot(
+            let analysis = match rt.block_on(vision::analyze_screenshot(
                 &ai_config,
                 &VisionConfig::default(),
                 &prompt_cfg,
                 &b64,
                 1,
             )) {
-                Ok(desc) => {
+                Ok(analysis) => {
                     info!(
                         model = %vision_model,
                         width = w,
                         height = h,
-                        chars = desc.chars().count(),
+                        chars = analysis.description.chars().count(),
                         "[{}] 视觉分析完成",
                         if resolutions.len() > 1 { format!("{}px", res_w) } else { String::new() }
                     );
-                    desc
+                    analysis
                 }
                 Err(e) => {
                     warn!(error = %e, width = res_w, "视觉分析失败");
-                    String::new()
+                    ai_pad_core::vision::VisionAnalysis::default()
                 }
             };
 
             // 保存（文件名带分辨率后缀）
             let record = ai_pad_core::screenshot::ScreenshotRecord {
-                description: description.clone(),
+                analysis: analysis.clone(),
                 hash: 0,
                 skipped: false,
                 width: w,
@@ -496,7 +496,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
 
             // 只在最后一个分辨率显示气泡
             if is_last {
-                if description.is_empty() {
+                if analysis.description.is_empty() {
                     info!("[screenshot] 描述为空，显示兜底提示");
                     let _ = crate::bubble::show_bubble(
                         app,
@@ -504,10 +504,10 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
                     );
                 } else {
                     debug!(
-                        chars = description.chars().count(),
+                        chars = analysis.description.chars().count(),
                         "show screenshot bubble"
                     );
-                    match crate::bubble::show_bubble(app, &description) {
+                    match crate::bubble::show_bubble(app, &analysis.description) {
                         Ok(()) => debug!("screenshot bubble shown"),
                         Err(e) => warn!(error = %e, "screenshot bubble failed"),
                     }
@@ -553,7 +553,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
                     );
                     let descriptions: Vec<String> = records
                         .into_iter()
-                        .map(|r| r.description)
+                        .map(|r| r.context_text())
                         .filter(|d| !d.is_empty())
                         .collect();
 
@@ -609,7 +609,7 @@ pub fn do_screenshot_now(app: &tauri::AppHandle) -> Result<String, String> {
         .build()
         .map_err(|e| format!("创建运行时失败: {e}"))?;
 
-    let description = rt.block_on(vision::analyze_screenshot(
+    let analysis = rt.block_on(vision::analyze_screenshot(
         &ai_config,
         &VisionConfig::default(),
         &prompt_cfg,
@@ -618,7 +618,7 @@ pub fn do_screenshot_now(app: &tauri::AppHandle) -> Result<String, String> {
     ))?;
 
     let record = ai_pad_core::screenshot::ScreenshotRecord {
-        description: description.clone(),
+        analysis: analysis.clone(),
         hash: 0,
         skipped: false,
         width: w,
@@ -629,8 +629,8 @@ pub fn do_screenshot_now(app: &tauri::AppHandle) -> Result<String, String> {
         tracing::warn!(error = %e, "保存截图失败");
     }
 
-    let _ = crate::bubble::show_bubble(app, &description);
-    Ok(description)
+    let _ = crate::bubble::show_bubble(app, &analysis.description);
+    Ok(analysis.description)
 }
 
 /// 手动触发截图分析的 Tauri 命令。

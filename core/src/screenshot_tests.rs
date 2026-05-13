@@ -372,7 +372,10 @@ min_width: 480
         std::fs::create_dir_all(&jpg_dir).unwrap();
 
         let record = ScreenshotRecord {
-            description: "测试描述".into(),
+            analysis: crate::vision::VisionAnalysis {
+                description: "测试描述".into(),
+                ..Default::default()
+            },
             hash: 12345,
             skipped: false,
             width: 960,
@@ -395,7 +398,7 @@ min_width: 480
 
         let parsed: ScreenshotRecord =
             serde_json::from_str(&std::fs::read_to_string(&json_path).unwrap()).unwrap();
-        assert_eq!(parsed.description, "测试描述");
+        assert_eq!(parsed.description(), "测试描述");
         assert_eq!(parsed.hash, 12345);
     }
 
@@ -404,7 +407,10 @@ min_width: 480
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path();
         let record = ScreenshotRecord {
-            description: "调试分析".into(),
+            analysis: crate::vision::VisionAnalysis {
+                description: "调试分析".into(),
+                ..Default::default()
+            },
             hash: 999,
             skipped: false,
             width: 1280,
@@ -418,7 +424,7 @@ min_width: 480
         assert!(json_path.exists());
         let parsed: ScreenshotRecord =
             serde_json::from_str(&std::fs::read_to_string(&json_path).unwrap()).unwrap();
-        assert_eq!(parsed.description, "调试分析");
+        assert_eq!(parsed.description(), "调试分析");
         assert_eq!(parsed.width, 1280);
     }
 
@@ -449,7 +455,10 @@ min_width: 480
     #[test]
     fn test_screenshot_record_snapshot() {
         let record = ScreenshotRecord {
-            description: "VS Code".into(),
+            analysis: crate::vision::VisionAnalysis {
+                description: "VS Code".into(),
+                ..Default::default()
+            },
             hash: 999,
             skipped: false,
             width: 960,
@@ -470,7 +479,10 @@ min_width: 480
         for (i, desc) in ["浏览器", "终端", "VS Code"].iter().enumerate() {
             let prefix = format!("{:06}", 100000 + i * 10);
             let record = ScreenshotRecord {
-                description: (*desc).into(),
+                analysis: crate::vision::VisionAnalysis {
+                    description: (*desc).into(),
+                    ..Default::default()
+                },
                 hash: i as u64,
                 skipped: false,
                 width: 1280,
@@ -482,9 +494,9 @@ min_width: 480
 
         let results = list_recent_analyses(today.as_path(), 3);
         assert_eq!(results.len(), 3);
-        assert_eq!(results[0].description, "VS Code");
-        assert_eq!(results[1].description, "终端");
-        assert_eq!(results[2].description, "浏览器");
+        assert_eq!(results[0].description(), "VS Code");
+        assert_eq!(results[1].description(), "终端");
+        assert_eq!(results[2].description(), "浏览器");
     }
 
     #[test]
@@ -496,7 +508,10 @@ min_width: 480
         for i in 0..5 {
             let prefix = format!("{:06}", 100000 + i * 10);
             let record = ScreenshotRecord {
-                description: format!("截图{}", i),
+                analysis: crate::vision::VisionAnalysis {
+                    description: format!("截图{}", i),
+                    ..Default::default()
+                },
                 hash: i as u64,
                 skipped: false,
                 width: 1280,
@@ -508,8 +523,8 @@ min_width: 480
 
         let results = list_recent_analyses(today.as_path(), 2);
         assert_eq!(results.len(), 2);
-        assert_eq!(results[0].description, "截图4");
-        assert_eq!(results[1].description, "截图3");
+        assert_eq!(results[0].description(), "截图4");
+        assert_eq!(results[1].description(), "截图3");
     }
 
     #[test]
@@ -529,7 +544,10 @@ min_width: 480
         std::fs::create_dir_all(&today).unwrap();
 
         let record = ScreenshotRecord {
-            description: "有效".into(),
+            analysis: crate::vision::VisionAnalysis {
+                description: "有效".into(),
+                ..Default::default()
+            },
             hash: 1,
             skipped: false,
             width: 1280,
@@ -542,7 +560,7 @@ min_width: 480
 
         let results = list_recent_analyses(today.as_path(), 10);
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].description, "有效");
+        assert_eq!(results[0].description(), "有效");
     }
 
     // ---- list_recent_analyses_multi_day 测试 ----
@@ -560,7 +578,10 @@ min_width: 480
                 &prefix,
                 "",
                 &ScreenshotRecord {
-                    description: format!("截图{}", i),
+                    analysis: crate::vision::VisionAnalysis {
+                        description: format!("截图{}", i),
+                        ..Default::default()
+                    },
                     hash: i as u64,
                     skipped: false,
                     width: 1280,
@@ -573,8 +594,8 @@ min_width: 480
 
         let results = list_recent_analyses_multi_day(base.path(), 3);
         assert_eq!(results.len(), 3);
-        assert_eq!(results[0].1.description, "截图2");
-        assert_eq!(results[2].1.description, "截图0");
+        assert_eq!(results[0].1.description(), "截图2");
+        assert_eq!(results[2].1.description(), "截图0");
     }
 
     #[test]
@@ -590,7 +611,10 @@ min_width: 480
             "150000",
             "",
             &ScreenshotRecord {
-                description: "今天".into(),
+                analysis: crate::vision::VisionAnalysis {
+                    description: "今天".into(),
+                    ..Default::default()
+                },
                 hash: 1,
                 skipped: false,
                 width: 1280,
@@ -607,7 +631,10 @@ min_width: 480
                 &prefix,
                 "",
                 &ScreenshotRecord {
-                    description: format!("昨天{}", i),
+                    analysis: crate::vision::VisionAnalysis {
+                        description: format!("昨天{}", i),
+                        ..Default::default()
+                    },
                     hash: i as u64,
                     skipped: false,
                     width: 1280,
@@ -620,10 +647,10 @@ min_width: 480
 
         let results = list_recent_analyses_multi_day(base.path(), 4);
         assert_eq!(results.len(), 4);
-        assert_eq!(results[0].1.description, "今天");
-        assert_eq!(results[1].1.description, "昨天2");
-        assert_eq!(results[2].1.description, "昨天1");
-        assert_eq!(results[3].1.description, "昨天0");
+        assert_eq!(results[0].1.description(), "今天");
+        assert_eq!(results[1].1.description(), "昨天2");
+        assert_eq!(results[2].1.description(), "昨天1");
+        assert_eq!(results[3].1.description(), "昨天0");
     }
 
     #[test]
@@ -646,7 +673,10 @@ min_width: 480
             "120000",
             "",
             &ScreenshotRecord {
-                description: "用户在写代码".into(),
+                analysis: crate::vision::VisionAnalysis {
+                    description: "用户在写代码".into(),
+                    ..Default::default()
+                },
                 hash: 1,
                 skipped: false,
                 width: 1280,
@@ -682,7 +712,11 @@ min_width: 480
                 &prefix,
                 "",
                 &ScreenshotRecord {
-                    description: "这是一条很长的截图分析描述用于测试截断功能是否正常工作".into(),
+                    analysis: crate::vision::VisionAnalysis {
+                        description: "这是一条很长的截图分析描述用于测试截断功能是否正常工作"
+                            .into(),
+                        ..Default::default()
+                    },
                     hash: i as u64,
                     skipped: false,
                     width: 1280,
@@ -714,7 +748,10 @@ min_width: 480
                 &prefix,
                 "",
                 &ScreenshotRecord {
-                    description: (*desc).into(),
+                    analysis: crate::vision::VisionAnalysis {
+                        description: (*desc).into(),
+                        ..Default::default()
+                    },
                     hash: i as u64,
                     skipped: false,
                     width: 1280,

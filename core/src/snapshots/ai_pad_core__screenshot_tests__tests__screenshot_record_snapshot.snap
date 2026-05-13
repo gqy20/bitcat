@@ -1,8 +1,15 @@
 ---
 source: core/src/screenshot_tests.rs
+assertion_line: 468
 expression: record
 ---
-description: VS Code
+analysis:
+  description: VS Code
+  apps: []
+  state:
+    kind: unknown
+  text_readable: false
+  confidence: 0
 hash: 999
 skipped: false
 width: 960

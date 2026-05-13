@@ -218,7 +218,7 @@ pub fn execute_recent_screenshots(
         lines.push(format!(
             "  {}. {} ({}x{}, {} bytes)",
             i + 1,
-            r.description,
+            r.description(),
             r.width,
             r.height,
             r.jpeg_size
@@ -547,7 +547,10 @@ mod tests {
             use crate::screenshot::{ScreenshotRecord, save_analysis_json};
             let prefix = format!("{:06}", 100000 + i * 10);
             let record = ScreenshotRecord {
-                description: (*desc).into(),
+                analysis: crate::vision::VisionAnalysis {
+                    description: (*desc).into(),
+                    ..Default::default()
+                },
                 hash: i as u64,
                 skipped: false,
                 width: 1280,

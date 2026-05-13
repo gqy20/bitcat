@@ -227,12 +227,22 @@ pub fn encode_jpeg(rgb: &[u8], w: u32, h: u32, quality: u8) -> Result<Vec<u8>, S
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ScreenshotRecord {
-    pub description: String,
+    pub analysis: crate::vision::VisionAnalysis,
     pub hash: u64,
     pub skipped: bool,
     pub width: u32,
     pub height: u32,
     pub jpeg_size: usize,
+}
+
+impl ScreenshotRecord {
+    pub fn description(&self) -> &str {
+        &self.analysis.description
+    }
+
+    pub fn context_text(&self) -> String {
+        self.analysis.to_context_text()
+    }
 }
 
 pub fn screenshot_base_dir() -> Result<std::path::PathBuf, String> {
@@ -354,7 +364,7 @@ pub fn build_recent_analyses_context_with_base(
     let footer_chars = footer.chars().count();
     let mut result = String::from(header);
     for (i, (_day, record)) in records.iter().rev().enumerate() {
-        let line = format!("{}. {}\n", i + 1, record.description);
+        let line = format!("{}. {}\n", i + 1, record.context_text());
         if result.chars().count() + line.chars().count() + footer_chars > max_chars {
             break;
         }

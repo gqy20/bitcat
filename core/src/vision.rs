@@ -10,6 +10,16 @@ use tracing::{debug, warn};
 
 // ---- 配置 ----
 
+const STRUCTURED_VISION_OUTPUT_INSTRUCTIONS: &str = r#"
+
+只返回一个 JSON 对象，不要使用 Markdown，不要添加解释。字段：
+- description: 一句话描述主活动
+- apps: 识别到的应用名称数组，不确定则 []
+- state: {"kind":"working","app":"应用名"} 或 {"kind":"idle"} / {"kind":"media"} / {"kind":"off_screen"} / {"kind":"unknown"}
+- text_readable: 是否能看清文字内容
+- confidence: 0 到 1 的置信度
+"#;
+
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct VisionConfig {
     #[serde(default)]
@@ -49,6 +59,18 @@ impl VisionAnalysis {
     }
 }
 
+impl Default for VisionAnalysis {
+    fn default() -> Self {
+        Self {
+            description: String::new(),
+            apps: Vec::new(),
+            state: VisionState::Unknown,
+            text_readable: false,
+            confidence: 0.0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum VisionState {
@@ -78,6 +100,10 @@ impl VisionState {
 }
 
 // ---- 请求构建 ----
+
+fn build_structured_prompt(prompt: &str) -> String {
+    format!("{prompt}{STRUCTURED_VISION_OUTPUT_INSTRUCTIONS}")
+}
 
 /// 构建标准 Anthropic Messages API 请求体（含图片）。
 pub fn build_vision_request(model: &str, prompt: &str, base64_jpeg: &str) -> Value {
@@ -175,7 +201,7 @@ async fn send_vision_request(
     api_key: &str,
     model: &str,
     body: &Value,
-) -> Result<String, String> {
+) -> Result<VisionAnalysis, String> {
     let start = std::time::Instant::now();
     let response = client
         .post(url)
@@ -211,32 +237,33 @@ async fn send_vision_request(
             .with_elapsed_ms(elapsed.as_millis() as u64),
     );
 
-    parse_vision_response(&json)
+    parse_vision_analysis_response(&json)
 }
 
-/// 发送视觉分析请求。返回 AI 描述文本。
+/// 发送视觉分析请求。返回结构化视觉分析。
 pub async fn analyze_screenshot(
     config: &AiConfig,
     vision_config: &VisionConfig,
     prompt_config: &VisionPromptConfig,
     base64_jpeg: &str,
     monitor_count: usize,
-) -> Result<String, String> {
+) -> Result<VisionAnalysis, String> {
     let model = vision_config
         .vision_model
         .as_deref()
         .unwrap_or(&config.model);
+    let prompt = build_structured_prompt(&prompt_config.prompt);
 
     let body = if monitor_count > 1 {
         build_vision_request_multi(
             model,
-            &prompt_config.prompt,
+            &prompt,
             base64_jpeg,
             monitor_count,
             &prompt_config.prompt_multi,
         )
     } else {
-        build_vision_request(model, &prompt_config.prompt, base64_jpeg)
+        build_vision_request(model, &prompt, base64_jpeg)
     };
 
     let url = build_api_url(config);
@@ -468,7 +495,10 @@ mod wiremock_tests {
             .and(header("x-api-key", "test-key"))
             .and(header("anthropic-version", "2023-06-01"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "content": [{ "type": "text", "text": "VS Code 编辑器" }]
+                "content": [{
+                    "type": "text",
+                    "text": r#"{"description":"VS Code 编辑器","apps":["VS Code"],"state":{"kind":"working","app":"VS Code"},"text_readable":true,"confidence":0.9}"#
+                }]
             })))
             .mount(&server)
             .await;
@@ -477,7 +507,9 @@ mod wiremock_tests {
         let url = format!("{}/v1/messages", server.uri());
         let body = build_vision_request("test-model", "prompt", "AA==");
         let result = send_vision_request(&client, &url, "test-key", "test-model", &body).await;
-        assert_eq!(result.unwrap(), "VS Code 编辑器");
+        let analysis = result.unwrap();
+        assert_eq!(analysis.description, "VS Code 编辑器");
+        assert_eq!(analysis.apps, vec!["VS Code"]);
     }
 
     #[tokio::test]
