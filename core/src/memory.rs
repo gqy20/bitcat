@@ -12,15 +12,17 @@
 //!
 //! 与 `agent.rs`（对话后写入）、`bridge.rs`（构建上下文）交互。
 
+use rig::client::CompletionClient;
+use rig::providers::anthropic;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 use std::fs;
 use std::path::PathBuf;
 use tracing::{debug, info, warn};
 
 use crate::ai_config::AiConfig;
 use crate::token_tracker::{
-    TokenCategory, TokenRecord, new_session_id, parse_anthropic_usage, record_token_usage,
+    TokenCategory, TokenRecord, TokenUsage, new_session_id, record_token_usage,
 };
 
 // ---- 数据结构 ----
@@ -373,6 +375,11 @@ pub struct ProfileStore {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+struct ProfileAggregation {
+    pub profile_text: String,
+}
+
 /// 返回用户画像文件路径 `~/.ai-pad/memory/profile.json`。
 fn profile_file_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
@@ -532,87 +539,53 @@ pub async fn aggregate_profile(
         )
     };
 
-    let body = json!({
-        "model": ai_config.model,
-        "max_tokens": 1024,
-        "messages": [
-            {
-                "role": "user",
-                "content": format!("{prompt}\n\n{user_content}")
-            }
-        ]
-    });
+    debug!(
+        model = %ai_config.model,
+        base_url = %ai_config.base_url,
+        "开始聚合用户画像"
+    );
 
-    let url = format!("{}/v1/messages", ai_config.base_url.trim_end_matches('/'));
-    debug!(model = %ai_config.model, url = %url, "开始聚合用户画像");
-
-    let client = reqwest::Client::builder()
+    let http_client = rig::http_client::ReqwestClient::builder()
         .no_proxy()
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
+    let client = anthropic::Client::builder()
+        .api_key(&ai_config.api_key)
+        .base_url(&ai_config.base_url)
+        .http_client(http_client)
+        .build()
+        .map_err(|e| format!("创建 Anthropic 记忆 Client 失败: {e}"))?;
+    let extractor = client
+        .extractor::<ProfileAggregation>(ai_config.model.as_str())
+        .preamble(prompt)
+        .max_tokens(1024)
+        .retries(1)
+        .build();
+
     let start = std::time::Instant::now();
-    let response = client
-        .post(&url)
-        .header("x-api-key", &ai_config.api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
-        .json(&body)
-        .send()
+    let response = extractor
+        .extract_with_usage(user_content)
         .await
-        .map_err(|e| format!("聚合 API 请求失败: {e}"))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        warn!(status = %status, "聚合 API 返回错误");
-        return Err(format!("聚合 API 返回错误 {}: {}", status, text));
-    }
-
-    let json: Value = response
-        .json()
-        .await
-        .map_err(|e| format!("解析聚合 API 响应失败: {e}"))?;
+        .map_err(|e| format!("生成结构化用户画像失败: {e}"))?;
 
     let elapsed = start.elapsed();
-    debug!(elapsed_ms = elapsed.as_millis(), "用户画像聚合完成");
+    debug!(
+        elapsed_ms = elapsed.as_millis(),
+        chars = response.data.profile_text.chars().count(),
+        "用户画像聚合完成"
+    );
 
-    let usage = parse_anthropic_usage(&json);
     record_token_usage(
         &TokenRecord::new(
             new_session_id(),
             TokenCategory::MemoryAggregation,
             ai_config.model.clone(),
-            usage,
+            TokenUsage::from(response.usage),
         )
         .with_elapsed_ms(elapsed.as_millis() as u64),
     );
 
-    parse_aggregation_response(&json)
-}
-
-/// 从 Anthropic Messages 响应中提取聚合后的画像文本。
-fn parse_aggregation_response(response: &Value) -> Result<String, String> {
-    let content = response
-        .get("content")
-        .ok_or_else(|| "响应缺少 content 字段".to_string())?
-        .as_array()
-        .ok_or_else(|| "content 不是数组".to_string())?;
-
-    let texts: Vec<String> = content
-        .iter()
-        .filter_map(|block| {
-            if block.get("type").and_then(|t| t.as_str()) == Some("text") {
-                block.get("text").and_then(|t| t.as_str()).map(String::from)
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    if texts.is_empty() {
-        return Err("响应中没有文本内容".to_string());
-    }
-    Ok(texts.join(""))
+    Ok(response.data.profile_text)
 }
 
 // ---- 测试 ----
@@ -620,7 +593,8 @@ fn parse_aggregation_response(response: &Value) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wiremock::matchers::{header, method};
+    use serde_json::json;
+    use wiremock::matchers::method;
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[test]
@@ -1071,9 +1045,25 @@ mod tests {
     async fn test_aggregate_profile_success() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(header("x-api-key", "test-key"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "content": [{ "type": "text", "text": "主人叫小明，程序员，正在做 8Bit Cat 项目。" }]
+                "type": "message",
+                "id": "msg_test",
+                "model": "test-model",
+                "role": "assistant",
+                "stop_reason": "tool_use",
+                "stop_sequence": null,
+                "usage": {
+                    "input_tokens": 18,
+                    "output_tokens": 7
+                },
+                "content": [{
+                    "type": "tool_use",
+                    "id": "toolu_test",
+                    "name": "submit",
+                    "input": {
+                        "profile_text": "主人叫小明，程序员，正在做 8Bit Cat 项目。"
+                    }
+                }]
             })))
             .mount(&server)
             .await;
@@ -1102,11 +1092,26 @@ mod tests {
     async fn test_aggregate_profile_with_existing() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(json!({
-                    "content": [{ "type": "text", "text": "主人叫小明，程序员。正在做 8Bit Cat 项目（Rust）。" }]
-                })),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "type": "message",
+                "id": "msg_test",
+                "model": "test-model",
+                "role": "assistant",
+                "stop_reason": "tool_use",
+                "stop_sequence": null,
+                "usage": {
+                    "input_tokens": 20,
+                    "output_tokens": 8
+                },
+                "content": [{
+                    "type": "tool_use",
+                    "id": "toolu_test",
+                    "name": "submit",
+                    "input": {
+                        "profile_text": "主人叫小明，程序员。正在做 8Bit Cat 项目（Rust）。"
+                    }
+                }]
+            })))
             .mount(&server)
             .await;
 
@@ -1167,6 +1172,6 @@ mod tests {
 
         let result = aggregate_profile(&refs, "", &ai_config, "测试聚合提示词").await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("错误"));
+        assert!(result.unwrap_err().contains("生成结构化用户画像失败"));
     }
 }
