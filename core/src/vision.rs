@@ -18,6 +18,65 @@ pub struct VisionConfig {
     pub vision_max_tokens: Option<u32>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VisionAnalysis {
+    pub description: String,
+    #[serde(default)]
+    pub apps: Vec<String>,
+    #[serde(default)]
+    pub state: VisionState,
+    #[serde(default)]
+    pub text_readable: bool,
+    #[serde(default)]
+    pub confidence: f32,
+}
+
+impl VisionAnalysis {
+    pub fn to_context_text(&self) -> String {
+        let apps = if self.apps.is_empty() {
+            "unknown".to_string()
+        } else {
+            self.apps.join(", ")
+        };
+        format!(
+            "{} | apps: {} | state: {} | text_readable: {} | confidence: {:.2}",
+            self.description,
+            apps,
+            self.state.label(),
+            self.text_readable,
+            self.confidence
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum VisionState {
+    Working { app: String },
+    Idle,
+    Media,
+    OffScreen,
+    Unknown,
+}
+
+impl Default for VisionState {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
+impl VisionState {
+    pub fn label(&self) -> &str {
+        match self {
+            Self::Working { .. } => "working",
+            Self::Idle => "idle",
+            Self::Media => "media",
+            Self::OffScreen => "off_screen",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
 // ---- 请求构建 ----
 
 /// 构建标准 Anthropic Messages API 请求体（含图片）。
@@ -76,6 +135,31 @@ pub fn parse_vision_response(response: &Value) -> Result<String, String> {
         }
     }
     Ok(texts.join(""))
+}
+
+pub fn parse_vision_analysis_response(response: &Value) -> Result<VisionAnalysis, String> {
+    let text = parse_vision_response(response)?;
+    let json_text = normalize_json_text(&text);
+    serde_json::from_str::<VisionAnalysis>(json_text)
+        .map_err(|e| format!("解析结构化视觉分析失败: {e}"))
+}
+
+fn normalize_json_text(text: &str) -> &str {
+    let trimmed = text.trim();
+    let Some(after_opening) = trimmed.strip_prefix("```") else {
+        return trimmed;
+    };
+
+    let after_language = after_opening
+        .trim_start()
+        .strip_prefix("json")
+        .unwrap_or(after_opening)
+        .trim_start();
+
+    match after_language.rfind("```") {
+        Some(end) => after_language[..end].trim(),
+        None => after_language.trim(),
+    }
 }
 
 /// 构建完整 API URL。
@@ -261,6 +345,66 @@ mod tests {
         });
         let result = parse_vision_response(&response).unwrap();
         assert_eq!(result, "第一段。第二段。");
+    }
+
+    #[test]
+    fn test_parse_vision_analysis_response() {
+        let response = json!({
+            "content": [{
+                "type": "text",
+                "text": r#"{
+                    "description":"用户正在 VS Code 中编写 Rust 代码",
+                    "apps":["VS Code"],
+                    "state":{"kind":"working","app":"VS Code"},
+                    "text_readable":true,
+                    "confidence":0.91
+                }"#
+            }]
+        });
+        let result = parse_vision_analysis_response(&response).unwrap();
+        assert_eq!(result.description, "用户正在 VS Code 中编写 Rust 代码");
+        assert_eq!(result.apps, vec!["VS Code"]);
+        assert_eq!(
+            result.state,
+            VisionState::Working {
+                app: "VS Code".into()
+            }
+        );
+        assert!(result.text_readable);
+        assert!((result.confidence - 0.91).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_vision_analysis_response_accepts_json_fence() {
+        let response = json!({
+            "content": [{
+                "type": "text",
+                "text": "```json\n{\"description\":\"桌面空闲\",\"state\":{\"kind\":\"idle\"}}\n```"
+            }]
+        });
+        let result = parse_vision_analysis_response(&response).unwrap();
+        assert_eq!(result.description, "桌面空闲");
+        assert_eq!(result.state, VisionState::Idle);
+        assert!(result.apps.is_empty());
+        assert!(!result.text_readable);
+    }
+
+    #[test]
+    fn test_vision_analysis_context_text() {
+        let analysis = VisionAnalysis {
+            description: "用户正在浏览文档".into(),
+            apps: vec!["Browser".into()],
+            state: VisionState::Working {
+                app: "Browser".into(),
+            },
+            text_readable: true,
+            confidence: 0.8,
+        };
+        let context = analysis.to_context_text();
+        assert!(context.contains("用户正在浏览文档"));
+        assert!(context.contains("Browser"));
+        assert!(context.contains("working"));
+        assert!(context.contains("0.80"));
     }
 
     // ---- API URL 构建 ----

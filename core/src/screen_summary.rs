@@ -18,6 +18,90 @@ pub struct ScreenSummaryEntry {
     pub summary: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StructuredSummary {
+    #[serde(default)]
+    pub time_range: String,
+    #[serde(default)]
+    pub activities: Vec<ActivityGroup>,
+    #[serde(default)]
+    pub notable_changes: Vec<String>,
+}
+
+impl StructuredSummary {
+    pub fn to_context_text(&self) -> String {
+        let mut lines = Vec::new();
+
+        for group in &self.activities {
+            let range = if group.time_range.is_empty() {
+                self.time_range.as_str()
+            } else {
+                group.time_range.as_str()
+            };
+            let items = if group.items.is_empty() {
+                "无细节".to_string()
+            } else {
+                group.items.join("；")
+            };
+            lines.push(format!("[{}] {}: {}", range, group.category.label(), items));
+        }
+
+        for change in &self.notable_changes {
+            lines.push(format!("[变化] {change}"));
+        }
+
+        if lines.is_empty() {
+            if self.time_range.is_empty() {
+                "无显著屏幕活动".to_string()
+            } else {
+                format!("[{}] 无显著屏幕活动", self.time_range)
+            }
+        } else {
+            lines.join("\n")
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ActivityGroup {
+    #[serde(default)]
+    pub category: ActivityCategory,
+    #[serde(default)]
+    pub time_range: String,
+    #[serde(default)]
+    pub items: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActivityCategory {
+    Coding,
+    Browsing,
+    Communication,
+    Entertainment,
+    Documents,
+    Other,
+}
+
+impl Default for ActivityCategory {
+    fn default() -> Self {
+        Self::Other
+    }
+}
+
+impl ActivityCategory {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Coding => "coding",
+            Self::Browsing => "browsing",
+            Self::Communication => "communication",
+            Self::Entertainment => "entertainment",
+            Self::Documents => "documents",
+            Self::Other => "other",
+        }
+    }
+}
+
 /// 屏幕摘要存储（全量追加）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScreenSummaryStore {
@@ -292,6 +376,31 @@ fn parse_text_response(response: &Value) -> Result<String, String> {
         return Err("响应中没有文本内容".to_string());
     }
     Ok(texts.join(""))
+}
+
+pub fn parse_structured_summary_response(response: &Value) -> Result<StructuredSummary, String> {
+    let text = parse_text_response(response)?;
+    let json_text = normalize_json_text(&text);
+    serde_json::from_str::<StructuredSummary>(json_text)
+        .map_err(|e| format!("解析结构化屏幕摘要失败: {e}"))
+}
+
+fn normalize_json_text(text: &str) -> &str {
+    let trimmed = text.trim();
+    let Some(after_opening) = trimmed.strip_prefix("```") else {
+        return trimmed;
+    };
+
+    let after_language = after_opening
+        .trim_start()
+        .strip_prefix("json")
+        .unwrap_or(after_opening)
+        .trim_start();
+
+    match after_language.rfind("```") {
+        Some(end) => after_language[..end].trim(),
+        None => after_language.trim(),
+    }
 }
 
 /// 按 Unicode 字符截断，超长时追加 "..."
@@ -606,6 +715,62 @@ mod tests {
         let response = json!({});
         let result = parse_text_response(&response);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_structured_summary_response() {
+        let response = json!({
+            "content": [{
+                "type": "text",
+                "text": r#"{
+                    "time_range":"14:00-14:15",
+                    "activities":[{
+                        "category":"coding",
+                        "time_range":"14:00-14:12",
+                        "items":["在 VS Code 中编写 Rust 代码","查看测试输出"]
+                    }],
+                    "notable_changes":["从浏览器切换到编辑器"]
+                }"#
+            }]
+        });
+        let summary = parse_structured_summary_response(&response).unwrap();
+        assert_eq!(summary.time_range, "14:00-14:15");
+        assert_eq!(summary.activities.len(), 1);
+        assert_eq!(summary.activities[0].category, ActivityCategory::Coding);
+        assert_eq!(summary.activities[0].items.len(), 2);
+        assert_eq!(summary.notable_changes, vec!["从浏览器切换到编辑器"]);
+    }
+
+    #[test]
+    fn test_parse_structured_summary_response_accepts_json_fence() {
+        let response = json!({
+            "content": [{
+                "type": "text",
+                "text": "```json\n{\"time_range\":\"15:00-15:15\",\"activities\":[{\"category\":\"browsing\",\"items\":[\"浏览 GitHub\"]}]}\n```"
+            }]
+        });
+        let summary = parse_structured_summary_response(&response).unwrap();
+        assert_eq!(summary.time_range, "15:00-15:15");
+        assert_eq!(summary.activities[0].category, ActivityCategory::Browsing);
+        assert_eq!(summary.activities[0].items, vec!["浏览 GitHub"]);
+    }
+
+    #[test]
+    fn test_structured_summary_context_text() {
+        let summary = StructuredSummary {
+            time_range: "14:00-14:15".into(),
+            activities: vec![ActivityGroup {
+                category: ActivityCategory::Coding,
+                time_range: "14:00-14:12".into(),
+                items: vec!["在 VS Code 中编写 Rust 代码".into()],
+            }],
+            notable_changes: vec!["开始调试结构化输出".into()],
+        };
+        let context = summary.to_context_text();
+        assert!(context.contains("14:00-14:12"));
+        assert!(context.contains("coding"));
+        assert!(context.contains("VS Code"));
+        assert!(context.contains("开始调试结构化输出"));
     }
 
     #[test]
