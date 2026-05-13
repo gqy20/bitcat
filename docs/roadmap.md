@@ -9,7 +9,7 @@
 
 | 能力 | 状态 |
 |------|------|
-| 6 状态像素精灵动画（idle/walk/sleep/talk/happy/confused） | 已有 |
+| 6 状态像素精灵动画（非均匀帧时长 + 瞬态 repeat+fallback） | 已有（2026-05-13 增强） |
 | AI 对话（Anthropic Claude via rig-core，流式输出） | 已有 |
 | 10 个内置工具（launch/shell/read_file/get_time/hotkey/clipboard/foreground/screenshots/perform_dance/play_dance） | 已有 |
 | SDL2 手柄输入（8BitDo Micro） | 已有 |
@@ -112,17 +112,19 @@
 
 ### B4. 工具运行时与开销优化（谨慎，不做关键词意图识别）
 
-当前 10 个工具全量注册到每次对话（历史估算占 prompt token 大头），但 B4 不应只做 token 裁剪。更基础的问题是：工具调用现在仍会以普通文本混入 bubble 流式回复，缺少结构化生命周期、UI 状态、耗时/成功率统计和安全策略结果展示。
+当前 10 个工具仍全量注册到每次对话，但 B4 第一阶段已经完成了更基础的运行时治理：工具调用不再混入 bubble 正文，而是通过结构化事件单独呈现；普通工具显示低干扰状态条，舞蹈这类表演型工具显示“正在编舞 / 准备开跳”并短暂退场；工具结果会写入 `~/.ai-pad/logs/tool_events.jsonl`，用于后续统计成功率、耗时和拦截次数。
 
-新的原则是：**默认相信大模型自己选择工具，Rust 负责 schema、权限、生命周期事件、审计和体验呈现**。B4 先把 rig 原生 `PromptHook` / `MultiTurnStreamItem` 暴露出的工具调用和工具结果整理成统一事件协议，再基于真实数据做 schema 压缩、能力包拆分或 prompt caching。舞蹈/游戏这类“表演型工具”应从普通工具状态中分离，进入 pet 舞台状态；`shell/read_file/get_time` 等普通工具则在 bubble 中显示低干扰状态行。
+新的原则保持不变：**默认相信大模型自己选择工具，Rust 负责 schema、权限、生命周期事件、审计和体验呈现**。B4 现在已经足够支撑下一阶段游戏工具接入：未来 `start_game` / `play_game` 这类表演型或互动型工具应复用 `ToolKind::Performance` 或扩展出更精细的 kind，让 bubble 退到辅助位置，把主视觉交给 pet/panel/game 窗口。
 
 建议拆分：
 
-1. **B4.1 工具生命周期事件协议**：`started / allowed / blocked / finished / failed`，携带 `tool_name`、`internal_call_id`、预览、耗时和结果状态。
-2. **B4.2 bubble/pet 工具状态 UI**：普通工具显示安静状态条；`perform_dance` / `play_dance` 走“正在编舞 / 准备开跳 / bubble 退场”的舞台体验。
-3. **B4.3 工具调用统计**：记录次数、成功率、失败原因、耗时、被安全策略拦截次数，不记录大文本。
-4. **B4.4 schema/description 压缩**：基于 B2/B4.3 数据优化固定 prompt 开销。
-5. **B4.5 显式能力包 / dynamic_tools 实验**：仅在真实数据证明必要时启用，必须 feature flag 可回滚。
+1. **B4.1 已完成：工具生命周期事件协议**：`planned / blocked / finished / failed` 已接入，携带 `tool_name`、`internal_call_id`、结果预览、耗时和结果状态。`allowed` 不做伪事件，除非以后把 `PermissionHook` 改为带事件 sink 的状态化 hook。
+2. **B4.2 已完成：bubble 表演型工具状态 UI**：普通工具显示安静状态条；`perform_dance` / `play_dance` 走“正在编舞 / 准备开跳 / bubble 退场”的舞台体验。
+3. **B4.3 已完成：工具事件审计日志**：`tool_events.jsonl` 记录成功率、失败/拦截、耗时和短结果预览，不记录大文本。
+4. **B4.4 已做首轮：schema/description 压缩**：已低风险压缩 `perform_dance` / `play_dance` 文案。真实 token 预算工具暂缓，等工具继续增长或真实日志显示固定 schema 成为瓶颈再做。
+5. **B4.5 暂缓：显式能力包 / dynamic_tools 实验**：当前不阻塞游戏部分。仅在真实数据证明必要时启用，必须 feature flag 可回滚。
+
+下一步主线建议：先做游戏部分。游戏工具应直接复用 B4 已完成的事件协议、UI 分层和审计日志；不要再引入关键词分类或额外小模型判断。
 
 详细设计：[plan/rig-capability-roadmap.md](plan/rig-capability-roadmap.md) §P1
 
@@ -150,7 +152,7 @@
 
 ### C2. 动画增强
 
-- 呼吸微动、眨眼、走路改进
+- ~~呼吸微动、眨眼、走路改进~~ ✅ **已完成 (2026-05-13)** — 非均匀帧时长 + 瞬态 repeat+fallback
 - 粒子系统迁移到 Three.js Points
 - 舞蹈系统 3D 化（真实抛物线轨迹、翻滚感）
 - 鼠标交互：hover 时猫转头看鼠标
