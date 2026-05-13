@@ -3,7 +3,7 @@ use crate::permission_hook::PermissionHook;
 use crate::prompts::PromptsConfig;
 use crate::tools::{
     self, ClipboardArgs, CreateDanceArgs, ForegroundArgs, GetTimeArgs, HotkeyArgs, LaunchArgs,
-    PlayDanceArgs, ReadFileArgs, RecentScreenshotsArgs, ShellArgs, ToolError,
+    PerformDanceArgs, PlayDanceArgs, ReadFileArgs, RecentScreenshotsArgs, ShellArgs, ToolError,
 };
 use futures::StreamExt;
 use rig::agent::Agent;
@@ -57,6 +57,7 @@ impl PetAgent {
             .tool(HotkeyTool)
             .tool(ClipboardTool)
             .tool(ForegroundTool)
+            .tool(PerformDanceTool)
             .tool(CreateDanceTool)
             .tool(PlayDanceTool)
             .build();
@@ -306,9 +307,42 @@ define_tool_sync!(
 );
 
 define_tool_sync!(
+    PerformDanceTool,
+    "perform_dance",
+    "直接编排并立即播放一段完整舞蹈。适合用户让桌宠跳舞、表演、扭动、庆祝、安慰或表达情绪时调用。你需要给出完整 steps，不要只给 mood。动作只允许 jump/spin/wave/shake/idle；建议 3-8 步，每步 150-900ms。",
+    PerformDanceArgs,
+    json!({
+        "type": "object",
+        "properties": {
+            "name": { "type": "string", "description": "舞蹈名称/文件名，只能使用英文、数字、下划线或短横线，例如 happy_twist" },
+            "loop_": { "type": "boolean", "description": "保存到 YAML 的默认循环设置，通常为 true" },
+            "steps": {
+                "type": "array",
+                "description": "完整舞蹈步骤，按时间顺序执行",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "action": { "type": "string", "enum": ["jump", "spin", "wave", "shake", "idle"], "description": "舞蹈动作" },
+                        "duration_ms": { "type": "integer", "description": "该动作持续毫秒数，建议 150-900，允许 80-5000" },
+                        "repeat": { "type": "integer", "description": "重复次数，通常省略或设为 1，允许 1-8" }
+                    },
+                    "required": ["action", "duration_ms"]
+                },
+                "minItems": 1,
+                "maxItems": 24
+            },
+            "loops": { "type": "integer", "description": "本次播放轮数：不填或 1=单次，0=无限循环，>=2=固定轮数" },
+            "duration_ms": { "type": "integer", "description": "本次播放硬上限毫秒数，到时强制停止" }
+        },
+        "required": ["name", "steps"]
+    }),
+    tools::execute_perform_dance
+);
+
+define_tool_sync!(
     CreateDanceTool,
     "create_dance",
-    "创建一段舞蹈动画。根据心情(mood)自动编排动作序列，保存为 YAML 文件。创建后如需立即播放，请接着调用 play_dance(name)",
+    "旧版兜底工具：根据心情(mood)用内置模板创建舞蹈 YAML。优先使用 perform_dance 直接编排完整 steps；仅当你只需要按 mood 快速生成模板时使用本工具。",
     CreateDanceArgs,
     json!({
         "type": "object",
@@ -325,7 +359,7 @@ define_tool_sync!(
 define_tool_sync!(
     PlayDanceTool,
     "play_dance",
-    "立即播放一段已保存的舞蹈（通过 create_dance 生成的），桌宠会根据 steps 序列表演。可选 loops 指定轮数（0=无限），duration_ms 指定硬上限毫秒",
+    "立即播放一段已保存的舞蹈，桌宠会根据 YAML 中的 steps 序列表演。若用户要求你即兴编一段新舞，优先调用 perform_dance。",
     PlayDanceArgs,
     json!({
         "type": "object",
@@ -415,6 +449,20 @@ mod tests {
         let props = params.get("properties").unwrap().as_object().unwrap();
         assert!(props.get("name").is_some());
         assert!(props.get("mood").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_perform_dance_tool_definition() {
+        let def = PerformDanceTool.definition(String::new()).await;
+        assert_eq!(def.name, "perform_dance");
+        assert!(def.description.contains("完整"));
+        let params = def.parameters.as_object().unwrap();
+        let props = params.get("properties").unwrap().as_object().unwrap();
+        assert!(props.get("name").is_some());
+        assert!(props.get("steps").is_some());
+        let required = params.get("required").unwrap().as_array().unwrap();
+        assert!(required.iter().any(|v| v == "name"));
+        assert!(required.iter().any(|v| v == "steps"));
     }
 
     #[tokio::test]

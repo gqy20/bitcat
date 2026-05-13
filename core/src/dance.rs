@@ -66,6 +66,62 @@ impl DanceDef {
     }
 }
 
+const MAX_DANCE_NAME_CHARS: usize = 64;
+const MAX_DANCE_STEPS: usize = 24;
+const MIN_STEP_DURATION_MS: u32 = 80;
+const MAX_STEP_DURATION_MS: u32 = 5_000;
+const MAX_STEP_REPEAT: u32 = 8;
+const MAX_TOTAL_DURATION_MS: u32 = 30_000;
+
+pub fn validate_dance_def(def: &DanceDef) -> Result<(), String> {
+    let name = def.name.trim();
+    if name.is_empty() {
+        return Err("舞蹈名称不能为空".into());
+    }
+    if name.chars().count() > MAX_DANCE_NAME_CHARS {
+        return Err(format!("舞蹈名称过长，最多 {MAX_DANCE_NAME_CHARS} 个字符"));
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err("舞蹈名称只能包含英文、数字、下划线或短横线".into());
+    }
+    if def.steps.is_empty() {
+        return Err("舞蹈至少需要 1 个步骤".into());
+    }
+    if def.steps.len() > MAX_DANCE_STEPS {
+        return Err(format!("舞蹈步骤过多，最多 {MAX_DANCE_STEPS} 步"));
+    }
+
+    for (idx, step) in def.steps.iter().enumerate() {
+        if step.duration_ms < MIN_STEP_DURATION_MS || step.duration_ms > MAX_STEP_DURATION_MS {
+            return Err(format!(
+                "第 {} 步 duration_ms 必须在 {}..={} 之间",
+                idx + 1,
+                MIN_STEP_DURATION_MS,
+                MAX_STEP_DURATION_MS
+            ));
+        }
+        if step.repeat == 0 || step.repeat > MAX_STEP_REPEAT {
+            return Err(format!(
+                "第 {} 步 repeat 必须在 1..={} 之间",
+                idx + 1,
+                MAX_STEP_REPEAT
+            ));
+        }
+    }
+
+    let total = def.total_duration_ms();
+    if total > MAX_TOTAL_DURATION_MS {
+        return Err(format!(
+            "舞蹈单轮总时长过长，最多 {MAX_TOTAL_DURATION_MS}ms"
+        ));
+    }
+
+    Ok(())
+}
+
 // ---- 目录管理 ----
 
 /// 返回舞蹈存储目录 ~/.ai-pad/dances/
@@ -94,6 +150,7 @@ pub fn ensure_dance_dir() -> std::io::Result<PathBuf> {
 
 /// 保存舞蹈定义为 YAML 文件
 pub fn save_dance(def: &DanceDef) -> Result<PathBuf, String> {
+    validate_dance_def(def)?;
     let dir = ensure_dance_dir().map_err(|e| format!("创建目录失败: {e}"))?;
     let path = dir.join(format!("{}.yaml", def.name));
     let yaml = serde_yaml::to_string(def).map_err(|e| format!("序列化失败: {e}"))?;
@@ -360,6 +417,36 @@ mod tests {
         let yaml = "name: foo\nsteps:\n  - action: jump\n    duration_ms: 100";
         let def: DanceDef = serde_yaml::from_str(yaml).unwrap();
         assert!(def.loop_);
+    }
+
+    #[test]
+    fn validate_dance_def_accepts_reasonable_dance() {
+        let def = DanceDef {
+            name: "happy_twist".into(),
+            loop_: true,
+            steps: vec![step(DanceAction::Jump, 300), step(DanceAction::Wave, 400)],
+        };
+        assert!(validate_dance_def(&def).is_ok());
+    }
+
+    #[test]
+    fn validate_dance_def_rejects_bad_name() {
+        let def = DanceDef {
+            name: "../bad".into(),
+            loop_: true,
+            steps: vec![step(DanceAction::Jump, 300)],
+        };
+        assert!(validate_dance_def(&def).is_err());
+    }
+
+    #[test]
+    fn validate_dance_def_rejects_empty_steps() {
+        let def = DanceDef {
+            name: "empty".into(),
+            loop_: true,
+            steps: vec![],
+        };
+        assert!(validate_dance_def(&def).is_err());
     }
 
     #[test]

@@ -1,4 +1,5 @@
 use crate::action::launch_program;
+use crate::dance::{DanceDef, DanceStep};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use thiserror::Error;
@@ -278,6 +279,24 @@ pub struct CreateDanceArgs {
     pub duration_ms: Option<u32>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PerformDanceArgs {
+    pub name: String,
+    #[serde(default = "default_dance_loop")]
+    pub loop_: bool,
+    pub steps: Vec<DanceStep>,
+    /// 播放轮数：不填或 1 = 单次；0 = 无限循环；>=2 = 固定轮数
+    #[serde(default)]
+    pub loops: Option<u32>,
+    /// 硬上限毫秒数，到时强制停
+    #[serde(default)]
+    pub duration_ms: Option<u32>,
+}
+
+fn default_dance_loop() -> bool {
+    true
+}
+
 /// AI 创建舞蹈：根据 mood 查表生成 DanceDef → 序列化 YAML → 写入 ~/.ai-pad/dances/
 pub fn execute_create_dance(args: &CreateDanceArgs) -> ToolResult {
     debug!(name = %args.name, mood = %args.mood, "AI 创建舞蹈");
@@ -298,6 +317,52 @@ pub fn execute_create_dance(args: &CreateDanceArgs) -> ToolResult {
             path.display()
         )),
         Err(e) => ToolResult::err(format!("保存舞蹈失败: {e}")),
+    }
+}
+
+/// AI 直接编排并立即播放完整舞蹈定义。
+pub fn execute_perform_dance(args: &PerformDanceArgs) -> ToolResult {
+    debug!(
+        name = %args.name,
+        steps = args.steps.len(),
+        loops = ?args.loops,
+        duration_ms = ?args.duration_ms,
+        "AI 编排并播放舞蹈"
+    );
+
+    let def = DanceDef {
+        name: args.name.clone(),
+        loop_: args.loop_,
+        steps: args.steps.clone(),
+    };
+
+    if let Err(e) = crate::dance::validate_dance_def(&def) {
+        return ToolResult::err(format!("舞蹈定义无效: {e}"));
+    }
+
+    let path = match crate::dance::save_dance(&def) {
+        Ok(path) => path,
+        Err(e) => return ToolResult::err(format!("保存舞蹈失败: {e}")),
+    };
+
+    let req = crate::dance::PlayDanceRequest {
+        name: def.name.clone(),
+        loops: args.loops,
+        duration_ms: args.duration_ms,
+    };
+
+    match crate::dance::request_play_dance(req) {
+        Ok(()) => ToolResult::ok(format!(
+            "已编排并播放舞蹈「{}」({} 步, {}ms)，保存在 {}",
+            def.name,
+            def.steps.len(),
+            def.total_duration_ms(),
+            path.display()
+        )),
+        Err(e) => ToolResult::err(format!(
+            "舞蹈已保存但触发播放失败: {e}。文件位置: {}",
+            path.display()
+        )),
     }
 }
 
@@ -654,6 +719,41 @@ mod tests {
         };
         let result = execute_create_dance(&args);
         assert!(result.success); // 未知 mood 应该走默认模板，不报错
+    }
+
+    // ---- perform_dance 工具测试 ----
+
+    #[test]
+    fn perform_dance_args_deserialize() {
+        let json = r#"{
+            "name":"ai_bounce",
+            "steps":[
+                {"action":"jump","duration_ms":300},
+                {"action":"spin","duration_ms":450,"repeat":2}
+            ],
+            "loops":1
+        }"#;
+        let args: PerformDanceArgs = serde_json::from_str(json).unwrap();
+        assert_eq!(args.name, "ai_bounce");
+        assert!(args.loop_);
+        assert_eq!(args.steps.len(), 2);
+        assert_eq!(args.steps[0].duration_ms, 300);
+        assert_eq!(args.steps[1].repeat, 2);
+        assert_eq!(args.loops, Some(1));
+    }
+
+    #[test]
+    fn execute_perform_dance_rejects_invalid_def() {
+        let args = PerformDanceArgs {
+            name: "../bad".into(),
+            loop_: true,
+            steps: vec![],
+            loops: None,
+            duration_ms: None,
+        };
+        let result = execute_perform_dance(&args);
+        assert!(!result.success);
+        assert!(result.output.contains("无效"));
     }
 
     // ---- play_dance 工具测试 ----
