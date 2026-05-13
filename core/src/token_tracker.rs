@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use tracing::{debug, warn};
@@ -98,6 +98,40 @@ pub struct TokenSession {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenSessions {
     pub sessions: Vec<TokenSession>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TokenTotals {
+    pub record_count: u32,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub total_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_write_tokens: u64,
+    pub chat_total_tokens: u64,
+    pub vision_total_tokens: u64,
+    pub screen_summary_total_tokens: u64,
+    pub memory_aggregation_total_tokens: u64,
+}
+
+impl TokenTotals {
+    pub fn add_record(&mut self, record: &TokenRecord) {
+        self.record_count = self.record_count.saturating_add(1);
+        self.input_tokens += record.input_tokens;
+        self.output_tokens += record.output_tokens;
+        self.total_tokens += record.total_tokens;
+        self.cache_read_tokens += record.cache_read_tokens;
+        self.cache_write_tokens += record.cache_write_tokens;
+
+        match record.category {
+            TokenCategory::Chat => self.chat_total_tokens += record.total_tokens,
+            TokenCategory::Vision => self.vision_total_tokens += record.total_tokens,
+            TokenCategory::ScreenSummary => self.screen_summary_total_tokens += record.total_tokens,
+            TokenCategory::MemoryAggregation => {
+                self.memory_aggregation_total_tokens += record.total_tokens
+            }
+        }
+    }
 }
 
 impl TokenSession {
@@ -312,6 +346,40 @@ pub fn upsert_session(store: &mut TokenSessions, record: &TokenRecord) {
     }
 }
 
+pub fn read_usage_records(path: &Path) -> Result<Vec<TokenRecord>, String> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let file = fs::File::open(path).map_err(|e| format!("打开 token 明细失败: {e}"))?;
+    let reader = std::io::BufReader::new(file);
+    let mut records = Vec::new();
+
+    for (idx, line) in reader.lines().enumerate() {
+        let line = line.map_err(|e| format!("读取 token 明细第 {} 行失败: {e}", idx + 1))?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let record: TokenRecord = serde_json::from_str(trimmed)
+            .map_err(|e| format!("解析 token 明细第 {} 行失败: {e}", idx + 1))?;
+        records.push(record);
+    }
+
+    Ok(records)
+}
+
+pub fn totals_for_date(path: &Path, date: chrono::NaiveDate) -> Result<TokenTotals, String> {
+    let date_prefix = date.format("%Y-%m-%d").to_string();
+    let mut totals = TokenTotals::default();
+    for record in read_usage_records(path)? {
+        if record.timestamp.starts_with(&date_prefix) {
+            totals.add_record(&record);
+        }
+    }
+    Ok(totals)
+}
+
 pub fn parse_anthropic_usage(response: &Value) -> TokenUsage {
     let Some(usage) = response.get("usage") else {
         return TokenUsage::default();
@@ -485,5 +553,68 @@ mod tests {
         assert_eq!(store.sessions[0].session_id, "session-2");
         assert_eq!(store.sessions[0].screen_summary_count, 1);
         assert_eq!(store.sessions[0].screen_summary_total_tokens, 15);
+    }
+
+    #[test]
+    fn totals_for_date_sums_matching_records() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("token_usage.jsonl");
+        let records = [
+            TokenRecord {
+                timestamp: "2026-05-13T12:00:00+08:00".into(),
+                session_id: "s1".into(),
+                category: TokenCategory::Chat,
+                model: "model".into(),
+                input_tokens: 10,
+                output_tokens: 5,
+                total_tokens: 15,
+                cache_read_tokens: 2,
+                cache_write_tokens: 1,
+                elapsed_ms: None,
+                extra: None,
+            },
+            TokenRecord {
+                timestamp: "2026-05-13T12:01:00+08:00".into(),
+                session_id: "s2".into(),
+                category: TokenCategory::Vision,
+                model: "model".into(),
+                input_tokens: 100,
+                output_tokens: 20,
+                total_tokens: 120,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                elapsed_ms: None,
+                extra: None,
+            },
+            TokenRecord {
+                timestamp: "2026-05-14T12:01:00+08:00".into(),
+                session_id: "s3".into(),
+                category: TokenCategory::ScreenSummary,
+                model: "model".into(),
+                input_tokens: 1000,
+                output_tokens: 200,
+                total_tokens: 1200,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                elapsed_ms: None,
+                extra: None,
+            },
+        ];
+
+        for record in &records {
+            append_record(&path, record).unwrap();
+        }
+
+        let totals =
+            totals_for_date(&path, chrono::NaiveDate::from_ymd_opt(2026, 5, 13).unwrap()).unwrap();
+        assert_eq!(totals.record_count, 2);
+        assert_eq!(totals.input_tokens, 110);
+        assert_eq!(totals.output_tokens, 25);
+        assert_eq!(totals.total_tokens, 135);
+        assert_eq!(totals.cache_read_tokens, 2);
+        assert_eq!(totals.cache_write_tokens, 1);
+        assert_eq!(totals.chat_total_tokens, 15);
+        assert_eq!(totals.vision_total_tokens, 120);
+        assert_eq!(totals.screen_summary_total_tokens, 0);
     }
 }
