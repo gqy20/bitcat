@@ -21,6 +21,7 @@
     <div class="body">
       <aside class="nav">
         <button class="nav-item active" data-tab="ai"><span class="icon">🤖</span><span>AI 模型</span></button>
+        <button class="nav-item" data-tab="usage"><span class="icon">📊</span><span>用量统计</span></button>
         <button class="nav-item" data-tab="actions"><span class="icon">🎮</span><span>按键绑定</span></button>
         <button class="nav-item" data-tab="prompts"><span class="icon">💬</span><span>Prompt</span></button>
         <button class="nav-item" data-tab="appearance"><span class="icon">🎨</span><span>外观行为</span></button>
@@ -52,6 +53,52 @@
             <input id="ai-maxtokens" type="number" min="1" placeholder="256000" />
           </div>
           <div class="effective" id="ai-effective"></div>
+        </section>
+
+        <!-- Usage -->
+        <section class="tab hidden" data-pane="usage">
+          <div class="section-title">
+            <div>
+              <h2>用量统计</h2>
+              <p class="hint">从本机 token_usage.jsonl 与 token_sessions.json 读取，只展示本地记录。</p>
+            </div>
+            <button id="usage-refresh" class="mini" type="button">刷新</button>
+          </div>
+
+          <div class="usage-summary">
+            <div class="usage-metric">
+              <span>今日总量</span>
+              <strong id="usage-total">-</strong>
+            </div>
+            <div class="usage-metric">
+              <span>输入 / 输出</span>
+              <strong id="usage-io">-</strong>
+            </div>
+            <div class="usage-metric">
+              <span>缓存读 / 写</span>
+              <strong id="usage-cache">-</strong>
+            </div>
+            <div class="usage-metric">
+              <span>记录数</span>
+              <strong id="usage-records">-</strong>
+            </div>
+          </div>
+
+          <div class="usage-block">
+            <div class="usage-block-title">各链路占比</div>
+            <div id="usage-breakdown" class="usage-breakdown"></div>
+          </div>
+
+          <div class="usage-block">
+            <div class="usage-block-title">最近会话</div>
+            <div id="usage-sessions" class="usage-sessions"></div>
+          </div>
+
+          <div class="row col usage-paths">
+            <label>统计文件</label>
+            <span id="usage-paths" class="ro mono">-</span>
+          </div>
+          <div id="usage-status" class="hint"></div>
         </section>
 
         <!-- Actions -->

@@ -61,6 +61,7 @@ function switchTab(name) {
   document.querySelectorAll(".tab").forEach(s => {
     s.classList.toggle("hidden", s.dataset.pane !== name);
   });
+  if (name === "usage") loadTokenStats();
 }
 
 // ---- 渲染各分类 ----
@@ -298,6 +299,102 @@ function renderAbout(a) {
   $("about-prompts-hint").textContent = a.prompts_yml_hint;
 }
 
+async function loadTokenStats() {
+  const status = $("usage-status");
+  if (!status) return;
+  status.textContent = "正在读取统计...";
+  try {
+    const stats = await invoke("cmd_get_token_stats");
+    renderTokenStats(stats);
+    status.textContent = `已更新：${formatDateTime(stats.generated_at)}`;
+  } catch (e) {
+    log("加载 token 统计失败: " + e);
+    status.textContent = "统计读取失败：" + String(e);
+    renderTokenStats(null);
+  }
+}
+
+function renderTokenStats(stats) {
+  const empty = {
+    record_count: 0,
+    input_tokens: 0,
+    output_tokens: 0,
+    total_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    chat_total_tokens: 0,
+    vision_total_tokens: 0,
+    screen_summary_total_tokens: 0,
+    memory_aggregation_total_tokens: 0,
+  };
+  const today = stats?.today || empty;
+  $("usage-total").textContent = formatNumber(today.total_tokens);
+  $("usage-io").textContent = `${formatNumber(today.input_tokens)} / ${formatNumber(today.output_tokens)}`;
+  $("usage-cache").textContent = `${formatNumber(today.cache_read_tokens)} / ${formatNumber(today.cache_write_tokens)}`;
+  $("usage-records").textContent = formatNumber(today.record_count);
+  $("usage-paths").textContent = stats
+    ? `${stats.paths.usage_jsonl}\n${stats.paths.sessions_json}`
+    : "-";
+
+  renderUsageBreakdown(today);
+  renderUsageSessions(stats?.recent_sessions || []);
+}
+
+function renderUsageBreakdown(today) {
+  const rows = [
+    ["聊天", today.chat_total_tokens],
+    ["截图理解", today.vision_total_tokens],
+    ["屏幕摘要", today.screen_summary_total_tokens],
+    ["记忆聚合", today.memory_aggregation_total_tokens],
+  ];
+  const total = Math.max(1, today.total_tokens || rows.reduce((sum, [, value]) => sum + value, 0));
+  const box = $("usage-breakdown");
+  box.innerHTML = rows.map(([label, value]) => {
+    const pct = Math.round((value / total) * 100);
+    return `
+      <div class="usage-bar-row">
+        <div class="usage-bar-meta">
+          <span>${escapeHtml(label)}</span>
+          <span>${formatNumber(value)} · ${pct}%</span>
+        </div>
+        <div class="usage-bar"><span style="width:${pct}%"></span></div>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderUsageSessions(sessions) {
+  const box = $("usage-sessions");
+  if (!sessions.length) {
+    box.innerHTML = `<div class="empty">暂无会话记录</div>`;
+    return;
+  }
+
+  box.innerHTML = sessions.map(session => {
+    const parts = [
+      ["聊", session.chat_total_tokens],
+      ["图", session.vision_total_tokens],
+      ["摘", session.screen_summary_total_tokens],
+      ["忆", session.memory_aggregation_total_tokens],
+    ].filter(([, value]) => value > 0)
+      .map(([label, value]) => `<span>${label} ${formatNumber(value)}</span>`)
+      .join("");
+    return `
+      <div class="usage-session">
+        <div class="usage-session-main">
+          <strong>${formatNumber(session.total_tokens)}</strong>
+          <span>${escapeHtml(formatDateTime(session.ended_at))}</span>
+        </div>
+        <div class="usage-session-sub">
+          <span>${escapeHtml((session.models || []).join(", ") || "unknown model")}</span>
+          <span>${formatNumber(session.record_count)} 条 · ${formatDuration(session.elapsed_ms_total)}</span>
+        </div>
+        <div class="usage-session-parts">${parts || "<span>无分类明细</span>"}</div>
+      </div>
+    `;
+  }).join("");
+}
+
 // ---- 保存 / 重置 ----
 
 async function saveAll() {
@@ -341,7 +438,7 @@ async function saveAll() {
 }
 
 async function resetCurrent() {
-  if (currentTab === "about") return;
+  if (currentTab === "about" || currentTab === "usage") return;
   if (!confirm(`确定将「${tabLabel(currentTab)}」重置为默认？`)) return;
   try {
     await invoke("cmd_settings_reset", { category: currentTab });
@@ -367,6 +464,7 @@ async function loadSnapshot() {
     renderPrompts(SNAPSHOT.prompts);
     renderAppearance(SNAPSHOT.appearance);
     renderAbout(SNAPSHOT.about);
+    loadTokenStats();
     ["ai", "actions", "prompts", "appearance"].forEach(clearDirty);
   } catch (e) {
     log("加载失败: " + e);
@@ -392,6 +490,7 @@ function bindGlobal() {
   });
   $("btn-save").addEventListener("click", saveAll);
   $("btn-reset").addEventListener("click", resetCurrent);
+  $("usage-refresh").addEventListener("click", loadTokenStats);
   $("ai-key-toggle").addEventListener("click", () => {
     const el = $("ai-key");
     el.type = el.type === "password" ? "text" : "password";
@@ -412,6 +511,29 @@ function escapeHtml(s) {
   })[c]);
 }
 function escapeAttr(s) { return escapeHtml(s).replace(/"/g, "&quot;"); }
+
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString("zh-CN");
+}
+
+function formatDuration(ms) {
+  const value = Number(ms || 0);
+  if (value < 1000) return `${value}ms`;
+  if (value < 60_000) return `${(value / 1000).toFixed(1)}s`;
+  return `${Math.round(value / 60_000)}m`;
+}
+
+function formatDateTime(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 // 启动
 document.addEventListener("DOMContentLoaded", () => {

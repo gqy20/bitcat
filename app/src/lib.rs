@@ -60,6 +60,7 @@ pub fn run() {
             settings::cmd_settings_close,
             settings::cmd_settings_log,
             settings::cmd_settings_load,
+            settings::cmd_get_token_stats,
             settings::cmd_settings_save_ai,
             settings::cmd_settings_save_actions,
             settings::cmd_settings_save_prompts,

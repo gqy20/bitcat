@@ -9,6 +9,10 @@ use crate::commands::SharedWindowState;
 use ai_pad_core::action::{ActionConfig, ActionDef, Defaults};
 use ai_pad_core::app_settings::{AiOverride, AppSettings, AppearanceSettings};
 use ai_pad_core::prompts::PromptsConfig;
+use ai_pad_core::token_tracker::{
+    load_sessions, token_sessions_path, token_usage_path, totals_for_date, TokenSession,
+    TokenTotals,
+};
 use ai_pad_core::user_profile::UserProfile;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -124,6 +128,35 @@ pub struct AboutInfo {
     pub prompts_yml_hint: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct TokenStatsView {
+    pub generated_at: String,
+    pub today: TokenTotals,
+    pub recent_sessions: Vec<TokenSessionView>,
+    pub paths: TokenStatsPaths,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TokenStatsPaths {
+    pub usage_jsonl: String,
+    pub sessions_json: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TokenSessionView {
+    pub session_id: String,
+    pub started_at: String,
+    pub ended_at: String,
+    pub models: Vec<String>,
+    pub record_count: u32,
+    pub elapsed_ms_total: u64,
+    pub total_tokens: u64,
+    pub chat_total_tokens: u64,
+    pub vision_total_tokens: u64,
+    pub screen_summary_total_tokens: u64,
+    pub memory_aggregation_total_tokens: u64,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct AppearanceInput {
     pub always_on_top: bool,
@@ -136,6 +169,28 @@ pub struct AppearanceInput {
 
 fn default_screenshot_interval_sec() -> u64 {
     30
+}
+
+fn token_session_view(session: &TokenSession) -> TokenSessionView {
+    let total_tokens = session
+        .chat_total_tokens
+        .saturating_add(session.vision_total_tokens)
+        .saturating_add(session.screen_summary_total_tokens)
+        .saturating_add(session.memory_aggregation_total_tokens);
+
+    TokenSessionView {
+        session_id: session.session_id.clone(),
+        started_at: session.started_at.clone(),
+        ended_at: session.ended_at.clone(),
+        models: session.models.clone(),
+        record_count: session.record_count,
+        elapsed_ms_total: session.elapsed_ms_total,
+        total_tokens,
+        chat_total_tokens: session.chat_total_tokens,
+        vision_total_tokens: session.vision_total_tokens,
+        screen_summary_total_tokens: session.screen_summary_total_tokens,
+        memory_aggregation_total_tokens: session.memory_aggregation_total_tokens,
+    }
 }
 
 // ---- 命令 ----
@@ -256,6 +311,31 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
             prompts_yml_hint: "config/prompts.yml（exe 同目录/config/ 或 CWD/config/）".into(),
         },
         button_catalog,
+    })
+}
+
+#[tauri::command]
+pub async fn cmd_get_token_stats() -> Result<TokenStatsView, String> {
+    let usage_path = token_usage_path()?;
+    let sessions_path = token_sessions_path()?;
+    let today = chrono::Local::now().date_naive();
+    let today_totals = totals_for_date(&usage_path, today)?;
+    let sessions = load_sessions(&sessions_path)?;
+    let recent_sessions = sessions
+        .sessions
+        .iter()
+        .take(10)
+        .map(token_session_view)
+        .collect();
+
+    Ok(TokenStatsView {
+        generated_at: chrono::Local::now().to_rfc3339(),
+        today: today_totals,
+        recent_sessions,
+        paths: TokenStatsPaths {
+            usage_jsonl: usage_path.to_string_lossy().into_owned(),
+            sessions_json: sessions_path.to_string_lossy().into_owned(),
+        },
     })
 }
 
@@ -465,5 +545,28 @@ mod tests {
         let input: AppearanceInput = serde_json::from_str(json).unwrap();
         assert!(!input.always_on_top);
         assert_eq!(input.global_shortcut, "F12");
+    }
+
+    #[test]
+    fn test_token_session_view_sums_categories() {
+        let session = TokenSession {
+            session_id: "s1".into(),
+            started_at: "2026-05-13T10:00:00+08:00".into(),
+            ended_at: "2026-05-13T10:00:02+08:00".into(),
+            models: vec!["model-a".into()],
+            record_count: 3,
+            elapsed_ms_total: 1200,
+            chat_total_tokens: 10,
+            vision_total_tokens: 20,
+            screen_summary_total_tokens: 30,
+            memory_aggregation_total_tokens: 40,
+            ..Default::default()
+        };
+
+        let view = token_session_view(&session);
+        assert_eq!(view.total_tokens, 100);
+        assert_eq!(view.session_id, "s1");
+        assert_eq!(view.models, vec!["model-a"]);
+        assert_eq!(view.record_count, 3);
     }
 }
