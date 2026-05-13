@@ -15,23 +15,26 @@ const MENU_SETTINGS: &str = "settings";
 const MENU_EXIT: &str = "exit";
 
 pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let screenshot_item = MenuItem::with_id(app, MENU_SCREENSHOT, "立即截图", true, None::<&str>)?;
+    let settings_item = MenuItem::with_id(app, MENU_SETTINGS, "设置…", true, None::<&str>)?;
+    let screenshot_item =
+        MenuItem::with_id(app, MENU_SCREENSHOT, "分析当前屏幕", true, None::<&str>)?;
+    let separator_primary = PredefinedMenuItem::separator(app)?;
     let collapse_item = MenuItem::with_id(app, MENU_COLLAPSE, "折叠", true, None::<&str>)?;
     let top_item = MenuItem::with_id(app, MENU_TOP, "取消置顶", true, None::<&str>)?;
-    let reload_item = MenuItem::with_id(app, MENU_RELOAD, "重载配置", true, None::<&str>)?;
-    let settings_item = MenuItem::with_id(app, MENU_SETTINGS, "设置…", true, None::<&str>)?;
-    let separator = PredefinedMenuItem::separator(app)?;
-    let exit_item = MenuItem::with_id(app, MENU_EXIT, "退出", true, None::<&str>)?;
+    let separator_state = PredefinedMenuItem::separator(app)?;
+    let reload_item = MenuItem::with_id(app, MENU_RELOAD, "重新载入配置", true, None::<&str>)?;
+    let exit_item = MenuItem::with_id(app, MENU_EXIT, "退出 8Bit Cat", true, None::<&str>)?;
 
     let menu = Menu::with_items(
         app,
         &[
+            &settings_item,
             &screenshot_item,
+            &separator_primary,
             &collapse_item,
             &top_item,
+            &separator_state,
             &reload_item,
-            &settings_item,
-            &separator,
             &exit_item,
         ],
     )?;
