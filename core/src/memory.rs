@@ -1,3 +1,17 @@
+//! 三层对话记忆系统：短期滚动窗口 + 长期 JSONL 检索 + AI 聚合画像。
+//!
+//! 设计遵循 grep-first 原则：所有持久化产物均为可搜索的结构化文本
+//! （JSON / JSONL），不引入向量数据库或 Embedding，方便 `rg`、
+//! 人工审查和大模型共同读取。记忆检索先用关键词等可解释条件筛选候选，
+//! 再交给大模型判断压缩。
+//!
+//! 三层各自持久化到 `~/.ai-pad/memory/`：
+//! - **MemoryStore** — `chat_summary.json`，滚动窗口短期记忆，直接注入 prompt
+//! - **LongTermMemory** — `long_term.json`，原始对话按需关键词检索注入
+//! - **ProfileStore** — `profile.json`，AI 定期聚合的用户画像摘要
+//!
+//! 与 `agent.rs`（对话后写入）、`bridge.rs`（构建上下文）交互。
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::fs;
@@ -11,7 +25,7 @@ use crate::token_tracker::{
 
 // ---- 数据结构 ----
 
-/// 单条对话记录
+/// 单条对话记录，包含时间戳、用户消息和 AI 回复。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryEntry {
     pub timestamp: String,
@@ -19,13 +33,17 @@ pub struct MemoryEntry {
     pub ai_reply: String,
 }
 
-/// 对话记忆存储（滚动窗口）
+/// 短期对话记忆存储，维护固定大小的滚动窗口。
+///
+/// 超出 `max_entries` 时自动淘汰最旧条目，保证注入 prompt 的上下文不会无限膨胀。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryStore {
     pub entries: Vec<MemoryEntry>,
 }
 
-/// 记忆系统配置（来自 prompts.yml 的 memory 段）
+/// 记忆系统配置，来自 `config/prompts.yml` 的 `memory` 段。
+///
+/// 控制滚动窗口大小、上下文字符预算、单条消息截断阈值。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct MemoryConfig {
     #[serde(default = "default_max_entries")]
@@ -64,6 +82,7 @@ impl Default for MemoryConfig {
 
 // ---- 存储路径 ----
 
+/// 返回短期记忆文件路径 `~/.ai-pad/memory/chat_summary.json`。
 fn memory_file_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
     Ok(home
@@ -192,7 +211,9 @@ fn truncate_chars(s: &str, max_chars: usize) -> String {
 
 // ---- Layer 2: 长期记忆（原始对话记录，按需检索） ----
 
-/// 单条长期记忆条目——完整保存值得长期保留的对话内容
+/// 单条长期记忆条目——完整保存值得长期保留的对话内容。
+///
+/// `aggregated` 标记表示该条目已被 AI 聚合到画像中，容量不足时优先淘汰。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LongTermEntry {
     pub timestamp: String,
@@ -202,18 +223,22 @@ pub struct LongTermEntry {
     pub aggregated: bool,
 }
 
-/// 长期记忆存储：存原始对话原文，按需关键词检索注入
+/// 长期记忆存储：保存原始对话原文，按关键词相关性检索并注入 prompt。
+///
+/// 超出容量时优先淘汰已聚合条目，保持未聚合数据供下次聚合使用。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LongTermMemory {
     pub entries: Vec<LongTermEntry>,
 }
 
+/// 返回长期记忆文件路径 `~/.ai-pad/memory/long_term.json`。
 fn long_term_file_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
     Ok(home.join(".ai-pad").join("memory").join("long_term.json"))
 }
 
 impl LongTermMemory {
+    /// 从磁盘加载。文件不存在或损坏时返回空记忆。
     pub fn load() -> Self {
         let path = match long_term_file_path() {
             Ok(p) => p,
@@ -319,6 +344,7 @@ impl LongTermMemory {
         self.entries.iter().filter(|e| !e.aggregated).collect()
     }
 
+    /// 持久化到磁盘（原子写入：先写临时文件再 rename）。
     pub fn save(&self) -> Result<(), String> {
         let path = long_term_file_path()?;
         if let Some(parent) = path.parent() {
@@ -338,19 +364,23 @@ impl LongTermMemory {
 
 // ---- Layer 2: 聚合画像（AI 定期生成） ----
 
-/// AI 聚合后的用户画像/记忆摘要
+/// AI 聚合后的用户画像摘要，由 `aggregate_profile()` 定期生成。
+///
+/// 优先级低于 `config/user.yml` 中的显式声明——user.yml 有内容时直接使用，全空才回退到本画像。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileStore {
     pub profile_text: String,
     pub updated_at: String,
 }
 
+/// 返回用户画像文件路径 `~/.ai-pad/memory/profile.json`。
 fn profile_file_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
     Ok(home.join(".ai-pad").join("memory").join("profile.json"))
 }
 
 impl ProfileStore {
+    /// 从磁盘加载。文件不存在或损坏时返回空画像。
     pub fn load() -> Self {
         let path = match profile_file_path() {
             Ok(p) => p,
@@ -397,6 +427,7 @@ impl ProfileStore {
         format!("[关于主人]\n{}\n[/关于主人]\n", self.profile_text)
     }
 
+    /// 持久化到磁盘（原子写入：先写临时文件再 rename）。
     pub fn save(&self) -> Result<(), String> {
         let path = profile_file_path()?;
         if let Some(parent) = path.parent() {
@@ -559,6 +590,7 @@ pub async fn aggregate_profile(
     parse_aggregation_response(&json)
 }
 
+/// 从 Anthropic Messages 响应中提取聚合后的画像文本。
 fn parse_aggregation_response(response: &Value) -> Result<String, String> {
     let content = response
         .get("content")

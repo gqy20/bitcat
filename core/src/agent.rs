@@ -1,3 +1,20 @@
+//! AI Agent 模块：基于 rig-core 的多轮流式对话与工具调用。
+//!
+//! 本模块是桌宠的"大脑"，负责与 Anthropic Claude 模型进行流式对话，并注册
+//! 一组内置工具（启动程序、执行命令、读取文件等），让模型可以自主调用以完成
+//! 用户指令。
+//!
+//! 设计上采用 rig-core 的 Agent + StreamingPrompt 模式：文本 chunk 通过
+//! `on_chunk` 回调实时传递给 app 层的 bubble 窗口渲染，工具调用和最终响应
+//! 统计通过 `MultiTurnStreamItem` 枚举分别处理，避免阻塞流式输出。
+//!
+//! 工具注册使用 `define_tool_sync!` / `define_tool_async!` 两个宏消除样板代码，
+//! 每个工具只需提供名称、描述、参数 schema 和执行函数即可自动实现 `Tool` trait。
+//!
+//! 交互关系：`bridge::handle_button_press` 触发对话 → `PetAgent::chat_stream`
+//! 执行流式推理 → `on_chunk` 回调驱动 bubble 窗口更新 → 返回完整回复后由
+//! `bridge::resolve_agent_response` 决定宠物状态变化。
+
 use crate::ai_config::AiConfig;
 use crate::permission_hook::PermissionHook;
 use crate::prompts::PromptsConfig;
@@ -27,13 +44,17 @@ use tracing::{debug, info, instrument, trace};
 /// 16 留足余量又不会让异常循环无限跑（每轮至少数秒，满轮约等于几分钟超时兜底）。
 const MAX_AGENT_TURNS: usize = 16;
 
-/// 桌宠 AI Agent
+/// 桌宠 AI Agent，封装 rig-core Agent 和运行时配置。
+///
+/// 通过 `new()` 从 `AiConfig` + `PromptsConfig` 构建，内部注册了全部内置工具，
+/// 对外暴露 `chat`（一次性）和 `chat_stream`（流式）两个对话入口。
 pub struct PetAgent {
     pub agent: Agent<anthropic::completion::CompletionModel, PermissionHook>,
     pub config: AiConfig,
 }
 
 impl PetAgent {
+    /// 从配置文件构建 Agent：加载 AI 密钥、模型、提示词，注册全部工具。
     pub fn new() -> Result<Self, String> {
         let config = AiConfig::load()?;
         let prompts = PromptsConfig::load();
@@ -67,6 +88,8 @@ impl PetAgent {
         Ok(Self { agent, config })
     }
 
+    /// 一次性对话（非流式），等待模型返回完整回复。
+    /// 适用于不需要实时显示中间结果的场景。
     pub async fn chat(&self, message: &str) -> Result<String, String> {
         self.agent
             .prompt(message)

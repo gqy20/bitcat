@@ -1,3 +1,9 @@
+//! AI 服务配置加载与优先级合并
+//!
+//! 从多个来源读取 API key、base_url、model 等字段，按优先级合并：
+//! 环境变量 > app_settings.json 覆盖层 > ~/.claude/settings.json > 内置默认值。
+//! 这样设计是为了让用户可以通过多种方式配置，同时不回写 claude 自身的 settings。
+
 use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;

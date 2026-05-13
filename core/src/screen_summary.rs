@@ -1,3 +1,13 @@
+//! 屏幕活动摘要：将定时截图分析结果聚合为结构化事件日志并注入 AI 上下文。
+//!
+//! 本模块定期收集 Vision API 的截图分析描述，调用 AI 将它们压缩为
+//! [`StructuredSummary`]（活动分组 + 显著变化），以滚动窗口方式保留最近 N 条，
+//! 持久化到 `~/.ai-pad/memory/screen_summary.json`。
+//!
+//! 与 [`vision`](crate::vision) 模块协作：vision 负责单帧分析，
+//! 本模块负责跨帧聚合和上下文注入，供 agent prompt 使用。
+//! 存储模式为全量追加，上下文构建时按 [`ScreenSummaryConfig`] 截取最近条目。
+
 use crate::ai_config::AiConfig;
 use crate::token_tracker::{
     TokenCategory, TokenRecord, TokenUsage, new_session_id, record_token_usage,
@@ -13,7 +23,7 @@ use tracing::{debug, info, warn};
 
 // ---- 数据结构 ----
 
-/// 单条屏幕活动摘要
+/// 单条屏幕活动摘要，包含时间戳、时间范围和结构化内容。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScreenSummaryEntry {
     pub timestamp: String,
@@ -21,6 +31,7 @@ pub struct ScreenSummaryEntry {
     pub summary: StructuredSummary,
 }
 
+/// AI 生成的结构化摘要：按活动类型分组 + 显著变化列表。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct StructuredSummary {
     #[serde(default)]
@@ -32,6 +43,7 @@ pub struct StructuredSummary {
 }
 
 impl StructuredSummary {
+    /// 将结构化摘要格式化为可读的多行文本，供 prompt 上下文注入。
     pub fn to_context_text(&self) -> String {
         let mut lines = Vec::new();
 
@@ -65,6 +77,7 @@ impl StructuredSummary {
     }
 }
 
+/// 单个活动分组：类别、时间范围和具体事项列表。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ActivityGroup {
     #[serde(default)]
@@ -75,6 +88,7 @@ pub struct ActivityGroup {
     pub items: Vec<String>,
 }
 
+/// 活动类别枚举，与 AI 输出的 JSON schema 对应。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ActivityCategory {
@@ -93,6 +107,7 @@ impl Default for ActivityCategory {
 }
 
 impl ActivityCategory {
+    /// 返回用于日志和上下文输出的英文标签。
     pub fn label(self) -> &'static str {
         match self {
             Self::Coding => "coding",
@@ -105,7 +120,7 @@ impl ActivityCategory {
     }
 }
 
-/// 屏幕摘要存储（全量追加）
+/// 屏幕摘要存储，全量追加并持久化到 `~/.ai-pad/memory/screen_summary.json`。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScreenSummaryStore {
     pub entries: Vec<ScreenSummaryEntry>,
@@ -378,6 +393,7 @@ fn extract_text_response(response: &Value) -> Result<String, String> {
     Ok(texts.join(""))
 }
 
+/// 从 API 响应中提取文本并反序列化为 [`StructuredSummary`]，自动剥离 markdown 代码围栏。
 pub fn parse_structured_summary_response(response: &Value) -> Result<StructuredSummary, String> {
     let text = extract_text_response(response)?;
     let json_text = normalize_json_text(&text);

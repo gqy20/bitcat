@@ -73,6 +73,7 @@ const MAX_STEP_DURATION_MS: u32 = 5_000;
 const MAX_STEP_REPEAT: u32 = 8;
 const MAX_TOTAL_DURATION_MS: u32 = 30_000;
 
+/// 校验舞蹈定义的合法性（名称格式、步骤数量、时长范围、总时长上限）
 pub fn validate_dance_def(def: &DanceDef) -> Result<(), String> {
     let name = def.name.trim();
     if name.is_empty() {

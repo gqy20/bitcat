@@ -1,3 +1,14 @@
+//! AI Agent 内置工具定义与执行逻辑。
+//!
+//! 定义了桌宠 AI 可调用的全部工具：launch_program、shell、read_file、
+//! get_time、recent_screenshots、hotkey、clipboard、foreground、perform_dance、
+//! play_dance。每个工具由参数结构体（`XxxArgs`）+ 纯函数执行器（`execute_xxx`）组成，
+//! 结果统一为 `ToolResult { output, success }`。
+//!
+//! 工具不内置权限分级，由 `agent.rs` 在注册时决定哪些工具暴露给 AI。
+//! 执行器均为纯函数（async 用 `tokio::process`），方便独立测试。
+//! 与 `agent.rs`（注册工具到 rig Agent）和 `bridge.rs`（解析工具调用）交互。
+
 use crate::action::launch_program;
 use crate::dance::{DanceDef, DanceStep};
 use crate::logging::log_preview;
@@ -6,6 +17,7 @@ use std::time::Duration;
 use thiserror::Error;
 use tracing::{debug, info};
 
+/// 工具执行错误类型：执行失败、权限不足、超时。
 #[derive(Debug, Error)]
 pub enum ToolError {
     #[error("执行失败: {0}")]
@@ -32,6 +44,7 @@ const MAX_OUTPUT_CHARS: usize = 8000;
 
 // ---- Tool 参数定义 ----
 
+/// `launch_program` 工具参数：程序名、参数、工作目录、是否在终端中启动。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct LaunchArgs {
     pub program: String,
@@ -47,16 +60,19 @@ fn default_terminal() -> bool {
     true
 }
 
+/// `shell` 工具参数：要执行的 PowerShell 命令。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ShellArgs {
     pub command: String,
 }
 
+/// `read_file` 工具参数：要读取的文件绝对路径。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ReadFileArgs {
     pub path: String,
 }
 
+/// `get_time` 工具参数：时间格式（`full` / `date` / `time`），默认 `full`。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct GetTimeArgs {
     #[serde(default = "default_format")]
@@ -67,6 +83,7 @@ fn default_format() -> String {
     "full".into()
 }
 
+/// `recent_screenshots` 工具参数：返回最近 N 条截图分析记录，默认 3。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RecentScreenshotsArgs {
     #[serde(default = "default_screenshot_count")]
@@ -79,6 +96,7 @@ fn default_screenshot_count() -> Option<u32> {
 
 // ---- Tool 执行结果 ----
 
+/// 工具执行结果：`output` 为可读文本，`success` 标记成功或失败。
 #[derive(Debug, Clone, Serialize)]
 pub struct ToolResult {
     pub output: String,
@@ -86,6 +104,7 @@ pub struct ToolResult {
 }
 
 impl ToolResult {
+    /// 构造成功结果。
     pub fn ok(output: impl Into<String>) -> Self {
         Self {
             output: output.into(),
@@ -93,6 +112,7 @@ impl ToolResult {
         }
     }
 
+    /// 构造失败结果。
     pub fn err(output: impl Into<String>) -> Self {
         Self {
             output: output.into(),
@@ -229,6 +249,7 @@ pub fn execute_recent_screenshots(
 
 // ---- 新增工具：Hotkey / Clipboard / Foreground ----
 
+/// `hotkey` 工具参数：要模拟的按键序列和可选的按住时长（秒）。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct HotkeyArgs {
     pub keys: Vec<String>,
@@ -246,6 +267,7 @@ pub fn execute_hotkey(args: &HotkeyArgs) -> ToolResult {
     }
 }
 
+/// `clipboard` 工具参数（当前无额外字段）。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ClipboardArgs {}
 
@@ -261,6 +283,7 @@ pub fn execute_clipboard(_args: &ClipboardArgs) -> ToolResult {
     }
 }
 
+/// `foreground` 工具参数：目标窗口句柄（HWND）。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ForegroundArgs {
     pub hwnd: isize,
@@ -277,6 +300,7 @@ pub fn execute_foreground(args: &ForegroundArgs) -> ToolResult {
 
 // ---- 舞蹈工具 ----
 
+/// `perform_dance` 工具参数：AI 即时编排并播放的完整舞蹈定义。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PerformDanceArgs {
     pub name: String,
@@ -343,6 +367,7 @@ pub fn execute_perform_dance(args: &PerformDanceArgs) -> ToolResult {
 
 // ---- play_dance 工具 ----
 
+/// `play_dance` 工具参数：播放已保存的舞蹈，按名称查找。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PlayDanceArgs {
     pub name: String,

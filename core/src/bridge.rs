@@ -1,16 +1,28 @@
-//! 手柄 → AI → 宠物动画 桥接层
+//! 手柄 → AI → 宠物动画 桥接层。
 //!
-//! 职责：
-//! 1. 将手柄按键映射到 Agent 动作
-//! 2. 格式化 IPC 命令（ctl→pet）
-//! 3. 解析 Agent 回复，决定宠物状态变化
+//! 本模块负责将 SDL2 手柄按键翻译为 AI 对话请求或宠物控制命令，并将 Agent
+//! 回复解析为 `PetCommand` 序列驱动宠物动画状态变化。
+//!
+//! `PetStateName` 独立于 `pet::PetState` 存在，是因为 IPC 序列化需要零依赖的
+//! 纯数据枚举——不携带帧索引、计时器等运行时状态，确保 JSON 线路上传输的内容
+//! 稳定且安全。两端通过 `From` trait 互转。
+//!
+//! 按键映射流程：`handle_button_press` 根据按钮索引查 `default_button_mapping`，
+//! 返回 (可选 AI 消息, 可选宠物命令) 二元组；app 层的 `gamepad_loop` 消费这对
+//! 结果，分别决定是否发起对话和切换动画。
+//!
+//! Agent 回复处理流程：`resolve_agent_response` 对回复文本做轻量关键词匹配以
+//! 选择情绪状态（Happy / Confused），截断过长文本后生成 `PetCommand` 序列，
+//! 由 app 层依次发送到 pet 窗口。
 
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 // ---- IPC 命令协议 ----
 
-/// ctl 发给 pet 的命令（JSON 行协议）
+/// app 层发送给 pet 窗口的命令，通过 JSON 行协议序列化。
+///
+/// 每个变体对应一种宠物行为：切换状态、移动、显示气泡文本、播放舞蹈或退出。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "cmd")]
 pub enum PetCommand {
@@ -95,10 +107,12 @@ fn default_button_mapping(button_index: u32) -> Option<SpecialAction> {
 // ---- 命令序列化 ----
 
 impl PetCommand {
+    /// 将命令序列化为单行 JSON，用于 IPC 线路传输。
     pub fn to_json_line(&self) -> String {
         serde_json::to_string(self).expect("PetCommand 序列化失败")
     }
 
+    /// 从 JSON 行反序列化命令，格式非法时返回 `None`。
     pub fn from_json_line(line: &str) -> Option<Self> {
         serde_json::from_str(line).ok()
     }

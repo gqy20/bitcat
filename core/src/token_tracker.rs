@@ -1,3 +1,9 @@
+//! Token 用量追踪与统计
+//!
+//! 记录每次 AI 调用的 token 消耗到 JSONL 文件，按会话聚合统计。
+//! 支持按日期、类别（Chat/Vision/ScreenSummary/MemoryAggregation）查询汇总。
+//! 数据持久化到 ~/.ai-pad/logs/ 目录，供设置界面展示用量统计。
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs::{self, OpenOptions};
@@ -8,6 +14,7 @@ use tracing::{debug, warn};
 
 const MAX_TOKEN_SESSIONS: usize = 200;
 
+/// token 用量类别：聊天对话、截图视觉分析、屏幕摘要、记忆聚合
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TokenCategory {
     Chat,
@@ -16,6 +23,7 @@ pub enum TokenCategory {
     MemoryAggregation,
 }
 
+/// 单次 API 调用的 token 用量统计
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenUsage {
     pub input_tokens: u64,
@@ -53,6 +61,7 @@ impl From<rig::completion::Usage> for TokenUsage {
     }
 }
 
+/// 一条完整的 token 使用记录，写入 JSONL 文件
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenRecord {
     pub timestamp: String,
@@ -68,6 +77,7 @@ pub struct TokenRecord {
     pub extra: Option<String>,
 }
 
+/// 按会话聚合的 token 用量汇总
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenSession {
     pub session_id: String,
@@ -225,16 +235,19 @@ impl TokenRecord {
 
 static TOKEN_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
+/// 生成基于 UTC 纳秒时间戳的十六进制会话 ID
 pub fn new_session_id() -> String {
     let now = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
     format!("{now:x}")
 }
 
+/// 返回 token 用量明细文件路径 `~/.ai-pad/logs/token_usage.jsonl`
 pub fn token_usage_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
     Ok(home.join(".ai-pad").join("logs").join("token_usage.jsonl"))
 }
 
+/// 返回 token 会话聚合文件路径 `~/.ai-pad/logs/token_sessions.json`
 pub fn token_sessions_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
     Ok(home
@@ -243,6 +256,7 @@ pub fn token_sessions_path() -> Result<PathBuf, String> {
         .join("token_sessions.json"))
 }
 
+/// 记录一条 token 用量：追加到 JSONL 明细 + 更新会话聚合文件。零 token 记录自动跳过。
 pub fn record_token_usage(record: &TokenRecord) {
     if record.total_tokens == 0
         && record.input_tokens == 0
@@ -279,6 +293,7 @@ pub fn record_token_usage(record: &TokenRecord) {
     }
 }
 
+/// 向 JSONL 文件追加一条 token 记录（线程安全，通过全局 Mutex 序列化写入）
 pub fn append_record(path: &Path, record: &TokenRecord) -> Result<(), String> {
     let _guard = TOKEN_WRITE_LOCK
         .get_or_init(|| Mutex::new(()))
@@ -299,6 +314,7 @@ pub fn append_record(path: &Path, record: &TokenRecord) -> Result<(), String> {
     Ok(())
 }
 
+/// 用一条记录更新会话聚合文件：存在则累加，不存在则新建，保留最近 200 个会话
 pub fn update_sessions_file(path: &Path, record: &TokenRecord) -> Result<(), String> {
     let _guard = TOKEN_WRITE_LOCK
         .get_or_init(|| Mutex::new(()))
@@ -310,6 +326,7 @@ pub fn update_sessions_file(path: &Path, record: &TokenRecord) -> Result<(), Str
     save_sessions(path, &store)
 }
 
+/// 从磁盘加载会话聚合数据，文件不存在返回空
 pub fn load_sessions(path: &Path) -> Result<TokenSessions, String> {
     if !path.exists() {
         return Ok(TokenSessions::default());
@@ -319,6 +336,7 @@ pub fn load_sessions(path: &Path) -> Result<TokenSessions, String> {
     serde_json::from_str(&content).map_err(|e| format!("解析 token 会话失败: {e}"))
 }
 
+/// 将会话聚合数据序列化写入磁盘（pretty-print JSON）
 pub fn save_sessions(path: &Path, store: &TokenSessions) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("创建 token 会话目录失败: {e}"))?;
@@ -329,6 +347,7 @@ pub fn save_sessions(path: &Path, store: &TokenSessions) -> Result<(), String> {
     fs::write(path, json).map_err(|e| format!("写入 token 会话失败: {e}"))
 }
 
+/// 按 session_id 查找并累加记录，不存在则新建；按时间降序排列，超出上限截断
 pub fn upsert_session(store: &mut TokenSessions, record: &TokenRecord) {
     if let Some(session) = store
         .sessions
@@ -346,6 +365,7 @@ pub fn upsert_session(store: &mut TokenSessions, record: &TokenRecord) {
     }
 }
 
+/// 从 JSONL 文件逐行读取所有 token 用量记录
 pub fn read_usage_records(path: &Path) -> Result<Vec<TokenRecord>, String> {
     if !path.exists() {
         return Ok(Vec::new());
@@ -369,6 +389,7 @@ pub fn read_usage_records(path: &Path) -> Result<Vec<TokenRecord>, String> {
     Ok(records)
 }
 
+/// 按日期过滤并汇总 token 用量，返回当日各类别的 token 总计
 pub fn totals_for_date(path: &Path, date: chrono::NaiveDate) -> Result<TokenTotals, String> {
     let date_prefix = date.format("%Y-%m-%d").to_string();
     let mut totals = TokenTotals::default();
@@ -380,6 +401,7 @@ pub fn totals_for_date(path: &Path, date: chrono::NaiveDate) -> Result<TokenTota
     Ok(totals)
 }
 
+/// 从 Anthropic API 响应 JSON 中提取 usage 字段，映射为 TokenUsage
 pub fn parse_anthropic_usage(response: &Value) -> TokenUsage {
     let Some(usage) = response.get("usage") else {
         return TokenUsage::default();

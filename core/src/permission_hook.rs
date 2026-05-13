@@ -1,9 +1,15 @@
+//! AI 工具调用安全策略钩子
+//!
+//! 拦截 Agent 的 shell 工具调用，通过黑名单模式阻止危险命令（rm -rf、format、shutdown 等）。
+//! 非 shell 工具直接放行。作为 rig PromptHook 注册到 Agent 流水线中。
+
 use rig::agent::PromptHook;
 use rig::agent::ToolCallHookAction;
 use tracing::{info, warn};
 
 use crate::logging::log_preview;
 
+/// 空结构体，实现 rig 的 PromptHook trait，在工具调用前进行安全检查
 #[derive(Clone)]
 pub struct PermissionHook;
 

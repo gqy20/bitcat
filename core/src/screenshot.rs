@@ -1,7 +1,19 @@
+//! 截图管线：感知哈希去重、图像缩放、JPEG 编码与文件存储。
+//!
+//! 本模块提供截图数据的纯算法和 I/O 操作，不依赖任何窗口系统调用。
+//! 与 `app/src/screenshot.rs` 分工：app 侧通过 BitBlt 捕获原始 BGRA 帧并调用
+//! Vision API，本模块负责 dHash 感知哈希去重、resize/JPEG 编码以及
+//! `~/.ai-pad/screenshots/` 下的按日存储和 7 天自动清理。
+//!
+//! 被截屏观察线程（`app::screenshot::screenshot_loop`）和
+//! [`screen_summary`](crate::screen_summary) 模块共同消费：
+//! Vision 分析结果存为 [`ScreenshotRecord`]，后续由 screen_summary 聚合注入 AI 上下文。
+
 use serde::{Deserialize, Serialize};
 
 // ---- 截图目标 ----
 
+/// 截图捕获目标：仅主显示器或全部显示器（默认）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "PascalCase")]
 pub enum ScreenshotTarget {
@@ -12,6 +24,9 @@ pub enum ScreenshotTarget {
 
 // ---- 截图配置 ----
 
+/// 截图管线的完整配置，来自 `config/prompts.yml` 或环境变量覆盖。
+///
+/// 包含目标显示器、最大宽度、JPEG 质量、定时截取间隔、dHash 去重阈值等参数。
 #[derive(Debug, Clone, Deserialize)]
 pub struct ScreenshotConfig {
     #[serde(default)]
@@ -70,6 +85,7 @@ impl Default for ScreenshotConfig {
 }
 
 impl ScreenshotConfig {
+    /// 从环境变量 `SCREENSHOT_MAX_WIDTH` 等读取覆盖值，未设置的项保持默认。
     pub fn from_env() -> Self {
         let mut cfg = Self::default();
         if let Ok(v) = std::env::var("SCREENSHOT_MAX_WIDTH")
@@ -80,6 +96,7 @@ impl ScreenshotConfig {
         cfg
     }
 
+    /// 校验配置合法性（JPEG 质量 1-100、max_width 非零等），失败返回描述性错误。
     pub fn validate(&self) -> Result<(), String> {
         if self.jpeg_quality == 0 || self.jpeg_quality > 100 {
             return Err(format!(
@@ -96,6 +113,10 @@ impl ScreenshotConfig {
 
 // ---- dHash 感知哈希 ----
 
+/// 计算灰度像素缓冲区的 dHash（差异哈希），返回 64 位指纹。
+///
+/// 逐行比较相邻像素亮度，将比较结果编码到 bit 位中。
+/// 用于截帧去重：两帧 hash 相似度高于阈值则跳过。
 pub fn perceptual_hash(pixels: &[u8], w: u32, h: u32) -> u64 {
     let mut hash: u64 = 0;
     for row in 0..h.min(8) {
@@ -110,20 +131,24 @@ pub fn perceptual_hash(pixels: &[u8], w: u32, h: u32) -> u64 {
     hash
 }
 
+/// 两个 dHash 指纹之间的汉明距离（不同 bit 数）。
 pub fn hamming_distance(a: u64, b: u64) -> u32 {
     (a ^ b).count_ones()
 }
 
+/// 两帧的相似度，1.0 表示完全相同，0.0 表示完全不同。
 pub fn similarity(a: u64, b: u64) -> f64 {
     1.0 - (hamming_distance(a, b) as f64 / 64.0)
 }
 
+/// 判断两帧是否在给定阈值内相似。
 pub fn is_similar(a: u64, b: u64, threshold: f64) -> bool {
     similarity(a, b) >= threshold
 }
 
 // ---- 截图帧数据 ----
 
+/// 单帧 BGRA 像素数据及其尺寸。
 #[derive(Debug, Clone)]
 pub struct CapturedFrame {
     pub pixels: Vec<u8>,
@@ -131,6 +156,7 @@ pub struct CapturedFrame {
     pub height: u32,
 }
 
+/// 显示器的逻辑矩形区域（像素），用于多显示器拼接时的坐标计算。
 #[derive(Debug, Clone, Copy)]
 pub struct ScreenInfo {
     pub left: i32,
@@ -139,6 +165,7 @@ pub struct ScreenInfo {
     pub height: u32,
 }
 
+/// 将多帧水平拼接为一张完整图像，高度取最大值，不足部分填充透明。
 pub fn stitch_horizontal(frames: &[&CapturedFrame]) -> CapturedFrame {
     if frames.is_empty() {
         return CapturedFrame {
@@ -170,6 +197,10 @@ pub fn stitch_horizontal(frames: &[&CapturedFrame]) -> CapturedFrame {
 
 // ---- Resize + JPEG 编码 ----
 
+/// 将 BGRA 像素缓冲区按比例缩小到 `max_width` 以内，输出 RGB 数据。
+///
+/// 若原始宽度不超过 `max_width` 则直接转换颜色空间不缩放。
+/// 使用 Triangle 滤波以保证缩放质量。
 pub fn resize_bgra(
     bgra: &[u8],
     w: u32,
@@ -210,6 +241,7 @@ pub fn resize_bgra(
     Ok((rgb, out_w, out_h))
 }
 
+/// 将 RGB 像素编码为 JPEG 字节流，quality 范围 1-100。
 pub fn encode_jpeg(rgb: &[u8], w: u32, h: u32, quality: u8) -> Result<Vec<u8>, String> {
     use image::codecs::jpeg::JpegEncoder;
     use image::{ImageBuffer, RgbImage};
@@ -225,6 +257,7 @@ pub fn encode_jpeg(rgb: &[u8], w: u32, h: u32, quality: u8) -> Result<Vec<u8>, S
 
 // ---- 截图存储 ----
 
+/// 截图分析结果的持久化记录，包含 Vision 分析、感知哈希、尺寸和跳过标记。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ScreenshotRecord {
     pub analysis: crate::vision::VisionAnalysis,
@@ -236,20 +269,24 @@ pub struct ScreenshotRecord {
 }
 
 impl ScreenshotRecord {
+    /// 返回 Vision 分析的描述文本。
     pub fn description(&self) -> &str {
         &self.analysis.description
     }
 
+    /// 生成供 prompt 注入用的单行上下文文本。
     pub fn context_text(&self) -> String {
         self.analysis.to_context_text()
     }
 }
 
+/// 返回 `~/.ai-pad/screenshots/` 路径。
 pub fn screenshot_base_dir() -> Result<std::path::PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
     Ok(home.join(".ai-pad").join("screenshots"))
 }
 
+/// 确保当天日期子目录存在并返回其路径（如 `~/.ai-pad/screenshots/2025-06-01/`）。
 pub fn ensure_today_dir() -> Result<std::path::PathBuf, String> {
     let base = screenshot_base_dir()?;
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
@@ -258,6 +295,7 @@ pub fn ensure_today_dir() -> Result<std::path::PathBuf, String> {
     Ok(dir)
 }
 
+/// 将 JPEG 字节和分析记录写入当天目录（`HHMMSS.jpg` + `HHMMSS_analysis.json`）。
 pub fn save_screenshot(
     jpeg_bytes: &[u8],
     record: &ScreenshotRecord,
@@ -270,6 +308,7 @@ pub fn save_screenshot(
     Ok(jpg_path)
 }
 
+/// 将分析记录序列化为 JSON 写入指定目录，文件名由 prefix + suffix 组成。
 pub fn save_analysis_json(
     dir: &std::path::Path,
     prefix: &str,
@@ -283,6 +322,7 @@ pub fn save_analysis_json(
     Ok(())
 }
 
+/// 按文件名倒序读取最近 count 条分析记录（单目录）。
 pub fn list_recent_analyses(dir: &std::path::Path, count: u32) -> Vec<ScreenshotRecord> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
@@ -307,6 +347,7 @@ pub fn list_recent_analyses(dir: &std::path::Path, count: u32) -> Vec<Screenshot
         .collect()
 }
 
+/// 跨日期目录读取最近 count 条分析记录，优先取最新的日期。
 #[allow(dead_code)]
 pub fn list_recent_analyses_multi_day(
     base_dir: &std::path::Path,
@@ -341,6 +382,7 @@ pub fn list_recent_analyses_multi_day(
     results
 }
 
+/// 构建最近截图观察的 prompt 上下文片段（`[最近截图观察]...[/最近截图观察]`）。
 #[allow(dead_code)]
 pub fn build_recent_analyses_context(count: usize, max_chars: usize) -> String {
     let base = match screenshot_base_dir() {
@@ -350,6 +392,7 @@ pub fn build_recent_analyses_context(count: usize, max_chars: usize) -> String {
     build_recent_analyses_context_with_base(count, max_chars, &base)
 }
 
+/// 同 [`build_recent_analyses_context`]，但使用指定的 base_dir（方便测试）。
 pub fn build_recent_analyses_context_with_base(
     count: usize,
     max_chars: usize,
@@ -374,6 +417,7 @@ pub fn build_recent_analyses_context_with_base(
     result
 }
 
+/// 删除超过 keep_days 天的日期子目录，返回删除数量。
 pub fn cleanup_old_screenshots(keep_days: u64) -> Result<u32, String> {
     let base = screenshot_base_dir()?;
     if !base.exists() {

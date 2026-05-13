@@ -1,9 +1,15 @@
+//! 用户动作配置与程序启动逻辑
+//!
+//! 解析 config/actions.yml，定义手柄按键触发的动作（启动程序、执行命令、语音输入等）。
+//! launch_program 是跨模块共用的统一程序启动函数，处理终端包裹和参数传递。
+
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
 // ---- 数据结构 ----
 
+/// 全局默认配置（终端程序、窗口模式）
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Defaults {
     #[serde(default = "default_terminal")]
@@ -19,6 +25,7 @@ fn default_window() -> String {
     "maximized".into()
 }
 
+/// 动作配置根结构：全局默认值 + 按钮名称到动作定义的映射
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ActionConfig {
     #[serde(default)]
@@ -26,6 +33,7 @@ pub struct ActionConfig {
     pub actions: std::collections::HashMap<String, ActionDef>,
 }
 
+/// 单个动作定义：可启动程序、执行命令或触发语音输入
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ActionDef {
     #[serde(rename = "type")]
@@ -56,6 +64,7 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
+/// 语音输入触发配置
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct VoiceConfig {
     #[serde(default)]
@@ -95,6 +104,7 @@ fn resolve_save_path(path: &str) -> PathBuf {
 }
 
 impl ActionConfig {
+    /// 从 YAML 文件加载动作配置，文件不存在时回退到编译时嵌入的默认值
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let content = load_config_content(path, DEFAULT_YML);
         let config: ActionConfig = serde_yaml::from_str(&content)?;

@@ -1,3 +1,13 @@
+//! 视觉分析：构建 Anthropic Messages 图片分析请求并解析结构化响应。
+//!
+//! 将截图的 base64 JPEG 发送给 Vision API，通过 JSON schema 约束返回
+//! [`VisionAnalysis`]（描述、应用列表、屏幕状态、置信度）等结构化字段，
+//! 确保下游可程序化处理而非依赖自由文本。
+//!
+//! 与 [`app/src/screenshot.rs`](crate::screenshot) 协作：app 侧负责 BitBlt 截屏
+//! 并调用本模块的 [`analyze_screenshot`] 完成 API 交互，结果经
+//! [`screen_summary`](crate::screen_summary) 聚合后注入 AI prompt 上下文。
+
 use rig::OneOrMany;
 use rig::client::CompletionClient;
 use rig::completion::Message;
@@ -16,6 +26,7 @@ use tracing::{debug, info};
 
 // ---- 配置 ----
 
+/// Vision API 的可选模型与 token 上限配置，来自 prompts.yml 的 vision 段。
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct VisionConfig {
     #[serde(default)]
@@ -24,6 +35,7 @@ pub struct VisionConfig {
     pub vision_max_tokens: Option<u32>,
 }
 
+/// Vision API 返回的结构化分析结果，通过 JSON schema 约束模型输出。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VisionAnalysis {
     pub description: String,
@@ -38,6 +50,7 @@ pub struct VisionAnalysis {
 }
 
 impl VisionAnalysis {
+    /// 将分析结果格式化为单行上下文文本，供 prompt 注入使用。
     pub fn to_context_text(&self) -> String {
         let apps = if self.apps.is_empty() {
             "unknown".to_string()
@@ -67,6 +80,7 @@ impl Default for VisionAnalysis {
     }
 }
 
+/// 屏幕状态的分类枚举，作为 VisionAnalysis 的子字段。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum VisionState {
@@ -84,6 +98,7 @@ impl Default for VisionState {
 }
 
 impl VisionState {
+    /// 返回用于日志和上下文的简短标签字符串。
     pub fn label(&self) -> &str {
         match self {
             Self::Working { .. } => "working",
@@ -155,6 +170,8 @@ pub fn parse_vision_response(response: &Value) -> Result<String, String> {
     Ok(texts.join(""))
 }
 
+/// 从 API 响应中提取文本并反序列化为 [`VisionAnalysis`]。
+/// 自动剥离 markdown 代码围栏（```json ... ```）。
 pub fn parse_vision_analysis_response(response: &Value) -> Result<VisionAnalysis, String> {
     let text = parse_vision_response(response)?;
     let json_text = normalize_json_text(&text);
@@ -162,6 +179,7 @@ pub fn parse_vision_analysis_response(response: &Value) -> Result<VisionAnalysis
         .map_err(|e| format!("解析结构化视觉分析失败: {e}"))
 }
 
+/// 剥离 markdown 代码围栏（```json ... ```），返回纯 JSON 文本。
 fn normalize_json_text(text: &str) -> &str {
     let trimmed = text.trim();
     let Some(after_opening) = trimmed.strip_prefix("```") else {

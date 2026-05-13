@@ -1,3 +1,34 @@
+//! ai-pad-core：8Bit 桌宠的纯逻辑层。
+//!
+//! 本 crate 封装了 AI Agent 对话、宠物状态机、按键映射、截图分析、记忆系统等
+//! 全部业务逻辑，不依赖任何 UI 或窗口框架，可独立进行单元测试。
+//!
+//! 之所以把逻辑从 app crate 中剥离，是为了让核心能力在脱离 SDL2 / Tauri /
+//! WebView2 等平台组件时仍可编译和测试，显著加快迭代速度。
+//!
+//! app crate 通过 `use ai_pad_core::...` 引入数据结构和函数，负责窗口管理、
+//! 手柄输入循环、IPC 通信等平台相关职责；core 自身不感知窗口或渲染。
+//!
+//! 核心子模块概览：
+//! - `agent` — 基于 rig-core 的 AI 流式对话与工具注册
+//! - `bridge` — 手柄按键 → Agent 命令 → 宠物动画的桥接映射
+//! - `pet` — 宠物状态机（6 状态、帧动画）
+//! - `memory` — 滚动窗口对话记忆
+//! - `vision` / `screenshot` — 截图捕获与 Vision API 分析
+//! - `prompts` — 统一提示词配置
+//! - `user_profile` — 用户画像
+//! - `action` / `hotkey` — 快捷键与动作定义、Win32 SendInput 模拟
+//! - `ai_config` — AI 模型密钥、base URL、模型名等运行时配置
+//! - `app_settings` — 应用全局设置（窗口位置、截图间隔等）
+//! - `config` — 通用配置文件加载基础设施
+//! - `dance` — 舞蹈编排与播放
+//! - `device` — 手柄设备枚举与连接管理
+//! - `logging` — 日志工具函数（log_preview 等）
+//! - `permission_hook` — rig-core 工具调用的权限拦截钩子
+//! - `screen_summary` — 截图摘要注入 prompt 构建
+//! - `token_tracker` — Token 用量统计与持久化
+//! - `tools` — 内置工具的参数类型与执行逻辑
+
 pub mod action;
 pub mod agent;
 pub mod ai_config;

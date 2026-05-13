@@ -1,3 +1,9 @@
+//! 键盘热键模拟与剪贴板读取
+//!
+//! 将按键名解析为 Windows Virtual Key Code，通过 SendInput API 模拟按键组合、
+//! 单键按下/释放、鼠标滚轮和窗口前置。供 hotkey.rs（动作热键）、panel.rs（导航）
+//! 和 bridge.rs（AI 工具调用）等模块共用。
+
 use std::collections::HashMap;
 use std::sync::OnceLock;
 

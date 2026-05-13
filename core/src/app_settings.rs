@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+/// 应用级配置覆盖层，包含 AI 服务覆盖和外观/行为设置
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct AppSettings {
     #[serde(default)]
@@ -19,6 +20,7 @@ pub struct AppSettings {
     pub appearance: AppearanceSettings,
 }
 
+/// AI 服务配置覆盖字段（api_key / base_url / model / max_tokens），均为可选
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct AiOverride {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -31,6 +33,7 @@ pub struct AiOverride {
     pub max_tokens: Option<u64>,
 }
 
+/// 外观与行为设置：置顶、折叠、TTS、全局快捷键、截图间隔等
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct AppearanceSettings {
     #[serde(default = "default_true")]

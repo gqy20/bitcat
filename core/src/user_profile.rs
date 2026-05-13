@@ -1,9 +1,16 @@
+//! 用户画像配置（显式声明）
+//!
+//! 从 config/user.yml 加载用户主动填写的身份信息（名字、身份、偏好、语言等），
+//! 构建 `[关于主人]...[/关于主人]` 格式的上下文注入 AI prompt。
+//! 优先级高于 ProfileStore 的自动聚合画像：user.yml 非空时直接使用。
+
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
 // ---- 数据结构 ----
 
+/// 用户显式声明的身份信息，存储在 config/user.yml
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct UserProfile {
     #[serde(default)]
