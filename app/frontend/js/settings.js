@@ -9,10 +9,10 @@ const { invoke } = window.__TAURI__.core;
 const ACTION_TYPES = ["unbound", "launch", "hotkey", "script", "voice"];
 const ACTION_TYPE_LABELS = {
   unbound: "未绑定",
-  launch: "启动程序 (launch)",
-  hotkey: "按键序列 (hotkey)",
-  script: "脚本命令 (script)",
-  voice: "语音触发 (voice)",
+  launch: "启动程序",
+  hotkey: "按键序列",
+  script: "脚本命令",
+  voice: "语音触发",
 };
 
 // 全量快照（来自后端）
@@ -74,11 +74,11 @@ function renderAi(ai) {
 
   const eff = ai.effective;
   $("ai-effective").innerHTML =
-    `<div>当前生效：</div>` +
-    `<div>• API Key：<b>${ai.has_effective_key ? "已配置" : "（空）"}</b></div>` +
-    `<div>• Base URL：<b>${escapeHtml(eff.base_url)}</b></div>` +
-    `<div>• 模型：<b>${escapeHtml(eff.model)}</b></div>` +
-    `<div>• Max Tokens：<b>${eff.max_tokens}</b></div>`;
+    `<div class="effective-title">当前生效</div>` +
+    `<div class="effective-item"><span>API Key</span><b>${ai.has_effective_key ? "已配置" : "未配置"}</b></div>` +
+    `<div class="effective-item"><span>Base URL</span><b title="${escapeAttr(eff.base_url)}">${escapeHtml(eff.base_url)}</b></div>` +
+    `<div class="effective-item"><span>模型</span><b title="${escapeAttr(eff.model)}">${escapeHtml(eff.model)}</b></div>` +
+    `<div class="effective-item"><span>Max Tokens</span><b>${formatNumber(eff.max_tokens)}</b></div>`;
 
   ["ai-key", "ai-baseurl", "ai-model", "ai-maxtokens"].forEach(id => {
     $(id).oninput = () => markDirty("ai");
@@ -131,43 +131,61 @@ function renderActionItem(btn, def) {
 
   const curType = def ? def.action_type : "unbound";
   const trigHintText = def && Array.isArray(def.trigger) && def.trigger.length > 0
-    ? "trigger: " + def.trigger.join("+")
+    ? def.trigger.join(" + ")
     : "";
+  const meta = [btn.label, btn.position, trigHintText && `触发 ${trigHintText}`].filter(Boolean).join(" · ");
+  const workingDef = def ? { ...def } : { action_type: "unbound" };
 
   el.innerHTML = `
     <div class="ai-head">
       <div class="key-block">
-        <div class="key">${escapeHtml(btn.name)}</div>
-        <div class="key-label">${escapeHtml(btn.label || "")}</div>
-        <div class="key-pos">${escapeHtml(btn.position || "")}</div>
+        <span class="key">${escapeHtml(btn.name)}</span>
+        <span class="key-meta">${escapeHtml(meta || "自定义按键")}</span>
       </div>
+      <span class="action-summary">${escapeHtml(actionSummary(workingActionType(def), def))}</span>
       <select class="a-type" title="动作类型">
         ${ACTION_TYPES.map(t => `<option value="${t}" ${t === curType ? "selected" : ""}>${escapeHtml(ACTION_TYPE_LABELS[t] || t)}</option>`).join("")}
       </select>
-      <span class="trig-hint">${escapeHtml(trigHintText)}</span>
     </div>
     <div class="ai-body"></div>
   `;
 
   const body = el.querySelector(".ai-body");
-  const workingDef = def ? { ...def } : { action_type: "unbound" };
-  renderActionBody(body, workingDef);
+  const summary = el.querySelector(".action-summary");
+  const refreshSummary = () => {
+    if (summary) summary.textContent = actionSummary(workingDef.action_type, workingDef);
+  };
+  renderActionBody(body, workingDef, refreshSummary);
 
   const sel = el.querySelector(".a-type");
   sel.addEventListener("change", () => {
     workingDef.action_type = sel.value;
     el.classList.toggle("unbound", sel.value === "unbound");
-    renderActionBody(body, workingDef);
+    refreshSummary();
+    renderActionBody(body, workingDef, refreshSummary);
     markDirty("actions");
   });
   return el;
 }
 
-function renderActionBody(body, def) {
+function workingActionType(def) {
+  return def ? def.action_type : "unbound";
+}
+
+function actionSummary(type, def) {
+  if (!def || type === "unbound") return "未写入";
+  if (type === "launch") return def.program ? `打开 ${def.program}` : "启动程序";
+  if (type === "hotkey") return def.command || "按键序列";
+  if (type === "script") return def.command || "脚本命令";
+  if (type === "voice") return "语音触发";
+  return ACTION_TYPE_LABELS[type] || type;
+}
+
+function renderActionBody(body, def, onChange = () => {}) {
   body.innerHTML = "";
   const t = def.action_type;
   if (t === "unbound") {
-    body.innerHTML = `<div class="hint" style="margin:0;font-size:11.5px;color:#8d939a;">未绑定：保存后该按键将从 actions.yml 中移除。</div>`;
+    body.innerHTML = "";
     return;
   }
   const mk = (label, id, val, type = "text") => {
@@ -175,7 +193,11 @@ function renderActionBody(body, def) {
     row.className = "row";
     row.innerHTML = `<label>${label}</label><input data-field="${id}" type="${type}" value="${escapeAttr(val ?? "")}" />`;
     body.appendChild(row);
-    row.querySelector("input").oninput = () => markDirty("actions");
+    row.querySelector("input").oninput = (event) => {
+      setWorkingActionField(def, id, event.target.value);
+      onChange();
+      markDirty("actions");
+    };
     return row;
   };
   const mkToggle = (label, id, val) => {
@@ -183,24 +205,43 @@ function renderActionBody(body, def) {
     row.className = "row toggle";
     row.innerHTML = `<label>${label}</label><input data-field="${id}" type="checkbox" ${val ? "checked" : ""} />`;
     body.appendChild(row);
-    row.querySelector("input").onchange = () => markDirty("actions");
+    row.querySelector("input").onchange = (event) => {
+      setWorkingActionField(def, id, event.target.checked);
+      onChange();
+      markDirty("actions");
+    };
   };
 
   if (t === "launch") {
-    mk("程序 program", "program", def.program || "");
-    mk("参数 args", "args", def.args || "");
-    mk("工作目录 workdir", "workdir", def.workdir || "");
-    mkToggle("终端启动 terminal", "terminal", !!def.terminal);
+    mk("程序", "program", def.program || "");
+    mk("参数", "args", def.args || "");
+    mk("工作目录", "workdir", def.workdir || "");
+    mkToggle("终端启动", "terminal", !!def.terminal);
   } else if (t === "hotkey" || t === "script") {
-    mk("命令 command", "command", def.command || "");
+    mk("命令", "command", def.command || "");
   } else if (t === "voice") {
     const trig = def.voice?.trigger?.join(",") ?? "";
     const delay = def.voice?.delay ?? 1.0;
-    mk("语音触发键 trigger (逗号分隔)", "voice-trigger", trig);
-    mk("延迟 delay (秒)", "voice-delay", delay, "number");
+    mk("触发键", "voice-trigger", trig);
+    mk("延迟（秒）", "voice-delay", delay, "number");
   }
-  // 所有非 unbound 动作都可额外绑定一个键盘全局热键（改后需重启生效）
-  mk("键盘热键 keyboard_shortcut (可选，如 Ctrl+Alt+D，需重启生效)", "kbd", def.keyboard_shortcut || "");
+  mk("键盘热键", "kbd", def.keyboard_shortcut || "");
+}
+
+function setWorkingActionField(def, id, value) {
+  if (id === "program") def.program = value;
+  else if (id === "args") def.args = value;
+  else if (id === "workdir") def.workdir = value;
+  else if (id === "terminal") def.terminal = value;
+  else if (id === "command") def.command = value;
+  else if (id === "kbd") def.keyboard_shortcut = value;
+  else if (id === "voice-trigger") {
+    def.voice = def.voice || {};
+    def.voice.trigger = String(value || "").split(",").map(s => s.trim()).filter(Boolean);
+  } else if (id === "voice-delay") {
+    def.voice = def.voice || {};
+    def.voice.delay = parseFloat(value) || 1.0;
+  }
 }
 
 function collectActions() {
@@ -302,14 +343,14 @@ function renderAbout(a) {
 async function loadTokenStats() {
   const status = $("usage-status");
   if (!status) return;
-  status.textContent = "正在读取统计...";
+  status.textContent = "读取中...";
   try {
     const stats = await invoke("cmd_get_token_stats");
     renderTokenStats(stats);
-    status.textContent = `已更新：${formatDateTime(stats.generated_at)}`;
+    status.textContent = `更新于 ${formatDateTime(stats.generated_at)}`;
   } catch (e) {
     log("加载 token 统计失败: " + e);
-    status.textContent = "统计读取失败：" + String(e);
+    status.textContent = "读取失败：" + String(e);
     renderTokenStats(null);
   }
 }

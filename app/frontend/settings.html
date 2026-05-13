@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>8Bit Cat 设置</title>
+  <link rel="icon" href="data:," />
   <link rel="stylesheet" href="/css/settings.css" />
 </head>
 <body>
@@ -20,53 +21,73 @@
 
     <div class="body">
       <aside class="nav">
-        <button class="nav-item active" data-tab="ai"><span class="icon">🤖</span><span>AI 模型</span></button>
-        <button class="nav-item" data-tab="usage"><span class="icon">📊</span><span>用量统计</span></button>
-        <button class="nav-item" data-tab="actions"><span class="icon">🎮</span><span>按键绑定</span></button>
-        <button class="nav-item" data-tab="prompts"><span class="icon">💬</span><span>Prompt</span></button>
-        <button class="nav-item" data-tab="appearance"><span class="icon">🎨</span><span>外观行为</span></button>
-        <button class="nav-item" data-tab="about"><span class="icon">ℹ️</span><span>关于</span></button>
+        <div class="nav-kicker">Control</div>
+        <button class="nav-item active" data-tab="ai"><span class="icon icon-ai"></span><span>AI 模型</span></button>
+        <button class="nav-item" data-tab="usage"><span class="icon icon-usage"></span><span>用量统计</span></button>
+        <button class="nav-item" data-tab="actions"><span class="icon icon-actions"></span><span>按键绑定</span></button>
+        <button class="nav-item" data-tab="prompts"><span class="icon icon-prompts"></span><span>Prompt</span></button>
+        <button class="nav-item" data-tab="appearance"><span class="icon icon-appearance"></span><span>外观行为</span></button>
+        <button class="nav-item" data-tab="about"><span class="icon icon-about"></span><span>关于</span></button>
       </aside>
 
       <main class="pane">
-        <!-- AI -->
         <section class="tab" data-pane="ai">
-          <h2>AI 模型</h2>
-          <p class="hint">修改将写入 app_settings.json 覆盖层；<code>~/.claude/settings.json</code> 只读不写。留空则回退到下一级（环境变量 / Claude settings / 默认）。</p>
-          <div class="row">
-            <label>API Key</label>
-            <div class="input-with-action">
-              <input id="ai-key" type="password" placeholder="（已保存：****）" autocomplete="off" />
-              <button class="mini" id="ai-key-toggle" type="button">👁</button>
+          <div class="pane-head">
+            <div>
+              <p class="eyebrow">Model Gateway</p>
+              <h2>AI 模型</h2>
+              <p class="hint">只设置需要覆盖的字段；留空自动回退。</p>
             </div>
           </div>
-          <div class="row">
-            <label>Base URL</label>
-            <input id="ai-baseurl" type="text" placeholder="https://api.anthropic.com" />
-          </div>
-          <div class="row">
-            <label>模型</label>
-            <input id="ai-model" type="text" placeholder="claude-sonnet-4-20250514" />
-          </div>
-          <div class="row">
-            <label>Max Tokens</label>
-            <input id="ai-maxtokens" type="number" min="1" placeholder="256000" />
+
+          <div class="settings-card">
+            <div class="setting-row">
+              <div class="setting-copy">
+                <label for="ai-key">API Key</label>
+                <span>保存在本机覆盖层。</span>
+              </div>
+              <div class="input-with-action">
+                <input id="ai-key" type="password" placeholder="已保存则留空" autocomplete="off" />
+                <button class="icon-btn" id="ai-key-toggle" type="button" title="显示或隐藏 API Key"><span class="icon-eye"></span></button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-copy">
+                <label for="ai-baseurl">Base URL</label>
+                <span>Anthropic 兼容接口地址。</span>
+              </div>
+              <input id="ai-baseurl" type="text" placeholder="https://api.anthropic.com" />
+            </div>
+            <div class="setting-row">
+              <div class="setting-copy">
+                <label for="ai-model">模型</label>
+                <span>例如 claude-sonnet 或 glm 系列。</span>
+              </div>
+              <input id="ai-model" type="text" placeholder="claude-sonnet-4-20250514" />
+            </div>
+            <div class="setting-row">
+              <div class="setting-copy">
+                <label for="ai-maxtokens">Max Tokens</label>
+                <span>留空使用默认上限。</span>
+              </div>
+              <input id="ai-maxtokens" type="number" min="1" placeholder="256000" />
+            </div>
           </div>
           <div class="effective" id="ai-effective"></div>
         </section>
 
-        <!-- Usage -->
         <section class="tab hidden" data-pane="usage">
-          <div class="section-title">
+          <div class="pane-head usage-head">
             <div>
+              <p class="eyebrow">Local Ledger</p>
               <h2>用量统计</h2>
-              <p class="hint">从本机 token_usage.jsonl 与 token_sessions.json 读取，只展示本地记录。</p>
+              <p class="hint">本机 token 记录，不上传、不同步。</p>
             </div>
-            <button id="usage-refresh" class="mini" type="button">刷新</button>
+            <button id="usage-refresh" class="btn small" type="button">刷新</button>
           </div>
 
           <div class="usage-summary">
-            <div class="usage-metric">
+            <div class="usage-metric primary">
               <span>今日总量</span>
               <strong id="usage-total">-</strong>
             </div>
@@ -85,7 +106,7 @@
           </div>
 
           <div class="usage-block">
-            <div class="usage-block-title">各链路占比</div>
+            <div class="usage-block-title">链路占比</div>
             <div id="usage-breakdown" class="usage-breakdown"></div>
           </div>
 
@@ -94,105 +115,176 @@
             <div id="usage-sessions" class="usage-sessions"></div>
           </div>
 
-          <div class="row col usage-paths">
-            <label>统计文件</label>
+          <details class="quiet-details usage-paths">
+            <summary>统计文件</summary>
             <span id="usage-paths" class="ro mono">-</span>
-          </div>
-          <div id="usage-status" class="hint"></div>
+          </details>
+          <div id="usage-status" class="status-line"></div>
         </section>
 
-        <!-- Actions -->
         <section class="tab hidden" data-pane="actions">
-          <h2>按键绑定</h2>
-          <p class="hint">保存后立即热重载。默认终端与窗口模式在顶部设置。</p>
-          <div class="row">
-            <label>默认终端</label>
-            <select id="actions-term">
-              <option value="powershell">powershell（Windows PowerShell 5.1）</option>
-              <option value="pwsh">pwsh（PowerShell 7）</option>
-              <option value="cmd">cmd（传统命令提示符）</option>
-              <option value="wt">wt（Windows Terminal）</option>
-            </select>
+          <div class="pane-head">
+            <div>
+              <p class="eyebrow">Controller Map</p>
+              <h2>按键绑定</h2>
+              <p class="hint">保存后热重载；全局键盘热键仍需重启。</p>
+            </div>
           </div>
-          <div class="row">
-            <label>默认窗口</label>
-            <select id="actions-win">
-              <option value="maximized">maximized（最大化）</option>
-              <option value="normal">normal（默认尺寸）</option>
-              <option value="minimized">minimized（最小化后台）</option>
-            </select>
+          <div class="settings-card compact">
+            <div class="setting-row">
+              <div class="setting-copy">
+                <label for="actions-term">默认终端</label>
+                <span>启动脚本和命令时使用。</span>
+              </div>
+              <select id="actions-term">
+                <option value="powershell">PowerShell 5.1</option>
+                <option value="pwsh">PowerShell 7</option>
+                <option value="cmd">Command Prompt</option>
+                <option value="wt">Windows Terminal</option>
+              </select>
+            </div>
+            <div class="setting-row">
+              <div class="setting-copy">
+                <label for="actions-win">默认窗口</label>
+                <span>终端窗口打开方式。</span>
+              </div>
+              <select id="actions-win">
+                <option value="maximized">最大化</option>
+                <option value="normal">默认尺寸</option>
+                <option value="minimized">最小化后台</option>
+              </select>
+            </div>
           </div>
-          <div class="section-sep"></div>
           <div id="actions-list"></div>
         </section>
 
-        <!-- Prompts -->
         <section class="tab hidden" data-pane="prompts">
-          <h2>Prompt</h2>
-          <p class="hint">修改将写回 prompts.yml（原文件自动备份为 <code>.bak</code>）。</p>
-          <div class="row col">
-            <label>Agent Preamble</label>
-            <textarea id="p-agent" rows="8"></textarea>
+          <div class="pane-head">
+            <div>
+              <p class="eyebrow">Prompt Studio</p>
+              <h2>Prompt</h2>
+              <p class="hint">写回 prompts.yml，保存前会生成 .bak。</p>
+            </div>
           </div>
-          <div class="row col">
-            <label>Vision Prompt</label>
-            <textarea id="p-vision" rows="6"></textarea>
+          <div class="editor-stack">
+            <div class="editor-panel">
+              <div class="editor-head">
+                <label for="p-agent">Agent Preamble</label>
+                <span>人格与对话风格</span>
+              </div>
+              <textarea id="p-agent" rows="8"></textarea>
+            </div>
+            <div class="editor-panel">
+              <div class="editor-head">
+                <label for="p-vision">Vision Prompt</label>
+                <span>单屏理解规则</span>
+              </div>
+              <textarea id="p-vision" rows="6"></textarea>
+            </div>
+            <div class="editor-panel">
+              <div class="editor-head">
+                <label for="p-vision-multi">Vision Prompt · 多屏</label>
+                <span>多显示器摘要规则</span>
+              </div>
+              <textarea id="p-vision-multi" rows="3"></textarea>
+            </div>
           </div>
-          <div class="row col">
-            <label>Vision Prompt (多屏)</label>
-            <textarea id="p-vision-multi" rows="3"></textarea>
-          </div>
-          <div class="row">
-            <label>Memory 最大条数</label>
-            <input id="p-mem-max" type="number" min="1" />
-          </div>
-          <div class="row">
-            <label>Memory 最大上下文字符</label>
-            <input id="p-mem-ctx" type="number" min="0" />
-          </div>
-          <div class="row">
-            <label>屏幕摘要间隔（分钟）</label>
-            <input id="p-ss-interval" type="number" min="1" />
+          <div class="settings-card compact">
+            <div class="setting-row">
+              <div class="setting-copy">
+                <label for="p-mem-max">Memory 条数</label>
+                <span>保留的滚动记忆条目。</span>
+              </div>
+              <input id="p-mem-max" type="number" min="1" />
+            </div>
+            <div class="setting-row">
+              <div class="setting-copy">
+                <label for="p-mem-ctx">Memory 上下文</label>
+                <span>注入 prompt 的最大字符数。</span>
+              </div>
+              <input id="p-mem-ctx" type="number" min="0" />
+            </div>
+            <div class="setting-row">
+              <div class="setting-copy">
+                <label for="p-ss-interval">屏幕摘要</label>
+                <span>间隔，单位分钟。</span>
+              </div>
+              <input id="p-ss-interval" type="number" min="1" />
+            </div>
           </div>
         </section>
 
-        <!-- Appearance -->
         <section class="tab hidden" data-pane="appearance">
-          <h2>外观与行为</h2>
-          <div class="row toggle">
-            <label>默认置顶</label>
-            <input id="a-top" type="checkbox" />
+          <div class="pane-head">
+            <div>
+              <p class="eyebrow">Surface</p>
+              <h2>外观与行为</h2>
+              <p class="hint">控制桌宠的常驻、启动和观察方式。</p>
+            </div>
           </div>
-          <div class="row toggle">
-            <label>启动时折叠</label>
-            <input id="a-collapsed" type="checkbox" />
+          <div class="settings-card">
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="a-top">默认置顶</label>
+                <span>窗口保持在其他应用上方。</span>
+              </div>
+              <input id="a-top" type="checkbox" />
+            </div>
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="a-collapsed">启动时折叠</label>
+                <span>启动后先保持轻量状态。</span>
+              </div>
+              <input id="a-collapsed" type="checkbox" />
+            </div>
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="a-tts">TTS 语音</label>
+                <span>允许语音播报回复。</span>
+              </div>
+              <input id="a-tts" type="checkbox" />
+            </div>
+            <div class="setting-row">
+              <div class="setting-copy">
+                <label for="a-shortcut">全局快捷键</label>
+                <span>更改后重启完全生效。</span>
+              </div>
+              <input id="a-shortcut" type="text" placeholder="CommandOrControl+Alt+Space" />
+            </div>
+            <div class="setting-row">
+              <div class="setting-copy">
+                <label for="a-ss-interval">截屏分析</label>
+                <span>5-3600 秒；对话中暂停。</span>
+              </div>
+              <input id="a-ss-interval" type="number" min="5" max="3600" step="5" placeholder="30" />
+            </div>
           </div>
-          <div class="row toggle">
-            <label>TTS 语音</label>
-            <input id="a-tts" type="checkbox" />
-          </div>
-          <div class="row">
-            <label>全局快捷键</label>
-            <input id="a-shortcut" type="text" placeholder="CommandOrControl+Alt+Space" />
-          </div>
-          <div class="row">
-            <label>截屏分析间隔（秒）</label>
-            <input id="a-ss-interval" type="number" min="5" max="3600" step="5" placeholder="30" />
-          </div>
-          <p class="hint">全局快捷键的实时切换需要重启应用才完全生效。截屏间隔 5~3600 秒，对话进行时自动锁定不触发分析。</p>
         </section>
 
-        <!-- About -->
         <section class="tab hidden" data-pane="about">
-          <h2>关于</h2>
-          <div class="row"><label>版本</label><span id="about-version" class="ro">-</span></div>
-          <div class="row col"><label>app_settings.json 路径</label><span id="about-settings-path" class="ro mono">-</span></div>
-          <div class="row col"><label>actions.yml</label><span id="about-actions-hint" class="ro mono">-</span></div>
-          <div class="row col"><label>prompts.yml</label><span id="about-prompts-hint" class="ro mono">-</span></div>
-          <div class="row">
-            <label>项目地址</label>
-            <span class="ro">GitHub: 8Bit Cat</span>
+          <div class="pane-head">
+            <div>
+              <p class="eyebrow">About</p>
+              <h2>关于</h2>
+              <p class="hint">版本与本机配置位置。</p>
+            </div>
           </div>
+          <div class="settings-card about-card">
+            <div class="setting-row">
+              <div class="setting-copy"><label>版本</label></div>
+              <span id="about-version" class="ro value">-</span>
+            </div>
+            <div class="setting-row">
+              <div class="setting-copy"><label>项目地址</label></div>
+              <span class="ro value">GitHub: 8Bit Cat</span>
+            </div>
+          </div>
+          <details class="quiet-details about-details" open>
+            <summary>本机文件</summary>
+            <div class="file-line"><span>app_settings.json</span><code id="about-settings-path">-</code></div>
+            <div class="file-line"><span>actions.yml</span><code id="about-actions-hint">-</code></div>
+            <div class="file-line"><span>prompts.yml</span><code id="about-prompts-hint">-</code></div>
+          </details>
         </section>
       </main>
     </div>
