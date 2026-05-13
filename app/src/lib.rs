@@ -42,6 +42,7 @@ pub fn run() {
             panel::cmd_panel_log,
             bubble::cmd_consume_bubble_text,
             bubble::cmd_hide_bubble,
+            bubble::cmd_reposition_bubble,
             voice::cmd_voice_update_text,
             voice::cmd_voice_get_text,
             snap::cmd_recreate_pet_window,

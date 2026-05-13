@@ -60,16 +60,11 @@
     // 首次 show 时，如果有保存的偏好尺寸，先应用
     if (resizeMode === 'auto' && userPrefSize && window.__TAURI__ && window.__TAURI__.window) {
       resizeMode = 'manual';
-      var win = window.__TAURI__.window.getCurrentWindow();
-      win.setSize(new window.__TAURI__.window.LogicalSize(
+      resizeBubbleWindow(
         Math.max(MIN_W, Math.min(MAX_W, userPrefSize.w)),
-        Math.max(MIN_H, Math.min(ABS_MAX_H, userPrefSize.h))
-      )).then(function() {
-        currentWinW = userPrefSize.w;
-        currentWinH = userPrefSize.h;
-        document.documentElement.style.width = userPrefSize.w + 'px';
-        document.body.style.width = userPrefSize.w + 'px';
-      }).catch(function() {});
+        Math.max(MIN_H, Math.min(ABS_MAX_H, userPrefSize.h)),
+        true
+      );
     }
     document.body.classList.add('show');
   }
@@ -84,6 +79,37 @@
   function startHideTimer() {
     clearHideTimer();
     hideTimer = setTimeout(hide, HIDE_AFTER_MS);
+  }
+
+  function syncCssWidth(width) {
+    document.documentElement.style.width = width + 'px';
+    document.body.style.width = width + 'px';
+  }
+
+  function repositionBubbleWindow() {
+    if (!window.__TAURI__ || !window.__TAURI__.core) return Promise.resolve();
+    return window.__TAURI__.core.invoke('cmd_reposition_bubble')
+      .catch(function(e) {
+        diag('reposition failed: ' + e);
+      });
+  }
+
+  function resizeBubbleWindow(targetW, targetH, shouldReposition) {
+    if (!window.__TAURI__ || !window.__TAURI__.window) return Promise.resolve(false);
+
+    var win = window.__TAURI__.window.getCurrentWindow();
+    return win.setSize(new window.__TAURI__.window.LogicalSize(targetW, targetH))
+      .then(function() {
+        currentWinW = targetW;
+        currentWinH = targetH;
+        syncCssWidth(targetW);
+        if (shouldReposition) return repositionBubbleWindow();
+      })
+      .then(function() { return true; })
+      .catch(function(e) {
+        diag('resize failed: w=' + targetW + ' h=' + targetH + ' err=' + e);
+        return false;
+      });
   }
 
   /// 根据实际渲染高度动态调整窗口高度
@@ -105,22 +131,8 @@
     var newH = Math.round(neededH);
     var sizeChanged = (newH !== currentWinH || targetW !== currentWinW);
 
-    if (sizeChanged && window.__TAURI__ && window.__TAURI__.window) {
-      var deltaH = newH - currentWinH;
-      currentWinH = newH;
-      currentWinW = targetW;
-      var win = window.__TAURI__.window.getCurrentWindow();
-      win.setSize(new window.__TAURI__.window.LogicalSize(targetW, newH))
-        .then(function() {
-          if (deltaH !== 0) {
-            return win.outerPosition().then(function(pos) {
-              return win.setPosition(
-                new window.__TAURI__.window.LogicalPosition(pos.x, pos.y - deltaH)
-              );
-            });
-          }
-        })
-        .catch(function() {});
+    if (sizeChanged) {
+      resizeBubbleWindow(targetW, newH, true);
     }
   }
 
@@ -173,21 +185,15 @@
 
   function hide() {
     stopPolling();
-    hideInput('hide-bubble'); // 隐藏时一并收起输入框
-    // 隐藏时重置为 AUTO 模式 + 恢复默认尺寸（不清除 localStorage 偏好）
+    hideInput('hide-bubble');
     resizeMode = 'auto';
-    // 隐藏前恢复默认尺寸
-    if (window.__TAURI__ && window.__TAURI__.window) {
-      window.__TAURI__.window.getCurrentWindow()
-        .setSize(new window.__TAURI__.window.LogicalSize(280, MIN_H))
-        .catch(() => {});
-      currentWinH = MIN_H;
-      currentWinW = 280;
-    }
+    resizeBubbleWindow(280, MIN_H, false);
     document.body.classList.remove('show');
     document.body.classList.add('hidden');
     if (window.__TAURI__ && window.__TAURI__.core) {
-      window.__TAURI__.core.invoke('cmd_hide_bubble').catch(() => {});
+      window.__TAURI__.core.invoke('cmd_hide_bubble').catch(function(e) {
+        diag('hide bubble failed: ' + e);
+      });
     }
   }
 
@@ -550,7 +556,9 @@
         e.preventDefault();
         e.stopPropagation();
         resizeMode = 'manual';
-        win.startResizeDragging('SouthEast').catch(function() {});
+        win.startResizeDragging('SouthEast').catch(function(e) {
+          diag('startResizeDragging failed: ' + e);
+        });
       });
 
       // 双击 grip → 回到 AUTO 模式
@@ -575,10 +583,12 @@
             currentWinH = h;
             localStorage.setItem('bubble_pref', JSON.stringify(userPrefSize));
             // CSS 跟随宽度变化
-            document.documentElement.style.width = w + 'px';
-            document.body.style.width = w + 'px';
+            syncCssWidth(w);
             diag('resize: manual size updated w=' + w + ' h=' + h);
-          }).catch(function() {});
+            repositionBubbleWindow();
+          }).catch(function(e) {
+            diag('manual resize read failed: ' + e);
+          });
         }
       });
     }

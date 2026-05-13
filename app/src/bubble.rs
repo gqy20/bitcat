@@ -391,6 +391,15 @@ pub async fn cmd_hide_bubble(app: AppHandle) -> Result<(), String> {
     hide_bubble_window(&app)
 }
 
+/// Recompute bubble placement from Rust after the frontend changes its size.
+#[tauri::command]
+pub async fn cmd_reposition_bubble(app: AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("bubble") {
+        position_above_pet(&app, &w);
+    }
+    Ok(())
+}
+
 pub fn hide_bubble_window(app: &AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("bubble") {
         w.hide().map_err(|e| e.to_string())?;
