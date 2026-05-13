@@ -14,6 +14,104 @@ const BUBBLE_SUBCLASS_ID: usize = 100;
 
 const BUBBLE_W: f64 = 280.0;
 const BUBBLE_H: f64 = 140.0;
+const EDGE_MARGIN_LP: f64 = 12.0;
+const PET_GAP_LP: f64 = 8.0;
+const ARROW_MARGIN_LP: f64 = 26.0;
+const BUBBLE_INSET_X_LP: f64 = 8.0;
+
+#[derive(Clone, Copy, Debug)]
+struct RectI {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+}
+
+impl RectI {
+    fn right(self) -> i32 {
+        self.x + self.w
+    }
+
+    fn bottom(self) -> i32 {
+        self.y + self.h
+    }
+
+    fn inset(self, margin: i32) -> Self {
+        Self {
+            x: self.x + margin,
+            y: self.y + margin,
+            w: (self.w - margin * 2).max(1),
+            h: (self.h - margin * 2).max(1),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct BubblePlacement {
+    x: i32,
+    y: i32,
+    arrow_x: f64,
+    above_pet: bool,
+}
+
+fn scaled_px(value: f64, scale: f64) -> i32 {
+    (value * scale.max(0.5)).round().max(1.0) as i32
+}
+
+fn clamp_i32(value: i32, min: i32, max: i32) -> i32 {
+    if min > max {
+        min
+    } else {
+        value.clamp(min, max)
+    }
+}
+
+fn compute_bubble_placement(
+    monitor: RectI,
+    pet: RectI,
+    bubble_w: i32,
+    bubble_h: i32,
+    scale: f64,
+) -> BubblePlacement {
+    let edge_margin = scaled_px(EDGE_MARGIN_LP, scale);
+    let pet_gap = scaled_px(PET_GAP_LP, scale);
+    let arrow_margin = scaled_px(ARROW_MARGIN_LP, scale) as f64;
+    let safe = monitor.inset(edge_margin);
+    let pet_center_x = pet.x + pet.w / 2;
+
+    let min_x = safe.x;
+    let max_x = safe.right() - bubble_w;
+    let centered_x = pet_center_x - bubble_w / 2;
+    let x = clamp_i32(centered_x, min_x, max_x);
+
+    let above_y = pet.y - pet_gap - bubble_h;
+    let below_y = pet.bottom() + pet_gap;
+    let fits_above = above_y >= safe.y;
+    let fits_below = below_y + bubble_h <= safe.bottom();
+    let space_above = pet.y - pet_gap - safe.y;
+    let space_below = safe.bottom() - pet.bottom() - pet_gap;
+
+    let (raw_y, above_pet) = if fits_above || (!fits_below && space_above >= space_below) {
+        (above_y, true)
+    } else {
+        (below_y, false)
+    };
+    let y = clamp_i32(raw_y, safe.y, safe.bottom() - bubble_h);
+
+    let arrow_x = (pet_center_x - x) as f64;
+    let arrow_x = if bubble_w as f64 > arrow_margin * 2.0 {
+        arrow_x.clamp(arrow_margin, bubble_w as f64 - arrow_margin)
+    } else {
+        bubble_w as f64 / 2.0
+    };
+
+    BubblePlacement {
+        x,
+        y,
+        arrow_x,
+        above_pet,
+    }
+}
 
 /// 后端待消费文本：首次创建窗口时 emit 时机早于前端 listen 注册，
 /// 因此把文本存这里，前端 init 时主动 invoke 拉一次。
@@ -279,28 +377,36 @@ pub fn position_above_pet(app: &AppHandle, bubble: &tauri::WebviewWindow) {
         (BUBBLE_W * scale) as u32,
         (BUBBLE_H * scale) as u32,
     ));
-    let bubble_w_px = bubble_size.width as f64;
-    let bubble_h_px = bubble_size.height as f64;
 
-    // 默认：水平居中于 pet 上方
-    let pet_center_x = pet_pos.x as f64 + pet_size.width as f64 / 2.0;
-    let pet_top = pet_pos.y as f64;
-    let mut bubble_x = (pet_center_x - bubble_w_px / 2.0) as i32;
-    let mut bubble_y = (pet_top - bubble_h_px + 6.0 * scale) as i32;
+    let placement = compute_bubble_placement(
+        RectI {
+            x: monitor_pos.x,
+            y: monitor_pos.y,
+            w: monitor_size.width as i32,
+            h: monitor_size.height as i32,
+        },
+        RectI {
+            x: pet_pos.x,
+            y: pet_pos.y,
+            w: pet_size.width as i32,
+            h: pet_size.height as i32,
+        },
+        bubble_size.width as i32,
+        bubble_size.height as i32,
+        scale,
+    );
 
-    let screen_left = monitor_pos.x;
-    let screen_right = monitor_pos.x + monitor_size.width as i32;
-    let screen_top = monitor_pos.y;
-
-    // 水平 clamp：不超出屏幕左右
-    bubble_x = bubble_x.clamp(screen_left + 4, screen_right - bubble_w_px as i32 - 4);
-
-    // 上方放不下 → 翻到 pet 下方
-    if bubble_y < screen_top + 4 {
-        bubble_y = (pet_top + pet_size.height as f64 + 6.0 * scale) as i32;
-    }
-
-    let _ = bubble.set_position(PhysicalPosition::new(bubble_x, bubble_y));
+    let _ = bubble.set_position(PhysicalPosition::new(placement.x, placement.y));
+    let arrow_side = if placement.above_pet { "bottom" } else { "top" };
+    let arrow_css_x = (placement.arrow_x / scale.max(0.5)) - BUBBLE_INSET_X_LP;
+    let _ = bubble.eval(&format!(
+        "document.documentElement.style.setProperty('--bubble-arrow-x','{}px');\
+         document.documentElement.classList.toggle('bubble-arrow-top', {});\
+         document.documentElement.classList.toggle('bubble-arrow-bottom', {});",
+        arrow_css_x.round(),
+        arrow_side == "top",
+        arrow_side == "bottom"
+    ));
 }
 
 pub fn create_bubble_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
@@ -505,6 +611,112 @@ mod tests {
     }
 
     // ---- Cycle 1: WM_MOUSEWHEEL 参数构建 ----
+
+    #[test]
+    fn test_bubble_placement_keeps_negative_monitor_bounds() {
+        let placement = compute_bubble_placement(
+            RectI {
+                x: -1920,
+                y: 0,
+                w: 1920,
+                h: 1080,
+            },
+            RectI {
+                x: -80,
+                y: 500,
+                w: 128,
+                h: 128,
+            },
+            280,
+            140,
+            1.0,
+        );
+
+        assert!(placement.x <= -12);
+        assert!(placement.x >= -1920 + 12);
+        assert!(placement.y >= 12);
+        assert!(placement.y + 140 <= 1080 - 12);
+    }
+
+    #[test]
+    fn test_bubble_placement_flips_below_near_top() {
+        let placement = compute_bubble_placement(
+            RectI {
+                x: 0,
+                y: 0,
+                w: 1536,
+                h: 960,
+            },
+            RectI {
+                x: 700,
+                y: 20,
+                w: 128,
+                h: 128,
+            },
+            280,
+            140,
+            1.25,
+        );
+
+        assert!(!placement.above_pet);
+        assert!(placement.y >= 20 + 128);
+        assert!(placement.y + 140 <= 960 - 15);
+    }
+
+    #[test]
+    fn test_bubble_placement_clamps_bottom_for_tall_bubble() {
+        let placement = compute_bubble_placement(
+            RectI {
+                x: 0,
+                y: 0,
+                w: 1536,
+                h: 960,
+            },
+            RectI {
+                x: 700,
+                y: 200,
+                w: 128,
+                h: 128,
+            },
+            420,
+            680,
+            1.25,
+        );
+
+        assert!(placement.y >= 15);
+        assert!(placement.y + 680 <= 960 - 15);
+    }
+
+    #[test]
+    fn test_bubble_arrow_tracks_pet_when_window_is_clamped() {
+        let placement = compute_bubble_placement(
+            RectI {
+                x: 0,
+                y: 0,
+                w: 1536,
+                h: 960,
+            },
+            RectI {
+                x: 4,
+                y: 500,
+                w: 128,
+                h: 128,
+            },
+            280,
+            140,
+            1.0,
+        );
+
+        assert_eq!(placement.x, 12);
+        assert!(placement.arrow_x > 26.0);
+        assert!(placement.arrow_x < 140.0);
+    }
+
+    #[test]
+    fn test_bubble_arrow_css_position_accounts_for_scale_and_inset() {
+        let arrow_css_x = (150.0 / 1.25_f64.max(0.5)) - BUBBLE_INSET_X_LP;
+        assert_eq!(arrow_css_x.round() as i32, 112);
+    }
 
     #[cfg(target_os = "windows")]
     #[test]
