@@ -80,7 +80,12 @@ impl Default for VisionAnalysis {
 }
 
 /// 屏幕状态的分类枚举，作为 VisionAnalysis 的子字段。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+///
+/// serde 使用 `tag = "kind"` 内部标签枚举，但 schemars 默认对内部标签枚举生成 `oneOf`，
+/// 而 `glm-5v-turbo`（智谱）对 `oneOf` 类型会返回字符串化的 JSON 而非内联对象。
+/// 因此手动实现 `JsonSchema`，生成扁平的 `type: object` schema（kind 为 enum + app 为可选），
+/// 避免触发模型的 `oneOf` 兼容性问题。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum VisionState {
     Working { app: String },
@@ -88,6 +93,26 @@ pub enum VisionState {
     Media,
     OffScreen,
     Unknown,
+}
+
+impl JsonSchema for VisionState {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "VisionState".into()
+    }
+
+    fn json_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "enum": ["working", "idle", "media", "off_screen", "unknown"]
+                },
+                "app": { "type": "string" }
+            },
+            "required": ["kind"]
+        })
+    }
 }
 
 impl Default for VisionState {
