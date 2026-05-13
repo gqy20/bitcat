@@ -498,7 +498,7 @@
     // 精灵内小幅补充动画（叠加在窗口移动之上）
     switch (currentAction) {
       case 'jump':
-        var jumpH = -Math.sin(progress * Math.PI) * 12;
+        var jumpH = -Math.sin(progress * Math.PI) * 18;
         opts.offsetY = jumpH;
         break;
       case 'spin':
@@ -506,10 +506,10 @@
         pet.facingRight = flipCount % 2 === 0;
         break;
       case 'wave':
-        opts.offsetY = -Math.abs(Math.sin(progress * Math.PI * 4)) * 6;
+        opts.offsetY = -Math.abs(Math.sin(progress * Math.PI * 4)) * 9;
         break;
       case 'shake':
-        opts.offsetX = Math.sin(dancePlayer.time * 0.06) * 6;
+        opts.offsetX = Math.sin(dancePlayer.time * 0.06) * 10;
         break;
     }
 
@@ -529,29 +529,29 @@
 
     switch (action) {
       case 'jump': {
-        // 弹性跳跃：窗口上移屏幕高度的 12~15%，带弹跳缓动
-        var jumpRange = m.screenH * 0.14;
-        oy = -easeOutBounce(progress) * jumpRange;
-        // 跳跃时轻微 X 轴摇摆增加动感
-        ox = Math.sin(time * 0.008) * (m.screenW * 0.008);
+        // 大跳跃：窗口沿弧线上移屏幕高度约 22%，并带一点横向冲刺
+        var jumpRange = m.screenH * 0.22;
+        oy = -Math.sin(progress * Math.PI) * jumpRange;
+        // 跳跃时横向位移增加舞台感
+        ox = Math.sin(progress * Math.PI) * (m.screenW * 0.08);
         break;
       }
       case 'spin': {
-        // 旋转时窗口原地小幅度快速抖动（模拟旋转离心力）
-        ox = Math.sin(time * 0.03) * (m.screenW * 0.02);
-        oy = Math.cos(time * 0.025) * (m.screenH * 0.015);
+        // 旋转时窗口做明显椭圆摆动（模拟旋转离心力）
+        ox = Math.sin(time * 0.03) * (m.screenW * 0.12);
+        oy = Math.cos(time * 0.025) * (m.screenH * 0.04);
         break;
       }
       case 'wave': {
-        // 挥手节奏：上下浮动屏幕高度 3~5%
-        oy = -Math.abs(Math.sin(progress * Math.PI * 4)) * (m.screenH * 0.04);
+        // 挥手节奏：上下浮动屏幕高度约 8%
+        oy = -Math.abs(Math.sin(progress * Math.PI * 4)) * (m.screenH * 0.08);
         break;
       }
       case 'shake': {
-        // 大幅左右抖动：屏幕宽度 3~5%
-        ox = Math.sin(time * 0.05) * (m.screenW * 0.04);
-        // 轻微 Y 轴抖动增加不稳定感
-        oy = Math.sin(time * 0.07) * (m.screenH * 0.01);
+        // 大幅左右抖动：单侧约 20% 屏宽，左右总摆幅约 40%
+        ox = Math.sin(time * 0.05) * (m.screenW * 0.20);
+        // Y 轴抖动增加不稳定感
+        oy = Math.sin(time * 0.07) * (m.screenH * 0.025);
         break;
       }
     }

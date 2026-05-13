@@ -2,18 +2,21 @@ name: happy_twist
 loop_: true
 steps:
   - action: jump
-    duration_ms: 360
+    duration_ms: 480
   - action: shake
-    duration_ms: 260
-    repeat: 2
+    duration_ms: 320
+    repeat: 3
   - action: spin
-    duration_ms: 420
+    duration_ms: 560
   - action: wave
-    duration_ms: 280
+    duration_ms: 360
     repeat: 2
   - action: jump
-    duration_ms: 320
+    duration_ms: 460
+  - action: shake
+    duration_ms: 280
+    repeat: 2
   - action: spin
-    duration_ms: 360
+    duration_ms: 520
   - action: idle
-    duration_ms: 260
+    duration_ms: 240
