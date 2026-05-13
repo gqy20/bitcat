@@ -1,23 +1,17 @@
 use crate::ai_config::AiConfig;
 use crate::token_tracker::{
-    TokenCategory, TokenRecord, new_session_id, parse_anthropic_usage, record_token_usage,
+    TokenCategory, TokenRecord, TokenUsage, new_session_id, record_token_usage,
 };
+use rig::client::CompletionClient;
+use rig::providers::anthropic;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
 use tracing::{debug, info, warn};
 
 // ---- 数据结构 ----
-
-const STRUCTURED_SUMMARY_OUTPUT_INSTRUCTIONS: &str = r#"
-
-只返回一个 JSON 对象，不要使用 Markdown，不要添加解释。字段：
-- time_range: 本次摘要覆盖的时间范围
-- activities: 活动分组数组，每项包含 category、time_range、items
-- category 只能是 coding / browsing / communication / entertainment / documents / other
-- notable_changes: 重要变化数组，不确定则 []
-"#;
 
 /// 单条屏幕活动摘要
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,7 +21,7 @@ pub struct ScreenSummaryEntry {
     pub summary: StructuredSummary,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct StructuredSummary {
     #[serde(default)]
     pub time_range: String,
@@ -71,7 +65,7 @@ impl StructuredSummary {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ActivityGroup {
     #[serde(default)]
     pub category: ActivityCategory,
@@ -81,7 +75,7 @@ pub struct ActivityGroup {
     pub items: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ActivityCategory {
     Coding,
@@ -310,65 +304,53 @@ pub async fn generate_summary(
         .collect::<Vec<_>>()
         .join("\n");
 
-    let body = json!({
-        "model": ai_config.model,
-        "max_tokens": 1024,
-        "messages": [
-            {
-                "role": "user",
-                "content": format!(
-                    "{}{}\n\n以下是截图观察记录：\n{}",
-                    config.prompt, STRUCTURED_SUMMARY_OUTPUT_INSTRUCTIONS, user_content
-                )
-            }
-        ]
-    });
+    debug!(
+        model = %ai_config.model,
+        base_url = %ai_config.base_url,
+        "开始生成屏幕摘要"
+    );
 
-    let url = format!("{}/v1/messages", ai_config.base_url.trim_end_matches('/'));
-    debug!(model = %ai_config.model, url = %url, "开始生成屏幕摘要");
-
-    let client = reqwest::Client::builder()
+    let http_client = rig::http_client::ReqwestClient::builder()
         .no_proxy()
         .build()
         .map_err(|e| format!("创建摘要 HTTP 客户端失败: {e}"))?;
+    let client = anthropic::Client::builder()
+        .api_key(&ai_config.api_key)
+        .base_url(&ai_config.base_url)
+        .http_client(http_client)
+        .build()
+        .map_err(|e| format!("创建 Anthropic 摘要 Client 失败: {e}"))?;
+    let extractor = client
+        .extractor::<StructuredSummary>(ai_config.model.as_str())
+        .preamble(&config.prompt)
+        .max_tokens(1024)
+        .retries(1)
+        .build();
+
     let start = std::time::Instant::now();
-    let response = client
-        .post(&url)
-        .header("x-api-key", &ai_config.api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
-        .json(&body)
-        .send()
+    let response = extractor
+        .extract_with_usage(format!("以下是截图观察记录：\n{user_content}"))
         .await
-        .map_err(|e| format!("摘要 API 请求失败: {e}"))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        warn!(status = %status, "摘要 API 返回错误");
-        return Err(format!("摘要 API 返回错误 {}: {}", status, text));
-    }
-
-    let json: Value = response
-        .json()
-        .await
-        .map_err(|e| format!("解析摘要 API 响应失败: {e}"))?;
+        .map_err(|e| format!("生成结构化屏幕摘要失败: {e}"))?;
 
     let elapsed = start.elapsed();
-    debug!(elapsed_ms = elapsed.as_millis(), "屏幕摘要生成完成");
+    info!(
+        elapsed_ms = elapsed.as_millis(),
+        activities = response.data.activities.len(),
+        "屏幕摘要生成完成"
+    );
 
-    let usage = parse_anthropic_usage(&json);
     record_token_usage(
         &TokenRecord::new(
             new_session_id(),
             TokenCategory::ScreenSummary,
             ai_config.model.clone(),
-            usage,
+            TokenUsage::from(response.usage),
         )
         .with_elapsed_ms(elapsed.as_millis() as u64),
     );
 
-    parse_structured_summary_response(&json)
+    Ok(response.data)
 }
 
 /// 从 Anthropic Messages API 响应中提取 text blocks。
@@ -426,6 +408,7 @@ fn normalize_json_text(text: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use wiremock::matchers::method;
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -600,16 +583,28 @@ mod tests {
         Mock::given(method("POST"))
             .respond_with(
                 ResponseTemplate::new(200).set_body_json(json!({
+                    "type": "message",
+                    "id": "msg_test",
+                    "model": "test-model",
+                    "role": "assistant",
+                    "stop_reason": "tool_use",
+                    "stop_sequence": null,
+                    "usage": {
+                        "input_tokens": 12,
+                        "output_tokens": 8
+                    },
                     "content": [{
-                        "type": "text",
-                        "text": r#"{
+                        "type": "tool_use",
+                        "id": "toolu_test",
+                        "name": "submit",
+                        "input": {
                             "time_range":"14:00-14:15",
                             "activities":[
                                 {"category":"coding","time_range":"14:00-14:10","items":["在 VS Code 写 Rust 代码"]},
                                 {"category":"browsing","time_range":"14:10-14:15","items":["浏览 GitHub"]}
                             ],
                             "notable_changes":["从编辑器切换到浏览器"]
-                        }"#
+                        }
                     }]
                 })),
             )
@@ -670,7 +665,10 @@ mod tests {
         let descriptions = vec!["some description".to_string()];
         let result = generate_summary(&descriptions, &config, &ai_config).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("错误"), "应包含 API 错误信息");
+        assert!(
+            result.unwrap_err().contains("生成结构化屏幕摘要失败"),
+            "应包含 rig extractor 错误信息"
+        );
     }
 
     #[test]
