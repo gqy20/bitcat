@@ -39,6 +39,10 @@
 
 ### 方案
 
+采用**直接清理兼容层**的改造方式：`vision` 和 `screen_summary` 不再保留旧的 `Result<String, String>` 主接口，也不再保留旧的自由文本解析路径。新主线直接返回强类型结构体；bubble、截图存储、摘要注入等调用点同步迁移到结构字段。
+
+优先目标是把输出边界强类型化。理想实现使用 rig 的 `Extractor<M, T>`；如果 rig v0.36 对 Anthropic 图片 content block 的 Extractor 支持不满足需求，则短期可保留 Anthropic-compatible request 构造，但必须要求模型返回 JSON 并反序列化到同一批结构体。外部 API 不因此保留旧字符串兼容层。
+
 使用 rig 的 `Extractor<M, T>` 将输出约束为强类型结构体：
 
 ```rust
@@ -102,6 +106,14 @@ pub enum ActivityCategory {
 
 ### 实现路径
 
+#### 改造原则
+
+1. **不保留旧 String 主接口**：`analyze_screenshot()` 直接改为 `Result<VisionAnalysis, String>`；`generate_summary()` 直接改为 `Result<StructuredSummary, String>`。
+2. **不兼容旧存储结构**：截图分析记录和屏幕摘要记录直接升级为新结构。开发期旧的 `~/.ai-pad/screenshots/` 与 screen summary 数据可清空或忽略，不写迁移器。
+3. **删除旧解析函数**：`parse_vision_response()`、`parse_text_response()` 和只为兼容自由文本而存在的 fallback 不继续保留。
+4. **调用点同步改造**：bubble 显示取 `analysis.description`；记忆/摘要注入使用结构体格式化后的稳定文本。
+5. **测试以结构体为中心**：保留请求体快照测试，但主要断言 `VisionAnalysis` / `StructuredSummary` 字段，而不是 `String contains(...)`。
+
 #### Phase 1: Vision 路径改造
 
 1. 新增 `VisionAnalysis` / `VisionState` 结构体（含 `JsonSchema` derive）
@@ -118,20 +130,34 @@ pub enum ActivityCategory {
    let analysis: VisionAnalysis = extractor.extract(prompt_with_image).await?;
    ```
 3. `analyze_screenshot()` 返回值从 `Result<String, String>` 改为 `Result<VisionAnalysis, String>`
-4. bubble 显示层取 `analysis.description`，存储层存完整结构体
+4. bubble 显示层取 `analysis.description`，存储层只存新结构体
 
 #### Phase 2: Screen Summary 路径改造
 
 1. 新增 `StructuredSummary` / `ActivityGroup` / `ActivityCategory`
 2. 同样用 Extractor 替代 raw reqwest
 3. `generate_summary()` 返回值改为 `Result<StructuredSummary, String>`
-4. `ScreenSummaryEntry.summary` 字段可保留字符串（用于上下文注入），同时新增 `structured: Option<StructuredSummary>` 字段
+4. `ScreenSummaryEntry` 直接改为结构化字段；如需要给 prompt 注入纯文本，由 `StructuredSummary::to_context_text()` 之类 helper 派生生成，不再把字符串摘要作为唯一事实来源
 
 #### Phase 3: 清理遗留代码
 
-1. 删除 `parse_vision_response()` 和 `parse_text_response()`（被 Extractor 内部处理替代）
-2. 删除 `send_vision_request()` 和 `generate_summary()` 中的 raw reqwest 调用
-3. `build_vision_request()` / `build_vision_request_multi()` 可能仍需保留（用于构造带图片的请求体），或改用 rig 的 image content API
+1. 删除 `parse_vision_response()` 和 `parse_text_response()`。
+2. 删除 `send_vision_request()` 和 `generate_summary()` 中重复的 raw reqwest 调用。
+3. 如果 Extractor 图片输入不稳定，可临时保留 `build_vision_request()` / `build_vision_request_multi()`，但它们只服务于结构化 JSON 响应，不再输出自由文本。
+4. 移除旧数据兼容分支、`structured: Option<_>` 过渡字段和旧格式读取逻辑。
+
+### 工作量预估
+
+| 改造项 | 预计改动 |
+|------|---------:|
+| 公共 AI request / usage 收口（如需要） | 80-120 行 |
+| `vision.rs` 强类型返回与解析 | 100-170 行 |
+| `screen_summary.rs` 强类型返回与存储 | 120-200 行 |
+| app/core 调用点同步 | 80-160 行 |
+| 删除旧文本解析和兼容代码 | -60 到 -120 行 |
+| 测试重写与快照更新 | 150-280 行 |
+
+净增约 **250-400 行（MVP）**，做完整测试和调用点整理约 **400-650 行**。触碰范围预计 5-8 个文件。
 
 ### 收益
 
@@ -149,7 +175,8 @@ pub enum ActivityCategory {
 |------|------|
 | Extractor 对图片输入的支持需验证 | rig 的 `Prompt` trait 支持 content block；若不支持图片，保留 `build_vision_request` 构造 body 后手动调用 Extractor 的底层 submit_tool 机制 |
 | JsonSchema derive 与 serde 冲突 | 使用 `schemars` crate（rig 已依赖），确保 `#[serde(rename)]` 和 `#[schemars(rename)]` 一致 |
-| 大模型偶尔返回不符合 schema 的 JSON | Extractor 内部有 repair 机制；极端情况降级回纯文本 + warn log |
+| 大模型偶尔返回不符合 schema 的 JSON | Extractor 内部有 repair 机制；极端情况返回错误并记录 warn，不降级为旧自由文本主路径 |
+| 旧本地截图/摘要数据读不回 | 本阶段明确不做迁移；开发期可清空或忽略旧数据 |
 
 ### 依赖关系
 

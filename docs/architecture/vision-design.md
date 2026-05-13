@@ -331,19 +331,26 @@ const VISION_PROMPT_MULTI_MONITOR: &str = r#"你是 8Bit，一只住在电脑屏
 }
 ```
 
-### rig-core 的限制与绕过
+### rig-core 的限制与后续改造
 
-rig-core v0.36 **不原生支持 image content block**。两种实现路径：
+当前实现沿用了早期判断：rig-core v0.36 对 image content block / Extractor 的组合支持需要验证，因此 `core/src/vision.rs` 先用独立 HTTP 客户端构造 Anthropic-compatible 请求。
 
-**路径 A（推荐）：独立 HTTP 客户端**
+后续 B3 改造的决策是：**不再把自由文本作为主接口，也不为旧截图/摘要数据保留兼容层**。
+
+**目标路径：rig Extractor**
+- 用 `VisionAnalysis` 作为截图分析的强类型返回值
+- 用 `StructuredSummary` 作为屏幕摘要的强类型返回值
+- bubble 只显示 `analysis.description`，存储和记忆注入使用结构字段派生
+- 删除 `parse_vision_response()` / `parse_text_response()` 等自由文本解析路径
+
+**短期兜底：结构化 HTTP**
 - 在 `core/src/vision.rs` 中直接用 `reqwest` 构造 Anthropic-compatible 请求
-- 绕过 rig 的 Agent 抽象，更灵活控制 image block
-- 约 80-100 行代码
+- 但 prompt 必须要求 JSON 输出，并反序列化为同一批结构体
+- 这只是图片输入能力未验证前的实现细节，不恢复旧 `Result<String, String>` 主接口
 
-**路径 B：扩展 Tool**
-- 给 PetAgent 加一个 `screenshot_analysis` tool
-- Tool 内部发 HTTP 请求带图片
-- 与现有 Tool 体系一致，但语义不太对（这不是 user 可调用的 tool）
+**不采用：扩展 Tool**
+- 不给 PetAgent 增加 `screenshot_analysis` tool
+- 截图观察是后台观察链路，不是用户对话中由模型自行选择的工具能力
 
 ### 成本优化（实测数据）
 
@@ -530,11 +537,11 @@ app/src/
     └── ScreenshotConfig       # 间隔/分辨率/质量配置
 
 core/src/
-└── vision.rs                  # 视觉分析模块（~120行）
-    ├── VisionClient           # 封装 Anthropic-compatible vision API
-    ├── analyze_screen()       # 发送截图 + prompt → 返回分析文本
-    ├── detect_anomaly()       # 异常检测专用分析
-    └── VisionResult           # 结构化分析结果
+└── vision.rs                  # 视觉分析模块
+    ├── VisionAnalysis         # 强类型截图分析结果
+    ├── analyze_screenshot()   # 发送截图 + prompt → 返回 VisionAnalysis
+    ├── build_vision_request() # 仅在 Extractor 图片输入未落地时保留
+    └── request/parse tests    # 请求体快照 + 结构体解析测试
 ```
 
 ### 线程模型
@@ -592,14 +599,14 @@ memory 系统 ──→ 用户偏好设置 ──→ 决定截图策略/频率  
 | 类别 | 文件 | 行数 |
 |------|------|------|
 | 生产代码 | `app/src/screenshot.rs` | ~280（含多屏枚举/拼接/配置） |
-| 生产代码 | `core/src/vision.rs` | ~120 |
+| 生产代码 | `core/src/vision.rs` | ~180-260（B3 后） |
 | 配置文件 | `screenshot.yml` | ~25 |
-| 修改现有 | `agent.rs`（加 vision tool 或方法） | ~30 |
+| 修改现有 | `screen_summary.rs` / 调用点（B3 强类型化） | ~200-360 |
 | 修改现有 | `app/src/lib.rs`（启动 screenshot 线程） | ~20 |
 | 修改现有 | `panel.rs`（截图设置面板 UI） | ~40 |
 | 测试 | screenshot 多屏/编码/哈希/存储/配置 | ~140 |
-| 测试 | vision 请求构造/解析 | ~50 |
-| **合计** | | **~705 行** |
+| 测试 | vision / summary 请求构造与结构体解析 | ~150-280 |
+| **合计** | | **~850-1100 行（含 B3 强类型化后估算）** |
 
 ## 九、演进路线图
 

@@ -106,7 +106,7 @@
 
 ### B3. 结构化输出（Extractor 改造）
 
-当前 vision 和 screen_summary 绕过 rig 直接用 reqwest 调 API，返回纯文本字符串，下游需二次解析。使用 rig 的 `Extractor<M, T>` 将输出约束为强类型结构体（如 `VisionAnalysis`），消除格式不稳定问题，同时回归 rig 生态对接 token 追踪。
+当前 vision 和 screen_summary 绕过 rig 直接用 reqwest 调 API，返回纯文本字符串，下游需二次解析。B3 采用直接清理兼容层的方式推进：`analyze_screenshot()` / `generate_summary()` 直接切换为强类型返回（如 `VisionAnalysis`、`StructuredSummary`），删除旧自由文本解析路径和旧存储兼容分支；开发期旧截图/摘要数据可清空或忽略，不写迁移器。理想实现使用 rig `Extractor<M, T>`，若图片输入支持不足，则短期保留 Anthropic-compatible 请求构造但仍强制 JSON 结构化输出。
 
 详细设计：[plan/rig-capability-roadmap.md](plan/rig-capability-roadmap.md) §P0
 
@@ -241,7 +241,7 @@ A1+A2+C1 ──→ D1(Steam) MVP 功能完备
 | **B1** | 日志规范化 | 已完成第一轮 | 0 | Done |
 | **A1** | 舞蹈系统 | 已完成 MVP | 0 | Done |
 | **B2** | Token 追踪 + 设置页统计 | 已完成 MVP | 0 | Done |
-| **B3** | Extractor 改造 | ~150-300 行 | 0 或 schemars | P0，0.5-1.5 天 |
+| **B3** | Extractor 改造（直接清理兼容层） | ~250-650 行 | 0 或 schemars | P0，0.5-1.5 天 |
 | **A2** | 迷你游戏引擎 | ~450-700 行 | 0 | P1，1-3 天 |
 | **B4** | 工具开销优化 | ~50-200 行 | 0 | P1，先分析 0.5 天 |
 | **A3** | 内容扩展 | ~200-350 行/种 | 0 | P2，0.5-1 天/种 |

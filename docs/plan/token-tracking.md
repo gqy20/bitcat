@@ -13,6 +13,8 @@
 | 屏幕摘要聚合 | `screen_summary::generate_summary()` | raw reqwest → Anthropic API | ✅ 响应体含 `usage` 字段 | 已解析并记录 |
 | 长期记忆聚合 | `memory::aggregate_profile()` | raw reqwest → Anthropic API | ✅ 响应体含 `usage` 字段 | 已解析并记录 |
 
+> B3（Extractor 结构化输出）会把 vision / screen_summary 的主接口改为强类型返回，并直接清理旧自由文本解析路径。若最终改为 rig Extractor，usage 来源应从 `FinalResponse` / Extractor 返回值接入；若短期仍保留 Anthropic-compatible HTTP，请继续复用 `parse_anthropic_usage()`，不要恢复旧 `String` 解析主线。
+
 **核心问题**：
 已解决的问题：
 
@@ -210,13 +212,15 @@ fn parse_usage(response: &Value) -> Usage {
 }
 ```
 
-调用链：`analyze_screenshot()` → `send_vision_request()` → 解析 usage → `record_token_usage()`
+当前调用链：`analyze_screenshot()` → `send_vision_request()` → 解析 usage → `record_token_usage()`。
+
+B3 后调用链应变为：`analyze_screenshot()` → 结构化模型调用（Extractor 或结构化 HTTP）→ `VisionAnalysis` + usage → `record_token_usage()`。
 
 #### `core/src/screen_summary.rs`
 
 **改动点 D — `generate_summary()` usage 解析**
 
-与 vision 同理。复用 `parse_usage()` 或内联解析。
+与 vision 同理。B3 后 `generate_summary()` 返回 `StructuredSummary`，usage 记录仍归入 `TokenCategory::ScreenSummary`。
 
 #### `core/src/lib.rs`（或 mod.rs）
 
