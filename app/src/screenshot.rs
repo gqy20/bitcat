@@ -28,6 +28,15 @@ pub struct CapturedMonitorFrame {
     pub frame: CapturedFrame,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FrameSkipReason {
+    Empty,
+    MostlyBlack {
+        dark_samples: usize,
+        total_samples: usize,
+    },
+}
+
 fn mark_screenshot_finished() {
     *LAST_SCREENSHOT_FINISHED.lock().unwrap() = Some(Instant::now());
 }
@@ -37,6 +46,42 @@ fn screenshot_finished_recently(interval_sec: u64) -> bool {
         .lock()
         .unwrap()
         .is_some_and(|last| last.elapsed() < Duration::from_secs(interval_sec))
+}
+
+fn classify_frame_skip_reason(frame: &CapturedFrame) -> Option<FrameSkipReason> {
+    let total_pixels = frame.pixels.len() / 4;
+    if total_pixels == 0 || frame.width == 0 || frame.height == 0 {
+        return Some(FrameSkipReason::Empty);
+    }
+
+    let sample_count = total_pixels.min(256);
+    let dark_samples = (0..sample_count)
+        .filter(|&i| {
+            let pixel_index = if sample_count == 1 {
+                0
+            } else {
+                i * (total_pixels - 1) / (sample_count - 1)
+            };
+            let idx = pixel_index * 4;
+            let b = frame.pixels[idx];
+            let g = frame.pixels[idx + 1];
+            let r = frame.pixels[idx + 2];
+            r <= 8 && g <= 8 && b <= 8
+        })
+        .count();
+
+    if dark_samples * 100 >= sample_count * 95 {
+        Some(FrameSkipReason::MostlyBlack {
+            dark_samples,
+            total_samples: sample_count,
+        })
+    } else {
+        None
+    }
+}
+
+fn classify_monitor_skip_reason(monitor: &CapturedMonitorFrame) -> Option<FrameSkipReason> {
+    classify_frame_skip_reason(&monitor.frame)
 }
 
 // ---- Windows BitBlt 截图 ----
@@ -422,12 +467,14 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             continue;
         }
 
-        // 熄屏检测
-        trace!("[screenshot] 检查熄屏");
         {
-            use windows_sys::Win32::UI::WindowsAndMessaging::GetSystemMetrics;
-            if unsafe { GetSystemMetrics(0x8000) } != 0 {
-                debug!("[screenshot] 显示器关闭，跳过");
+            let gate: tauri::State<crate::observation_gate::SharedObservationGate> = app.state();
+            if let Some(reason) = gate.skip_reason() {
+                info!(
+                    reason = reason.label(),
+                    "screenshot skipped by observation gate"
+                );
+                mark_screenshot_finished();
                 continue;
             }
         }
@@ -454,6 +501,33 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             }
         };
 
+        let mut visible_monitors = Vec::new();
+        for monitor in monitor_frames {
+            match classify_monitor_skip_reason(&monitor) {
+                Some(FrameSkipReason::Empty) => {
+                    info!(monitor = %monitor.label, "截图帧为空，跳过视觉分析");
+                }
+                Some(FrameSkipReason::MostlyBlack {
+                    dark_samples,
+                    total_samples,
+                }) => {
+                    info!(
+                        monitor = %monitor.label,
+                        dark = dark_samples,
+                        total = total_samples,
+                        "检测到近黑帧，跳过视觉分析"
+                    );
+                }
+                None => visible_monitors.push(monitor),
+            }
+        }
+
+        if visible_monitors.is_empty() {
+            debug!("all captured monitors were empty or mostly black; screenshot cycle skipped");
+            mark_screenshot_finished();
+            continue;
+        }
+
         // 确定要尝试的分辨率列表
         let resolutions: Vec<u32> = if config.debug_resolutions.is_empty() {
             vec![config.max_width]
@@ -469,31 +543,9 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             }
         };
 
-        let multi_monitor = monitor_frames.len() > 1;
+        let multi_monitor = visible_monitors.len() > 1;
         let mut bubble_parts = Vec::new();
-        for monitor in monitor_frames {
-            // 全黑帧检测（覆盖屏保/锁屏等 SM_MONITORISOFF 未覆盖的场景）
-            let sample_count = 256;
-            let step = (monitor.frame.pixels.len() / 4).max(1) / sample_count.max(1);
-            let black_pixels = (0..sample_count)
-                .filter(|&i| {
-                    let idx = i * step * 4;
-                    idx + 3 < monitor.frame.pixels.len()
-                        && monitor.frame.pixels[idx] == 0
-                        && monitor.frame.pixels[idx + 1] == 0
-                        && monitor.frame.pixels[idx + 2] == 0
-                })
-                .count();
-            if black_pixels > sample_count * 95 / 100 {
-                info!(
-                    monitor = %monitor.label,
-                    black = black_pixels,
-                    total = sample_count,
-                    "检测到全黑帧，跳过"
-                );
-                continue;
-            }
-
+        for monitor in visible_monitors {
             // 二次检查 chat_active：截图捕获/缩放期间用户可能刚开始聊天。
             {
                 let bubble: tauri::State<crate::bubble::SharedBubble> = app.state();
@@ -732,10 +784,48 @@ pub fn do_screenshot_now(app: &tauri::AppHandle) -> Result<String, String> {
         .build()
         .map_err(|e| format!("创建运行时失败: {e}"))?;
 
+    {
+        let gate: tauri::State<crate::observation_gate::SharedObservationGate> = app.state();
+        if let Some(reason) = gate.skip_reason() {
+            let description = format!("屏幕观察已暂停：{}", reason.label());
+            let _ = crate::bubble::show_bubble(app, &description);
+            mark_screenshot_finished();
+            return Ok(description);
+        }
+    }
+
     let monitor_frames = capture_target_frames(&config.target)?;
-    let multi_monitor = monitor_frames.len() > 1;
-    let mut parts = Vec::new();
+    let mut visible_monitors = Vec::new();
     for monitor in monitor_frames {
+        match classify_monitor_skip_reason(&monitor) {
+            Some(FrameSkipReason::Empty) => {
+                tracing::info!(monitor = %monitor.label, "手动截图帧为空，跳过视觉分析");
+            }
+            Some(FrameSkipReason::MostlyBlack {
+                dark_samples,
+                total_samples,
+            }) => {
+                tracing::info!(
+                    monitor = %monitor.label,
+                    dark = dark_samples,
+                    total = total_samples,
+                    "手动截图检测到近黑帧，跳过视觉分析"
+                );
+            }
+            None => visible_monitors.push(monitor),
+        }
+    }
+
+    if visible_monitors.is_empty() {
+        let description = "屏幕似乎已关闭或是黑屏，已跳过视觉分析".to_string();
+        let _ = crate::bubble::show_bubble(app, &description);
+        mark_screenshot_finished();
+        return Ok(description);
+    }
+
+    let multi_monitor = visible_monitors.len() > 1;
+    let mut parts = Vec::new();
+    for monitor in visible_monitors {
         if let Some(description) = analyze_and_save_monitor_frame(
             &rt,
             &ai_config,
@@ -783,6 +873,16 @@ pub async fn cmd_screenshot_now(app: tauri::AppHandle) -> Result<String, String>
 mod tests {
     use ai_pad_core::screenshot::{CapturedFrame, ScreenInfo, ScreenshotConfig};
 
+    use super::{classify_frame_skip_reason, FrameSkipReason};
+
+    fn repeated_bgra(pixel: [u8; 4], count: usize) -> Vec<u8> {
+        let mut pixels = Vec::with_capacity(count * 4);
+        for _ in 0..count {
+            pixels.extend_from_slice(&pixel);
+        }
+        pixels
+    }
+
     #[test]
     fn test_captured_frame_type_compiles() {
         let frame = CapturedFrame {
@@ -808,5 +908,63 @@ mod tests {
     fn test_config_validate_ok() {
         let cfg = ScreenshotConfig::default();
         assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_empty_frame_is_skipped() {
+        let frame = CapturedFrame {
+            pixels: vec![],
+            width: 0,
+            height: 0,
+        };
+        assert_eq!(
+            classify_frame_skip_reason(&frame),
+            Some(FrameSkipReason::Empty)
+        );
+    }
+
+    #[test]
+    fn test_mostly_black_frame_is_skipped() {
+        let frame = CapturedFrame {
+            pixels: repeated_bgra([0, 0, 0, 255], 300),
+            width: 30,
+            height: 10,
+        };
+        assert!(matches!(
+            classify_frame_skip_reason(&frame),
+            Some(FrameSkipReason::MostlyBlack {
+                dark_samples: 256,
+                total_samples: 256
+            })
+        ));
+    }
+
+    #[test]
+    fn test_near_black_frame_is_skipped() {
+        let frame = CapturedFrame {
+            pixels: repeated_bgra([8, 7, 6, 255], 256),
+            width: 16,
+            height: 16,
+        };
+        assert!(matches!(
+            classify_frame_skip_reason(&frame),
+            Some(FrameSkipReason::MostlyBlack { .. })
+        ));
+    }
+
+    #[test]
+    fn test_visible_frame_is_not_skipped() {
+        let mut pixels = repeated_bgra([0, 0, 0, 255], 256);
+        for chunk in pixels.chunks_exact_mut(4).take(32) {
+            chunk[0] = 80;
+            chunk[1] = 120;
+            chunk[2] = 200;
+        }
+        let frame = CapturedFrame {
+            pixels,
+            width: 16,
+            height: 16,
+        };
+        assert_eq!(classify_frame_skip_reason(&frame), None);
     }
 }

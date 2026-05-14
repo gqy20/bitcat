@@ -21,6 +21,7 @@ pub mod commands;
 pub mod game;
 pub mod gamepad;
 pub mod joystick;
+pub mod observation_gate;
 pub mod panel;
 pub mod screenshot;
 pub mod settings;
@@ -45,6 +46,7 @@ pub fn run() {
         .manage(commands::SharedWindowState::default())
         .manage(bubble::SharedBubble::new())
         .manage(voice::SharedVoice::new())
+        .manage(observation_gate::SharedObservationGate::default())
         .manage(screenshot::SharedScreenshotState::default())
         .manage(game::SharedGame::default())
         .manage(SharedPendingChat::new())
@@ -240,6 +242,9 @@ pub fn run() {
             // ── 预创建窗口 ──
             if let Err(e) = snap::precreate_pet_windows(app.handle()) {
                 warn!(error = %e, "预创建 pet 窗口失败");
+            }
+            if let Err(e) = observation_gate::install_windows_observation_hooks(app.handle()) {
+                warn!(error = %e, "安装屏幕观察门控失败");
             }
 
             if let Err(e) = voice::precreate_voice_window(app.handle()) {

@@ -22,6 +22,8 @@ pub async fn cmd_recreate_pet_window(
     let on_top = ws.always_on_top.load(Ordering::SeqCst);
     let collapsed = width == 48 && height == 48;
 
+    let _ = crate::bubble::hide_bubble_window(&app);
+
     let target_label = if collapsed { "pet-mini" } else { "pet" };
     let hide_label = if collapsed { "pet" } else { "pet-mini" };
 
@@ -257,6 +259,8 @@ pub async fn cmd_snap_transform(
     *ws.is_snapped.lock().map_err(|e| e.to_string())? = true;
     *ws.snap_edge.lock().map_err(|e| e.to_string())? = Some(edge.clone());
 
+    let _ = crate::bubble::hide_bubble_window(&app);
+
     for label in ["pet", "pet-mini"] {
         if let Some(w) = app.get_webview_window(label) {
             let _ = w.eval("if(typeof __fadeOut==='function')__fadeOut();");
@@ -315,6 +319,8 @@ pub async fn cmd_snap_transform(
 pub async fn cmd_unsnap_transform(app: tauri::AppHandle) -> Result<(), String> {
     let ws: tauri::State<'_, SharedWindowState> = app.state();
     let on_top = ws.always_on_top.load(Ordering::SeqCst);
+
+    let _ = crate::bubble::hide_bubble_window(&app);
 
     let snap_win_opt = app.get_webview_window("pet-snap");
     if let Some(w) = &snap_win_opt {
