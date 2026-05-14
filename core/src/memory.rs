@@ -242,6 +242,29 @@ pub struct LongTermMemory {
     pub entries: Vec<LongTermEntry>,
 }
 
+/// 长期记忆检索过滤条件。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LongTermMemoryQuery {
+    pub text: String,
+    pub tags: Vec<String>,
+    pub source: Option<String>,
+    pub min_importance: Option<u8>,
+}
+
+/// 可人工审查的长期记忆条目视图。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LongTermReviewEntry {
+    pub index: usize,
+    pub timestamp: String,
+    pub title: String,
+    pub tags: Vec<String>,
+    pub importance: Option<u8>,
+    pub source: Option<String>,
+    pub aggregated: bool,
+    pub user_msg: String,
+    pub ai_reply: String,
+}
+
 /// 返回长期记忆文件路径 `~/.ai-pad/memory/long_term.json`。
 fn long_term_file_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
@@ -336,6 +359,17 @@ impl LongTermMemory {
 
     /// 根据查询文本检索最相关的条目，在字符预算内拼接为注入文本
     pub fn retrieve(&self, query: &str, budget_chars: usize) -> String {
+        self.retrieve_with(
+            &LongTermMemoryQuery {
+                text: query.to_string(),
+                ..Default::default()
+            },
+            budget_chars,
+        )
+    }
+
+    /// 按文本、标签、来源和重要度过滤后检索长期记忆，并生成可注入 prompt 的文本。
+    pub fn retrieve_with(&self, query: &LongTermMemoryQuery, budget_chars: usize) -> String {
         if self.entries.is_empty() {
             return String::new();
         }
@@ -344,6 +378,7 @@ impl LongTermMemory {
             .entries
             .iter()
             .enumerate()
+            .filter(|(_, e)| long_term_entry_matches(e, query))
             .map(|(i, e)| {
                 let text = format!(
                     "{} {} {} {}",
@@ -352,7 +387,14 @@ impl LongTermMemory {
                     e.user_msg,
                     e.ai_reply
                 );
-                (i, relevance_score(&text, query))
+                let mut score = relevance_score(&text, &query.text);
+                if let Some(importance) = e.importance {
+                    score += f32::from(importance.min(5)) * 0.02;
+                }
+                if !query.tags.is_empty() {
+                    score += 0.1;
+                }
+                (i, score)
             })
             .filter(|(_, s)| *s > 0.05)
             .collect();
@@ -391,6 +433,66 @@ impl LongTermMemory {
         result
     }
 
+    /// 生成可 grep、可人工审查的 Markdown 记忆视图。
+    pub fn review_markdown(&self, limit: usize) -> String {
+        if self.entries.is_empty() {
+            return "# Long-term Memory\n\nNo entries.\n".to_string();
+        }
+
+        let mut out = String::from("# Long-term Memory\n\n");
+        for entry in self.review_entries(limit) {
+            out.push_str(&format!(
+                "## {}. {} ({})\n\n",
+                entry.index + 1,
+                entry.title,
+                entry.timestamp
+            ));
+            out.push_str(&format!(
+                "- source: {}\n- importance: {}\n- tags: {}\n- aggregated: {}\n\n",
+                entry.source.as_deref().unwrap_or("unknown"),
+                entry
+                    .importance
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "unknown".to_string()),
+                if entry.tags.is_empty() {
+                    "none".to_string()
+                } else {
+                    entry.tags.join(", ")
+                },
+                entry.aggregated
+            ));
+            out.push_str(&format!(
+                "- user: {}\n- assistant: {}\n\n",
+                entry.user_msg, entry.ai_reply
+            ));
+        }
+        out
+    }
+
+    /// 返回长期记忆条目的结构化审查视图，最新条目优先。
+    pub fn review_entries(&self, limit: usize) -> Vec<LongTermReviewEntry> {
+        self.entries
+            .iter()
+            .enumerate()
+            .rev()
+            .take(limit)
+            .map(|(index, entry)| LongTermReviewEntry {
+                index,
+                timestamp: entry.timestamp.clone(),
+                title: entry
+                    .summary
+                    .clone()
+                    .unwrap_or_else(|| truncate_chars(&entry.user_msg, 80)),
+                tags: entry.tags.clone(),
+                importance: entry.importance,
+                source: entry.source.clone(),
+                aggregated: entry.aggregated,
+                user_msg: truncate_chars(&entry.user_msg, 180),
+                ai_reply: truncate_chars(&entry.ai_reply, 180),
+            })
+            .collect()
+    }
+
     /// 标记所有条目为已聚合
     pub fn mark_all_aggregated(&mut self) {
         for e in &mut self.entries {
@@ -419,6 +521,20 @@ impl LongTermMemory {
         debug!(path = ?path, "长期记忆已持久化");
         Ok(())
     }
+}
+
+fn long_term_entry_matches(entry: &LongTermEntry, query: &LongTermMemoryQuery) -> bool {
+    if let Some(min_importance) = query.min_importance {
+        if entry.importance.unwrap_or(0) < min_importance {
+            return false;
+        }
+    }
+    if let Some(source) = &query.source {
+        if entry.source.as_deref() != Some(source.as_str()) {
+            return false;
+        }
+    }
+    query.tags.iter().all(|tag| entry.tags.contains(tag))
 }
 
 // ---- Layer 2: 聚合画像（AI 定期生成） ----
@@ -710,6 +826,70 @@ mod tests {
 
         assert!(ctx.contains("用户正在开发 8Bit Cat 桌宠项目"));
         assert!(ctx.contains("#project"));
+    }
+
+    #[test]
+    fn test_retrieve_with_filters_by_tags_source_and_importance() {
+        let mut store = LongTermMemory {
+            entries: Vec::new(),
+        };
+        store.record_candidate(
+            &MemoryCandidate {
+                text: "用户偏好 grep-first 记忆检索".into(),
+                importance: 5,
+                tags: vec!["memory".into(), "preference".into()],
+            },
+            "记住我的偏好",
+            "好的",
+            10,
+        );
+        store.record_candidate(
+            &MemoryCandidate {
+                text: "用户正在调试桌宠动画".into(),
+                importance: 3,
+                tags: vec!["animation".into()],
+            },
+            "动画还有问题",
+            "我看看",
+            10,
+        );
+
+        let ctx = store.retrieve_with(
+            &LongTermMemoryQuery {
+                text: "记忆".into(),
+                tags: vec!["memory".into()],
+                source: Some("agent_reaction".into()),
+                min_importance: Some(4),
+            },
+            500,
+        );
+
+        assert!(ctx.contains("grep-first"));
+        assert!(!ctx.contains("动画"));
+    }
+
+    #[test]
+    fn test_review_markdown_lists_latest_structured_memory() {
+        let mut store = LongTermMemory {
+            entries: Vec::new(),
+        };
+        store.record_candidate(
+            &MemoryCandidate {
+                text: "用户正在实现 mood + memory".into(),
+                importance: 4,
+                tags: vec!["project".into()],
+            },
+            "开始实现",
+            "收到",
+            10,
+        );
+
+        let markdown = store.review_markdown(10);
+
+        assert!(markdown.contains("# Long-term Memory"));
+        assert!(markdown.contains("用户正在实现 mood + memory"));
+        assert!(markdown.contains("source: agent_reaction"));
+        assert!(markdown.contains("tags: project"));
     }
 
     #[test]

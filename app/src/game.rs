@@ -9,9 +9,7 @@ use ai_pad_core::minigame::{validate_game_def, GameDef};
 use ai_pad_core::pet_event::{PetEvent, PetMode, PetMood};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder,
-};
+use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
 use tracing::{info, warn};
 
 /// 游戏窗口共享状态。
@@ -253,7 +251,9 @@ fn set_pet_state(app: &AppHandle, state: PetStateName) -> Result<(), String> {
         "idle" => PetEvent::set_mode(PetMode::Idle),
         _ => PetEvent::react(PetMood::Focused),
     };
-    app.emit("pet-event", event).map_err(|e| e.to_string())
+    let bus: tauri::State<'_, crate::pet_event_bus::SharedPetEventBus> = app.state();
+    bus.emit(app, event);
+    Ok(())
 }
 
 /// 前端请求启动默认游戏。

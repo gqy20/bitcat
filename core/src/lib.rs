@@ -45,6 +45,7 @@ pub mod hotkey;
 pub mod logging;
 pub mod memory;
 pub mod minigame;
+pub mod mood_policy;
 pub mod panel_action;
 pub mod permission_hook;
 pub mod pet;

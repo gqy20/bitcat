@@ -1,7 +1,7 @@
 # Rig 驱动的宠物语义事件改造方案
 
 > 日期：2026-05-14  
-> 状态：Phase 1-3 已完成（2026-05-14）  
+> 状态：Phase 1-4 已完成（2026-05-14）  
 > 目标：清理旧的 `SetState` 视觉状态事件，把 Rig Agent / Tool 生命周期接入为一套可解释、可测试、可扩展的宠物语义事件。
 
 ## 背景
@@ -21,7 +21,7 @@ AI 回复文本 -> Rust 关键词判断 -> PetCommand::SetState(Happy/Confused/I
 前端 pet-event -> pet.applyEvent() -> 直接切视觉 state
 ```
 
-这会让“语义”和“动画表现”耦合在一起，也让 Rig 已经提供的工具生命周期事件无法自然驱动宠物。Phase 1-3 已将主链路迁移到 tagged `PetEvent`，并用 `AgentReaction` 接管最终情绪和长期记忆候选。
+这会让“语义”和“动画表现”耦合在一起，也让 Rig 已经提供的工具生命周期事件无法自然驱动宠物。Phase 1-4 已将主链路迁移到 tagged `PetEvent`，用 `AgentReaction` 接管最终情绪和长期记忆候选，并通过 `PetEventBus` / `MoodPolicy` 收口事件发送、去重、节流与情绪生命周期。
 
 ## 设计原则
 
@@ -340,7 +340,16 @@ pub struct MemoryCandidate {
 6. 删除 `should_store()` 关键词记忆判断；长期记忆写入由 `memory_candidates` 驱动。
 7. 为 `AgentReaction` 抽取增加 8 秒超时，失败时 fallback 到 `Idle`。
 
-### Phase 4：后续优化
+### Phase 4：事件总线、情绪策略与记忆审查（已完成）
+
+1. 新增 app 层 `PetEventBus`，作为 `pet-event` IPC 的统一发送入口。
+2. 在总线中集中处理短窗口去重、低优先级情绪节流和事件日志。
+3. 新增 core 层 `MoodPolicy`，为 `React` 事件补默认 TTL，并管理情绪覆盖规则。
+4. 前端 `PetStateMachine` 支持 `React.ttl_ms`，情绪到期后自动回到 idle 或当前语义状态。
+5. `LongTermMemory` 新增 `retrieve_with()`，支持 text/tag/source/min_importance 的 grep-first 检索过滤。
+6. `LongTermMemory` 新增 `review_entries()` 和 `review_markdown()`，提供可人工审查、可 grep 的长期记忆视图。
+
+### Phase 5：后续优化
 
 1. 将 `PromptHook::on_text_delta()` / `on_tool_call_delta()` 接入更细粒度的“正在组织参数”状态。
 2. 增加 `Focused` 专用动画帧。
@@ -368,12 +377,16 @@ pub struct MemoryCandidate {
 - 长期记忆测试：
   - `record_candidate()` 写入 summary/tags/importance/source。
   - `retrieve()` 可匹配 summary 和 tags。
+  - `retrieve_with()` 可按 tag/source/importance 解释性过滤。
+  - `review_markdown()` 输出可 grep 的审查视图。
+- `MoodPolicy` 测试：默认 TTL、显式 TTL、低优先级节流、高优先级覆盖。
+- `PetEventBus` 测试：React TTL 补全、短窗口重复通知去重。
 
 ### Frontend Vitest
 
 - notification 设置后映射到正确 visual state。
 - refresh 延长生命周期。
-- TTL 到期后 fallback 到 reaction 或 idle。
+- notification 和 reaction TTL 到期后 fallback 到 reaction 或 idle。
 - `SetMode(Sleep)` 优先级高于 notification。
 - `ClearNotification(kind)` 只清对应 kind。
 - 旧 `state` payload 不再作为主路径测试；如保留兼容，只测 warn 和忽略。
@@ -390,8 +403,9 @@ pub struct MemoryCandidate {
 | Rust + Vitest 测试 | 200-400 行 |
 | 删除旧协议/旧测试 | -100 到 -250 行 |
 | Phase 3 AgentReaction | 已完成，约 400 行 |
+| Phase 4 EventBus + MoodPolicy + memory review | 已完成，约 500 行 |
 
-实际实现拆为四笔提交：Phase 1 新协议、Phase 2 Rig 生命周期、旧状态事件清理、Phase 3 AgentReaction + memory candidates。
+实际实现拆为多笔提交：Phase 1 新协议、Phase 2 Rig 生命周期、旧状态事件清理、Phase 3 AgentReaction + memory candidates、Phase 4 EventBus + MoodPolicy + memory review。
 
 ## 验收标准
 

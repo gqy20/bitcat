@@ -23,6 +23,7 @@ pub mod gamepad;
 pub mod joystick;
 pub mod observation_gate;
 pub mod panel;
+pub mod pet_event_bus;
 pub mod screenshot;
 pub mod settings;
 pub mod shutdown;
@@ -50,6 +51,7 @@ pub fn run() {
         .manage(observation_gate::SharedObservationGate::default())
         .manage(screenshot::SharedScreenshotState::default())
         .manage(game::SharedGame::default())
+        .manage(pet_event_bus::SharedPetEventBus::new())
         .manage(SharedPendingChat::new())
         .manage(SharedChatCore::new())
         .manage(SharedAgent::new())

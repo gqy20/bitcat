@@ -25,6 +25,7 @@ pub enum PetEvent {
     React {
         mood: PetMood,
         speech: Option<String>,
+        ttl_ms: Option<u64>,
     },
     /// 设置长生命周期模式。
     SetMode { mode: PetMode },
@@ -85,7 +86,11 @@ impl PetEvent {
 
     /// 设置情绪反应。
     pub fn react(mood: PetMood) -> Self {
-        Self::React { mood, speech: None }
+        Self::React {
+            mood,
+            speech: None,
+            ttl_ms: None,
+        }
     }
 
     /// 设置长期模式。

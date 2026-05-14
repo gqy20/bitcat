@@ -54,6 +54,7 @@ class PetStateMachine {
     this.bubble = null;
     this.mode = 'idle';
     this.reactionMood = 'idle';
+    this.reactionExpiresAt = null;
     this.notifications = [];
   }
 
@@ -76,8 +77,9 @@ class PetStateMachine {
     this.applySemanticState();
   }
 
-  react(mood, speech) {
+  react(mood, speech, ttlMs) {
     this.reactionMood = MOOD_STATE[mood] ? mood : 'idle';
+    this.reactionExpiresAt = ttlMs == null ? null : performance.now() + ttlMs;
     if (speech) this.bubble = speech;
     this.applySemanticState();
   }
@@ -112,7 +114,12 @@ class PetStateMachine {
   expireNotifications(now) {
     const before = this.notifications.length;
     this.notifications = this.notifications.filter(n => n.expiresAt == null || n.expiresAt > now);
-    if (this.notifications.length !== before) this.applySemanticState();
+    const reactionExpired = this.reactionExpiresAt != null && this.reactionExpiresAt <= now;
+    if (reactionExpired) {
+      this.reactionMood = 'idle';
+      this.reactionExpiresAt = null;
+    }
+    if (this.notifications.length !== before || reactionExpired) this.applySemanticState();
   }
 
   currentVisualState() {
@@ -166,7 +173,7 @@ class PetStateMachine {
           this.clearNotification(event.kind);
           break;
         case 'react':
-          this.react(event.mood, event.speech);
+          this.react(event.mood, event.speech, event.ttl_ms);
           break;
         case 'set_mode':
           this.setMode(event.mode);
@@ -339,6 +346,13 @@ describe('PetStateMachine', () => {
     it('react 事件切换情绪', () => {
       pet.applyEvent({ type: 'react', mood: 'happy', speech: null });
       expect(pet.state).toBe('happy');
+    });
+
+    it('react ttl expires back to idle', () => {
+      pet.applyEvent({ type: 'react', mood: 'happy', speech: null, ttl_ms: 1 });
+      expect(pet.state).toBe('happy');
+      pet.expireNotifications(performance.now() + 2);
+      expect(pet.state).toBe('idle');
     });
 
     it('bubble 事件存储文本', () => {

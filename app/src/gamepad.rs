@@ -13,6 +13,7 @@ use crate::bubble;
 use crate::commands::SharedWindowState;
 use crate::joystick::{self, SdlGamepad};
 use crate::panel;
+use crate::pet_event_bus::SharedPetEventBus;
 use crate::tts;
 use crate::voice;
 use ai_pad_core::action::{ActionConfig, ActionDef};
@@ -65,9 +66,8 @@ pub fn process_button(button_index: u32) -> Vec<PetEvent> {
 }
 
 fn emit_pet_event(app: &AppHandle, event: PetEvent) {
-    if let Err(e) = app.emit("pet-event", event) {
-        warn!(error = %e, "emit pet-event failed");
-    }
+    let bus: tauri::State<'_, SharedPetEventBus> = app.state();
+    bus.emit(app, event);
 }
 
 // ========================================================================
@@ -1111,6 +1111,7 @@ pub fn run_ai_chat(
                 PetEvent::React {
                     mood: reaction.mood,
                     speech,
+                    ttl_ms: None,
                 },
             );
 

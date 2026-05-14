@@ -123,6 +123,7 @@ class PetStateMachine {
     this.bubble = null;
     this.mode = 'idle';
     this.reactionMood = 'idle';
+    this.reactionExpiresAt = null;
     this.notifications = [];
   }
 
@@ -148,8 +149,9 @@ class PetStateMachine {
     this.applySemanticState();
   }
 
-  react(mood, speech) {
+  react(mood, speech, ttlMs) {
     this.reactionMood = MOOD_STATE[mood] ? mood : 'idle';
+    this.reactionExpiresAt = ttlMs == null ? null : performance.now() + ttlMs;
     if (speech) this.bubble = speech;
     this.applySemanticState();
   }
@@ -188,7 +190,12 @@ class PetStateMachine {
   expireNotifications(now) {
     const before = this.notifications.length;
     this.notifications = this.notifications.filter(n => n.expiresAt == null || n.expiresAt > now);
-    if (this.notifications.length !== before) {
+    const reactionExpired = this.reactionExpiresAt != null && this.reactionExpiresAt <= now;
+    if (reactionExpired) {
+      this.reactionMood = 'idle';
+      this.reactionExpiresAt = null;
+    }
+    if (this.notifications.length !== before || reactionExpired) {
       this.applySemanticState();
     }
   }
@@ -268,7 +275,7 @@ class PetStateMachine {
           this.clearNotification(event.kind);
           break;
         case 'react':
-          this.react(event.mood, event.speech);
+          this.react(event.mood, event.speech, event.ttl_ms);
           break;
         case 'set_mode':
           this.setMode(event.mode);
