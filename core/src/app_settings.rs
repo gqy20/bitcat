@@ -10,6 +10,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// 应用级配置覆盖层，包含 AI 服务覆盖和外观/行为设置
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -115,10 +116,25 @@ impl AppSettings {
             fs::create_dir_all(parent).map_err(|e| format!("创建配置目录失败: {e}"))?;
         }
         let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
-        let tmp = path.with_extension("json.tmp");
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+        let tmp = path.with_extension(format!(
+            "json.{}.{}.{unique}.tmp",
+            std::process::id(),
+            thread_id_suffix()
+        ));
         fs::write(&tmp, json).map_err(|e| format!("写入临时文件失败: {e}"))?;
         fs::rename(&tmp, &path).map_err(|e| format!("保存 app_settings.json 失败: {e}"))
     }
+}
+
+fn thread_id_suffix() -> String {
+    format!("{:?}", std::thread::current().id())
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect()
 }
 
 // ---- 测试 ----
@@ -197,5 +213,12 @@ mod tests {
         assert!(!json.contains("base_url"));
         assert!(!json.contains("model"));
         assert!(!json.contains("max_tokens"));
+    }
+
+    #[test]
+    fn test_thread_id_suffix_is_file_name_safe() {
+        let suffix = thread_id_suffix();
+        assert!(!suffix.is_empty());
+        assert!(suffix.chars().all(|c| c.is_ascii_alphanumeric()));
     }
 }
