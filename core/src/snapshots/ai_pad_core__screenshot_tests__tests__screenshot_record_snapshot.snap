@@ -1,6 +1,5 @@
 ---
 source: core/src/screenshot_tests.rs
-assertion_line: 468
 expression: record
 ---
 analysis:
@@ -10,6 +9,10 @@ analysis:
     kind: unknown
   text_readable: false
   confidence: 0
+  confirmed_text: []
+  uncertain_text: []
+  inferred_activity: []
+  risk_flags: []
 hash: 999
 skipped: false
 width: 960

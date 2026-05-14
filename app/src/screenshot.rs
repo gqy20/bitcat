@@ -22,6 +22,12 @@ use tauri::Manager;
 static SCREENSHOT_PIPELINE_LOCK: Mutex<()> = Mutex::new(());
 static LAST_SCREENSHOT_FINISHED: Mutex<Option<Instant>> = Mutex::new(None);
 
+#[derive(Debug)]
+pub struct CapturedMonitorFrame {
+    pub label: String,
+    pub frame: CapturedFrame,
+}
+
 fn mark_screenshot_finished() {
     *LAST_SCREENSHOT_FINISHED.lock().unwrap() = Some(Instant::now());
 }
@@ -43,6 +49,19 @@ pub fn capture_target(target: &ScreenshotTarget) -> Result<CapturedFrame, String
     match target {
         ScreenshotTarget::Primary => capture_primary(),
         ScreenshotTarget::All => capture_all_screens(),
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn capture_target_frames(
+    target: &ScreenshotTarget,
+) -> Result<Vec<CapturedMonitorFrame>, String> {
+    match target {
+        ScreenshotTarget::Primary => Ok(vec![CapturedMonitorFrame {
+            label: "primary".into(),
+            frame: capture_primary()?,
+        }]),
+        ScreenshotTarget::All => capture_all_monitor_frames(),
     }
 }
 
@@ -132,6 +151,16 @@ fn capture_primary() -> Result<CapturedFrame, String> {
 #[cfg(target_os = "windows")]
 fn capture_all_screens() -> Result<CapturedFrame, String> {
     use ai_pad_core::screenshot::stitch_horizontal;
+    let frames = capture_all_monitor_frames()?;
+    if frames.len() == 1 {
+        return Ok(frames.into_iter().next().unwrap().frame);
+    }
+    let refs: Vec<&CapturedFrame> = frames.iter().map(|f| &f.frame).collect();
+    Ok(stitch_horizontal(&refs))
+}
+
+#[cfg(target_os = "windows")]
+fn capture_all_monitor_frames() -> Result<Vec<CapturedMonitorFrame>, String> {
     use windows_sys::Win32::Foundation::{LPARAM, RECT};
     use windows_sys::Win32::Graphics::Gdi::{
         BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
@@ -216,13 +245,21 @@ fn capture_all_screens() -> Result<CapturedFrame, String> {
     if frames.is_empty() {
         return Err("未找到显示器".into());
     }
-    if frames.len() == 1 {
-        return Ok(frames.remove(0).1);
-    }
 
     frames.sort_by_key(|(left, _)| *left);
-    let refs: Vec<&CapturedFrame> = frames.iter().map(|(_, f)| f).collect();
-    Ok(stitch_horizontal(&refs))
+    let total = frames.len();
+    Ok(frames
+        .into_iter()
+        .enumerate()
+        .map(|(idx, (_left, frame))| CapturedMonitorFrame {
+            label: if total == 1 {
+                "primary".into()
+            } else {
+                format!("monitor{}", idx + 1)
+            },
+            frame,
+        })
+        .collect())
 }
 
 /// 枚举所有显示器的位置和尺寸信息。
@@ -276,6 +313,13 @@ pub fn capture_target(_target: &ScreenshotTarget) -> Result<CapturedFrame, Strin
 }
 
 #[cfg(not(target_os = "windows"))]
+pub fn capture_target_frames(
+    _target: &ScreenshotTarget,
+) -> Result<Vec<CapturedMonitorFrame>, String> {
+    Err("截图仅支持 Windows".into())
+}
+
+#[cfg(not(target_os = "windows"))]
 pub fn enumerate_displays() -> Vec<ScreenInfo> {
     vec![]
 }
@@ -303,9 +347,7 @@ impl Default for SharedScreenshotState {
 /// 全黑帧采样 → 缩放 JPEG → Vision API 分析 → 保存文件 → 气泡展示 →
 /// 定时生成屏幕活动摘要。使用单线程 tokio runtime 驱动异步 HTTP 调用。
 pub fn screenshot_loop(app: &tauri::AppHandle) {
-    use ai_pad_core::screenshot::{encode_jpeg, resize_bgra, ScreenshotConfig};
-    use ai_pad_core::vision::{self, VisionConfig};
-    use base64::Engine;
+    use ai_pad_core::screenshot::ScreenshotConfig;
     use tracing::{debug, error, info, trace, warn};
 
     let rt = match tokio::runtime::Builder::new_current_thread()
@@ -399,32 +441,12 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             }
         }
 
-        // 截图
+        // 截图。多屏幕时每个显示器独立分析，避免横向拼接再压缩导致文字不可读。
         trace!("[screenshot] 开始捕获");
-        let frame = match capture_target(&config.target) {
-            Ok(f) => {
-                debug!(width = f.width, height = f.height, "screenshot captured");
-                // 全黑帧检测（覆盖屏保/锁屏等 SM_MONITORISOFF 未覆盖的场景）
-                let sample_count = 256;
-                let step = (f.pixels.len() / 4).max(1) / sample_count.max(1);
-                let black_pixels = (0..sample_count)
-                    .filter(|&i| {
-                        let idx = i * step * 4;
-                        idx + 3 < f.pixels.len()
-                            && f.pixels[idx] == 0
-                            && f.pixels[idx + 1] == 0
-                            && f.pixels[idx + 2] == 0
-                    })
-                    .count();
-                if black_pixels > sample_count * 95 / 100 {
-                    info!(
-                        black = black_pixels,
-                        total = sample_count,
-                        "检测到全黑帧，跳过"
-                    );
-                    continue;
-                }
-                f
+        let monitor_frames = match capture_target_frames(&config.target) {
+            Ok(frames) => {
+                debug!(monitor_count = frames.len(), "screenshot captured");
+                frames
             }
             Err(e) => {
                 warn!(error = %e, "截图捕获失败");
@@ -439,16 +461,6 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             config.debug_resolutions.clone()
         };
 
-        let (first_rgb, first_w, first_h) =
-            match resize_bgra(&frame.pixels, frame.width, frame.height, resolutions[0]) {
-                Ok(r) => r,
-                Err(e) => {
-                    warn!(error = %e, "截图缩放失败");
-                    continue;
-                }
-            };
-
-        // 逐分辨率处理
         let ai_config = match ai_pad_core::ai_config::AiConfig::load() {
             Ok(c) => c,
             Err(e) => {
@@ -457,36 +469,32 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             }
         };
 
-        for (i, &res_w) in resolutions.iter().enumerate() {
-            let is_last = i == resolutions.len() - 1;
+        let multi_monitor = monitor_frames.len() > 1;
+        let mut bubble_parts = Vec::new();
+        for monitor in monitor_frames {
+            // 全黑帧检测（覆盖屏保/锁屏等 SM_MONITORISOFF 未覆盖的场景）
+            let sample_count = 256;
+            let step = (monitor.frame.pixels.len() / 4).max(1) / sample_count.max(1);
+            let black_pixels = (0..sample_count)
+                .filter(|&i| {
+                    let idx = i * step * 4;
+                    idx + 3 < monitor.frame.pixels.len()
+                        && monitor.frame.pixels[idx] == 0
+                        && monitor.frame.pixels[idx + 1] == 0
+                        && monitor.frame.pixels[idx + 2] == 0
+                })
+                .count();
+            if black_pixels > sample_count * 95 / 100 {
+                info!(
+                    monitor = %monitor.label,
+                    black = black_pixels,
+                    total = sample_count,
+                    "检测到全黑帧，跳过"
+                );
+                continue;
+            }
 
-            let (rgb, w, h) = if res_w == resolutions[0] {
-                (first_rgb.clone(), first_w, first_h)
-            } else {
-                match resize_bgra(&frame.pixels, frame.width, frame.height, res_w) {
-                    Ok(r) => r,
-                    Err(e) => {
-                        warn!(error = %e, width = res_w, "缩放失败，跳过");
-                        continue;
-                    }
-                }
-            };
-
-            let jpeg = match encode_jpeg(&rgb, w, h, config.jpeg_quality) {
-                Ok(j) => j,
-                Err(e) => {
-                    warn!(error = %e, width = res_w, "JPEG 编码失败");
-                    continue;
-                }
-            };
-            let b64 = base64::engine::general_purpose::STANDARD.encode(&jpeg);
-
-            // Vision API
-            let prompt_cfg = ai_pad_core::prompts::PromptsConfig::load().vision;
-            let vision_model = ai_config.model.clone();
-
-            // 二次检查 chat_active：截图捕获/缩放期间用户可能刚开始聊天，
-            // 此时不应再发起 Vision API 请求（浪费 token + 可能打断对话）
+            // 二次检查 chat_active：截图捕获/缩放期间用户可能刚开始聊天。
             {
                 let bubble: tauri::State<crate::bubble::SharedBubble> = app.state();
                 if bubble.is_chat_active() {
@@ -495,93 +503,34 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
                 }
             }
 
-            let monitor_count = match config.target {
-                ScreenshotTarget::All => enumerate_displays().len().max(1),
-                ScreenshotTarget::Primary => 1,
-            };
-
-            debug!(model = %vision_model, monitor_count, "vision request started");
-            let analysis = match rt.block_on(vision::analyze_screenshot(
+            match analyze_and_save_monitor_frame(
+                &rt,
                 &ai_config,
-                &VisionConfig::default(),
-                &prompt_cfg,
-                &b64,
-                monitor_count,
-            )) {
-                Ok(analysis) => {
-                    info!(
-                        model = %vision_model,
-                        monitor_count,
-                        width = w,
-                        height = h,
-                        chars = analysis.description.chars().count(),
-                        "[{}] 视觉分析完成",
-                        if resolutions.len() > 1 { format!("{}px", res_w) } else { String::new() }
-                    );
-                    analysis
-                }
-                Err(e) => {
-                    warn!(error = %e, width = res_w, "视觉分析失败");
-                    ai_pad_core::vision::VisionAnalysis::default()
-                }
-            };
-
-            // 保存（文件名带分辨率后缀）
-            let record = ai_pad_core::screenshot::ScreenshotRecord {
-                analysis: analysis.clone(),
-                hash: 0,
-                skipped: false,
-                width: w,
-                height: h,
-                jpeg_size: jpeg.len(),
-            };
-            let suffix = if resolutions.len() > 1 {
-                format!("_{}px", res_w)
-            } else {
-                String::new()
-            };
-            let dir = match ai_pad_core::screenshot::ensure_today_dir() {
-                Ok(d) => d,
-                Err(e) => {
-                    warn!(error = %e, "创建目录失败");
-                    continue;
-                }
-            };
-            let prefix = chrono::Local::now().format("%H%M%S").to_string();
-            let jpg_path = dir.join(format!("{prefix}{suffix}.jpg"));
-            if let Err(e) = std::fs::write(&jpg_path, &jpeg) {
-                warn!(error = %e, path = ?jpg_path, "保存 JPEG 失败");
-            }
-            if let Err(e) =
-                ai_pad_core::screenshot::save_analysis_json(&dir, &prefix, &suffix, &record)
-            {
-                warn!(error = %e, "保存分析结果失败");
-            }
-
-            // 只在最后一个分辨率显示气泡
-            if is_last {
-                if analysis.description.is_empty() {
-                    info!("[screenshot] 描述为空，显示兜底提示");
-                    let _ = crate::bubble::show_bubble(
-                        app,
-                        "喵~ 看不太清屏幕内容，可能需要检查 API 配置",
-                    );
-                } else {
-                    debug!(
-                        chars = analysis.description.chars().count(),
-                        "show screenshot bubble"
-                    );
-                    match crate::bubble::show_bubble(app, &analysis.description) {
-                        Ok(()) => debug!("screenshot bubble shown"),
-                        Err(e) => warn!(error = %e, "screenshot bubble failed"),
+                &monitor,
+                &resolutions,
+                config.jpeg_quality,
+            ) {
+                Ok(Some(description)) if !description.is_empty() => {
+                    if multi_monitor {
+                        bubble_parts.push(format!("{}：{}", monitor.label, description));
+                    } else {
+                        bubble_parts.push(description);
                     }
                 }
-            } else {
-                info!(
-                    i,
-                    total = resolutions.len(),
-                    "[screenshot] 非最后一个分辨率，跳过气泡"
-                );
+                Ok(_) => {}
+                Err(e) => warn!(error = %e, monitor = %monitor.label, "显示器视觉分析失败"),
+            }
+        }
+
+        if bubble_parts.is_empty() {
+            info!("[screenshot] 描述为空，显示兜底提示");
+            let _ = crate::bubble::show_bubble(app, "喵~ 看不太清屏幕内容，可能需要检查 API 配置");
+        } else {
+            let text = bubble_parts.join("\n");
+            debug!(chars = text.chars().count(), "show screenshot bubble");
+            match crate::bubble::show_bubble(app, &text) {
+                Ok(()) => debug!("screenshot bubble shown"),
+                Err(e) => warn!(error = %e, "screenshot bubble failed"),
             }
         }
 
@@ -656,53 +605,162 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
     }
 }
 
-/// 手动触发截图分析（同步，内部自行创建 tokio runtime）。
-pub fn do_screenshot_now(app: &tauri::AppHandle) -> Result<String, String> {
-    use ai_pad_core::screenshot::{encode_jpeg, resize_bgra, ScreenshotConfig};
+fn analyze_and_save_monitor_frame(
+    rt: &tokio::runtime::Runtime,
+    ai_config: &ai_pad_core::ai_config::AiConfig,
+    monitor: &CapturedMonitorFrame,
+    resolutions: &[u32],
+    jpeg_quality: u8,
+) -> Result<Option<String>, String> {
+    use ai_pad_core::screenshot::{encode_jpeg, resize_bgra};
     use ai_pad_core::vision::{self, VisionConfig};
     use base64::Engine;
+    use tracing::{debug, info, warn};
+
+    let prompt_cfg = ai_pad_core::prompts::PromptsConfig::load().vision;
+    let vision_model = ai_config.model.clone();
+    let mut last_description = None;
+
+    let dir = ai_pad_core::screenshot::ensure_today_dir()?;
+    let prefix = chrono::Local::now().format("%H%M%S").to_string();
+
+    for (i, &res_w) in resolutions.iter().enumerate() {
+        let (rgb, w, h) = match resize_bgra(
+            &monitor.frame.pixels,
+            monitor.frame.width,
+            monitor.frame.height,
+            res_w,
+        ) {
+            Ok(r) => r,
+            Err(e) => {
+                warn!(error = %e, monitor = %monitor.label, width = res_w, "缩放失败，跳过");
+                continue;
+            }
+        };
+
+        let jpeg = match encode_jpeg(&rgb, w, h, jpeg_quality) {
+            Ok(j) => j,
+            Err(e) => {
+                warn!(error = %e, monitor = %monitor.label, width = res_w, "JPEG 编码失败");
+                continue;
+            }
+        };
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&jpeg);
+
+        debug!(
+            model = %vision_model,
+            monitor = %monitor.label,
+            width = w,
+            height = h,
+            "vision request started"
+        );
+        let analysis = match rt.block_on(vision::analyze_screenshot(
+            ai_config,
+            &VisionConfig::default(),
+            &prompt_cfg,
+            &b64,
+            1,
+        )) {
+            Ok(analysis) => {
+                info!(
+                    model = %vision_model,
+                    monitor = %monitor.label,
+                    width = w,
+                    height = h,
+                    chars = analysis.description.chars().count(),
+                    "[{}] 视觉分析完成",
+                    if resolutions.len() > 1 { format!("{}px", res_w) } else { String::new() }
+                );
+                analysis
+            }
+            Err(e) => {
+                warn!(error = %e, monitor = %monitor.label, width = res_w, "视觉分析失败");
+                ai_pad_core::vision::VisionAnalysis::default()
+            }
+        };
+
+        let record = ai_pad_core::screenshot::ScreenshotRecord {
+            analysis: analysis.clone(),
+            hash: 0,
+            skipped: false,
+            width: w,
+            height: h,
+            jpeg_size: jpeg.len(),
+        };
+        let suffix = if resolutions.len() > 1 {
+            format!("_{}_{}px", monitor.label, res_w)
+        } else {
+            format!("_{}", monitor.label)
+        };
+        let jpg_path = dir.join(format!("{prefix}{suffix}.jpg"));
+        if let Err(e) = std::fs::write(&jpg_path, &jpeg) {
+            warn!(error = %e, path = ?jpg_path, "保存 JPEG 失败");
+        }
+        if let Err(e) = ai_pad_core::screenshot::save_analysis_json(&dir, &prefix, &suffix, &record)
+        {
+            warn!(error = %e, "保存分析结果失败");
+        }
+
+        if i == resolutions.len() - 1 {
+            last_description = Some(analysis.description);
+        } else {
+            info!(
+                i,
+                total = resolutions.len(),
+                monitor = %monitor.label,
+                "[screenshot] 非最后一个分辨率，跳过气泡"
+            );
+        }
+    }
+
+    Ok(last_description)
+}
+
+/// 手动触发截图分析（同步，内部自行创建 tokio runtime）。
+pub fn do_screenshot_now(app: &tauri::AppHandle) -> Result<String, String> {
+    use ai_pad_core::screenshot::ScreenshotConfig;
 
     let _pipeline_guard = SCREENSHOT_PIPELINE_LOCK
         .try_lock()
         .map_err(|_| "已有截图分析正在进行中，请稍后再试".to_string())?;
 
     let config = ScreenshotConfig::default();
-    let frame = capture_target(&config.target)?;
-    let (rgb, w, h) = resize_bgra(&frame.pixels, frame.width, frame.height, config.max_width)?;
-    let jpeg = encode_jpeg(&rgb, w, h, config.jpeg_quality)?;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(&jpeg);
-
     let ai_config = ai_pad_core::ai_config::AiConfig::load()?;
-    let prompt_cfg = ai_pad_core::prompts::PromptsConfig::load().vision;
 
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|e| format!("创建运行时失败: {e}"))?;
 
-    let analysis = rt.block_on(vision::analyze_screenshot(
-        &ai_config,
-        &VisionConfig::default(),
-        &prompt_cfg,
-        &b64,
-        enumerate_displays().len(),
-    ))?;
-
-    let record = ai_pad_core::screenshot::ScreenshotRecord {
-        analysis: analysis.clone(),
-        hash: 0,
-        skipped: false,
-        width: w,
-        height: h,
-        jpeg_size: jpeg.len(),
-    };
-    if let Err(e) = ai_pad_core::screenshot::save_screenshot(&jpeg, &record) {
-        tracing::warn!(error = %e, "保存截图失败");
+    let monitor_frames = capture_target_frames(&config.target)?;
+    let multi_monitor = monitor_frames.len() > 1;
+    let mut parts = Vec::new();
+    for monitor in monitor_frames {
+        if let Some(description) = analyze_and_save_monitor_frame(
+            &rt,
+            &ai_config,
+            &monitor,
+            &[config.max_width],
+            config.jpeg_quality,
+        )? {
+            if !description.is_empty() {
+                if multi_monitor {
+                    parts.push(format!("{}：{}", monitor.label, description));
+                } else {
+                    parts.push(description);
+                }
+            }
+        }
     }
 
-    let _ = crate::bubble::show_bubble(app, &analysis.description);
+    let description = if parts.is_empty() {
+        "喵~ 看不太清屏幕内容，可能需要检查 API 配置".to_string()
+    } else {
+        parts.join("\n")
+    };
+    let _ = crate::bubble::show_bubble(app, &description);
     mark_screenshot_finished();
-    Ok(analysis.description)
+    Ok(description)
 }
 
 /// 手动触发截图分析的 Tauri 命令。

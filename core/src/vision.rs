@@ -37,6 +37,7 @@ pub struct VisionConfig {
 /// Vision API 返回的结构化分析结果，通过 JSON schema 约束模型输出。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VisionAnalysis {
+    /// 气泡展示用的自然语言短描述；不作为长期事实来源。
     pub description: String,
     #[serde(default)]
     pub apps: Vec<String>,
@@ -46,6 +47,18 @@ pub struct VisionAnalysis {
     pub text_readable: bool,
     #[serde(default)]
     pub confidence: f32,
+    /// 仅包含画面里明确可见、可直接引用的短文本。
+    #[serde(default)]
+    pub confirmed_text: Vec<String>,
+    /// 看起来像某些内容但无法完全确认的文本，不应进入长期记忆。
+    #[serde(default)]
+    pub uncertain_text: Vec<String>,
+    /// 对用户正在做什么的概括性推断，可用于短期摘要但需要降权。
+    #[serde(default)]
+    pub inferred_activity: Vec<String>,
+    /// 标记本次观察的风险点，如 small_text、media_metadata、brand_unclear。
+    #[serde(default)]
+    pub risk_flags: Vec<String>,
 }
 
 impl VisionAnalysis {
@@ -56,14 +69,62 @@ impl VisionAnalysis {
         } else {
             self.apps.join(", ")
         };
+        let confirmed = if self.confirmed_text.is_empty() {
+            "none".to_string()
+        } else {
+            self.confirmed_text.join("; ")
+        };
+        let inferred = if self.inferred_activity.is_empty() {
+            "none".to_string()
+        } else {
+            self.inferred_activity.join("; ")
+        };
+        let risks = if self.risk_flags.is_empty() {
+            "none".to_string()
+        } else {
+            self.risk_flags.join(", ")
+        };
         format!(
-            "{} | apps: {} | state: {} | text_readable: {} | confidence: {:.2}",
+            "{} | apps: {} | state: {} | confirmed: {} | inferred: {} | risks: {} | confidence: {:.2}",
             self.description,
             apps,
             self.state.label(),
-            self.text_readable,
+            confirmed,
+            inferred,
+            risks,
             self.confidence
         )
+    }
+
+    fn normalized(mut self) -> Self {
+        self.description = truncate_chars(&self.description, 140);
+        truncate_vec(&mut self.confirmed_text, 6, 80);
+        truncate_vec(&mut self.uncertain_text, 4, 80);
+        truncate_vec(&mut self.inferred_activity, 3, 80);
+        truncate_vec(&mut self.risk_flags, 6, 40);
+        self.confirmed_text.retain(|s| !s.trim().is_empty());
+        self.uncertain_text.retain(|s| !s.trim().is_empty());
+        self.inferred_activity.retain(|s| !s.trim().is_empty());
+        self.risk_flags
+            .retain(|s| !s.trim().is_empty() && s != "none");
+        self
+    }
+}
+
+fn truncate_chars(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        s.to_string()
+    } else {
+        let mut out: String = s.chars().take(max_chars.saturating_sub(1)).collect();
+        out.push('…');
+        out
+    }
+}
+
+fn truncate_vec(values: &mut Vec<String>, max_items: usize, max_chars: usize) {
+    values.truncate(max_items);
+    for value in values {
+        *value = truncate_chars(value.trim(), max_chars);
     }
 }
 
@@ -75,6 +136,10 @@ impl Default for VisionAnalysis {
             state: VisionState::Unknown,
             text_readable: false,
             confidence: 0.0,
+            confirmed_text: Vec::new(),
+            uncertain_text: Vec::new(),
+            inferred_activity: Vec::new(),
+            risk_flags: Vec::new(),
         }
     }
 }
@@ -246,10 +311,12 @@ pub async fn analyze_screenshot(
         .map_err(|e| format!("生成结构化视觉分析失败: {e}"))?;
     let elapsed = start.elapsed();
 
+    let analysis = response.data.normalized();
+
     info!(
         elapsed_ms = elapsed.as_millis(),
-        apps = response.data.apps.len(),
-        state = response.data.state.label(),
+        apps = analysis.apps.len(),
+        state = analysis.state.label(),
         "视觉分析完成"
     );
 
@@ -263,7 +330,7 @@ pub async fn analyze_screenshot(
         .with_elapsed_ms(elapsed.as_millis() as u64),
     );
 
-    Ok(response.data)
+    Ok(analysis)
 }
 
 #[cfg(test)]
@@ -311,12 +378,37 @@ mod tests {
             },
             text_readable: true,
             confidence: 0.8,
+            confirmed_text: vec!["README.md".into()],
+            uncertain_text: vec!["文件树部分文字看不清".into()],
+            inferred_activity: vec!["浏览文档".into()],
+            risk_flags: vec!["small_text".into()],
         };
         let context = analysis.to_context_text();
         assert!(context.contains("用户正在浏览文档"));
         assert!(context.contains("Browser"));
         assert!(context.contains("working"));
+        assert!(context.contains("README.md"));
+        assert!(context.contains("small_text"));
         assert!(context.contains("0.80"));
+    }
+
+    #[test]
+    fn test_vision_analysis_normalizes_long_fields() {
+        let analysis = VisionAnalysis {
+            description: "很长".repeat(100),
+            confirmed_text: vec!["  A  ".into(); 10],
+            uncertain_text: vec!["B".repeat(100)],
+            inferred_activity: vec!["C".repeat(100)],
+            risk_flags: vec!["none".into(), "small_text".into()],
+            ..Default::default()
+        }
+        .normalized();
+
+        assert!(analysis.description.chars().count() <= 140);
+        assert_eq!(analysis.confirmed_text.len(), 6);
+        assert_eq!(analysis.confirmed_text[0], "A");
+        assert!(analysis.uncertain_text[0].chars().count() <= 80);
+        assert_eq!(analysis.risk_flags, vec!["small_text"]);
     }
 
     #[test]
@@ -366,7 +458,11 @@ mod wiremock_tests {
                         "apps":["VS Code"],
                         "state":{"kind":"working","app":"VS Code"},
                         "text_readable":true,
-                        "confidence":0.9
+                        "confidence":0.9,
+                        "confirmed_text":["VS Code"],
+                        "uncertain_text":[],
+                        "inferred_activity":["写代码"],
+                        "risk_flags":[]
                     }
                 }]
             })))
@@ -385,6 +481,7 @@ mod wiremock_tests {
         let analysis = result.unwrap();
         assert_eq!(analysis.description, "VS Code 编辑器");
         assert_eq!(analysis.apps, vec!["VS Code"]);
+        assert_eq!(analysis.confirmed_text, vec!["VS Code"]);
     }
 
     #[tokio::test]
