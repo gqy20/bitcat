@@ -5,6 +5,7 @@
 //! 模式和明确动作，前端状态机再负责映射到具体视觉状态与生命周期。
 
 use crate::agent::{ToolPhase, ToolRuntimeEvent};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// 前端宠物窗口的语义事件。
@@ -50,7 +51,7 @@ pub enum PetNotificationKind {
 }
 
 /// 对话或业务事件结束后的情绪反应。
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum PetMood {
     Idle,

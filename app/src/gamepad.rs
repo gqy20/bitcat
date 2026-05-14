@@ -17,11 +17,12 @@ use crate::tts;
 use crate::voice;
 use ai_pad_core::action::{ActionConfig, ActionDef};
 use ai_pad_core::agent::{AgentStreamEvent, PetAgent};
+use ai_pad_core::agent_reaction::{extract_agent_reaction, fallback_agent_reaction};
 use ai_pad_core::bridge::{handle_button_press, PetCommand};
 use ai_pad_core::device::button_name;
 use ai_pad_core::hotkey;
 use ai_pad_core::logging::log_preview;
-use ai_pad_core::memory::{should_store, LongTermMemory, MemoryStore, ProfileStore};
+use ai_pad_core::memory::{LongTermMemory, MemoryStore, ProfileStore};
 use ai_pad_core::pet_event::{
     tool_event_to_pet_event, PetEvent, PetMode, PetMood, PetNotificationKind,
 };
@@ -996,6 +997,8 @@ pub fn run_ai_chat(
     let app_for_chunks = app.clone();
     let prefix = log_prefix.to_string();
     let prefix_for_log = prefix.clone();
+    let tool_summaries = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
+    let tool_summaries_for_stream = tool_summaries.clone();
     let mut text_started = false;
     let stream_result = rt.block_on(agent.chat_stream(&enriched_msg, move |event| match event {
         AgentStreamEvent::Text { text } => {
@@ -1017,6 +1020,17 @@ pub fn run_ai_chat(
             );
             if let Some(pet_event) = tool_event_to_pet_event(&event) {
                 emit_pet_event(&app_for_chunks, pet_event);
+            }
+            if let Ok(mut summaries) = tool_summaries_for_stream.lock() {
+                let preview = event.result_preview.as_deref().unwrap_or("");
+                summaries.push(format!(
+                    "{}:{} success={:?} elapsed={:?} {}",
+                    event.tool_name,
+                    event.phase.as_str(),
+                    event.success,
+                    event.elapsed_ms,
+                    preview
+                ));
             }
             let _ = bubble::emit_tool_event(
                 &app_for_chunks,
@@ -1060,16 +1074,6 @@ pub fn run_ai_chat(
                 warn!("memory 锁中毒，跳过短期记忆写入");
             }
 
-            // 长期记忆：视内容决定是否保留
-            if should_store(msg, &reply) {
-                if let Ok(mut long_term) = core.long_term.lock() {
-                    long_term.record(msg, &reply, 200);
-                    if let Err(e) = long_term.save() {
-                        warn!(error = %e, "保存长期记忆失败");
-                    }
-                }
-            }
-
             let reply_preview = log_preview(&reply, 80);
             info!(
                 model = %agent.config.model,
@@ -1087,7 +1091,41 @@ pub fn run_ai_chat(
                 });
             }
 
-            emit_pet_event(app, PetEvent::set_mode(PetMode::Idle));
+            let summaries = tool_summaries.lock().map(|g| g.clone()).unwrap_or_default();
+            let reaction = match rt.block_on(extract_agent_reaction(
+                &agent.config,
+                msg,
+                &reply,
+                &summaries,
+            )) {
+                Ok(reaction) => reaction,
+                Err(e) => fallback_agent_reaction(&reply, &e),
+            };
+            let speech = if reaction.speech.is_empty() {
+                None
+            } else {
+                Some(reaction.speech.clone())
+            };
+            emit_pet_event(
+                app,
+                PetEvent::React {
+                    mood: reaction.mood,
+                    speech,
+                },
+            );
+
+            if !reaction.memory_candidates.is_empty() {
+                if let Ok(mut long_term) = core.long_term.lock() {
+                    for candidate in &reaction.memory_candidates {
+                        long_term.record_candidate(candidate, msg, &reply, 200);
+                    }
+                    if let Err(e) = long_term.save() {
+                        warn!(error = %e, "保存长期记忆候选失败");
+                    }
+                } else {
+                    warn!("long_term 锁中毒，跳过长期记忆候选写入");
+                }
+            }
         }
         Err(e) => {
             emit_pet_event(

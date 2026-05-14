@@ -20,6 +20,7 @@ use std::fs;
 use std::path::PathBuf;
 use tracing::{debug, info, warn};
 
+use crate::agent_reaction::MemoryCandidate;
 use crate::ai_config::AiConfig;
 use crate::token_tracker::{
     TokenCategory, TokenRecord, TokenUsage, new_session_id, record_token_usage,
@@ -222,6 +223,14 @@ pub struct LongTermEntry {
     pub user_msg: String,
     pub ai_reply: String,
     #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub importance: Option<u8>,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
     pub aggregated: bool,
 }
 
@@ -283,10 +292,40 @@ impl LongTermMemory {
             timestamp,
             user_msg: user_msg.to_string(),
             ai_reply: reply_truncated,
+            summary: None,
+            tags: Vec::new(),
+            importance: None,
+            source: Some("conversation".to_string()),
             aggregated: false,
         });
+        self.enforce_max_entries(max_entries);
+    }
+
+    /// 追加一条模型结构化判断出的长期记忆候选。
+    pub fn record_candidate(
+        &mut self,
+        candidate: &MemoryCandidate,
+        user_msg: &str,
+        ai_reply: &str,
+        max_entries: usize,
+    ) {
+        let timestamp = chrono::Local::now().format("%m-%d %H:%M").to_string();
+        let reply_truncated: String = ai_reply.chars().take(240).collect();
+        self.entries.push(LongTermEntry {
+            timestamp,
+            user_msg: user_msg.to_string(),
+            ai_reply: reply_truncated,
+            summary: Some(candidate.text.clone()),
+            tags: candidate.tags.clone(),
+            importance: Some(candidate.importance),
+            source: Some("agent_reaction".to_string()),
+            aggregated: false,
+        });
+        self.enforce_max_entries(max_entries);
+    }
+
+    fn enforce_max_entries(&mut self, max_entries: usize) {
         while self.entries.len() > max_entries {
-            // 优先淘汰已聚合的旧条目，其次淘汰最旧的
             if let Some(pos) = self.entries.iter().position(|e| e.aggregated) {
                 self.entries.remove(pos);
             } else {
@@ -306,7 +345,13 @@ impl LongTermMemory {
             .iter()
             .enumerate()
             .map(|(i, e)| {
-                let text = format!("{} {}", e.user_msg, e.ai_reply);
+                let text = format!(
+                    "{} {} {} {}",
+                    e.summary.as_deref().unwrap_or(""),
+                    e.tags.join(" "),
+                    e.user_msg,
+                    e.ai_reply
+                );
                 (i, relevance_score(&text, query))
             })
             .filter(|(_, s)| *s > 0.05)
@@ -320,7 +365,19 @@ impl LongTermMemory {
         let mut used = header.chars().count();
         for (idx, _) in &scored {
             let e = &self.entries[*idx];
-            let line = format!("[{}] {} | {}\n", e.timestamp, e.user_msg, e.ai_reply);
+            let line = if let Some(summary) = &e.summary {
+                let tags = if e.tags.is_empty() {
+                    String::new()
+                } else {
+                    format!(" #{}", e.tags.join(" #"))
+                };
+                format!(
+                    "[{}] {}{} | {} | {}\n",
+                    e.timestamp, summary, tags, e.user_msg, e.ai_reply
+                )
+            } else {
+                format!("[{}] {} | {}\n", e.timestamp, e.user_msg, e.ai_reply)
+            };
             if used + line.chars().count() > budget_chars {
                 break;
             }
@@ -650,6 +707,47 @@ mod tests {
         store.record_conversation("abcdefghijklmnopqrstuvwxyz", "1234567890ABCDEFGHIJ", &cfg);
         assert_eq!(store.entries[0].user_msg.chars().count(), 5);
         assert_eq!(store.entries[0].ai_reply.chars().count(), 10);
+    }
+
+    #[test]
+    fn test_record_candidate_stores_structured_fields() {
+        let mut store = LongTermMemory {
+            entries: Vec::new(),
+        };
+        let candidate = MemoryCandidate {
+            text: "用户偏好 grep-first 长期记忆".into(),
+            importance: 5,
+            tags: vec!["memory".into(), "preference".into()],
+        };
+
+        store.record_candidate(&candidate, "记住我的偏好", "好的", 10);
+
+        assert_eq!(store.entries.len(), 1);
+        assert_eq!(
+            store.entries[0].summary.as_deref(),
+            Some("用户偏好 grep-first 长期记忆")
+        );
+        assert_eq!(store.entries[0].importance, Some(5));
+        assert_eq!(store.entries[0].tags, vec!["memory", "preference"]);
+        assert_eq!(store.entries[0].source.as_deref(), Some("agent_reaction"));
+    }
+
+    #[test]
+    fn test_retrieve_matches_candidate_summary() {
+        let mut store = LongTermMemory {
+            entries: Vec::new(),
+        };
+        let candidate = MemoryCandidate {
+            text: "用户正在开发 8Bit Cat 桌宠项目".into(),
+            importance: 4,
+            tags: vec!["project".into()],
+        };
+        store.record_candidate(&candidate, "我们继续项目", "没问题", 10);
+
+        let ctx = store.retrieve("8Bit Cat", 500);
+
+        assert!(ctx.contains("用户正在开发 8Bit Cat 桌宠项目"));
+        assert!(ctx.contains("#project"));
     }
 
     #[test]
@@ -1072,6 +1170,10 @@ mod tests {
             timestamp: "05-12 14:23".into(),
             user_msg: "我叫小明".into(),
             ai_reply: "你好小明！".into(),
+            summary: None,
+            tags: Vec::new(),
+            importance: None,
+            source: Some("test".into()),
             aggregated: false,
         }];
         let refs: Vec<&LongTermEntry> = entries.iter().collect();
@@ -1119,6 +1221,10 @@ mod tests {
             timestamp: "05-12 15:00".into(),
             user_msg: "我在做 Rust 项目".into(),
             ai_reply: "什么项目？".into(),
+            summary: None,
+            tags: Vec::new(),
+            importance: None,
+            source: Some("test".into()),
             aggregated: false,
         }];
         let refs: Vec<&LongTermEntry> = entries.iter().collect();
@@ -1160,6 +1266,10 @@ mod tests {
             timestamp: "05-12 14:23".into(),
             user_msg: "我叫小明".into(),
             ai_reply: "你好".into(),
+            summary: None,
+            tags: Vec::new(),
+            importance: None,
+            source: Some("test".into()),
             aggregated: false,
         }];
         let refs: Vec<&LongTermEntry> = entries.iter().collect();

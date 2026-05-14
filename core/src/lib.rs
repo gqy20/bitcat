@@ -34,6 +34,7 @@
 
 pub mod action;
 pub mod agent;
+pub mod agent_reaction;
 pub mod ai_config;
 pub mod app_settings;
 pub mod bridge;
