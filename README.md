@@ -1,6 +1,6 @@
 # ai-pad / 8Bit Cat
 
-蓝牙手柄驱动的桌面工具：8 位像素桌宠 + AI 对话（流式）+ Quicker 风格弹出面板 + 语音输入 + TTS 朗读 + 截图视觉分析 + 贴边吸附 + 迷你游戏。
+蓝牙手柄驱动的桌面工具：8 位像素桌宠 + AI 对话（流式）+ 配置化弹出面板 + 语音输入 + 可选 TTS 朗读 + 截图视觉分析 + 贴边吸附 + 迷你游戏。
 
 基于 Tauri 2.0 + SDL2，单 exe，无 Node.js 依赖。共 **300+ 个测试**（Rust workspace + Vitest 前端），接入 cargo-husky（pre-commit fmt / pre-push clippy+test）。
 
@@ -36,19 +36,23 @@ make dist
 | 拖拽宠物到边缘 | 贴边吸附，变精致发光竖条（弹簧缓动动画） |
 | 点击猫咪嘴巴 | 打开聊天输入框，键盘输入文字送 AI |
 | 双击猫咪左眼 | 立即截图并显示 Vision 分析结果 |
-| AI 回复后 | 自动 TTS 朗读 |
+| AI 回复后 | 如果设置中开启 TTS，则自动朗读 |
 | 系统托盘右键 | 截图/折叠/置顶/**设置窗口**/重载配置/退出 |
 | 后台（每 30s） | 截图 + Vision API 分析 + 屏幕活动摘要 |
 | AI 对话中 | 自动暂停截图管线（避免浪费 Vision API 调用） |
 
 ## 弹出面板
 
-3 × 2 玻璃风格网格，默认六个动作：VSCode / 浏览器 / 资源管理器 / PowerShell / 记事本 / 问 AI（待实现）。
+弹出面板由 `config/panel_action.yml` 驱动，默认 480×420、3×3 玻璃风格网格。窗口尺寸、网格行列、按钮数量、图标、排序、启用状态和动作类型都可以通过 YAML 修改。
+
+默认按钮：VSCode / 浏览器 / 资源管理器 / PowerShell / 记事本 / 跳舞 / 游戏 / 设置 / 聊天。
 
 - 弹出后窗口居中、置顶、跳过任务栏、失焦自动隐藏
 - 选中项用蓝色光晕高亮，鼠标悬停或方向键移动都会同步选中
-- 按下 A / Enter 启动对应程序后面板自动关闭
+- 按下 A / Enter 执行动作后面板自动关闭
 - 后端的 `panel-nav` / `panel-confirm` / `panel-close` 事件由 Rust 主循环根据手柄状态发送
+- 前端通过 `cmd_get_panel_actions` 获取 ViewModel，不再硬编码按钮列表
+- `type: launch` 启动程序，`type: script` 执行 PowerShell 命令，`type: builtin` 调用内置入口（dance/game/settings/chat）
 
 ## AI 流式回复 & 气泡
 
@@ -57,7 +61,7 @@ make dist
 1. 后端调用 `agent.chat_stream()` 开始流式生成
 2. 同时打开独立气泡窗口，定位在宠物上方
 3. 每收到文本 chunk 通过 `bubble-chunk` 事件实时推送到前端渲染
-4. 流结束后发送 `bubble-end` 事件，前端启动自动隐藏定时器
+4. 流结束后发送 `bubble-end` 事件，前端启动自动隐藏定时器；如果设置中开启 TTS，则异步朗读回复
 5. 前端初始化时通过 `cmd_consume_bubble_text` invoke 拉取已有文本（解决 emit 早于 listen 的竞态）
 
 气泡支持 Markdown 渲染（marked.js）、毛玻璃效果、动画光标、聊天输入框模式、手动拖拽调整大小，并会在 AI 调用工具时显示计划/完成/失败/被阻止等运行状态。
@@ -83,7 +87,7 @@ make dist
 4. 屏幕活动摘要定时总结，**最近 10 条截图原始分析记录注入 AI prompt**
 5. **聊天输入聚焦时自动暂停截图**（避免浪费 Vision API 调用）
 6. 舞蹈播放期间同样暂停截图
-7. 支持多显示器按虚拟桌面坐标水平拼接
+7. 多显示器会按单个显示器独立分析和保存，多个可见显示器的 Vision API 请求会并行执行，再按显示器顺序汇总到气泡
 
 手动截图入口：
 
@@ -168,6 +172,8 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
 - **Token 用量**：展示今日总量、最近 session、Chat/Vision/ScreenSummary/MemoryAggregation 分类统计
 - 设计原则：`~/.claude/settings.json` 只读，所有用户修改通过覆盖层
 - 支持按分类重置为默认值
+- TTS 默认关闭；开启后 AI 回复完成时使用 Windows SAPI 本地朗读
+- `app_settings.json` 保存使用唯一临时文件和进程内读写锁，避免高频位置保存时读到半写入文件
 
 ## 手柄配对
 
@@ -188,6 +194,7 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
 ├── config/                 # 运行时配置目录（编译时嵌入 exe，exe 同目录可覆盖）
 │   ├── actions.yml         # 按键动作绑定
 │   ├── buttons.yml         # 硬件按键映射
+│   ├── panel_action.yml    # 弹出面板布局、按钮展示和动作
 │   ├── prompts.yml         # AI 提示词配置
 │   └── user.yml            # 用户画像（名字/角色/偏好/语言）
 ├── core/                   # 纯逻辑库（无 UI 依赖）
@@ -198,7 +205,8 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
 │       ├── ai_config.rs    # 从 ~/.claude/settings.json 或环境变量读取 API 配置
 │       ├── action.rs       # 动作定义与加载（hotkey/launch/voice/script），配置嵌入 + 多路径查找
 │       ├── app_settings.rs # 设置覆盖层存储（app_settings.json），只读→可写桥接
-│       ├── config.rs       # YAML 配置加载（buttons.yml），配置嵌入 + 多路径查找
+│       ├── config.rs       # 通用配置路径解析 + buttons.yml 加载
+│       ├── panel_action.rs # 面板布局、按钮 ViewModel 和动作配置
 │       ├── dance.rs        # 舞蹈定义、校验、用户/内置 YAML 双层加载
 │       ├── prompts.rs      # AI 提示词配置（agent/vision/memory/screen_summary），配置嵌入
 │       ├── device.rs       # SDL2 按键编号 → 名称映射
@@ -223,7 +231,7 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
     │   ├── commands.rs     # 共享状态 + Tauri command（snap_preview/crossfade/play_dance 等）
     │   ├── bubble.rs       # 独立气泡窗口, 流式 start/chunk/end 协议, bubble_follower 线程
     │   ├── voice.rs        # 语音输入窗口, 强制前台化, generation 防残留
-    │   ├── panel.rs        # 弹出面板（方向键导航, 动作执行, 舞蹈按钮）
+    │   ├── panel.rs        # 弹出面板（YAML 布局, 方向键导航, 动作执行）
     │   ├── settings.rs     # 设置窗口后端命令（读/写 app_settings + yml 重载）
     │   ├── screenshot.rs   # 截图线程（BitBlt + 熄屏检测 + Vision API + 聊天/舞蹈暂停）
     │   ├── joystick.rs     # SDL2 手柄封装 + is_attached 热插拔检测
@@ -233,7 +241,7 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
         ├── pet.html        # 宠物窗口（128×128 透明, Canvas 像素精灵 + 粒子 + 舞蹈播放器）
         ├── bubble.html     # 气泡窗口（流式文本 + Markdown + 毛玻璃）
         ├── game.html       # 迷你游戏窗口（Snake Phase 1）
-        ├── panel.html      # 面板窗口（480×320 玻璃风, 方向键导航, 舞蹈触发按钮）
+        ├── panel.html      # 面板窗口（尺寸/网格/按钮来自 panel_action.yml）
         ├── voice.html      # 语音输入条（280×40, textarea 接收输入法注入）
         ├── glow.html       # 吸附竖条（发光动画）
         ├── settings.html   # 设置窗口（720×520, 分类 Tab, 实时预览）
@@ -302,6 +310,42 @@ actions:
 
 按键编号到名称的映射，每种手柄不同。8BitDo Micro D-Input 已实测填好；换手柄需要校准。
 
+### config/panel_action.yml — 面板布局与按钮
+
+面板配置同时描述展示和执行行为：
+
+```yaml
+defaults:
+  terminal: powershell
+  width: 480
+  height: 420
+  columns: 3
+  rows: 3
+
+actions:
+  vscode:
+    label: VSCode
+    icon: "💻"
+    order: 10
+    type: launch
+    program: code
+    workdir: "D:\\C\\Desktop\\ai"
+    terminal: false
+
+  chat:
+    label: 聊天
+    icon: "💬"
+    order: 90
+    type: builtin
+    command: chat
+```
+
+- `width` / `height` / `columns` / `rows` 控制窗口大小和网格布局
+- `order` 控制排序；超出 `columns * rows` 的按钮不会显示
+- `enabled: false` 可临时隐藏可执行状态（按钮保留但禁用）
+- `type: builtin` 支持 `dance` / `game` / `settings` / `chat`
+- `type: launch` 和 `type: script` 用于外部程序和脚本快捷入口
+
 ### config/prompts.yml — AI 提示词
 
 包含四段配置：
@@ -334,7 +378,7 @@ language: "zh-CN"         # 首选语言（空则自动判断）
 
 ## AI Agent
 
-配置来源优先级：**环境变量 > `~/.claude/settings.json` > 默认值**
+配置来源优先级：**环境变量 > `app_settings.json` 覆盖层 > `~/.claude/settings.json` > 默认值**
 
 ```json
 // ~/.claude/settings.json
