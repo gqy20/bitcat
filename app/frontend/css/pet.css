@@ -216,7 +216,7 @@ body.collapsed .particles {
 
 /* ==========================================================================
    吸附竖条（Task 3：Canvas → DOM + CSS）
-   - 窗口尺寸固定 24×100（Rust 侧 SNAP_W/SNAP_H）
+   - 窗口尺寸由 Rust 侧 SNAP_W/SNAP_H 注入 CSS 变量
    - 三层渐变（outer / mid / core）+ 一个 hover 指示点（dot）
    - 呼吸 / hover 展宽 / 方向均由 CSS 动画与 class 驱动
    ========================================================================== */
@@ -224,8 +224,8 @@ body.collapsed .particles {
 #snap-bar {
   position: absolute;
   inset: 0;
-  width: 24px;
-  height: 100px;
+  width: var(--snap-w, 24px);
+  height: var(--snap-h, 67px);
   pointer-events: auto;
   cursor: pointer;
   --bar-width: 2px;      /* 核心条宽度，hover 时展宽到 6px */
@@ -326,8 +326,8 @@ body.collapsed .particles {
 /* ---- top/bottom: use the same snap window as a horizontal bar ---- */
 #snap-bar.direction-top,
 #snap-bar.direction-bottom {
-  width: 100px;
-  height: 24px;
+  width: var(--snap-h, 67px);
+  height: var(--snap-w, 24px);
 }
 
 #snap-bar.direction-top > *,
@@ -436,9 +436,9 @@ body.collapsed .particles {
 body.snap-mode #sprite,
 body.snap-mode .shadow,
 body.snap-mode .particles { display: none; }
-body.snap-mode { width: 24px !important; height: 100px !important; }
+body.snap-mode { width: var(--snap-w, 24px) !important; height: var(--snap-h, 67px) !important; }
 body.snap-mode.snap-top,
-body.snap-mode.snap-bottom { width: 100px !important; height: 24px !important; }
+body.snap-mode.snap-bottom { width: var(--snap-h, 67px) !important; height: var(--snap-w, 24px) !important; }
 
 /* ==========================================================================
    Crossfade（Task 4）：双窗口切换时消除双闪

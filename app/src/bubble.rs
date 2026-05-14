@@ -32,7 +32,7 @@ const BUBBLE_SUBCLASS_ID: usize = 100;
 const BUBBLE_W: f64 = 260.0;
 const BUBBLE_H: f64 = 120.0;
 const EDGE_MARGIN_LP: f64 = 12.0;
-const PET_GAP_LP: f64 = 8.0;
+const PET_GAP_LP: f64 = 4.0;
 const ARROW_MARGIN_LP: f64 = 26.0;
 const BUBBLE_INSET_X_LP: f64 = 8.0;
 

@@ -1,11 +1,12 @@
 use crate::commands::{self, SharedWindowState};
-use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
+use tauri::{LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 use tracing::{info, warn};
 
 use std::sync::atomic::Ordering;
 
 pub const SNAP_W: f64 = 24.0;
-pub const SNAP_H: i32 = 100;
+pub const SNAP_H: i32 = 67;
+const SNAP_BOTTOM_GAP_LP: f64 = 14.0;
 
 /// 切换 pet 窗口显示模式：正常(128x128) / 折叠(48x48)。
 #[tauri::command]
@@ -73,6 +74,7 @@ pub async fn cmd_snap_pet(app: tauri::AppHandle, x: i32, y: i32) -> Result<SnapR
     let scale = win.scale_factor().unwrap_or(1.0);
     let snap_h_px = (SNAP_H as f64 * scale) as i32;
     let snap_w_px = (SNAP_W * scale) as i32;
+    let bottom_gap_px = (SNAP_BOTTOM_GAP_LP * scale).round() as i32;
     let horizontal_snap_w_px = snap_h_px;
     let horizontal_snap_h_px = snap_w_px;
 
@@ -110,17 +112,11 @@ pub async fn cmd_snap_pet(app: tauri::AppHandle, x: i32, y: i32) -> Result<SnapR
         .copied()
         .unwrap_or(("none", snap_threshold + 1));
 
+    let side_snap_y =
+        (work.bottom - snap_h_px - bottom_gap_px).clamp(work.top, work.bottom - snap_h_px);
     let snap_result = match edge {
-        "left" if dist <= snap_threshold => (
-            "left",
-            work.left,
-            y.clamp(work.top, work.bottom - snap_h_px),
-        ),
-        "right" if dist <= snap_threshold => (
-            "right",
-            work.right - snap_w_px,
-            y.clamp(work.top, work.bottom - snap_h_px),
-        ),
+        "left" if dist <= snap_threshold => ("left", work.left, side_snap_y),
+        "right" if dist <= snap_threshold => ("right", work.right - snap_w_px, side_snap_y),
         "top" if dist <= snap_threshold => (
             "top",
             x.clamp(work.left, work.right - horizontal_snap_w_px),
@@ -212,8 +208,8 @@ pub async fn cmd_snap_transform(
     let ws: tauri::State<'_, SharedWindowState> = app.state();
     let on_top = ws.always_on_top.load(Ordering::SeqCst);
     let (snap_width, snap_height) = match edge.as_str() {
-        "left" | "right" => (SNAP_W as u32, SNAP_H as u32),
-        "top" | "bottom" => (SNAP_H as u32, SNAP_W as u32),
+        "left" | "right" => (SNAP_W, SNAP_H as f64),
+        "top" | "bottom" => (SNAP_H as f64, SNAP_W),
         _ => return Err(format!("invalid snap edge: {edge}")),
     };
 
@@ -238,7 +234,7 @@ pub async fn cmd_snap_transform(
         .get_webview_window("pet-snap")
         .ok_or("pet-snap window not found")?;
 
-    let _ = snap_win.set_size(PhysicalSize::new(snap_width, snap_height));
+    let _ = snap_win.set_size(LogicalSize::new(snap_width, snap_height));
     let _ = snap_win.set_position(PhysicalPosition::new(x, y));
     let _ = snap_win.set_always_on_top(on_top);
     snap_win.show().map_err(|e| e.to_string())?;
@@ -246,7 +242,9 @@ pub async fn cmd_snap_transform(
     let edge_for_eval = edge.clone();
     if snap_win
         .eval(format!(
-            "if(typeof __setSnapEdge==='function'){{__setSnapEdge('{edge_for_eval}');'ok'}}else{{'no-fn'}}"
+            "if(typeof __setSnapMetrics==='function'){{__setSnapMetrics({},{})}};\
+             if(typeof __setSnapEdge==='function'){{__setSnapEdge('{edge_for_eval}');'ok'}}else{{'no-fn'}}",
+            SNAP_W, SNAP_H
         ))
         .is_ok()
     {

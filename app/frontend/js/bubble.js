@@ -19,7 +19,7 @@
   const MIN_W = 220;
   const MAX_W = 420;
   const ABS_MAX_H = 680;      // 用户手动拖拽时的绝对最大高度
-  const PADDING_TOTAL = 60;   // body top(6) + bubble padding-top(14) + padding-bottom(14) + body bottom(22) + 余量(4)
+  const PADDING_TOTAL = 50;   // body top(6) + bubble padding-top(14) + padding-bottom(14) + body bottom(12) + 余量(4)
   const INPUT_ROW_H = 42;     // input-row 额外高度（含 padding-top:8）
   let hideTimer = null;
   let performanceHideTimer = null;
@@ -35,6 +35,7 @@
   let inputEl = null;
   let sendBtnEl = null;
   let resizeGripEl = null;      // resize 手柄元素
+  let collapseBtnEl = null;
   let isComposing = false;    // IME 组合状态标记
   let userScrolledUp = false;  // 用户是否手动向上滚动了（锁定自动跟底）
   let streaming = false;        // 是否处于流式输出中（bubble-end 后为 false 拦截迟到的轮询）
@@ -557,6 +558,7 @@
     sendBtnEl = document.getElementById('chatSend');
     thinkingEl = document.getElementById('thinking');
     resizeGripEl = document.getElementById('resizeGrip');
+    collapseBtnEl = document.getElementById('collapseBtn');
 
     // marked.js 配置：窄栏必须 breaks:true
     if (typeof marked !== 'undefined') {
@@ -630,6 +632,13 @@
       sendBtnEl.addEventListener('click', function() {
         diag('sendBtn click');
         submitChat();
+      });
+    }
+    if (collapseBtnEl) {
+      collapseBtnEl.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        hide();
       });
     }
 

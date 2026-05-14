@@ -6,6 +6,8 @@ use std::sync::Mutex;
 
 use tracing::info;
 
+const SNAP_SIDE_BOTTOM_GAP: i32 = 14;
+
 /// 共享宠物状态
 pub struct SharedPet {
     pub pet: Mutex<Pet>,
@@ -178,6 +180,8 @@ pub struct WindowStateSnapshot {
     /// 吸附方向: "left" / "right" / None（未吸附）
     /// 前端 init 时 pull 读取此字段决定 edgeReversed（替代 eval 注入 __setSnapEdge）
     pub snap_edge: Option<String>,
+    pub snap_w: f64,
+    pub snap_h: f64,
 }
 
 /// 从 SharedWindowState 读取当前快照（纯函数，可单测）
@@ -187,6 +191,8 @@ pub fn window_state_snapshot(ws: &SharedWindowState) -> WindowStateSnapshot {
         always_on_top: ws.always_on_top.load(Ordering::SeqCst),
         position: *ws.last_position.lock().unwrap(),
         snap_edge: ws.snap_edge.lock().ok().and_then(|g| g.clone()),
+        snap_w: crate::snap::SNAP_W,
+        snap_h: crate::snap::SNAP_H as f64,
     }
 }
 
@@ -266,17 +272,19 @@ pub fn calc_snap_preview(
         };
     }
 
+    let side_snap_y = work_bottom - snap_h - SNAP_SIDE_BOTTOM_GAP;
+
     match edge {
         "left" => SnapPreview {
             edge: "left".to_string(),
             x: work_left,
-            y: cursor_y.clamp(work_top, work_bottom - snap_h),
+            y: side_snap_y.clamp(work_top, work_bottom - snap_h),
             visible: true,
         },
         "right" => SnapPreview {
             edge: "right".to_string(),
             x: work_right - snap_w,
-            y: cursor_y.clamp(work_top, work_bottom - snap_h),
+            y: side_snap_y.clamp(work_top, work_bottom - snap_h),
             visible: true,
         },
         "top" => SnapPreview {
@@ -385,6 +393,8 @@ mod tests {
                 always_on_top: true,
                 position: None,
                 snap_edge: None,
+                snap_w: crate::snap::SNAP_W,
+                snap_h: crate::snap::SNAP_H as f64,
             }
         );
     }
@@ -413,6 +423,8 @@ mod tests {
             always_on_top: false,
             position: Some((1920, 1080)),
             snap_edge: None,
+            snap_w: crate::snap::SNAP_W,
+            snap_h: crate::snap::SNAP_H as f64,
         };
         let json = serde_json::to_string(&snap).unwrap();
         let restored: WindowStateSnapshot = serde_json::from_str(&json).unwrap();
@@ -426,6 +438,8 @@ mod tests {
             always_on_top: true,
             position: None,
             snap_edge: None,
+            snap_w: crate::snap::SNAP_W,
+            snap_h: crate::snap::SNAP_H as f64,
         };
         let json = serde_json::to_string(&snap).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -490,6 +504,8 @@ mod tests {
             always_on_top: true,
             position: None,
             snap_edge: Some("right".to_string()),
+            snap_w: crate::snap::SNAP_W,
+            snap_h: crate::snap::SNAP_H as f64,
         };
         let json = serde_json::to_string(&snap).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -503,6 +519,8 @@ mod tests {
             always_on_top: true,
             position: None,
             snap_edge: None,
+            snap_w: crate::snap::SNAP_W,
+            snap_h: crate::snap::SNAP_H as f64,
         };
         let json = serde_json::to_string(&snap).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -516,6 +534,8 @@ mod tests {
             always_on_top: false,
             position: Some((100, 200)),
             snap_edge: Some("left".to_string()),
+            snap_w: crate::snap::SNAP_W,
+            snap_h: crate::snap::SNAP_H as f64,
         };
         let json = serde_json::to_string(&snap).unwrap();
         let restored: WindowStateSnapshot = serde_json::from_str(&json).unwrap();
@@ -525,8 +545,8 @@ mod tests {
     // ===== 磁性预告 calc_snap_preview（Task 5）=====
 
     fn preview_at(x: i32, y: i32) -> SnapPreview {
-        // 典型工作区 1920x1080，宠物 128x128，阈值 80，snap 24x100
-        calc_snap_preview(x, y, 0, 0, 1920, 1040, 128, 128, 24, 100, 80)
+        // 典型工作区 1920x1080，宠物 128x128，阈值 80，snap 24x67
+        calc_snap_preview(x, y, 0, 0, 1920, 1040, 128, 128, 24, 67, 80)
     }
 
     #[test]
@@ -535,7 +555,7 @@ mod tests {
         assert_eq!(p.edge, "left");
         assert!(p.visible);
         assert_eq!(p.x, 0);
-        assert_eq!(p.y, 500);
+        assert_eq!(p.y, 1040 - 67 - SNAP_SIDE_BOTTOM_GAP);
     }
 
     #[test]
@@ -545,7 +565,7 @@ mod tests {
         assert_eq!(p.edge, "right");
         assert!(p.visible);
         assert_eq!(p.x, 1920 - 24);
-        assert_eq!(p.y, 500);
+        assert_eq!(p.y, 1040 - 67 - SNAP_SIDE_BOTTOM_GAP);
     }
 
     #[test]

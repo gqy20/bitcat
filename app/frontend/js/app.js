@@ -93,16 +93,18 @@
       // 吸附竖条模式：不启动宠物渲染循环，只显示发光条 + 监听点击
       // Pull 模式：init 时先从 Rust 拉取吸附方向，替代脆弱的 eval 注入
       var initialEdge = null;
+      var snapMetrics = null;
       try {
         if (window.__TAURI__ && window.__TAURI__.core) {
           var snap = await window.__TAURI__.core.invoke('cmd_get_window_state');
           if (snap && snap.snap_edge) initialEdge = snap.snap_edge;
+          if (snap && snap.snap_w && snap.snap_h) snapMetrics = { w: snap.snap_w, h: snap.snap_h };
           console.log('[pet-snap] pull 初始方向:', initialEdge);
         }
       } catch (err) {
         console.warn('[pet-snap] pull snap_edge 失败，默认 left:', err);
       }
-      setupSnapBar(initialEdge);
+      setupSnapBar(initialEdge, snapMetrics);
       return;
     }
 
@@ -120,7 +122,7 @@
   /// - 不再使用 canvas + requestAnimationFrame，视觉效果全部交给 CSS animation/transition
   /// - class 切换：direction-left/right（方向）、hovered（展宽）
   /// - initialEdge 来自 Rust pull 模式；window.__setSnapEdge 作为运行时兜底
-  function setupSnapBar(initialEdge) {
+  function setupSnapBar(initialEdge, snapMetrics) {
     const bar = document.getElementById('snap-bar');
     if (!bar) {
       console.error('[pet-snap] #snap-bar 节点缺失');
@@ -128,12 +130,27 @@
     }
 
     // 进入 snap 模式：body 标记用于隐藏主精灵/阴影/粒子
+    function applySnapMetrics(metrics) {
+      var w = metrics && Number(metrics.w);
+      var h = metrics && Number(metrics.h);
+      if (!Number.isFinite(w) || w <= 0) w = 24;
+      if (!Number.isFinite(h) || h <= 0) h = 67;
+      document.documentElement.style.setProperty('--snap-w', w + 'px');
+      document.documentElement.style.setProperty('--snap-h', h + 'px');
+      document.body.style.setProperty('--snap-w', w + 'px');
+      document.body.style.setProperty('--snap-h', h + 'px');
+      if (canvas) {
+        canvas.width = Math.round(w);
+        canvas.height = Math.round(h);
+      }
+    }
+
+    applySnapMetrics(snapMetrics);
+
     document.body.classList.add('snap-mode');
 
     // 主 canvas 在 snap 窗口中不再绘制任何东西
     if (canvas) {
-      canvas.width = 24;
-      canvas.height = 100;
       canvas.style.display = 'none';
     }
 
@@ -160,6 +177,7 @@
 
     // 运行时方向切换兜底（lib.rs cmd_snap_transform 通过 eval 调用）
     window.__setSnapEdge = function(edge) { setEdge(edge); };
+    window.__setSnapMetrics = function(w, h) { applySnapMetrics({ w: w, h: h }); };
   }
 
   // ========== Pull 模式：前端 init 时从 Rust 拉取窗口状态 ==========

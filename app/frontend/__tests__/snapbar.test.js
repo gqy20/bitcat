@@ -21,7 +21,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 function createSnapBarDOM() {
   document.body.innerHTML = `
     <div id="pet-root">
-      <canvas id="sprite" width="24" height="100"></canvas>
+      <canvas id="sprite" width="24" height="67"></canvas>
       <div id="snap-bar" hidden>
         <div class="snap-layer-outer"></div>
         <div class="snap-layer-mid"></div>
@@ -38,6 +38,23 @@ function setupSnapBar(initialEdge, opts) {
   var bar = document.getElementById('snap-bar');
   if (!bar) return null;
   opts = opts || {};
+  var metrics = opts.metrics || { w: 24, h: 67 };
+
+  function applySnapMetrics(next) {
+    var w = Number(next && next.w) || 24;
+    var h = Number(next && next.h) || 67;
+    document.documentElement.style.setProperty('--snap-w', w + 'px');
+    document.documentElement.style.setProperty('--snap-h', h + 'px');
+    document.body.style.setProperty('--snap-w', w + 'px');
+    document.body.style.setProperty('--snap-h', h + 'px');
+    var canvas = document.getElementById('sprite');
+    if (canvas) {
+      canvas.width = Math.round(w);
+      canvas.height = Math.round(h);
+    }
+  }
+
+  applySnapMetrics(metrics);
 
   function setEdge(edge) {
     var normalized = ['left', 'right', 'top', 'bottom'].includes(edge) ? edge : 'left';
@@ -58,6 +75,7 @@ function setupSnapBar(initialEdge, opts) {
 
   // 运行时方向切换兜底（lib.rs eval 调用）
   window.__setSnapEdge = function(edge) { setEdge(edge); };
+  window.__setSnapMetrics = function(w, h) { applySnapMetrics({ w: w, h: h }); };
 
   return { setEdge: setEdge };
 }
@@ -152,5 +170,15 @@ describe('snap bar DOM contract', () => {
     bar.dispatchEvent(new MouseEvent('mousedown', { button: 2, bubbles: true }));
     bar.dispatchEvent(new MouseEvent('mousedown', { button: 1, bubbles: true }));
     expect(called).toBe(0);
+  });
+  it('I: metrics from Rust snapshot drive CSS variables and canvas size', () => {
+    setupSnapBar('left', { metrics: { w: 30, h: 80 } });
+    const canvas = document.getElementById('sprite');
+    expect(document.documentElement.style.getPropertyValue('--snap-w')).toBe('30px');
+    expect(document.documentElement.style.getPropertyValue('--snap-h')).toBe('80px');
+    expect(canvas.width).toBe(30);
+    expect(canvas.height).toBe(80);
+    window.__setSnapMetrics(24, 67);
+    expect(document.documentElement.style.getPropertyValue('--snap-h')).toBe('67px');
   });
 });
