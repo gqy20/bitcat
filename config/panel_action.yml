@@ -1,0 +1,81 @@
+# 弹出面板快捷入口配置
+# id 需要与 app/frontend/js/panel.js 中的 ACTIONS id 保持一致。
+
+defaults:
+  terminal: powershell
+  width: 480
+  height: 420
+  columns: 3
+  rows: 3
+
+actions:
+  vscode:
+    label: VSCode
+    icon: "💻"
+    order: 10
+    type: launch
+    program: code
+    workdir: "D:\\C\\Desktop\\ai"
+    terminal: false
+
+  browser:
+    label: 浏览器
+    icon: "🌐"
+    order: 20
+    type: launch
+    program: explorer
+    args: "https://www.google.com"
+    terminal: false
+
+  explorer:
+    label: 资源管理器
+    icon: "📁"
+    order: 30
+    type: launch
+    program: explorer
+    args: "D:\\C\\Desktop\\ai"
+    terminal: false
+
+  powershell:
+    label: PowerShell
+    icon: "⚡"
+    order: 40
+    type: launch
+    program: powershell
+    terminal: true
+
+  notepad:
+    label: 记事本
+    icon: "📝"
+    order: 50
+    type: launch
+    program: notepad
+    terminal: false
+
+  dance:
+    label: 跳舞
+    icon: "💃"
+    order: 60
+    type: builtin
+    command: dance
+
+  game:
+    label: 游戏
+    icon: "🎮"
+    order: 70
+    type: builtin
+    command: game
+
+  settings:
+    label: 设置
+    icon: "⚙️"
+    order: 80
+    type: builtin
+    command: settings
+
+  chat:
+    label: 聊天
+    icon: "💬"
+    order: 90
+    type: builtin
+    command: chat

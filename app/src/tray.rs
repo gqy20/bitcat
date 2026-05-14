@@ -101,11 +101,20 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// 重载 config/actions.yml + config/prompts.yml，通知 gamepad_loop 刷新
+/// 重载 config/actions.yml / config/panel_action.yml / config/prompts.yml，通知 gamepad_loop 刷新。
 fn ws_reload_config(app: &AppHandle) {
     match ai_pad_core::action::ActionConfig::load("config/actions.yml") {
         Ok(cfg) => tracing::info!(actions = cfg.actions.len(), "已重载 config/actions.yml"),
         Err(e) => tracing::warn!(error = %e, "重载 config/actions.yml 失败"),
+    }
+    match ai_pad_core::panel_action::PanelActionConfig::load("config/panel_action.yml") {
+        Ok(cfg) => {
+            tracing::info!(
+                actions = cfg.actions.len(),
+                "已重载 config/panel_action.yml"
+            )
+        }
+        Err(e) => tracing::warn!(error = %e, "重载 config/panel_action.yml 失败"),
     }
     let _ = ai_pad_core::prompts::PromptsConfig::load();
     tracing::info!("已重载 config/prompts.yml");

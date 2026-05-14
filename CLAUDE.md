@@ -161,7 +161,7 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 - **日志**：统一用 `tracing` crate（info/warn/error/debug），不用 `eprintln!`
 - **中文处理**：Rust 中字符串切片必须按字符边界（`.chars().take(n)`），不可用字节索引
 - **前端**：无框架，IIFE 模块，通过 `window.__TAURI__` API 与后端通信
-- **配置**：`config/actions.yml`、`config/buttons.yml`、`config/prompts.yml` 运行时从 exe 同目录/config/ 加载，构建时需 cp 到 target/config/
+- **配置**：`config/actions.yml`、`config/buttons.yml`、`config/panel_action.yml`、`config/prompts.yml` 运行时从 exe 同目录/config/ 加载，构建时需 cp 到 target/config/
 - **模块文档**：每个 `.rs` 文件顶部应有 `//!` 模块文档（3 句话：做什么、为什么这样设计、与谁交互）。公共函数/结构体应有 `///` 注释说明用途和约束。新增模块时必须补齐；修改模块时同步更新。
 - **意图理解**：大模型擅长的简单任务不要做关键词匹配、正则分类或”小分类器”前置判断；让模型在普通对话里自行选择工具，Rust 只负责 schema、校验、权限和执行。
 - **记忆检索**：默认用可 grep 的结构化文本，不做 Embeddings / Vector RAG。若未来有人想重新评估，必须先更新 `docs/architecture/design-tradeoffs.md` 说明收益大于复杂度。

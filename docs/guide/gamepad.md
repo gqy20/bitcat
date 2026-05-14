@@ -84,6 +84,17 @@ L1/R1/L2 的具体功能由 `config/actions.yml` 配置，上方为默认值。
 
 面板可见时，A/B/方向键**由面板独占**，不会触发 actions.yml 中绑定的动作。
 
+### 面板按钮
+
+弹出面板布局由 `config/panel_action.yml` 的 `width` / `height` / `columns` / `rows` 决定，按钮按 `order` 排序。默认是 3×3 网格：
+
+| 按钮 | 来源 |
+|------|------|
+| VSCode / 浏览器 / 资源管理器 / PowerShell / 记事本 | `config/panel_action.yml` |
+| 跳舞 / 游戏 / 设置 / 聊天 | `config/panel_action.yml` 中的 `type: builtin` |
+
+`panel_action.yml` 管理面板按钮的展示与执行；手柄按键绑定仍由 `config/actions.yml` 管理。
+
 ## 按键处理优先级
 
 按键按下时，程序按以下顺序处理（高优先级先拦截）：

@@ -70,6 +70,7 @@ pub fn run() {
             game::cmd_game_log,
             panel::cmd_show_panel,
             panel::cmd_hide_panel,
+            panel::cmd_get_panel_actions,
             panel::cmd_execute_panel_action,
             panel::cmd_panel_log,
             bubble::cmd_consume_bubble_text,

@@ -3,10 +3,33 @@
 //! 解析 config/buttons.yml，将 SDL2 按钮 ID 映射为人类可读名称和别名，
 //! 并提供方向键 (hat) 映射。gamepad_loop 通过此模块识别按钮语义。
 
-use std::collections::HashMap;
-use std::fs;
+use std::{collections::HashMap, fs, path::PathBuf};
 
 use serde::Deserialize;
+
+/// 按统一优先级读取配置文件：exe 同目录 → 传入路径（CWD）→ 嵌入默认值。
+pub fn load_config_content(path: &str, default: &str) -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join(path)))
+        .filter(|p| p.exists())
+        .and_then(|p| fs::read_to_string(p).ok())
+        .or_else(|| fs::read_to_string(path).ok())
+        .unwrap_or_else(|| default.to_string())
+}
+
+/// 解析保存路径：优先复用加载时的路径（exe 同目录 → CWD），都不存在则写到 CWD。
+pub fn resolve_save_path(path: &str) -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join(path)))
+        .filter(|p| p.exists())
+        .or_else(|| {
+            let p = PathBuf::from(path);
+            if p.exists() { Some(p) } else { None }
+        })
+        .unwrap_or_else(|| PathBuf::from(path))
+}
 
 // ---- 数据结构 ----
 
@@ -68,13 +91,7 @@ impl ButtonConfig {
     /// 从 YAML 文件加载配置，文件不存在时回退到编译时嵌入的默认值
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         const DEFAULT_YML: &str = include_str!("../../config/buttons.yml");
-        let content = std::env::current_exe()
-            .ok()
-            .and_then(|exe| exe.parent().map(|dir| dir.join(path)))
-            .filter(|p| p.exists())
-            .and_then(|p| fs::read_to_string(p).ok())
-            .or_else(|| fs::read_to_string(path).ok())
-            .unwrap_or_else(|| DEFAULT_YML.to_string());
+        let content = load_config_content(path, DEFAULT_YML);
         let raw: RawButtonConfig = serde_yaml::from_str(&content)?;
 
         let buttons = raw

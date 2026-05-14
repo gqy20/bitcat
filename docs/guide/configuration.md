@@ -134,6 +134,47 @@ SDL2 按键编号到名称的映射表。针对 8BitDo Micro D-Input 模式实�
 
 如果更换手柄型号，需要根据实际按键编号修改此文件。你可以通过程序日志（`--debug` 模式）查看按键按下时的编号。
 
+### config/panel_action.yml — 弹出面板布局与快捷入口
+
+定义弹出面板的窗口尺寸、网格行列、按钮展示和按钮动作。修改后重新打开面板即可按新布局渲染；如果面板已存在，下一次显示时会同步窗口大小。
+
+```yaml
+defaults:
+  terminal: powershell
+  width: 480
+  height: 420
+  columns: 3
+  rows: 3
+
+actions:
+  vscode:
+    label: VSCode
+    icon: "💻"
+    order: 10
+    type: launch
+    program: code
+    workdir: "D:\\C\\Desktop\\ai"
+    terminal: false
+
+  explorer:
+    label: 资源管理器
+    icon: "📁"
+    order: 30
+    type: launch
+    program: explorer
+    args: "D:\\C\\Desktop\\ai"
+    terminal: false
+
+  chat:
+    label: 聊天
+    icon: "💬"
+    order: 90
+    type: builtin
+    command: chat
+```
+
+`type: launch` 和 `type: script` 用于外部程序/脚本；`type: builtin` 用于内置入口，目前支持 `dance`、`game`、`settings`、`chat`。前端不再硬编码按钮列表，而是从后端读取 `panel_action.yml` 生成的 ViewModel。
+
 ### config/prompts.yml — AI 提示词
 
 ```yaml
@@ -199,6 +240,7 @@ API Key、Base URL、模型名的配置来源按优先级排列：
 以下配置支持修改后即时生效，无需重启程序：
 
 - `config/actions.yml` — 通过托盘"重载配置"或设置窗口保存
+- `config/panel_action.yml` — 通过托盘"重载配置"重新校验，面板点击时实时读取
 - `config/prompts.yml` — 同上
 - `app_settings.json` — 设置窗口保存后即时生效（gamepad_loop 下一个 tick 刷新）
 - 截屏分析间隔 — 截图线程每轮重新读取，即时生效

@@ -5,7 +5,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
 
 // ---- 数据结构 ----
 
@@ -79,41 +78,17 @@ fn default_delay() -> f64 {
 
 const DEFAULT_YML: &str = include_str!("../../config/actions.yml");
 
-/// 配置文件查找：exe 同目录 → 传入路径（CWD）→ 嵌入默认值
-fn load_config_content(path: &str, default: &str) -> String {
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join(path)))
-        .filter(|p| p.exists())
-        .and_then(|p| fs::read_to_string(p).ok())
-        .or_else(|| fs::read_to_string(path).ok())
-        .unwrap_or_else(|| default.to_string())
-}
-
-/// 解析保存路径：优先复用加载时的路径（exe 同目录 → CWD），都不存在则写到 CWD。
-fn resolve_save_path(path: &str) -> PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join(path)))
-        .filter(|p| p.exists())
-        .or_else(|| {
-            let p = PathBuf::from(path);
-            if p.exists() { Some(p) } else { None }
-        })
-        .unwrap_or_else(|| PathBuf::from(path))
-}
-
 impl ActionConfig {
     /// 从 YAML 文件加载动作配置，文件不存在时回退到编译时嵌入的默认值
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let content = load_config_content(path, DEFAULT_YML);
+        let content = crate::config::load_config_content(path, DEFAULT_YML);
         let config: ActionConfig = serde_yaml::from_str(&content)?;
         Ok(config)
     }
 
     /// 序列化写回 config/actions.yml（会覆盖注释，保存前自动备份 `.bak`）。
     pub fn save(&self, path: &str) -> Result<(), String> {
-        let target = resolve_save_path(path);
+        let target = crate::config::resolve_save_path(path);
         if let Ok(old) = fs::read_to_string(&target) {
             let _ = fs::write(target.with_extension("yml.bak"), old);
         }

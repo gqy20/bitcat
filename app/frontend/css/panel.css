@@ -55,8 +55,8 @@ html, body {
 .grid {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(3, 1fr);
+  grid-template-columns: repeat(var(--panel-columns, 3), 1fr);
+  grid-template-rows: repeat(var(--panel-rows, 3), 1fr);
   gap: 8px;
   -webkit-app-region: no-drag;
 }

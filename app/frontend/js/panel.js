@@ -1,36 +1,26 @@
-// Phase A: 硬编码 6 个按钮，点击调用后端 cmd_execute_panel_action
-const ACTIONS = [
-  { id: 'vscode',     icon: '💻', label: 'VSCode' },
-  { id: 'browser',    icon: '🌐', label: '浏览器' },
-  { id: 'explorer',   icon: '📁', label: '资源管理器' },
-  { id: 'powershell', icon: '⚡', label: 'PowerShell' },
-  { id: 'notepad',    icon: '📝', label: '记事本' },
-  { id: 'dance',      icon: '💃', label: '跳舞' },
-  { id: 'game',       icon: '🎮', label: '游戏' },
-  { id: 'settings',   icon: '⚙️', label: '设置' },
-  { id: 'chat',       icon: '💬', label: '聊天' },
-];
-
-const COLS = 3;
-const ROWS = 3;
-
 const invoke = window.__TAURI__?.core?.invoke;
 const listen = window.__TAURI__?.event?.listen;
 
+let actions = [];
+let columns = 3;
+let rows = 3;
 let selectedIndex = 0;
 
 function render() {
   const grid = document.getElementById('grid');
   grid.innerHTML = '';
-  ACTIONS.forEach((a, i) => {
+  document.documentElement.style.setProperty('--panel-columns', String(columns));
+  document.documentElement.style.setProperty('--panel-rows', String(rows));
+  actions.forEach((a, i) => {
     const cell = document.createElement('div');
-    cell.className = 'cell';
+    cell.className = a.enabled ? 'cell' : 'cell disabled';
     cell.dataset.index = i;
     cell.innerHTML = `
       <div class="icon">${a.icon}</div>
       <div class="label">${a.label}</div>
     `;
     cell.addEventListener('click', () => {
+      if (!a.enabled) return;
       selectedIndex = i;
       updateSelection();
       activateSelected();
@@ -52,49 +42,24 @@ function updateSelection() {
 
 // dx: 列偏移；dy: 手柄约定（1=上，-1=下），需转屏幕坐标
 function moveSelection(dx, dy) {
-  const x = selectedIndex % COLS;
-  const y = Math.floor(selectedIndex / COLS);
-  const nx = Math.max(0, Math.min(COLS - 1, x + dx));
-  const ny = Math.max(0, Math.min(ROWS - 1, y - dy));
-  selectedIndex = ny * COLS + nx;
+  if (actions.length === 0) return;
+  const x = selectedIndex % columns;
+  const y = Math.floor(selectedIndex / columns);
+  const nx = Math.max(0, Math.min(columns - 1, x + dx));
+  const ny = Math.max(0, Math.min(rows - 1, y - dy));
+  selectedIndex = Math.min(actions.length - 1, ny * columns + nx);
   updateSelection();
 }
 
 async function activateSelected() {
-  const a = ACTIONS[selectedIndex];
-  if (!a) return;
+  const a = actions[selectedIndex];
+  if (!a || !a.enabled) return;
   if (!invoke) {
     console.error('Tauri invoke 不可用');
     return;
   }
   try {
-    if (a.id === 'dance') {
-      console.log('[panel] 💃 触发舞蹈播放');
-      await invoke('cmd_play_dance', { danceName: 'happy_twist' });
-      await invoke('cmd_hide_panel');
-      return;
-    }
-    if (a.id === 'game') {
-      console.log('[panel] 🎮 启动小游戏');
-      if (invoke) invoke('cmd_panel_log', { msg: 'game action selected: hide panel then cmd_start_game' }).catch(() => {});
-      await invoke('cmd_hide_panel');
-      if (invoke) invoke('cmd_panel_log', { msg: 'game action: panel hidden, invoking cmd_start_game' }).catch(() => {});
-      await invoke('cmd_start_game');
-      if (invoke) invoke('cmd_panel_log', { msg: 'game action: cmd_start_game resolved' }).catch(() => {});
-      return;
-    }
-    if (a.id === 'settings') {
-      await invoke('cmd_settings_show');
-      await invoke('cmd_hide_panel');
-      return;
-    }
-    if (a.id === 'chat') {
-      await invoke('cmd_open_chat');
-      await invoke('cmd_hide_panel');
-      return;
-    }
     await invoke('cmd_execute_panel_action', { id: a.id });
-    await invoke('cmd_hide_panel');
   } catch (e) {
     console.error('执行动作失败:', e);
   }
@@ -169,13 +134,33 @@ async function initEvents() {
 
 initEvents();
 
+async function loadPanelActions() {
+  if (!invoke) {
+    actions = [];
+    render();
+    return;
+  }
+  try {
+    const vm = await invoke('cmd_get_panel_actions');
+    columns = Math.max(1, Number(vm.columns) || 3);
+    rows = Math.max(1, Number(vm.rows) || 3);
+    actions = Array.isArray(vm.actions) ? vm.actions : [];
+    selectedIndex = Math.min(selectedIndex, Math.max(0, actions.length - 1));
+    render();
+  } catch (e) {
+    console.error('加载面板动作失败:', e);
+    actions = [];
+    render();
+  }
+}
+
 // 阻止透明窗口的滚轮弹回（WebView2 native scroll 不稳定）
 document.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
 
 // 重新显示时复位到第一项
 window.addEventListener('focus', () => {
   selectedIndex = 0;
-  updateSelection();
+  loadPanelActions();
 });
 
-render();
+loadPanelActions();
