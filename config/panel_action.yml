@@ -41,15 +41,16 @@ actions:
     icon: "⚡"
     order: 40
     type: launch
-    program: powershell
-    terminal: true
+    program: powershell.exe
+    args: "-NoExit"
+    terminal: false
 
   notepad:
     label: 记事本
     icon: "📝"
     order: 50
     type: launch
-    program: notepad
+    program: notepad.exe
     terminal: false
 
   dance:

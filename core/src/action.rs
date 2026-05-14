@@ -151,13 +151,47 @@ pub fn launch_program(
             .map_err(|e| format!("启动失败: {e}"))
     } else {
         let workdir = if workdir.is_empty() { "." } else { workdir };
-        std::process::Command::new(program)
+        match std::process::Command::new(program)
             .args(args.split_whitespace().filter(|s| !s.is_empty()))
             .current_dir(workdir)
             .spawn()
-            .map(|_| ())
-            .map_err(|e| format!("启动失败: {e}"))
+        {
+            Ok(_) => Ok(()),
+            Err(e) => launch_program_via_shell(program, args, workdir)
+                .map_err(|fallback| format!("启动失败: {e}; Shell fallback 失败: {fallback}")),
+        }
     }
+}
+
+#[cfg(windows)]
+fn launch_program_via_shell(program: &str, args: &str, workdir: &str) -> Result<(), String> {
+    const SCRIPT: &str = r#"
+$file = $args[0]
+$wd = $args[1]
+$argString = $args[2]
+$params = @{ FilePath = $file }
+if ($wd -and $wd -ne ".") { $params.WorkingDirectory = $wd }
+if ($argString) { $params.ArgumentList = $argString }
+Start-Process @params
+"#;
+
+    let status = std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", SCRIPT])
+        .arg(program)
+        .arg(workdir)
+        .arg(args)
+        .status()
+        .map_err(|e| e.to_string())?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("powershell helper exited with {status}"))
+    }
+}
+
+#[cfg(not(windows))]
+fn launch_program_via_shell(_program: &str, _args: &str, _workdir: &str) -> Result<(), String> {
+    Err("当前平台不支持 Shell fallback".into())
 }
 
 // ---- 测试 ----
