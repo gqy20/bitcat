@@ -788,7 +788,16 @@
     if (!window.__TAURI__) return;
 
     window.__TAURI__.event.listen('pet-event', (event) => {
-      pet.applyEvent(event.payload);
+      const payload = event.payload;
+      if (payload && payload.type === 'play_dance' && payload.name) {
+        try {
+          window.__TAURI__.core.invoke('cmd_play_dance', { danceName: payload.name });
+        } catch (err) {
+          console.warn('[pet] play_dance 事件处理失败:', err);
+        }
+        return;
+      }
+      pet.applyEvent(payload);
     });
 
     // 托盘实时事件：折叠/展开切换（非 init，是用户主动操作）

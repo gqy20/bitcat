@@ -83,6 +83,32 @@ const STATE_CONFIG = {
   },
 };
 
+const NOTIFICATION_CONFIG = {
+  ai_thinking: { state: 'talk', ttlMs: 30000 },
+  tool_running: { state: 'talk', ttlMs: 30000 },
+  tool_blocked: { state: 'confused', ttlMs: 15000 },
+  tool_failed: { state: 'confused', ttlMs: 15000 },
+  listening: { state: 'talk', ttlMs: null },
+  screenshot_observing: { state: 'talk', ttlMs: 5000 },
+};
+
+const MOOD_STATE = {
+  idle: 'idle',
+  happy: 'happy',
+  confused: 'confused',
+  focused: 'talk',
+  caring: 'happy',
+  excited: 'happy',
+  sleepy: 'sleep',
+};
+
+const MODE_STATE = {
+  idle: 'idle',
+  sleep: 'sleep',
+  game_play: 'gameplay',
+  gameplay: 'gameplay',
+};
+
 class PetStateMachine {
   constructor() {
     this.state = 'idle';
@@ -95,6 +121,9 @@ class PetStateMachine {
     this.speed = 60; // px/s
     this.targetX = null;
     this.bubble = null;
+    this.mode = 'idle';
+    this.reactionMood = 'idle';
+    this.notifications = [];
   }
 
   setState(newState) {
@@ -113,7 +142,75 @@ class PetStateMachine {
     this.targetX = x;
   }
 
+  setMode(mode) {
+    const normalized = MODE_STATE[mode] ? mode : 'idle';
+    this.mode = normalized;
+    this.applySemanticState();
+  }
+
+  react(mood, speech) {
+    this.reactionMood = MOOD_STATE[mood] ? mood : 'idle';
+    if (speech) this.bubble = speech;
+    this.applySemanticState();
+  }
+
+  setNotification(kind, body, ttlMs, refresh) {
+    const config = NOTIFICATION_CONFIG[kind];
+    if (!config) return;
+
+    const now = performance.now();
+    const effectiveTtl = ttlMs === undefined || ttlMs === null ? config.ttlMs : ttlMs;
+    const existing = this.notifications.find(n => n.kind === kind);
+    if (existing && refresh !== false) {
+      existing.body = body || existing.body;
+      existing.updatedAt = now;
+      existing.expiresAt = effectiveTtl == null ? null : now + effectiveTtl;
+    } else if (!existing) {
+      this.notifications.push({
+        kind,
+        body: body || null,
+        updatedAt: now,
+        expiresAt: effectiveTtl == null ? null : now + effectiveTtl,
+      });
+    }
+    this.applySemanticState();
+  }
+
+  clearNotification(kind) {
+    if (kind == null) {
+      this.notifications = [];
+    } else {
+      this.notifications = this.notifications.filter(n => n.kind !== kind);
+    }
+    this.applySemanticState();
+  }
+
+  expireNotifications(now) {
+    const before = this.notifications.length;
+    this.notifications = this.notifications.filter(n => n.expiresAt == null || n.expiresAt > now);
+    if (this.notifications.length !== before) {
+      this.applySemanticState();
+    }
+  }
+
+  currentVisualState() {
+    if (this.mode === 'sleep' || this.mode === 'game_play' || this.mode === 'gameplay') {
+      return MODE_STATE[this.mode] || 'idle';
+    }
+    const active = this.notifications.length ? this.notifications[this.notifications.length - 1] : null;
+    if (active && NOTIFICATION_CONFIG[active.kind]) {
+      return NOTIFICATION_CONFIG[active.kind].state;
+    }
+    return MOOD_STATE[this.reactionMood] || 'idle';
+  }
+
+  applySemanticState() {
+    const next = this.currentVisualState();
+    this.setState(next);
+  }
+
   update(dtMs) {
+    this.expireNotifications(performance.now());
     this.stateTimeMs += dtMs;
     this.frameTimeMs += dtMs;
 
@@ -160,6 +257,37 @@ class PetStateMachine {
   }
 
   applyEvent(event) {
+    if (!event) return;
+
+    if (event.type) {
+      switch (event.type) {
+        case 'notify':
+          this.setNotification(event.kind, event.body, event.ttl_ms, event.refresh);
+          break;
+        case 'clear_notification':
+          this.clearNotification(event.kind);
+          break;
+        case 'react':
+          this.react(event.mood, event.speech);
+          break;
+        case 'set_mode':
+          this.setMode(event.mode);
+          break;
+        case 'walk_to':
+          this.walkTo(event.x);
+          break;
+        case 'show_bubble':
+          this.bubble = event.text;
+          break;
+        case 'exit':
+          break;
+        case 'play_dance':
+          break;
+      }
+      return;
+    }
+
+    // 旧协议兼容：仅用于过渡期调试，AI 主链路不再发送裸 state。
     if (event.state) {
       if (event.state === 'exit') return;
       this.setState(event.state);

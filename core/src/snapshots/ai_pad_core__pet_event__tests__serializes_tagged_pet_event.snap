@@ -1,0 +1,10 @@
+---
+source: core/src/pet_event.rs
+assertion_line: 182
+expression: event
+---
+type: notify
+kind: ai_thinking
+body: 思考中...
+ttl_ms: 30000
+refresh: true

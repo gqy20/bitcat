@@ -47,6 +47,7 @@ pub mod minigame;
 pub mod panel_action;
 pub mod permission_hook;
 pub mod pet;
+pub mod pet_event;
 pub mod prompts;
 pub mod screen_summary;
 pub mod screenshot;

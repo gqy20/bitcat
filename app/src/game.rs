@@ -6,6 +6,7 @@
 
 use ai_pad_core::bridge::PetStateName;
 use ai_pad_core::minigame::{validate_game_def, GameDef};
+use ai_pad_core::pet_event::{PetEvent, PetMode, PetMood};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::{
@@ -245,11 +246,14 @@ fn set_pet_state(app: &AppHandle, state: PetStateName) -> Result<(), String> {
     let shared: tauri::State<'_, crate::commands::SharedPet> = app.state();
     let mut pet = shared.pet.lock().map_err(|e| e.to_string())?;
     let status = crate::commands::set_state(&mut pet, state);
-    app.emit(
-        "pet-event",
-        crate::gamepad::PetEvent::set_state(&status.state),
-    )
-    .map_err(|e| e.to_string())
+    let event = match status.state.as_str() {
+        "gameplay" => PetEvent::set_mode(PetMode::GamePlay),
+        "gamewin" => PetEvent::react(PetMood::Happy),
+        "gamelose" => PetEvent::react(PetMood::Confused),
+        "idle" => PetEvent::set_mode(PetMode::Idle),
+        _ => PetEvent::react(PetMood::Focused),
+    };
+    app.emit("pet-event", event).map_err(|e| e.to_string())
 }
 
 /// 前端请求启动默认游戏。

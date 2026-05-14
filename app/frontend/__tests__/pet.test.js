@@ -14,6 +14,32 @@ const STATE_CONFIG = {
   gamelose: { frameCount: 2, frameDuration: 400, autoIdleTimeout: 3000 },
 };
 
+const NOTIFICATION_CONFIG = {
+  ai_thinking: { state: 'talk', ttlMs: 30000 },
+  tool_running: { state: 'talk', ttlMs: 30000 },
+  tool_blocked: { state: 'confused', ttlMs: 15000 },
+  tool_failed: { state: 'confused', ttlMs: 15000 },
+  listening: { state: 'talk', ttlMs: null },
+  screenshot_observing: { state: 'talk', ttlMs: 5000 },
+};
+
+const MOOD_STATE = {
+  idle: 'idle',
+  happy: 'happy',
+  confused: 'confused',
+  focused: 'talk',
+  caring: 'happy',
+  excited: 'happy',
+  sleepy: 'sleep',
+};
+
+const MODE_STATE = {
+  idle: 'idle',
+  sleep: 'sleep',
+  game_play: 'gameplay',
+  gameplay: 'gameplay',
+};
+
 class PetStateMachine {
   constructor() {
     this.state = 'idle';
@@ -26,6 +52,9 @@ class PetStateMachine {
     this.speed = 60;
     this.targetX = null;
     this.bubble = null;
+    this.mode = 'idle';
+    this.reactionMood = 'idle';
+    this.notifications = [];
   }
 
   setState(newState) {
@@ -42,7 +71,65 @@ class PetStateMachine {
     this.targetX = x;
   }
 
+  setMode(mode) {
+    this.mode = MODE_STATE[mode] ? mode : 'idle';
+    this.applySemanticState();
+  }
+
+  react(mood, speech) {
+    this.reactionMood = MOOD_STATE[mood] ? mood : 'idle';
+    if (speech) this.bubble = speech;
+    this.applySemanticState();
+  }
+
+  setNotification(kind, body, ttlMs, refresh) {
+    const config = NOTIFICATION_CONFIG[kind];
+    if (!config) return;
+    const now = performance.now();
+    const effectiveTtl = ttlMs === undefined || ttlMs === null ? config.ttlMs : ttlMs;
+    const existing = this.notifications.find(n => n.kind === kind);
+    if (existing && refresh !== false) {
+      existing.body = body || existing.body;
+      existing.updatedAt = now;
+      existing.expiresAt = effectiveTtl == null ? null : now + effectiveTtl;
+    } else if (!existing) {
+      this.notifications.push({
+        kind,
+        body: body || null,
+        updatedAt: now,
+        expiresAt: effectiveTtl == null ? null : now + effectiveTtl,
+      });
+    }
+    this.applySemanticState();
+  }
+
+  clearNotification(kind) {
+    if (kind == null) this.notifications = [];
+    else this.notifications = this.notifications.filter(n => n.kind !== kind);
+    this.applySemanticState();
+  }
+
+  expireNotifications(now) {
+    const before = this.notifications.length;
+    this.notifications = this.notifications.filter(n => n.expiresAt == null || n.expiresAt > now);
+    if (this.notifications.length !== before) this.applySemanticState();
+  }
+
+  currentVisualState() {
+    if (this.mode === 'sleep' || this.mode === 'game_play' || this.mode === 'gameplay') {
+      return MODE_STATE[this.mode] || 'idle';
+    }
+    const active = this.notifications.length ? this.notifications[this.notifications.length - 1] : null;
+    if (active && NOTIFICATION_CONFIG[active.kind]) return NOTIFICATION_CONFIG[active.kind].state;
+    return MOOD_STATE[this.reactionMood] || 'idle';
+  }
+
+  applySemanticState() {
+    this.setState(this.currentVisualState());
+  }
+
   update(dtMs) {
+    this.expireNotifications(performance.now());
     this.stateTimeMs += dtMs;
     this.frameTimeMs += dtMs;
 
@@ -69,6 +156,30 @@ class PetStateMachine {
   }
 
   applyEvent(event) {
+    if (!event) return;
+    if (event.type) {
+      switch (event.type) {
+        case 'notify':
+          this.setNotification(event.kind, event.body, event.ttl_ms, event.refresh);
+          break;
+        case 'clear_notification':
+          this.clearNotification(event.kind);
+          break;
+        case 'react':
+          this.react(event.mood, event.speech);
+          break;
+        case 'set_mode':
+          this.setMode(event.mode);
+          break;
+        case 'walk_to':
+          this.walkTo(event.x);
+          break;
+        case 'show_bubble':
+          this.bubble = event.text;
+          break;
+      }
+      return;
+    }
     if (event.state) {
       if (event.state === 'exit') return;
       this.setState(event.state);
@@ -226,25 +337,39 @@ describe('PetStateMachine', () => {
   });
 
   describe('applyEvent', () => {
-    it('state 事件切换状态', () => {
-      pet.applyEvent({ state: 'talk' });
+    it('notify 事件切换到对应视觉状态', () => {
+      pet.applyEvent({ type: 'notify', kind: 'ai_thinking', body: '思考中', ttl_ms: 30000, refresh: true });
       expect(pet.state).toBe('talk');
     });
 
-    it('exit 事件被忽略', () => {
-      pet.applyEvent({ state: 'exit' });
-      expect(pet.state).toBe('idle');
+    it('react 事件切换情绪', () => {
+      pet.applyEvent({ type: 'react', mood: 'happy', speech: null });
+      expect(pet.state).toBe('happy');
     });
 
     it('bubble 事件存储文本', () => {
-      pet.applyEvent({ bubble: 'hello' });
+      pet.applyEvent({ type: 'show_bubble', text: 'hello' });
       expect(pet.bubble).toBe('hello');
     });
 
     it('walk_to 事件触发行走', () => {
-      pet.applyEvent({ walk_to: 200 });
+      pet.applyEvent({ type: 'walk_to', x: 200 });
       expect(pet.state).toBe('walk');
       expect(pet.targetX).toBe(200);
+    });
+
+    it('sleep mode 优先于普通通知', () => {
+      pet.applyEvent({ type: 'set_mode', mode: 'sleep' });
+      pet.applyEvent({ type: 'notify', kind: 'tool_running', body: '执行命令', ttl_ms: 30000, refresh: true });
+      expect(pet.state).toBe('sleep');
+    });
+
+    it('clear_notification 后回到 reaction', () => {
+      pet.applyEvent({ type: 'react', mood: 'happy', speech: null });
+      pet.applyEvent({ type: 'notify', kind: 'tool_running', body: '执行命令', ttl_ms: 30000, refresh: true });
+      expect(pet.state).toBe('talk');
+      pet.applyEvent({ type: 'clear_notification', kind: 'tool_running' });
+      expect(pet.state).toBe('happy');
     });
   });
 });

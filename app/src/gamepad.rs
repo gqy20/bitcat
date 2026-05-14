@@ -17,13 +17,13 @@ use crate::tts;
 use crate::voice;
 use ai_pad_core::action::{ActionConfig, ActionDef};
 use ai_pad_core::agent::{AgentStreamEvent, PetAgent};
-use ai_pad_core::bridge::{handle_button_press, resolve_agent_response, PetCommand};
+use ai_pad_core::bridge::{handle_button_press, resolve_agent_response, PetCommand, PetStateName};
 use ai_pad_core::device::button_name;
 use ai_pad_core::hotkey;
 use ai_pad_core::logging::log_preview;
 use ai_pad_core::memory::{should_store, LongTermMemory, MemoryStore, ProfileStore};
+use ai_pad_core::pet_event::{PetEvent, PetMode, PetMood};
 use ai_pad_core::user_profile::UserProfile;
-use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -33,48 +33,15 @@ use tracing::{debug, error, info, instrument, trace, warn};
 // PetEvent：前端事件
 // ========================================================================
 
-/// 前端宠物事件 payload，通过 `pet-event` 通道发送给 pet 窗口。
-///
-/// 每个字段都是 `Option`，一次事件可同时携带状态切换、气泡文本和行走坐标。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct PetEvent {
-    pub state: Option<String>,
-    pub bubble: Option<String>,
-    pub walk_to: Option<f32>,
-}
-
-impl PetEvent {
-    /// 构造一个状态切换事件（如 "talk"、"happy"、"idle"）。
-    pub fn set_state(state: &str) -> Self {
-        Self {
-            state: Some(state.to_string()),
-            bubble: None,
-            walk_to: None,
-        }
-    }
-    /// 构造一个气泡文本事件，让宠物窗口弹出消息。
-    pub fn bubble(text: &str) -> Self {
-        Self {
-            state: None,
-            bubble: Some(text.to_string()),
-            walk_to: None,
-        }
-    }
-    /// 构造一个行走事件，宠物将移动到指定的 X 坐标（像素）。
-    pub fn walk_to(x: f32) -> Self {
-        Self {
-            state: None,
-            bubble: None,
-            walk_to: Some(x),
-        }
-    }
-    /// 构造一个空事件（所有字段为 `None`）。
-    pub fn empty() -> Self {
-        Self {
-            state: None,
-            bubble: None,
-            walk_to: None,
-        }
+fn state_name_to_event(state: PetStateName) -> PetEvent {
+    match state {
+        PetStateName::Idle => PetEvent::set_mode(PetMode::Idle),
+        PetStateName::Sleep => PetEvent::set_mode(PetMode::Sleep),
+        PetStateName::GamePlay => PetEvent::set_mode(PetMode::GamePlay),
+        PetStateName::Talk => PetEvent::ai_thinking(),
+        PetStateName::Happy | PetStateName::GameWin => PetEvent::react(PetMood::Happy),
+        PetStateName::Confused | PetStateName::GameLose => PetEvent::react(PetMood::Confused),
+        PetStateName::Walk => PetEvent::react(PetMood::Focused),
     }
 }
 
@@ -82,13 +49,11 @@ impl PetEvent {
 pub fn commands_to_events(cmds: &[PetCommand]) -> Vec<PetEvent> {
     cmds.iter()
         .filter_map(|cmd| match cmd {
-            PetCommand::SetState { state } => {
-                Some(PetEvent::set_state(&format!("{:?}", state).to_lowercase()))
-            }
+            PetCommand::SetState { state } => Some(state_name_to_event(*state)),
             PetCommand::WalkTo { x } => Some(PetEvent::walk_to(*x)),
-            PetCommand::ShowBubble { text } => Some(PetEvent::bubble(text)),
-            PetCommand::Exit => Some(PetEvent::set_state("exit")),
-            PetCommand::PlayDance { .. } => None,
+            PetCommand::ShowBubble { text } => Some(PetEvent::show_bubble(text.clone())),
+            PetCommand::Exit => Some(PetEvent::exit()),
+            PetCommand::PlayDance { name } => Some(PetEvent::play_dance(name.clone())),
         })
         .collect()
 }
@@ -1292,27 +1257,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_event_set_state() {
-        let e = PetEvent::set_state("talk");
-        assert_eq!(e.state, Some("talk".to_string()));
-        assert_eq!(e.bubble, None);
+    fn test_event_notify() {
+        let e = PetEvent::ai_thinking();
+        assert!(matches!(e, PetEvent::Notify { .. }));
     }
 
     #[test]
     fn test_event_bubble() {
-        let e = PetEvent::bubble("喵~");
-        assert_eq!(e.bubble, Some("喵~".to_string()));
+        let e = PetEvent::show_bubble("喵~");
+        assert_eq!(
+            e,
+            PetEvent::ShowBubble {
+                text: "喵~".into()
+            }
+        );
     }
 
     #[test]
     fn test_event_walk_to() {
         let e = PetEvent::walk_to(150.0);
-        assert_eq!(e.walk_to, Some(150.0));
+        assert_eq!(e, PetEvent::WalkTo { x: 150.0 });
     }
 
     #[test]
     fn test_event_serialization() {
-        let e = PetEvent::set_state("happy");
+        let e = PetEvent::react(PetMood::Happy);
         let json = serde_json::to_string(&e).unwrap();
         let parsed: PetEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, e);
@@ -1322,7 +1291,7 @@ mod tests {
     fn test_process_button_start() {
         let events = process_button(11);
         assert!(!events.is_empty());
-        assert_eq!(events[0].state, Some("talk".to_string()));
+        assert!(matches!(events[0], PetEvent::Notify { .. }));
     }
 
     #[test]
@@ -1335,14 +1304,14 @@ mod tests {
     fn test_process_button_a_is_praise() {
         let events = process_button(0);
         assert!(!events.is_empty());
-        assert_eq!(events[0].state, Some("happy".to_string()));
+        assert_eq!(events[0], PetEvent::react(PetMood::Happy));
     }
 
     #[test]
     fn test_process_agent_response_happy() {
         let events = process_agent_response("哈哈哈太有趣了！");
-        assert!(events.iter().any(|e| e.state == Some("happy".to_string())));
-        assert_eq!(events.last().unwrap().state, Some("idle".to_string()));
+        assert!(events.iter().any(|e| *e == PetEvent::react(PetMood::Happy)));
+        assert_eq!(events.last().unwrap(), &PetEvent::set_mode(PetMode::Idle));
     }
 
     #[test]
