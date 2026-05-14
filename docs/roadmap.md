@@ -23,7 +23,38 @@
 | 设置页 Token 统计（今日消耗、最近会话、链路占比） | 已落地 |
 | Makefile 测试入口（通过 xtask 避免 PowerShell 语法问题） | 已落地 |
 
-**技术栈**：Rust workspace (core + app) + Tauri 2.0 + Vanilla JS Canvas + WebView2
+## 源码确认的技术栈
+
+8Bit Cat 当前不是 Web 应用套壳，而是 **Windows-first 的 Rust 桌面自动化程序 + Tauri 多透明 WebView 界面 + rig Agent 运行时**。`oc-claw` 可参考产品模型和会话状态抽象，但不建议照搬它的前端/桌面技术栈；本项目已有更贴近桌宠和手柄场景的底座。
+
+| 层级 | 技术 | 源码依据 | 说明 |
+|------|------|----------|------|
+| Workspace | Rust workspace：`core` / `app` / `xtask` | `Cargo.toml` | 逻辑、桌面壳、维护命令分离 |
+| Core crate | Rust 2024 + `ai-pad-core` | `core/Cargo.toml` | 纯逻辑层，无 Tauri/UI 依赖，便于快速测试 |
+| App crate | Rust 2021 + Tauri 2 | `app/Cargo.toml`, `app/tauri.conf.json` | 桌面窗口、托盘、全局快捷键、IPC |
+| UI Runtime | WebView2 via Tauri | `tauri.conf.json` `frontendDist: ./frontend` | 多窗口透明桌宠，而非浏览器页应用 |
+| Frontend | Vanilla HTML/CSS/JS + Canvas | `app/frontend/*.html`, `app/frontend/js/*.js` | 无 React/Vue/构建步骤；Node 只用于测试 |
+| Frontend Tests | Vitest 3 + jsdom | `app/frontend/package.json`, `vitest.config.ts` | 测试 `bubble/pet/game/sprite` 等纯 JS 逻辑 |
+| AI Agent | `rig-core` 0.36 + Anthropic provider | `core/src/agent.rs`, `core/src/vision.rs` | 流式对话、Tool、Extractor、Vision 结构化输出 |
+| AI 配置 | 环境变量 / `app_settings.json` / `~/.claude/settings.json` | `core/src/ai_config.rs` | 默认兼容 Claude Code 风格配置，只读读取 `.claude` |
+| Tool Schema | `schemars` + `serde` | `core/src/tools.rs`, `core/src/agent.rs` | 参数类型 derive JSON Schema，减少手写 schema 漂移 |
+| 手柄输入 | SDL2 0.38 bundled + static-link | `app/Cargo.toml`, `app/src/joystick.rs` | 8BitDo / DirectInput 轮询，Windows 构建静态 SDL2 |
+| Windows API | `windows-sys` | `core/src/hotkey.rs`, `app/src/screenshot.rs`, `app/src/main.rs` | SendInput、BitBlt、SAPI TTS、console、power/session 检测 |
+| 截图/Vision | Win32 BitBlt + `image` JPEG + rig Extractor | `app/src/screenshot.rs`, `core/src/vision.rs` | app 捕获像素，core 做压缩、dHash、Vision 结构化分析 |
+| 配置 | YAML + 内嵌默认值 + exe 同目录覆盖 | `config/*.yml`, `core/src/config.rs` | `actions/buttons/panel_action/prompts/user` |
+| 日志/审计 | `tracing` + rolling file + JSONL | `app/src/main.rs`, `core/src/tool_events.rs`, `core/src/token_tracker.rs` | 双写日志、token 用量、工具事件审计 |
+| 测试 | cargo-nextest / insta / rstest / proptest / wiremock / tauri::test | `.config/nextest.toml`, `core/Cargo.toml`, `app/Cargo.toml` | core 快速测，app IPC feature 测，外部 API 用 mock |
+| 打包 | `xtask` + zip + Makefile | `xtask/Cargo.toml`, `Makefile` | 配置复制、测试入口、portable zip 统一走 Rust 工具链 |
+
+### Track E 的技术落点
+
+Agent 管理线应优先复用现有栈：
+
+- 本地会话监听放在 `app` 侧线程或 `core` 侧纯解析模块中：进程/文件/hook JSONL 探测需要 Windows 和文件系统能力，UI 只消费归一化事件。
+- 会话抽象放在 `core`：新增 `agent_session` / `agent_monitor` 类型，保持可测试；`app` 只负责实际扫描、窗口打开和 IPC。
+- UI 使用现有 `panel.html` / `bubble.html` / `pet.html` 扩展：不引入 React/Electron，不新增前端构建链。
+- Claude Code/Codex 适配从“只读”开始：读取 `~/.claude/settings.json`、会话目录、Codex 工作区/线程元数据、进程命令行和 git 状态；控制动作等 E3 再接入审计与确认。
+- 远程/多工作区用 JSONL sidecar 或配置化 connector：不要先引入数据库、消息队列或向量索引。
 
 ---
 
@@ -34,18 +65,18 @@
 │                      8Bit Cat 产品路线                        │
 │                                                             │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │ Track A  │  │ Track B  │  │ Track C  │  │ Track D  │   │
-│  │ AI 内容  │  │ 基础设施  │  │ 渲染升级  │  │ 商业化   │   │
+│  │ Track A  │  │ Track B  │  │ Track C  │  │ Track E  │   │
+│  │ AI 内容  │  │ 基础设施  │  │ 渲染升级  │  │ Agent管理│   │
 │  │  生成    │  │  强化    │  │          │  │          │   │
 │  ├──────────┤  ├──────────┤  ├──────────┤  ├──────────┤   │
-│  │ A1 舞蹈✓ │  │ B1 日志✓  │  │ C1 3D体素 │  │ D1 Steam │   │
-│  │ A2 游戏  │  │ B2 Token✓│  │ C2 动画   │  │ D2 定价   │   │
-│  │ A3 扩展  │  │ B3 结构化 │  │ C3 游戏3D│  │          │   │
-│  │          │  │ B4 工具运行时│ │          │  │          │   │
+│  │ A1 舞蹈✓ │  │ B1 日志✓  │  │ C1 3D体素 │  │ E1 会话监听│  │
+│  │ A2 游戏  │  │ B2 Token✓│  │ C2 动画   │  │ E2 桌宠管家│  │
+│  │ A3 扩展  │  │ B3 结构化 │  │ C3 游戏3D│  │ E3 多Agent│  │
+│  │          │  │ B4 工具运行时│ │          │  │ E4 远程机 │   │
 │  │          │  │ B5 文本记忆│  │          │  │          │   │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
 │                                                             │
-│  当前优先级：B3 → A2 → B4(运行时+开销) → B5(grep-first) → C1 → A3 → D1│
+│  当前优先级：E1/E2 → A2 → B4(运行时+开销) → B5(grep-first) → C1 → A3 → D1│
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -173,6 +204,134 @@ panel → cmd_start_game → app/src/game.rs 动态创建 game 窗口
 
 ---
 
+## Track E: AI 编码工具管理（参考 oc-claw）
+
+参考项目：[rainnoon/oc-claw](https://github.com/rainnoon/oc-claw)。它的核心价值不在具体 UI 栈，而在产品模型：把 Claude Code / Codex / Cursor / OpenClaw 等编码 Agent 的会话活动抽象为 `working / idle / waiting` 等状态，再用桌面宠物、会话面板、历史记录和用量指标持续呈现。8Bit Cat 可以把这条思路做得更“桌宠原生”：手柄、pet 动画、bubble、panel 和截图记忆都参与 Agent 管理，而不是只做一个独立状态仪表盘。
+
+### oc-claw 源码核验结论
+
+本地核验 `oc-claw` 源码后，确认它是 **Tauri 2 + React 19 + Vite + Tailwind + Motion** 的构建型前端项目，真正应用位于 `frontend/`，Tauri 后端主要集中在 `frontend/src-tauri/src/lib.rs`（约 12K 行）。因此对 8Bit Cat 来说，它更适合作为 Agent 管理交互参考，而不是技术栈模板。
+
+关键源码事实：
+
+| 主题 | oc-claw 源码现状 | 对 8Bit Cat 的启发 |
+|------|------------------|-------------------|
+| 桌面壳 | Tauri 2，单个 `mini` 透明窗口，前端走 Vite 构建 | 我们保留多 WebView 静态窗口，不引入 React/Vite |
+| Agent 状态模型 | `ClaudeSession` 统一承载 `cc/codex/cursor`，字段含 `status/tool/toolInput/lastResponse/source` | 可以借鉴统一 `AgentSession`，但应拆进 core 类型和 app 监听层 |
+| Claude Code | 安装 hook 到 `~/.claude/hooks/`，事件进本地 socket，再由 Rust `process_claude_event()` 归一化 | E1 第一优先级可参考这条路径 |
+| Windows hook | Claude Code 在 Windows 通过 Git Bash 调 hook，源码改用 PowerShell 脚本 + TCP `127.0.0.1:19283`，并设置 UTF-8 stdin | 这是高价值坑位，Windows 必须按 UTF-8 和显式 TCP shutdown 处理 |
+| Codex | 非 Windows 使用 `~/.Codex/hooks.json`；但源码 Windows 分支会清理并禁用 oc-claw 的 Codex hook，TCP 也 drop `source=codex` | 不能照搬 oc-claw 做 Windows Codex；需要单独验证 Codex 当前 hook/会话格式 |
+| Cursor | 通过 `~/.cursor/hooks.json` + 自带 VS Code/Cursor extension，Windows 用 TCP `127.0.0.1:19284` | 可放到 E3/E4，复杂度高于 Claude Code |
+| OpenClaw | 读取 `~/.openclaw/agents/*/sessions/*.jsonl` 和 `sessions.json`，用 JSONL 最后消息判断 active | 可借鉴 JSONL 活跃判定，但不要绑定 OpenClaw 格式到通用模型 |
+| 权限提醒 | `PermissionRequest` 进入 `waiting`，前端显示工具名、Write/Edit/Bash 预览和四个操作按钮 | 我们可复用到 bubble/panel，但必须走 B4 审计和确认 |
+| 状态排序 | Mini 面板按 waiting / compacting / working / idle 和更新时间排序 | 适合迁移到 Agent 管理页 |
+| 统计 | Claude/Codex 从 JSONL 提取 token；Codex token_count 是累计快照，需转 delta；Cursor 不可靠，返回空统计 | 统计逻辑要按 source 分支，不能假设所有工具都有 usage |
+
+最重要的修正：**oc-claw 源码并不证明 Windows Codex hook 已可用**。它保留了非 Windows Codex hook 和统计解析，但 Windows 分支明确写着 “Codex support is dropped on Windows”，并主动删除旧 hook。8Bit Cat 是 Windows-first，所以 E1 里 Codex 只能列为“待验证适配”，不能直接按 oc-claw 实现路线排期。
+
+### E1. Claude Code / Codex 会话监听
+
+第一阶段不直接控制 Agent，只做可靠观察。目标是本地识别当前有哪些 AI 编码工具在运行、它们在哪个项目目录、最近是否有 token/文件/命令活动、是否进入等待用户输入状态。
+
+建议监听源：
+
+| 工具 | 第一版信号 | 后续增强 |
+|------|------------|----------|
+| Claude Code | `~/.claude/` 会话、transcript、hook 输出、进程命令行 | 标准化 hook bridge |
+| Codex | Codex 工作区/线程元数据、git/worktree 状态、进程命令行；Windows hook 需重新验证 | Codex app 自动化事件 |
+| OpenClaw / 其他工具 | 配置化目录扫描 + 进程探测 | 适配器式 connector |
+
+本项目落地形态：
+
+```text
+agent_monitor_loop()
+  ├── 扫描进程 / 会话文件 / hook JSONL
+  ├── 归一化为 AgentSession
+  ├── 推送 agent-session-update 到 panel / bubble
+  └── 写入 ~/.ai-pad/logs/agent_sessions.jsonl
+```
+
+`AgentSession` 建议字段：
+
+- `tool`: `claude_code | codex | cursor | openclaw | custom`
+- `workspace`
+- `status`: `working | idle | waiting | blocked | done | error`
+- `last_activity_at`
+- `current_task`
+- `branch`
+- `token_hint`
+- `risk_hint`
+
+### E2. 桌宠化 Agent 状态管理
+
+oc-claw 的状态宠物可以作为参考，但 8Bit Cat 应把状态直接接进现有宠物身体语言：
+
+| Agent 状态 | 桌宠表现 | UI 表现 |
+|------------|----------|---------|
+| `working` | Focused / Coding 动画，轻微键盘敲击粒子 | bubble 显示当前工具名和项目 |
+| `waiting` | 举牌/歪头/轻微抖动，提醒主人处理 | panel 置顶显示“需要输入”的会话 |
+| `blocked` | Confused 状态，短提示失败原因 | bubble 展示可执行的恢复动作 |
+| `idle` | Idle / Sleep | panel 收纳到历史列表 |
+| `done` | Happy / 小庆祝舞步 | 可一键打开 diff / PR / 测试结果 |
+
+面板应新增“Agent 管理”页签：
+
+- 当前活跃会话列表：工具、目录、分支、状态、最后活动时间。
+- 快捷操作：打开终端、打开目录、复制下一步提示、暂停/恢复监控。
+- 等待队列：优先显示需要用户确认、测试失败、merge conflict、权限询问的任务。
+- 历史记录：按项目和日期查看最近 Agent 做过什么。
+
+手柄映射建议：
+
+- Start：打开当前最需要关注的 Agent 会话。
+- D-pad：在活跃会话之间切换。
+- A：打开对应终端/窗口或确认安全动作。
+- B：收起提醒，保留低干扰状态。
+- Select 长按：切换“专注看管 / 安静陪伴”模式。
+
+### E3. 工具控制与安全边界
+
+第二阶段再做控制能力，避免一上来变成不透明的“远程遥控 Agent”。原则和 B4 一致：模型和桌宠可以建议，Rust 负责权限、审计和边界。
+
+优先做窄动作：
+
+1. `open_agent_workspace`：打开会话对应目录或终端。
+2. `copy_agent_prompt`：复制后续提示到剪贴板，让用户自己粘贴。
+3. `run_project_test`：按项目约定执行 `make test-core` / `npx vitest run` 等安全命令。
+4. `summarize_agent_session`：读取会话日志，生成短摘要写入记忆。
+5. `nudge_agent`：仅对显式支持 hook/stdin 的工具发送下一步提示，默认需要确认。
+
+所有控制动作都写入 `tool_events.jsonl` 或新的 `agent_actions.jsonl`，字段包含工具名、工作区、动作、触发来源、是否需要确认、结果预览和耗时。
+
+### E4. 多工作区 / 远程机器管理
+
+后续可以把 oc-claw 的“多 Agent 看板”扩展到多工作区：
+
+- 本机多个 repo 的 Claude Code / Codex 会话统一汇总。
+- WSL / SSH 远程机器通过轻量 sidecar 输出 JSONL 状态，本机桌宠只订阅。
+- 对长任务设置心跳提醒：超过 N 分钟无活动、测试失败、等待输入时让桌宠提示。
+- 与 B5 记忆系统联动：每个项目沉淀“Agent 做过什么、失败在哪里、下次怎么接上”。
+
+### 与现有路线的关系
+
+E 线不是替代 A/B/C，而是让 8Bit Cat 从“自己是一个 AI 桌宠”进化成“帮主人看管其他 AI 编码 Agent 的桌宠管家”：
+
+```text
+B4 工具事件协议 ──→ E3 控制动作审计
+B5 grep-first 记忆 ──→ E4 项目/会话历史召回
+pet/bubble/panel ──→ E2 状态呈现与手柄操作
+截图观察 ──→ 判断 Agent 是否卡在终端、浏览器、测试失败页
+```
+
+推荐最短路径：
+
+1. 先做 E1：只读监听 Claude Code / Codex 活跃会话。
+2. 再做 E2：pet 状态 + panel 会话列表 + waiting 提醒。
+3. 复用 B4：把会话控制动作纳入同一套审计和安全提示。
+4. 最后考虑 E3/E4：可控唤醒、多工作区、远程机 sidecar。
+
+---
+
 ## Track D: 商业化
 
 ### D1. Steam 发布准备
@@ -198,42 +357,48 @@ panel → cmd_start_game → app/src/game.rs 动态创建 game 窗口
 ---
 
 ## 实施优先级与依赖关系
-
 ```
 已完成      ┌─────────────────────────────────────┐
 2026-05-13 │  A1 舞蹈系统                         │
            │  B1 日志规范化第一轮                  │
            │  B2 Token 追踪 + 设置页统计            │
+           │  B3 Extractor 主链路                  │
            │  测试入口/Makefile/xtask 稳定化        │
            └─────────────────────────────────────┘
                   ↓
 短期        ┌─────────────────────────────────────┐
-1-3天      │  A2 迷你游戏引擎 MVP                  │  ← 复用 A1 的 YAML/Tool 模式
+1-3天      │  E1/E2 Agent 会话监听 + 桌宠状态       │  ← 参考 oc-claw，但接入 pet/bubble/panel
+           │  A2 迷你游戏引擎 Phase 2              │  ← 复用 A1 的 YAML/Tool 模式
            │  B4 工具运行时与开销优化              │  ← 先规范生命周期，再基于真实统计优化
            └─────────────────────────────────────┘
                   ↓
 中期        ┌─────────────────────────────────────┐
 1-3天      │  B5 grep-first 文本记忆检索            │
+           │  E3 Agent 控制动作与安全审计           │
            │  A3 内容扩展（更多游戏类型）           │
            └─────────────────────────────────────┘
                   ↓
 大块        ┌─────────────────────────────────────┐
 4-8天      │  C1 桌宠 3D 体素化                    │
+           │  E4 多工作区 / 远程机器 Agent 管理     │
            │  C2/C3 3D 动画与游戏能力               │
            └─────────────────────────────────────┘
 ```
 
 ### 关键依赖
-
 ```
 B1(日志) ──→ B2(Token追踪) 已完成，提供干净观测面
 B2(Token) ─→ B4(工具运行时) 用真实数据决定是否值得优化
 A1(舞蹈) ──→ A2(游戏) 复用同一模式
 B3(Extractor) ──→ B5(文本记忆) 结构化摘要更容易 grep 和压缩
+B4(工具运行时) ──→ E3(Agent控制) 复用权限、生命周期事件和审计日志
+E1(会话监听) ──→ E2(桌宠管家) 先只读观察，再做状态提醒
+E2(桌宠管家) ──→ E3(控制动作) 只对明确会话提供窄动作入口
+B5(文本记忆) ──→ E4(多项目历史) 让 Agent 会话摘要可 grep、可回忆
 A1/A2(内容型工具) ─→ B4(工具运行时) 提供舞蹈/游戏两类真实样本，验证工具事件协议
 B4(工具运行时) ──→ 控制固定 prompt 成本，给记忆候选留预算，也为工具事件记忆化打基础
 C1(3D化) ──→ C2/C3 渲染层就绪
-A1+A2+C1 ──→ D1(Steam) MVP 功能完备
+A1+A2+E1/E2+C1 ──→ D1(Steam) MVP 差异化更完整
 ```
 
 ---
@@ -262,8 +427,11 @@ A1+A2+C1 ──→ D1(Steam) MVP 功能完备
 | **B2** | Token 追踪 + 设置页统计 | 已完成 MVP | 0 | Done |
 | **B3** | Extractor 改造主链路 | 已完成 | 0 | Done |
 | **B3 cleanup** | 删除旧 raw helper / parser / 惰性配置 | 已完成，净删为主 | 0 | Done |
+| **E1** | AI 编码工具会话监听 | ~350-650 行 | 0 | P1，参考 oc-claw |
+| **E2** | 桌宠化 Agent 状态管理 | ~250-500 行 | 0 | P1，复用 pet/bubble/panel |
 | **A2** | 迷你游戏引擎 | Phase 1 已完成；Phase 2 待接 AI + Memory/Catch | 0 | P1 |
 | **B4** | 工具运行时与开销优化 | ~250-450 行（B4.1-B4.3）+ ~50-150 行（B4.4） | 0 | P1，1-2 天；B4.5 实验项 |
+| **E3** | 远程/多工作区 Agent 管理 | ~400-800 行 | SSH 可选 | P2 |
 | **A3** | 内容扩展 | ~200-350 行/种 | 0 | P2，0.5-1 天/种 |
 | **B5** | grep-first 文本记忆 | ~250-450 行 | 0 | P2，1-3 天 |
 | **C1** | 3D 体素化 | ~1200-1800 行 | three.js | P3，4-8 天 |
@@ -286,7 +454,13 @@ A1+A2+C1 ──→ D1(Steam) MVP 功能完备
 ├── logs/
 │   ├── ai-pad.YYYY-MM-DD.log
 │   ├── token_usage.jsonl    # Token 追踪行日志 (B2)
-│   └── token_sessions.json  # 会话级汇总 (B2)
+│   ├── token_sessions.json  # 会话级汇总 (B2)
+│   ├── tool_events.jsonl    # 工具生命周期审计 (B4)
+│   ├── agent_sessions.jsonl # Claude Code / Codex 等会话状态 (E1/E2)
+│   └── agent_actions.jsonl  # 桌宠触发的 Agent 控制动作 (E3)
+├── agents/
+│   ├── sessions.json        # 当前活跃 Agent 会话缓存 (E1/E2)
+│   └── connectors.yml       # 自定义工具/目录/hook 适配配置 (E1/E4)
 ├── workshop/            # Steam Workshop 订阅内容 (A3)
 └── config/
     ├── actions.yml
