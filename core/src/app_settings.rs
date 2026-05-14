@@ -10,7 +10,10 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+static SETTINGS_IO_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 /// 应用级配置覆盖层，包含 AI 服务覆盖和外观/行为设置
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -94,6 +97,7 @@ impl AppSettings {
         let Some(path) = settings_path() else {
             return Self::default();
         };
+        let _guard = settings_io_lock().lock().unwrap_or_else(|e| e.into_inner());
         if !path.exists() {
             return Self::default();
         }
@@ -116,6 +120,7 @@ impl AppSettings {
             fs::create_dir_all(parent).map_err(|e| format!("创建配置目录失败: {e}"))?;
         }
         let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
+        let _guard = settings_io_lock().lock().unwrap_or_else(|e| e.into_inner());
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_nanos())
@@ -126,8 +131,15 @@ impl AppSettings {
             thread_id_suffix()
         ));
         fs::write(&tmp, json).map_err(|e| format!("写入临时文件失败: {e}"))?;
+        if path.exists() {
+            fs::remove_file(&path).map_err(|e| format!("替换 app_settings.json 失败: {e}"))?;
+        }
         fs::rename(&tmp, &path).map_err(|e| format!("保存 app_settings.json 失败: {e}"))
     }
+}
+
+fn settings_io_lock() -> &'static Mutex<()> {
+    SETTINGS_IO_LOCK.get_or_init(|| Mutex::new(()))
 }
 
 fn thread_id_suffix() -> String {

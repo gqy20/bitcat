@@ -18,6 +18,7 @@ use ai_pad_core::screenshot::{CapturedFrame, ScreenInfo, ScreenshotTarget};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::Manager;
+use tracing::{debug, info, warn};
 
 static SCREENSHOT_PIPELINE_LOCK: Mutex<()> = Mutex::new(());
 static LAST_SCREENSHOT_FINISHED: Mutex<Option<Instant>> = Mutex::new(None);
@@ -26,6 +27,12 @@ static LAST_SCREENSHOT_FINISHED: Mutex<Option<Instant>> = Mutex::new(None);
 pub struct CapturedMonitorFrame {
     pub label: String,
     pub frame: CapturedFrame,
+}
+
+#[derive(Debug)]
+struct MonitorAnalysisResult {
+    monitor_label: String,
+    description: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -561,43 +568,15 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             }
         };
 
-        let multi_monitor = visible_monitors.len() > 1;
-        let mut bubble_parts = Vec::new();
-        for monitor in visible_monitors {
-            // 二次检查 chat_active：截图捕获/缩放期间用户可能刚开始聊天。
-            {
-                let bubble: tauri::State<crate::bubble::SharedBubble> = app.state();
-                if bubble.is_chat_active() {
-                    debug!("vision skipped because chat became active");
-                    break;
-                }
-            }
-            if crate::game::is_game_busy(app) {
-                info!(
-                    phase = crate::game::game_phase(app),
-                    "vision skipped because game became busy"
-                );
-                break;
-            }
-
-            match analyze_and_save_monitor_frame(
-                &rt,
-                &ai_config,
-                &monitor,
-                &resolutions,
-                config.jpeg_quality,
-            ) {
-                Ok(Some(description)) if !description.is_empty() => {
-                    if multi_monitor {
-                        bubble_parts.push(format!("{}：{}", monitor.label, description));
-                    } else {
-                        bubble_parts.push(description);
-                    }
-                }
-                Ok(_) => {}
-                Err(e) => warn!(error = %e, monitor = %monitor.label, "显示器视觉分析失败"),
-            }
-        }
+        let analysis_results = analyze_visible_monitors(
+            app,
+            visible_monitors,
+            &ai_config,
+            &resolutions,
+            config.jpeg_quality,
+        );
+        let multi_monitor = analysis_results.len() > 1;
+        let bubble_parts = bubble_parts_from_results(analysis_results, multi_monitor);
 
         if bubble_parts.is_empty() {
             info!("[screenshot] 描述为空，显示兜底提示");
@@ -682,8 +661,137 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
     }
 }
 
+fn analyze_visible_monitors(
+    app: &tauri::AppHandle,
+    monitors: Vec<CapturedMonitorFrame>,
+    ai_config: &ai_pad_core::ai_config::AiConfig,
+    resolutions: &[u32],
+    jpeg_quality: u8,
+) -> Vec<MonitorAnalysisResult> {
+    if monitors.is_empty() {
+        return Vec::new();
+    }
+
+    if monitors.len() == 1 {
+        let monitor = monitors.into_iter().next().unwrap();
+        return vec![analyze_monitor_with_guards(
+            app,
+            ai_config,
+            monitor,
+            resolutions,
+            jpeg_quality,
+        )];
+    }
+
+    let mut handles = Vec::with_capacity(monitors.len());
+    for (index, monitor) in monitors.into_iter().enumerate() {
+        if should_skip_vision_now(app) {
+            break;
+        }
+        let ai_config = ai_config.clone();
+        let resolutions = resolutions.to_vec();
+        let handle = std::thread::spawn(move || {
+            let label = monitor.label.clone();
+            let description = match analyze_and_save_monitor_frame(
+                &ai_config,
+                &monitor,
+                &resolutions,
+                jpeg_quality,
+            ) {
+                Ok(description) => description,
+                Err(e) => {
+                    warn!(error = %e, monitor = %label, "显示器视觉分析失败");
+                    None
+                }
+            };
+            (
+                index,
+                MonitorAnalysisResult {
+                    monitor_label: label,
+                    description,
+                },
+            )
+        });
+        handles.push(handle);
+    }
+
+    let mut results = Vec::with_capacity(handles.len());
+    for handle in handles {
+        match handle.join() {
+            Ok(result) => results.push(result),
+            Err(_) => warn!("显示器视觉分析线程 panic"),
+        }
+    }
+    results.sort_by_key(|(index, _)| *index);
+    results.into_iter().map(|(_, result)| result).collect()
+}
+
+fn analyze_monitor_with_guards(
+    app: &tauri::AppHandle,
+    ai_config: &ai_pad_core::ai_config::AiConfig,
+    monitor: CapturedMonitorFrame,
+    resolutions: &[u32],
+    jpeg_quality: u8,
+) -> MonitorAnalysisResult {
+    let label = monitor.label.clone();
+    if should_skip_vision_now(app) {
+        return MonitorAnalysisResult {
+            monitor_label: label,
+            description: None,
+        };
+    }
+    let description =
+        match analyze_and_save_monitor_frame(ai_config, &monitor, resolutions, jpeg_quality) {
+            Ok(description) => description,
+            Err(e) => {
+                warn!(error = %e, monitor = %label, "显示器视觉分析失败");
+                None
+            }
+        };
+    MonitorAnalysisResult {
+        monitor_label: label,
+        description,
+    }
+}
+
+fn should_skip_vision_now(app: &tauri::AppHandle) -> bool {
+    {
+        let bubble: tauri::State<crate::bubble::SharedBubble> = app.state();
+        if bubble.is_chat_active() {
+            debug!("vision skipped because chat became active");
+            return true;
+        }
+    }
+    if crate::game::is_game_busy(app) {
+        info!(
+            phase = crate::game::game_phase(app),
+            "vision skipped because game became busy"
+        );
+        return true;
+    }
+    false
+}
+
+fn bubble_parts_from_results(
+    results: Vec<MonitorAnalysisResult>,
+    multi_monitor: bool,
+) -> Vec<String> {
+    results
+        .into_iter()
+        .filter_map(|result| {
+            let description = result.description?;
+            if description.is_empty() {
+                None
+            } else if multi_monitor {
+                Some(format!("{}：{}", result.monitor_label, description))
+            } else {
+                Some(description)
+            }
+        })
+        .collect()
+}
+
 fn analyze_and_save_monitor_frame(
-    rt: &tokio::runtime::Runtime,
     ai_config: &ai_pad_core::ai_config::AiConfig,
     monitor: &CapturedMonitorFrame,
     resolutions: &[u32],
@@ -731,6 +839,10 @@ fn analyze_and_save_monitor_frame(
             height = h,
             "vision request started"
         );
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| format!("创建视觉运行时失败: {e}"))?;
         let analysis = match rt.block_on(vision::analyze_screenshot(
             ai_config,
             &VisionConfig::default(),
@@ -804,11 +916,6 @@ pub fn do_screenshot_now(app: &tauri::AppHandle) -> Result<String, String> {
     let config = ScreenshotConfig::default();
     let ai_config = ai_pad_core::ai_config::AiConfig::load()?;
 
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|e| format!("创建运行时失败: {e}"))?;
-
     {
         let gate: tauri::State<crate::observation_gate::SharedObservationGate> = app.state();
         if let Some(reason) = gate.skip_reason() {
@@ -857,25 +964,15 @@ pub fn do_screenshot_now(app: &tauri::AppHandle) -> Result<String, String> {
         return Ok(description);
     }
 
-    let multi_monitor = visible_monitors.len() > 1;
-    let mut parts = Vec::new();
-    for monitor in visible_monitors {
-        if let Some(description) = analyze_and_save_monitor_frame(
-            &rt,
-            &ai_config,
-            &monitor,
-            &[config.max_width],
-            config.jpeg_quality,
-        )? {
-            if !description.is_empty() {
-                if multi_monitor {
-                    parts.push(format!("{}：{}", monitor.label, description));
-                } else {
-                    parts.push(description);
-                }
-            }
-        }
-    }
+    let analysis_results = analyze_visible_monitors(
+        app,
+        visible_monitors,
+        &ai_config,
+        &[config.max_width],
+        config.jpeg_quality,
+    );
+    let multi_monitor = analysis_results.len() > 1;
+    let parts = bubble_parts_from_results(analysis_results, multi_monitor);
 
     let description = if parts.is_empty() {
         "喵~ 看不太清屏幕内容，可能需要检查 API 配置".to_string()
