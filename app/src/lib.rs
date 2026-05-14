@@ -96,6 +96,7 @@ pub fn run() {
             settings::cmd_settings_hide,
             settings::cmd_settings_close,
             settings::cmd_settings_log,
+            pet_event_bus::cmd_get_pet_event_log,
             settings::cmd_settings_load,
             settings::cmd_get_token_stats,
             settings::cmd_settings_save_ai,

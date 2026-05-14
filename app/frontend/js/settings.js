@@ -62,7 +62,7 @@ function switchTab(name) {
   document.querySelectorAll(".tab").forEach(s => {
     s.classList.toggle("hidden", s.dataset.pane !== name);
   });
-  if (name === "usage") loadTokenStats();
+  if (name === "usage") loadUsageDiagnostics();
 }
 
 // ---- 渲染各分类 ----
@@ -342,6 +342,10 @@ function renderAbout(a) {
   $("about-prompts-hint").textContent = a.prompts_yml_hint;
 }
 
+async function loadUsageDiagnostics() {
+  await Promise.all([loadTokenStats(), loadPetEventLog()]);
+}
+
 async function loadTokenStats() {
   const status = $("usage-status");
   if (!status) return;
@@ -354,6 +358,16 @@ async function loadTokenStats() {
     log("加载 token 统计失败: " + e);
     status.textContent = "读取失败：" + String(e);
     renderTokenStats(null);
+  }
+}
+
+async function loadPetEventLog() {
+  try {
+    const logView = await invoke("cmd_get_pet_event_log");
+    renderPetEventLog(logView);
+  } catch (e) {
+    log("加载宠物事件失败: " + e);
+    renderPetEventLog(null);
   }
 }
 
@@ -438,6 +452,34 @@ function renderUsageSessions(sessions) {
   }).join("");
 }
 
+function renderPetEventLog(logView) {
+  const box = $("pet-events");
+  if (!box) return;
+  const entries = logView?.entries || [];
+  if (!entries.length) {
+    box.innerHTML = `<div class="empty">暂无宠物事件</div>`;
+    return;
+  }
+
+  box.innerHTML = entries.map(entry => {
+    const payload = compactPayload(entry.payload);
+    const reason = entry.reason ? `<span>${escapeHtml(entry.reason)}</span>` : "";
+    return `
+      <div class="pet-event ${escapeAttr(entry.decision)}">
+        <div class="pet-event-main">
+          <strong>#${formatNumber(entry.seq)} ${escapeHtml(entry.event_type)}</strong>
+          <span>${escapeHtml(entry.timestamp)}</span>
+        </div>
+        <div class="pet-event-sub">
+          <span class="pet-event-decision">${escapeHtml(formatPetDecision(entry.decision))}</span>
+          ${reason}
+        </div>
+        <code>${escapeHtml(payload)}</code>
+      </div>
+    `;
+  }).join("");
+}
+
 // ---- 保存 / 重置 ----
 
 async function saveAll() {
@@ -507,7 +549,7 @@ async function loadSnapshot() {
     renderPrompts(SNAPSHOT.prompts);
     renderAppearance(SNAPSHOT.appearance);
     renderAbout(SNAPSHOT.about);
-    loadTokenStats();
+    loadUsageDiagnostics();
     ["ai", "actions", "prompts", "appearance"].forEach(clearDirty);
   } catch (e) {
     log("加载失败: " + e);
@@ -533,7 +575,7 @@ function bindGlobal() {
   });
   $("btn-save").addEventListener("click", saveAll);
   $("btn-reset").addEventListener("click", resetCurrent);
-  $("usage-refresh").addEventListener("click", loadTokenStats);
+  $("usage-refresh").addEventListener("click", loadUsageDiagnostics);
   $("ai-key-toggle").addEventListener("click", () => {
     const el = $("ai-key");
     el.type = el.type === "password" ? "text" : "password";
@@ -576,6 +618,29 @@ function formatDateTime(value) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatPetDecision(value) {
+  if (value === "sent") return "已发送";
+  if (value === "deduplicated") return "已去重";
+  if (value === "throttled") return "已节流";
+  if (value === "emit_failed") return "发送失败";
+  return value || "-";
+}
+
+function compactPayload(payload) {
+  if (!payload || payload === null) return "";
+  const copy = { ...payload };
+  if (typeof copy.body === "string" && copy.body.length > 80) {
+    copy.body = copy.body.slice(0, 80) + "...";
+  }
+  if (typeof copy.text === "string" && copy.text.length > 80) {
+    copy.text = copy.text.slice(0, 80) + "...";
+  }
+  if (typeof copy.speech === "string" && copy.speech.length > 80) {
+    copy.speech = copy.speech.slice(0, 80) + "...";
+  }
+  return JSON.stringify(copy);
 }
 
 // 启动

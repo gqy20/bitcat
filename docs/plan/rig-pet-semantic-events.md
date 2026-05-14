@@ -1,7 +1,7 @@
 # Rig 驱动的宠物语义事件改造方案
 
 > 日期：2026-05-14  
-> 状态：Phase 1-4 已完成（2026-05-14）  
+> 状态：Phase 1-5 已完成（2026-05-14）  
 > 目标：清理旧的 `SetState` 视觉状态事件，把 Rig Agent / Tool 生命周期接入为一套可解释、可测试、可扩展的宠物语义事件。
 
 ## 背景
@@ -21,7 +21,7 @@ AI 回复文本 -> Rust 关键词判断 -> PetCommand::SetState(Happy/Confused/I
 前端 pet-event -> pet.applyEvent() -> 直接切视觉 state
 ```
 
-这会让“语义”和“动画表现”耦合在一起，也让 Rig 已经提供的工具生命周期事件无法自然驱动宠物。Phase 1-4 已将主链路迁移到 tagged `PetEvent`，用 `AgentReaction` 接管最终情绪和长期记忆候选，并通过 `PetEventBus` / `MoodPolicy` 收口事件发送、去重、节流与情绪生命周期。
+这会让“语义”和“动画表现”耦合在一起，也让 Rig 已经提供的工具生命周期事件无法自然驱动宠物。Phase 1-5 已将主链路迁移到 tagged `PetEvent`，用 `AgentReaction` 接管最终情绪和长期记忆候选，并通过 `PetEventBus` / `MoodPolicy` 收口事件发送、去重、节流、情绪生命周期与可观察性。
 
 ## 设计原则
 
@@ -349,12 +349,19 @@ pub struct MemoryCandidate {
 5. `LongTermMemory` 新增 `retrieve_with()`，支持 text/tag/source/min_importance 的 grep-first 检索过滤。
 6. `LongTermMemory` 新增 `review_entries()` 和 `review_markdown()`，提供可人工审查、可 grep 的长期记忆视图。
 
-### Phase 5：后续优化
+### Phase 5：可观察性与调试面板（已完成）
+
+1. `PetEventBus` 记录最近 50 条事件决策日志。
+2. 日志包含序号、相对时间、事件类型、payload、处理结果和跳过原因。
+3. 新增 `cmd_get_pet_event_log` IPC，供设置页读取事件队列。
+4. 设置页用量 tab 增加“宠物事件”区域，展示 sent / deduplicated / throttled / emit_failed。
+
+### Phase 6：后续优化
 
 1. 将 `PromptHook::on_text_delta()` / `on_tool_call_delta()` 接入更细粒度的“正在组织参数”状态。
 2. 增加 `Focused` 专用动画帧。
 3. 评估 Dance 是否纳入统一状态机。
-4. 在设置页或调试面板显示最近 `PetEvent` 队列，便于排查状态覆盖。
+4. 把长期记忆 review markdown 接入设置页，支持查看和人工删除。
 
 ## 测试计划
 
@@ -380,7 +387,7 @@ pub struct MemoryCandidate {
   - `retrieve_with()` 可按 tag/source/importance 解释性过滤。
   - `review_markdown()` 输出可 grep 的审查视图。
 - `MoodPolicy` 测试：默认 TTL、显式 TTL、低优先级节流、高优先级覆盖。
-- `PetEventBus` 测试：React TTL 补全、短窗口重复通知去重。
+- `PetEventBus` 测试：React TTL 补全、短窗口重复通知去重、最近决策日志快照。
 
 ### Frontend Vitest
 
@@ -404,8 +411,9 @@ pub struct MemoryCandidate {
 | 删除旧协议/旧测试 | -100 到 -250 行 |
 | Phase 3 AgentReaction | 已完成，约 400 行 |
 | Phase 4 EventBus + MoodPolicy + memory review | 已完成，约 500 行 |
+| Phase 5 observability panel | 已完成，约 320 行 |
 
-实际实现拆为多笔提交：Phase 1 新协议、Phase 2 Rig 生命周期、旧状态事件清理、Phase 3 AgentReaction + memory candidates、Phase 4 EventBus + MoodPolicy + memory review。
+实际实现拆为多笔提交：Phase 1 新协议、Phase 2 Rig 生命周期、旧状态事件清理、Phase 3 AgentReaction + memory candidates、Phase 4 EventBus + MoodPolicy + memory review、Phase 5 observability panel。
 
 ## 验收标准
 
