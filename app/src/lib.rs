@@ -250,6 +250,9 @@ pub fn run() {
             if let Err(e) = voice::precreate_voice_window(app.handle()) {
                 warn!(error = %e, "预创建 voice 窗口失败");
             }
+            if let Err(e) = game::precreate_game_window(app.handle()) {
+                warn!(error = %e, "预创建 game 窗口失败");
+            }
 
             // ── 全局热键：面板切换 ──
             let app_handle = app.handle().clone();

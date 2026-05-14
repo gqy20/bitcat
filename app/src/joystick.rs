@@ -33,15 +33,18 @@ impl SdlGamepad {
             .num_joysticks()
             .map_err(|e| format!("获取数量失败: {e}"))?;
         for i in 0..count {
-            if let Ok(joy) = subsystem.open(i) {
-                result.push(GamepadInfo {
-                    index: i,
-                    name: joy.name(),
-                    num_buttons: joy.num_buttons(),
-                    num_axes: joy.num_axes(),
-                    num_hats: joy.num_hats(),
-                });
-            }
+            let name = subsystem
+                .name_for_index(i)
+                .unwrap_or_else(|_| format!("Joystick {i}"));
+            result.push(GamepadInfo {
+                index: i,
+                name,
+                // Avoid opening every HID device during enumeration. Some Bluetooth
+                // receivers crash inside SDL/driver code when opened speculatively.
+                num_buttons: 0,
+                num_axes: 0,
+                num_hats: 0,
+            });
         }
         Ok(result)
     }

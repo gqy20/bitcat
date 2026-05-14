@@ -14,6 +14,7 @@
   let engine = null;
   let lastTime = performance.now();
   let reported = false;
+  let lastLoggedState = null;
 
   function log(msg) {
     if (invoke) invoke('cmd_game_log', { msg }).catch(() => {});
@@ -74,6 +75,7 @@
 
     handleInput(input) {
       if (!input || this.ended) return;
+      log(`input type=${input.type || ''} dx=${input.dx ?? ''} dy=${input.dy ?? ''} state=${this.state}`);
       if (input.type === 'confirm' && this.state === 'ready') {
         this.state = 'playing';
         return;
@@ -303,6 +305,10 @@
       engine.render(ctx, metricsFor(engine.config));
       updateHud();
       const state = engine.getState();
+      if (state !== lastLoggedState) {
+        log(`state changed ${lastLoggedState || '<none>'} -> ${state} score=${engine.score} len=${engine.snake.length}`);
+        lastLoggedState = state;
+      }
       if (state === 'ready' || state === 'paused') {
         setOverlay(state);
       } else if (state === 'playing') {
@@ -346,6 +352,7 @@
   }
 
   async function initEvents() {
+    log('init events begin');
     document.addEventListener('keydown', (e) => {
       const input = toInputFromKey(e);
       if (!input || !engine) return;
@@ -355,16 +362,22 @@
     window.addEventListener('resize', resizeCanvas);
     if (listen) {
       await listen('game-input', (event) => {
+        log(`game-input event ${JSON.stringify(event.payload)}`);
         if (engine) engine.handleInput(event.payload);
       });
+      log('game-input listener registered');
+    } else {
+      log('event.listen unavailable; gamepad input disabled');
     }
   }
 
   async function init() {
+    log('init start');
     resizeCanvas();
     let config;
     try {
       config = invoke ? await invoke('cmd_get_current_game') : null;
+      log(`current game loaded title=${config && config.title}`);
     } catch (e) {
       log(`cmd_get_current_game failed: ${e}`);
     }
@@ -378,6 +391,7 @@
     };
     engine = new SnakeEngine(config);
     await initEvents();
+    log(`engine ready title=${config.title}`);
     requestAnimationFrame(loop);
   }
 

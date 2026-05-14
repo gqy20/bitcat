@@ -76,8 +76,11 @@ async function activateSelected() {
     }
     if (a.id === 'game') {
       console.log('[panel] 🎮 启动小游戏');
-      await invoke('cmd_start_game');
+      if (invoke) invoke('cmd_panel_log', { msg: 'game action selected: hide panel then cmd_start_game' }).catch(() => {});
       await invoke('cmd_hide_panel');
+      if (invoke) invoke('cmd_panel_log', { msg: 'game action: panel hidden, invoking cmd_start_game' }).catch(() => {});
+      await invoke('cmd_start_game');
+      if (invoke) invoke('cmd_panel_log', { msg: 'game action: cmd_start_game resolved' }).catch(() => {});
       return;
     }
     if (a.id === 'settings') {

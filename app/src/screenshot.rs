@@ -467,6 +467,16 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             continue;
         }
 
+        if crate::game::is_game_busy(app) {
+            info!(
+                cycle = cycle_count,
+                phase = crate::game::game_phase(app),
+                "screenshot skipped while game is busy"
+            );
+            mark_screenshot_finished();
+            continue;
+        }
+
         {
             let gate: tauri::State<crate::observation_gate::SharedObservationGate> = app.state();
             if let Some(reason) = gate.skip_reason() {
@@ -553,6 +563,13 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
                     debug!("vision skipped because chat became active");
                     break;
                 }
+            }
+            if crate::game::is_game_busy(app) {
+                info!(
+                    phase = crate::game::game_phase(app),
+                    "vision skipped because game became busy"
+                );
+                break;
             }
 
             match analyze_and_save_monitor_frame(
@@ -792,6 +809,15 @@ pub fn do_screenshot_now(app: &tauri::AppHandle) -> Result<String, String> {
             mark_screenshot_finished();
             return Ok(description);
         }
+    }
+
+    if crate::game::is_game_busy(app) {
+        let description = format!("屏幕观察已暂停：game_{}", crate::game::game_phase(app));
+        tracing::info!(
+            phase = crate::game::game_phase(app),
+            "manual screenshot skipped while game is busy"
+        );
+        return Ok(description);
     }
 
     let monitor_frames = capture_target_frames(&config.target)?;

@@ -15,14 +15,18 @@ use tracing::{info, warn};
 
 /// 游戏窗口共享状态。
 pub struct SharedGame {
+    pub starting: AtomicBool,
     pub active: AtomicBool,
+    pub startup_seq: std::sync::atomic::AtomicU64,
     pub current_def: Mutex<Option<GameDef>>,
 }
 
 impl Default for SharedGame {
     fn default() -> Self {
         Self {
+            starting: AtomicBool::new(false),
             active: AtomicBool::new(false),
+            startup_seq: std::sync::atomic::AtomicU64::new(0),
             current_def: Mutex::new(None),
         }
     }
@@ -34,9 +38,38 @@ pub fn is_game_active(app: &AppHandle) -> bool {
     state.active.load(Ordering::SeqCst)
 }
 
+/// 当前是否处于游戏启动或运行阶段。
+pub fn is_game_busy(app: &AppHandle) -> bool {
+    let state: tauri::State<'_, SharedGame> = app.state();
+    state.starting.load(Ordering::SeqCst) || state.active.load(Ordering::SeqCst)
+}
+
+/// 当前游戏生命周期阶段，供日志和截图观察门控使用。
+pub fn game_phase(app: &AppHandle) -> &'static str {
+    let state: tauri::State<'_, SharedGame> = app.state();
+    if state.starting.load(Ordering::SeqCst) {
+        "starting"
+    } else if state.active.load(Ordering::SeqCst) {
+        "active"
+    } else {
+        "idle"
+    }
+}
+
 /// 启动内置 Snake 游戏，供 ActionBus 和 IPC 共用。
 pub fn start_default_game(app: &AppHandle) -> Result<(), String> {
     start_game(app, GameDef::default_snake())
+}
+
+/// 应用启动时预创建游戏窗口，避免从面板 IPC 回调里临时创建 WebView。
+pub fn precreate_game_window(app: &AppHandle) -> Result<(), String> {
+    if app.get_webview_window("game").is_some() {
+        return Ok(());
+    }
+    info!("[game] precreate window begin");
+    create_game_window(app, 0)?;
+    info!("[game] precreate window done");
+    Ok(())
 }
 
 /// 启动指定游戏定义。
@@ -44,30 +77,90 @@ pub fn start_game(app: &AppHandle, def: GameDef) -> Result<(), String> {
     validate_game_def(&def)?;
 
     let state: tauri::State<'_, SharedGame> = app.state();
+    let startup_id = state.startup_seq.fetch_add(1, Ordering::SeqCst) + 1;
+    state.starting.store(true, Ordering::SeqCst);
+    state.active.store(false, Ordering::SeqCst);
     {
         let mut current = state.current_def.lock().map_err(|e| e.to_string())?;
         *current = Some(def.clone());
     }
-    state.active.store(true, Ordering::SeqCst);
 
+    {
+        let app = app.clone();
+        let title = def.title.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(20));
+            let state: tauri::State<'_, SharedGame> = app.state();
+            let same_startup = state.startup_seq.load(Ordering::SeqCst) == startup_id;
+            let still_starting = state.starting.load(Ordering::SeqCst);
+            let not_active = !state.active.load(Ordering::SeqCst);
+            if same_startup && still_starting && not_active {
+                state.starting.store(false, Ordering::SeqCst);
+                if let Ok(mut current) = state.current_def.lock() {
+                    *current = None;
+                }
+                let _ = set_pet_state(&app, PetStateName::Idle);
+                warn!(startup_id, title = %title, "[game] 启动超时，已解除 starting 状态");
+            }
+        });
+    }
+
+    info!(startup_id, title = %def.title, "[game] start requested");
+
+    info!(startup_id, "[game] set pet state begin");
     if let Err(e) = set_pet_state(app, PetStateName::GamePlay) {
         warn!(error = %e, "[game] 设置宠物 GamePlay 失败");
     }
+    info!(startup_id, "[game] set pet state done");
 
-    let window = match app.get_webview_window("game") {
-        Some(w) => w,
-        None => create_game_window(app)?,
-    };
+    let start_result = (|| {
+        info!(startup_id, "[game] get/create window begin");
+        let window = match app.get_webview_window("game") {
+            Some(w) => {
+                info!(startup_id, label = "game", "[game] reuse existing window");
+                w
+            }
+            None => create_game_window(app, startup_id)?,
+        };
+        info!(startup_id, "[game] get/create window done");
 
-    position_fullscreen_on_monitor(app, &window);
-    window.show().map_err(|e| e.to_string())?;
-    window.set_focus().map_err(|e| e.to_string())?;
-    info!(title = %def.title, "[game] 已启动");
+        info!(startup_id, "[game] position window begin");
+        position_fullscreen_on_monitor(app, &window);
+        info!(startup_id, "[game] position window done");
+        info!(startup_id, "[game] reload window begin");
+        window
+            .eval("window.location.reload()")
+            .map_err(|e| e.to_string())?;
+        info!(startup_id, "[game] reload window done");
+        info!(startup_id, "[game] show window begin");
+        window.show().map_err(|e| e.to_string())?;
+        info!(startup_id, "[game] show window done");
+        info!(startup_id, "[game] focus window begin");
+        window.set_focus().map_err(|e| e.to_string())?;
+        info!(startup_id, "[game] focus window done");
+        Ok::<(), String>(())
+    })();
+
+    if let Err(e) = start_result {
+        state.starting.store(false, Ordering::SeqCst);
+        state.active.store(false, Ordering::SeqCst);
+        if let Ok(mut current) = state.current_def.lock() {
+            *current = None;
+        }
+        let _ = set_pet_state(app, PetStateName::Idle);
+        warn!(error = %e, "[game] 启动失败，已回滚游戏状态");
+        return Err(e);
+    }
+
+    state.starting.store(false, Ordering::SeqCst);
+    state.active.store(true, Ordering::SeqCst);
+    info!(startup_id, title = %def.title, "[game] start completed");
     Ok(())
 }
 
-fn create_game_window(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
-    WebviewWindowBuilder::new(app, "game", WebviewUrl::App("game.html".into()))
+fn create_game_window(app: &AppHandle, startup_id: u64) -> Result<tauri::WebviewWindow, String> {
+    info!(startup_id, url = "game.html", "[game] build window begin");
+    let window = WebviewWindowBuilder::new(app, "game", WebviewUrl::App("game.html".into()))
         .title("8Bit Game")
         .inner_size(1280.0, 720.0)
         .decorations(false)
@@ -77,9 +170,12 @@ fn create_game_window(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)
-        .focused(true)
+        .focused(false)
+        .visible(false)
         .build()
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    info!(startup_id, "[game] build window done");
+    Ok(window)
 }
 
 fn position_fullscreen_on_monitor(app: &AppHandle, window: &tauri::WebviewWindow) {
@@ -114,12 +210,14 @@ fn set_pet_state(app: &AppHandle, state: PetStateName) -> Result<(), String> {
 /// 前端请求启动默认游戏。
 #[tauri::command]
 pub fn cmd_start_game(app: AppHandle) -> Result<(), String> {
+    info!("[game] cmd_start_game invoked");
     start_default_game(&app)
 }
 
 /// 前端或后续 AI 工具请求按配置启动游戏。
 #[tauri::command]
 pub fn cmd_start_game_with_def(app: AppHandle, def: GameDef) -> Result<(), String> {
+    info!(title = %def.title, "[game] cmd_start_game_with_def invoked");
     start_game(&app, def)
 }
 
@@ -141,13 +239,14 @@ pub fn cmd_game_end(app: AppHandle, result: String, score: u32) -> Result<(), St
     }
 
     let state: tauri::State<'_, SharedGame> = app.state();
+    state.starting.store(false, Ordering::SeqCst);
     state.active.store(false, Ordering::SeqCst);
     if let Ok(mut current) = state.current_def.lock() {
         *current = None;
     }
 
     if let Some(w) = app.get_webview_window("game") {
-        let _ = w.close();
+        let _ = w.hide();
     }
 
     let pet_state = match normalized.as_str() {
