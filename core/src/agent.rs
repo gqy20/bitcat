@@ -13,7 +13,7 @@
 //!
 //! 交互关系：`bridge::handle_button_press` 触发对话 → `PetAgent::chat_stream`
 //! 执行流式推理 → 回调把文本 chunk 送往 bubble，并把工具生命周期转换为宠物
-//! 语义事件。最终情绪不再由 Rust 关键词猜测，后续由结构化 `AgentReaction` 接管。
+//! 语义事件。最终情绪与长期记忆候选由结构化 `AgentReaction` 接管。
 
 use crate::ai_config::AiConfig;
 use crate::permission_hook;

@@ -515,44 +515,6 @@ impl ProfileStore {
     }
 }
 
-// ---- 本地规则：判断是否值得存入长期记忆 ----
-
-/// 纯本地判断，零 API 成本
-pub fn should_store(user_msg: &str, ai_reply: &str) -> bool {
-    let total_len = user_msg.chars().count() + ai_reply.chars().count();
-    if total_len < 8 {
-        return false;
-    }
-
-    let keywords = [
-        "我叫",
-        "我是",
-        "我在",
-        "我喜欢",
-        "我讨厌",
-        "帮我提醒",
-        "记得",
-        "项目",
-        "工作",
-        "明天",
-        "下周",
-        "不要",
-        "不对",
-        "忘了",
-        "记错",
-        "正在做",
-        "在写",
-        "在开发",
-        "在做",
-    ];
-    let combined = format!("{user_msg} {ai_reply}");
-    if keywords.iter().any(|k| combined.contains(k)) {
-        return true;
-    }
-
-    ai_reply.chars().count() > 30
-}
-
 /// 简单相关性评分：query 中的词出现在目标文本中的比例
 fn relevance_score(text: &str, query: &str) -> f32 {
     use std::collections::HashSet;
@@ -1078,44 +1040,6 @@ mod tests {
         store.update("新的画像内容");
         assert_eq!(store.profile_text, "新的画像内容");
         assert!(!store.updated_at.is_empty());
-    }
-
-    // ---- should_store 测试 ----
-
-    #[test]
-    fn test_should_store_short_chitchat_skipped() {
-        assert!(!should_store("喵一个", "喵~🐱"));
-    }
-
-    #[test]
-    fn test_should_store_time_query_skipped() {
-        assert!(!should_store("几点了", "下午两点五十"));
-    }
-
-    #[test]
-    fn test_should_store_name_mention_captured() {
-        assert!(should_store("我叫小明", "你好小明！"));
-    }
-
-    #[test]
-    fn test_should_store_project_mention_captured() {
-        assert!(should_store("我在做 Rust 项目", "什么项目呀？"));
-    }
-
-    #[test]
-    fn test_should_store_reminder_captured() {
-        assert!(should_store("帮我提醒明天开会", "好的，明天会提醒你"));
-    }
-
-    #[test]
-    fn test_should_store_correction_captured() {
-        assert!(should_store("不对我不喜欢暗色主题", "抱歉那你喜欢什么？"));
-    }
-
-    #[test]
-    fn test_should_store_long_reply_captured() {
-        let long = "这是一段很长的回复内容用于测试should_store规则是否正确触发";
-        assert!(should_store("", long));
     }
 
     // ---- relevance_score 测试 ----

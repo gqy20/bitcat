@@ -1092,14 +1092,14 @@ pub fn run_ai_chat(
             }
 
             let summaries = tool_summaries.lock().map(|g| g.clone()).unwrap_or_default();
-            let reaction = match rt.block_on(extract_agent_reaction(
-                &agent.config,
-                msg,
-                &reply,
-                &summaries,
-            )) {
-                Ok(reaction) => reaction,
-                Err(e) => fallback_agent_reaction(&reply, &e),
+            let reaction_result = rt.block_on(tokio::time::timeout(
+                std::time::Duration::from_secs(8),
+                extract_agent_reaction(&agent.config, msg, &reply, &summaries),
+            ));
+            let reaction = match reaction_result {
+                Ok(Ok(reaction)) => reaction,
+                Ok(Err(e)) => fallback_agent_reaction(&reply, &e),
+                Err(_) => fallback_agent_reaction(&reply, "AgentReaction timed out"),
             };
             let speech = if reaction.speech.is_empty() {
                 None
