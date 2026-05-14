@@ -48,6 +48,15 @@ pub struct AppearanceSettings {
     /// 值越大越省 API，值越小响应越即时。最小值 5 秒，避免刷屏。
     #[serde(default = "default_screenshot_interval_sec")]
     pub screenshot_interval_sec: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pet_position: Option<WindowPosition>,
+}
+
+/// Persisted physical desktop coordinates for the main pet window.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+pub struct WindowPosition {
+    pub x: i32,
+    pub y: i32,
 }
 
 fn default_true() -> bool {
@@ -68,6 +77,7 @@ impl Default for AppearanceSettings {
             tts_enabled: false,
             global_shortcut: default_shortcut(),
             screenshot_interval_sec: default_screenshot_interval_sec(),
+            pet_position: None,
         }
     }
 }
@@ -142,6 +152,7 @@ mod tests {
                 tts_enabled: false,
                 global_shortcut: "F12".into(),
                 screenshot_interval_sec: 45,
+                pet_position: Some(WindowPosition { x: 123, y: 456 }),
             },
         };
         let json = serde_json::to_string_pretty(&s).unwrap();
@@ -149,6 +160,10 @@ mod tests {
         assert_eq!(restored.ai.api_key.as_deref(), Some("sk-xxx"));
         assert_eq!(restored.ai.model.as_deref(), Some("glm-5.1"));
         assert_eq!(restored.appearance, s.appearance);
+        assert_eq!(
+            restored.appearance.pet_position,
+            Some(WindowPosition { x: 123, y: 456 })
+        );
     }
 
     #[test]

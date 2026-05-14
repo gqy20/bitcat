@@ -75,6 +75,7 @@ pub fn run() {
             voice::cmd_voice_update_text,
             voice::cmd_voice_get_text,
             snap::cmd_recreate_pet_window,
+            snap::cmd_save_pet_position,
             snap::cmd_snap_pet,
             snap::cmd_snap_transform,
             snap::cmd_unsnap_transform,

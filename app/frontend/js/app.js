@@ -147,22 +147,27 @@
 
     applySnapMetrics(snapMetrics);
 
-    document.body.classList.add('snap-mode');
-
     // 主 canvas 在 snap 窗口中不再绘制任何东西
     if (canvas) {
       canvas.style.display = 'none';
     }
 
     function setEdge(edge) {
-      var normalized = ['left', 'right', 'top', 'bottom'].includes(edge) ? edge : 'left';
+      var normalized = ['left', 'right', 'top', 'bottom'].includes(edge) ? edge : null;
       bar.classList.remove('direction-left', 'direction-right', 'direction-top', 'direction-bottom');
-      bar.classList.add('direction-' + normalized);
       document.body.classList.remove('snap-left', 'snap-right', 'snap-top', 'snap-bottom');
+      if (!normalized) {
+        bar.hidden = true;
+        document.body.classList.remove('snap-mode');
+        return false;
+      }
+      bar.classList.add('direction-' + normalized);
       document.body.classList.add('snap-' + normalized);
+      document.body.classList.add('snap-mode');
+      bar.hidden = false;
+      return true;
     }
-    setEdge(initialEdge || 'left');
-    bar.hidden = false;
+    setEdge(initialEdge);
 
     // hover 交互（CSS 负责视觉展宽/指示点）
     bar.addEventListener('mouseenter', () => { bar.classList.add('hovered'); });
@@ -335,6 +340,8 @@
               // 等动画完成再切换窗口
               await new Promise(r => setTimeout(r, 320));
               await cmdSnapTransform(edge, toX, toY);
+            } else {
+              await cmdSavePetPosition(pos.x, pos.y);
             }
           }
         } else {
@@ -360,6 +367,12 @@
   }
 
   /// 调用 Rust cmd_unsnap_transform，恢复宠物窗口
+  async function cmdSavePetPosition(x, y) {
+    try {
+      await window.__TAURI__.core.invoke('cmd_save_pet_position', { x, y });
+    } catch (e) { console.error('[pet] cmd_save_pet_position failed:', e); }
+  }
+
   async function cmdUnsnapTransform() {
     try {
       await window.__TAURI__.core.invoke('cmd_unsnap_transform');

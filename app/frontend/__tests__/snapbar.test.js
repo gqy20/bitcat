@@ -57,14 +57,21 @@ function setupSnapBar(initialEdge, opts) {
   applySnapMetrics(metrics);
 
   function setEdge(edge) {
-    var normalized = ['left', 'right', 'top', 'bottom'].includes(edge) ? edge : 'left';
+    var normalized = ['left', 'right', 'top', 'bottom'].includes(edge) ? edge : null;
     bar.classList.remove('direction-left', 'direction-right', 'direction-top', 'direction-bottom');
-    bar.classList.add('direction-' + normalized);
     document.body.classList.remove('snap-left', 'snap-right', 'snap-top', 'snap-bottom');
+    if (!normalized) {
+      bar.hidden = true;
+      document.body.classList.remove('snap-mode');
+      return false;
+    }
+    bar.classList.add('direction-' + normalized);
     document.body.classList.add('snap-' + normalized);
+    document.body.classList.add('snap-mode');
+    bar.hidden = false;
+    return true;
   }
-  setEdge(initialEdge || 'left');
-  bar.hidden = false;
+  setEdge(initialEdge);
 
   bar.addEventListener('mouseenter', function() { bar.classList.add('hovered'); });
   bar.addEventListener('mouseleave', function() { bar.classList.remove('hovered'); });
@@ -128,7 +135,13 @@ describe('snap bar DOM contract', () => {
   it('D: 未指定方向时默认为 left（与 pull None 一致）', () => {
     setupSnapBar(null);
     const bar = document.getElementById('snap-bar');
+    expect(bar.hidden).toBe(true);
+    expect(bar.classList.contains('direction-left')).toBe(false);
+    expect(document.body.classList.contains('snap-mode')).toBe(false);
+    window.__setSnapEdge('left');
+    expect(bar.hidden).toBe(false);
     expect(bar.classList.contains('direction-left')).toBe(true);
+    expect(document.body.classList.contains('snap-mode')).toBe(true);
   });
 
   it('E: __setSnapEdge 运行时切换 direction，不重复累加', () => {

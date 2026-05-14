@@ -1,4 +1,5 @@
 use crate::commands::{self, SharedWindowState};
+use ai_pad_core::app_settings::{AppSettings, WindowPosition};
 use tauri::{LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 use tracing::{info, warn};
 
@@ -33,12 +34,15 @@ pub async fn cmd_recreate_pet_window(
         None => return Err(format!("预创建窗口 '{}' 不存在", target_label)),
     };
 
-    let _ = win.set_position(PhysicalPosition::new(x, y));
-    let _ = win.set_always_on_top(on_top);
+    win.set_position(PhysicalPosition::new(x, y))
+        .map_err(|e| format!("set {target_label} position failed: {e}"))?;
+    if let Err(e) = win.set_always_on_top(on_top) {
+        warn!(error = %e, target = target_label, "设置窗口置顶状态失败");
+    }
     win.show().map_err(|e| e.to_string())?;
     let _ = win.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
 
-    *ws.last_position.lock().map_err(|e| e.to_string())? = Some((x, y));
+    remember_pet_position(&ws, x, y);
 
     info!(
         width = width,
@@ -57,6 +61,43 @@ pub struct SnapResult {
     edge: String,
     x: i32,
     y: i32,
+}
+
+fn persist_pet_position(x: i32, y: i32) -> Result<(), String> {
+    let mut settings = AppSettings::load();
+    settings.appearance.pet_position = Some(WindowPosition { x, y });
+    settings.save()
+}
+
+fn remember_pet_position(ws: &SharedWindowState, x: i32, y: i32) {
+    if let Ok(mut pos) = ws.last_position.lock() {
+        *pos = Some((x, y));
+    }
+    if let Err(e) = persist_pet_position(x, y) {
+        warn!(error = %e, x, y, "保存桌宠位置失败");
+    }
+}
+
+fn clamp_position_to_work_area(
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    work: windows_sys::Win32::Foundation::RECT,
+) -> (i32, i32) {
+    let max_x = work.right - w;
+    let max_y = work.bottom - h;
+    (
+        x.clamp(work.left, max_x.max(work.left)),
+        y.clamp(work.top, max_y.max(work.top)),
+    )
+}
+
+#[tauri::command]
+pub async fn cmd_save_pet_position(app: tauri::AppHandle, x: i32, y: i32) -> Result<(), String> {
+    let ws: tauri::State<'_, SharedWindowState> = app.state();
+    remember_pet_position(&ws, x, y);
+    Ok(())
 }
 
 /// 贴边吸附：计算宠物窗口的吸附目标位置
@@ -234,9 +275,15 @@ pub async fn cmd_snap_transform(
         .get_webview_window("pet-snap")
         .ok_or("pet-snap window not found")?;
 
-    let _ = snap_win.set_size(LogicalSize::new(snap_width, snap_height));
-    let _ = snap_win.set_position(PhysicalPosition::new(x, y));
-    let _ = snap_win.set_always_on_top(on_top);
+    snap_win
+        .set_size(LogicalSize::new(snap_width, snap_height))
+        .map_err(|e| format!("set snap size failed: {e}"))?;
+    snap_win
+        .set_position(PhysicalPosition::new(x, y))
+        .map_err(|e| format!("set snap position failed: {e}"))?;
+    if let Err(e) = snap_win.set_always_on_top(on_top) {
+        warn!(error = %e, "设置吸附窗口置顶状态失败");
+    }
     snap_win.show().map_err(|e| e.to_string())?;
 
     let edge_for_eval = edge.clone();
@@ -246,12 +293,18 @@ pub async fn cmd_snap_transform(
              if(typeof __setSnapEdge==='function'){{__setSnapEdge('{edge_for_eval}');'ok'}}else{{'no-fn'}}",
             SNAP_W, SNAP_H
         ))
+        .map_err(|e| {
+            warn!(error = %e, edge = %edge, "注入吸附方向失败");
+            e
+        })
         .is_ok()
     {
         info!(edge = %edge, "[cmd_snap_snap] ✓ eval setSnapEdge 成功（兜底通知）");
     }
 
-    let _ = snap_win.eval("if(typeof __fadeIn==='function')__fadeIn();");
+    if let Err(e) = snap_win.eval("if(typeof __fadeIn==='function')__fadeIn();") {
+        warn!(error = %e, "吸附窗口淡入失败");
+    }
 
     info!(snap_transform = true, edge = %edge, x = x, y = y, "吸附态切换成功");
     Ok(())
@@ -292,12 +345,18 @@ pub async fn cmd_unsnap_transform(app: tauri::AppHandle) -> Result<(), String> {
             Some("bottom") => (pos.x, pos.y - 80),
             _ => (pos.x, pos.y),
         };
-        let _ = win.set_position(PhysicalPosition::new(x, y));
+        win.set_position(PhysicalPosition::new(x, y))
+            .map_err(|e| format!("set {target} position failed: {e}"))?;
+        remember_pet_position(&ws, x, y);
     }
 
-    let _ = win.set_always_on_top(on_top);
+    if let Err(e) = win.set_always_on_top(on_top) {
+        warn!(error = %e, target = target, "设置窗口置顶状态失败");
+    }
     win.show().map_err(|e| e.to_string())?;
-    let _ = win.eval("if(typeof __fadeIn==='function')__fadeIn();");
+    if let Err(e) = win.eval("if(typeof __fadeIn==='function')__fadeIn();") {
+        warn!(error = %e, target = target, "窗口淡入失败");
+    }
 
     *ws.is_snapped.lock().map_err(|e| e.to_string())? = false;
     *ws.snap_edge.lock().map_err(|e| e.to_string())? = None;
@@ -323,9 +382,21 @@ pub fn get_work_area_for_window(
     if let Ok(hwnd) = win.hwnd() {
         let raw_hwnd = hwnd.0 as windows_sys::Win32::Foundation::HWND;
         let hmon_val: isize;
+        let ok;
         unsafe {
             hmon_val = MonitorFromWindow(raw_hwnd, MONITOR_DEFAULTTONEAREST) as isize;
-            GetMonitorInfoW(hmon_val as _, &mut mi);
+            ok = GetMonitorInfoW(hmon_val as _, &mut mi) != 0;
+        }
+        if !ok {
+            warn!(
+                hmon = hmon_val,
+                "get_work_area_for_window: Win32 GetMonitorInfoW 失败，使用 Tauri monitor fallback"
+            );
+            return fallback_work_area_for_window(win);
+        }
+        if mi.rcWork.right <= mi.rcWork.left || mi.rcWork.bottom <= mi.rcWork.top {
+            warn!("get_work_area_for_window: Win32 工作区为空，使用 Tauri monitor fallback");
+            return fallback_work_area_for_window(win);
         }
         info!(
             work_area = true,
@@ -342,11 +413,20 @@ pub fn get_work_area_for_window(
         warn!("get_work_area_for_window: 无法获取 HWND");
     }
 
+    if mi.rcWork.right <= mi.rcWork.left || mi.rcWork.bottom <= mi.rcWork.top {
+        return fallback_work_area_for_window(win);
+    }
     mi.rcWork
 }
 
 #[cfg(not(target_os = "windows"))]
 pub fn get_work_area_for_window(
+    win: &tauri::WebviewWindow,
+) -> windows_sys::Win32::Foundation::RECT {
+    fallback_work_area_for_window(win)
+}
+
+fn fallback_work_area_for_window(
     win: &tauri::WebviewWindow,
 ) -> windows_sys::Win32::Foundation::RECT {
     let (x, y, w, h) = if let Ok(Some(m)) = win.current_monitor() {
@@ -367,8 +447,10 @@ pub fn get_work_area_for_window(
 /// 预创建两个 pet 窗口（正常 + 折叠 + 吸附），启动时隐藏备用
 pub fn precreate_pet_windows(app: &tauri::AppHandle) -> Result<(), tauri::Error> {
     // 正常窗口 128x128
+    let saved_position = AppSettings::load().appearance.pet_position;
+
     if app.get_webview_window("pet").is_none() {
-        WebviewWindowBuilder::new(app, "pet", WebviewUrl::App("pet.html".into()))
+        let mut builder = WebviewWindowBuilder::new(app, "pet", WebviewUrl::App("pet.html".into()))
             .title("8Bit Cat")
             .inner_size(128.0, 128.0)
             .decorations(false)
@@ -377,8 +459,29 @@ pub fn precreate_pet_windows(app: &tauri::AppHandle) -> Result<(), tauri::Error>
             .shadow(false)
             .always_on_top(true)
             .skip_taskbar(true)
-            .resizable(false)
-            .build()?;
+            .resizable(false);
+        if let Some(pos) = saved_position {
+            builder = builder.position(pos.x as f64, pos.y as f64);
+        }
+        builder.build()?;
+        if let (Some(w), Some(pos)) = (app.get_webview_window("pet"), saved_position) {
+            match (w.outer_size(), w.scale_factor()) {
+                (Ok(size), Ok(scale)) => {
+                    let work = get_work_area_for_window(&w);
+                    let width = ((size.width as f64) / scale).round() as i32;
+                    let height = ((size.height as f64) / scale).round() as i32;
+                    let (x, y) = clamp_position_to_work_area(pos.x, pos.y, width, height, work);
+                    if let Err(e) = w.set_position(PhysicalPosition::new(x, y)) {
+                        warn!(error = %e, x, y, "恢复桌宠位置失败");
+                    } else {
+                        let ws: tauri::State<'_, SharedWindowState> = app.state();
+                        remember_pet_position(&ws, x, y);
+                    }
+                }
+                (Err(e), _) => warn!(error = %e, "读取桌宠窗口尺寸失败，跳过位置校正"),
+                (_, Err(e)) => warn!(error = %e, "读取桌宠窗口缩放失败，跳过位置校正"),
+            }
+        }
         info!("预创建 pet 窗口 (128x128)");
     }
 

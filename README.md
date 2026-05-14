@@ -123,6 +123,9 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
 4. 气泡自动跟随吸附态定位
 5. 双窗口 Crossfade 过渡（150ms CSS 动画）
 6. 支持上/下/左/右四边吸附
+7. 吸附条方向由 Rust 状态注入；缺少方向时保持隐藏，避免 fallback 到错误边缘
+
+拖拽结束且没有吸附时，桌宠当前位置会保存到 `app_settings.json` 的 `appearance.pet_position`。下次启动会恢复该位置，并按当前显示器工作区校正，避免窗口跑到屏幕外。
 
 ## 迷你游戏
 
@@ -161,7 +164,7 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
 - **AI 覆盖**：api_key / base_url / model / max_tokens → `app_settings.json`
 - **动作绑定**：编辑 config/actions.yml 并实时重载
 - **提示词配置**：编辑 config/prompts.yml 并实时重载
-- **外观设置**：always_on_top / default_collapsed / tts_enabled / global_shortcut / screenshot_interval_sec
+- **外观设置**：always_on_top / default_collapsed / tts_enabled / global_shortcut / screenshot_interval_sec / pet_position
 - **Token 用量**：展示今日总量、最近 session、Chat/Vision/ScreenSummary/MemoryAggregation 分类统计
 - 设计原则：`~/.claude/settings.json` 只读，所有用户修改通过覆盖层
 - 支持按分类重置为默认值

@@ -437,6 +437,7 @@ pub async fn cmd_settings_save_appearance(
         tts_enabled: payload.tts_enabled,
         global_shortcut: payload.global_shortcut,
         screenshot_interval_sec: interval,
+        pet_position: s.appearance.pet_position,
     };
     s.save()?;
 
