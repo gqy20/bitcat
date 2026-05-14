@@ -130,9 +130,24 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 - JS→Rust：`window.__TAURI__.core.invoke("cmd_xxx", args)` — Rust 用 `#[tauri::command]` 注册
 - 共享状态：`tauri::State<'_, SharedXxx>` + `Mutex<T>` 在命令间传递
 
+### 宠物语义事件
+
+宠物窗口只接收 tagged `PetEvent` 协议，不再接收裸视觉状态。上游只表达“发生了什么”，前端 `PetStateMachine` 再映射到具体动画。
+
+- `Notify`：短生命周期通知，包含 `AiThinking` / `AiWriting` / `ToolPreparing` / `ToolRunning` / `ToolBlocked` / `ToolFailed` / `Listening` / `ScreenshotObserving`。
+- `React`：对话结束后的最终情绪，由 `AgentReaction` 生成，并由 `MoodPolicy` 补 TTL、做优先级覆盖和节流。
+- `SetMode`：长生命周期模式，如 `Sleep` / `GamePlay`。
+- `WalkTo` / `ShowBubble` / `PlayDance` / `Exit`：明确动作命令。
+
+app 层通过 `SharedPetEventBus` 统一发送 `pet-event`，集中处理去重、节流、日志和 `MoodPolicy`。设置页“用量统计”里的“宠物事件”区域可查看最近 50 条事件决策：`sent` / `deduplicated` / `throttled` / `emit_failed`。
+
 ### AI Agent
 
-配置优先级：环境变量 > `~/.claude/settings.json` > `.env` > 默认值。4 个内置 Tool：launch_program / shell / read_file / get_time。max_tokens 固定 256K。
+配置优先级：环境变量 > `~/.claude/settings.json` > `.env` > 默认值。当前通过 rig `AgentBuilder` 注册 10 个内置 Tool：`launch_program` / `shell` / `read_file` / `get_time` / `recent_screenshots` / `send_hotkey` / `read_clipboard` / `force_foreground` / `perform_dance` / `play_dance`。`max_tokens` 默认 256K。
+
+主对话使用 `stream_prompt().multi_turn(MAX_AGENT_TURNS)`。`PetAgent::chat_stream()` 将 rig 的 `MultiTurnStreamItem` 拆成三类 app 可消费事件：`Text` 流式写入 bubble；`Tool` 携带 `ToolRuntimeEvent` 表达 planned / blocked / finished / failed；`Status` 从文本 delta 和 tool-call item 派生 `AiWriting` / `ToolPreparing`。`PermissionHook` 仍是 shell 安全边界，危险命令通过 `ToolCallHookAction::Skip` 返回可解释结果。
+
+对话结束后用 rig `Extractor<AgentReaction>` 做结构化收尾：输出最终 `PetMood`、可选 speech 和 `memory_candidates`。失败或超时时 fallback 到 `Idle`，不阻塞主回复。
 
 ### 截图观察系统
 
@@ -141,6 +156,8 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 ### 记忆系统
 
 `MemoryStore` 维护滚动窗口对话记忆（默认 20 条），持久化到 `~/.ai-pad/memory/chat_summary.json`。每次 AI 对话后记录 user_msg + ai_reply（按字符截断），下次对话时通过 `build_context()` 注入 prompt。配置在 `config/prompts.yml` 的 `memory` 段。
+
+长期记忆由 `AgentReaction.memory_candidates` 驱动写入 `LongTermMemory`，不再使用关键词式 `should_store` 判断。结构化条目保留 `summary` / `tags` / `importance` / `source`，并提供 `retrieve_with()` 按 text/tag/source/min_importance 过滤，以及 `review_entries()` / `review_markdown()` 供人工审查。
 
 长期记忆检索坚持 **grep-first**：优先使用 append-only JSONL / Markdown / 稳定字段，让记忆可以被 `rg`、人工审查和大模型共同读取。不要引入 Embeddings / Vector RAG / 向量数据库作为主线方案；当前取舍见 `docs/architecture/design-tradeoffs.md`。需要召回历史时，先用关键词、时间范围、来源、标签等可解释条件筛出候选，再交给大模型判断和压缩。
 
@@ -227,13 +244,17 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 - `app/src/main.rs` — --debug 控制台分配 + 日志双写（stderr + `~/.ai-pad/logs/` 按日滚动）
 - `app/src/screenshot.rs` — 截图观察线程：BitBlt 截屏 + 熄屏检测 + 缩放 JPEG + Vision API 调用 + 存储/清理
 - `core/src/pet.rs` — 宠物状态机（6 状态，帧动画，proptest 属性测试）
-- `core/src/agent.rs` — AI Agent 流式对话 + Tool 定义
+- `core/src/agent.rs` — AI Agent 流式对话 + Tool 定义 + rig stream status 派生
+- `core/src/agent_reaction.rs` — rig Extractor 结构化收尾，生成 mood/speech/memory_candidates
+- `core/src/pet_event.rs` — tagged PetEvent 协议与 Rig/Tool 状态映射
+- `core/src/mood_policy.rs` — React TTL、情绪优先级覆盖和低优先级节流
 - `core/src/bridge.rs` — 按键→命令映射，PetCommand 序列化
 - `core/src/screenshot.rs` — 截图类型定义、dHash 感知哈希、resize/JPEG 编码、截图存储 + 清理
 - `core/src/vision.rs` — Vision API 请求构建/响应解析（Anthropic Messages 图片分析）
-- `core/src/memory.rs` — 滚动窗口对话记忆，`~/.ai-pad/memory/` 持久化
+- `core/src/memory.rs` — 短期/长期记忆、grep-first 检索、结构化 memory candidates 持久化
 - `core/src/prompts.rs` — 统一提示词配置加载（agent/vision/memory），prompts.yml 解析
 - `core/src/user_profile.rs` — 用户画像配置（name/role/preferences），user.yml 解析，优先于自动聚合画像
 - `app/src/voice.rs` — 语音输入窗口 + generation 防残留
 - `app/src/bubble.rs` — 独立气泡窗口 + 流式 chunk 协议
+- `app/src/pet_event_bus.rs` — 统一 pet-event 发送入口、事件去重/节流、最近事件诊断日志
 - `app/frontend/js/app.js` — 宠物窗口主逻辑（拖拽、状态同步、精灵渲染）

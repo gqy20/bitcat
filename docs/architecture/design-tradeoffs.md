@@ -48,6 +48,18 @@
 - 把候选片段交给大模型做最终判断和压缩；
 - 用 `rg` / grep 风格检索，而不是向量数据库。
 
+### 当前实现补充（2026-05-15）
+
+长期记忆已经从关键词式 `should_store()` 迁移为 `AgentReaction.memory_candidates` 驱动。每条候选由 rig `Extractor<AgentReaction>` 生成，Rust 负责长度、标签和重要度等边界校验。
+
+`LongTermMemory` 当前提供：
+
+- `record_candidate()`：写入 summary/tags/importance/source。
+- `retrieve_with()`：按 text/tag/source/min_importance 进行可解释过滤。
+- `review_entries()` / `review_markdown()`：输出可人工审查、可 grep 的结构化视图。
+
+这仍然遵守 grep-first 原则：候选生成可由模型判断，但持久化形态必须能被人打开、搜索、diff 和删除。
+
 ### 推荐形态
 
 ```text

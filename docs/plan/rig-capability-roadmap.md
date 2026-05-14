@@ -1,10 +1,10 @@
 # Rig 原生能力提升路线图
 
-> 日期：2026-05-13 | 状态：P0 主链路已落地，进入清理阶段 | 目标：逐步引入 rig 框架未使用的高价值能力
+> 日期：2026-05-13 | 更新：2026-05-15 | 状态：P0 + P1.5 + 宠物语义事件 Phase 1-6 已落地 | 目标：逐步引入 rig 框架未使用的高价值能力
 
 ## 背景
 
-当前项目（8Bit Cat）使用 `rig` v0.36.0 框架构建 AI Agent。经过 P0 改造后，chat / vision / screen_summary / memory aggregation 已经统一回到 rig 生态；剩余工作主要是清理旧的 raw Anthropic 辅助代码，并继续引入更低风险的能力。
+当前项目（8Bit Cat）使用 `rig` v0.36.0 框架构建 AI Agent。经过 P0 与后续宠物语义事件改造后，chat / vision / screen_summary / memory aggregation / AgentReaction 已经统一回到 rig 生态；宠物状态也从旧的视觉 `SetState` 迁移为 `PetEvent` 语义协议。剩余工作主要是继续减少不可解释的本地规则，并谨慎引入更低风险的 rig 能力。
 
 | 已用 | 未用 |
 |------|------|
@@ -12,27 +12,32 @@
 | Tool trait + 10 个工具定义 | TypedPrompt（提示词类型化） |
 | stream_prompt / prompt | Embeddings（明确不采用，见取舍文档） |
 | PermissionHook + HookAction | dynamic_tools（动态工具集） |
-| MultiTurnStreamItem 流式消费 | .context() / .dynamic_context() |
-| PromptHook 工具生命周期钩子（部分使用） | 结构化工具事件 UI / 审计 |
+| MultiTurnStreamItem 流式消费 + AiWriting/ToolPreparing 派生 | .context() / .dynamic_context() |
+| PromptHook 工具生命周期钩子（shell 权限） | 更细参数 delta UI（按需再接） |
 | FinalResponse.usage() | output_schema（输出约束） |
-| Extractor（vision / screen_summary / memory aggregation） | Pipeline.lookup（向量检索，当前不采用） |
+| Extractor（vision / screen_summary / memory aggregation / AgentReaction） | Pipeline.lookup（向量检索，当前不采用） |
+| PetEventBus + MoodPolicy | dynamic_tools（动态工具集） |
 
 本文档按优先级排列，规划如何分阶段引入这些能力。
 
 ---
 
-## 当前实现快照（2026-05-13）
+## 当前实现快照（2026-05-15）
 
-P0 主链路已完成：
+P0 主链路与宠物语义事件 Phase 1-6 已完成：
 
 - `vision::analyze_screenshot()` 已使用 rig `Extractor<VisionAnalysis>`；图片通过 `UserContent::image_base64()` 进入 rig message，token 用量来自 `ExtractionResponse.usage`。
 - `screen_summary::generate_summary()` 已使用 rig `Extractor<StructuredSummary>`；`ScreenSummaryEntry.summary` 存储结构体，prompt 注入通过 `StructuredSummary::to_context_text()` 派生。
 - `memory::aggregate_profile()` 已使用 rig `Extractor<ProfileAggregation>`；外部 API 暂保持 `String` 结果，内部不再手写 Anthropic 请求和 JSON fence 修复。
 - core 侧业务主链路已经没有新的 raw Anthropic `reqwest` 调用；剩余 raw helper 主要是迁移前的请求构建、响应解析和 usage 解析测试资产。
+- `agent_reaction::extract_agent_reaction()` 已使用 rig `Extractor<AgentReaction>` 替代关键词情绪推断和关键词记忆写入。
+- `PetAgent::chat_stream()` 已从 rig `MultiTurnStreamItem` 派生 `AgentStreamStatus::AiWriting` / `ToolPreparing`，并保留文本 chunk 与工具生命周期事件分流。
+- `pet_event::PetEvent`、`PetEventBus`、`MoodPolicy` 已成为宠物状态主协议，设置页可查看最近 50 条事件决策日志。
+- 长期记忆写入由 `memory_candidates` 驱动，并提供 `retrieve_with()` / `review_markdown()` 的 grep-first 审查路径。
 
 ## 调研结论：把模型从回答者提升为行为导演
 
-这次重新查看 rig v0.36 与当前代码后，核心判断是：项目已经选对了方向，但还没有把 rig 的 agent 生命周期完整用起来。当前代码已经让模型通过 Tool Call 自主选择部分动作，例如 `perform_dance`；但外围仍有一些 Rust 侧语义猜测，例如从回复文本关键词推断宠物情绪、从关键词判断记忆是否值得保存、预先拼接较厚上下文给模型。
+这次重新查看 rig v0.36 与当前代码后，核心判断是：项目已经选对了方向，但还没有把 rig 的 agent 生命周期完整用起来。当前代码已经让模型通过 Tool Call 自主选择部分动作，例如 `perform_dance`；此前外围仍有一些 Rust 侧语义猜测，例如从回复文本关键词推断宠物情绪、从关键词判断记忆是否值得保存、预先拼接较厚上下文给模型。当前情绪与记忆两项已经迁移到 `AgentReaction`，下一步重点是把更多“按需上下文”和“语义工具”收口。
 
 更充分发挥模型能力的原则应调整为：
 
@@ -46,10 +51,10 @@ rig 已经提供了这套架构所需的支点：
 | rig 能力 | 当前用法 | 更充分的用法 |
 |----------|----------|--------------|
 | `AgentBuilder` + Tool | 全量注册 10 个工具 | 保持模型自主选择，同时把工具从底层 API 提升为语义能力 |
-| `stream_prompt().multi_turn()` | 流式文本 + 工具调用 | 文本、工具状态、最终反应分流为独立事件 |
+| `stream_prompt().multi_turn()` | 流式文本 + 工具调用 + `AiWriting` / `ToolPreparing` | 继续作为 UI 状态主来源，必要时再下钻到 hook delta |
 | `PromptHook::on_tool_call` | shell 黑名单 | 扩展为权限、审计、状态事件和异常终止控制 |
 | `PromptHook::on_tool_result` | 未完整使用 | 记录成功/失败、耗时、结果摘要，并反馈 UI |
-| `on_tool_call_delta` / `on_text_delta` | 未使用 | 展示更细粒度的“正在组织参数/正在思考”状态 |
+| `on_tool_call_delta` / `on_text_delta` | 暂未直接使用 | `MultiTurnStreamItem` 已覆盖主 UI 状态；若需要参数 delta 预览再接 hook |
 | `ToolCallHookAction::{Continue, Skip, Terminate}` | Continue/Skip | 对危险、跑偏或循环工具链做可解释阻断和终止 |
 | `Extractor<T>` | vision / summary / memory aggregation | 扩展到对话收尾的 `AgentReaction` / `MemoryCandidate` |
 | `output_schema<T>()` | 未使用 | 作为轻量结构化输出边界，适合最终反应而非独立抽取任务 |
@@ -58,11 +63,11 @@ rig 已经提供了这套架构所需的支点：
 
 ### 推荐的优雅落地点
 
-#### 1. AgentReaction：替代关键词情绪与记忆判断
+#### 1. AgentReaction：替代关键词情绪与记忆判断（已落地）
 
 当前 `bridge::resolve_agent_response()` 通过 `"错误" / "失败" / "哈哈" / "喵"` 选择宠物状态，`memory::should_store()` 通过关键词决定是否写长期记忆。这两块都属于模型更擅长的语义判断。
 
-建议新增对话收尾结构：
+当前已新增对话收尾结构：
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -86,16 +91,11 @@ pub enum PetMood {
 }
 ```
 
-短期可以有两种实现路径：
+当前采用第一种实现路径：继续保留主对话流式输出，结束后用一次轻量 Extractor 生成 `AgentReaction`。Rust 只校验 mood 枚举、记忆字段和长度，不再猜测自然语言。未来若需要更主动的中途行为，可再评估 `set_pet_mood` / `remember` 语义工具。
 
-- 继续保留主对话流式输出，结束后用一次轻量 Extractor 生成 `AgentReaction`。
-- 或在主 Agent 增加一个 `set_pet_mood` / `remember` 工具，让模型在对话中主动表达行为。
+#### 2. PromptHook / MultiTurnStreamItem 作为运行时总线（部分落地）
 
-第一种改动更小，第二种更像完整 agent。无论哪种，Rust 都只校验 mood 枚举、记忆字段和长度，不再猜测自然语言。
-
-#### 2. PromptHook 作为运行时总线
-
-`PermissionHook` 不应只是 shell 黑名单。它应该成为工具生命周期事件的单一入口：
+`PermissionHook` 目前仍负责 shell 权限边界；UI 状态总线优先消费 rig `MultiTurnStreamItem`，因为它已经提供文本、工具调用和工具结果的稳定节点。若未来需要参数流式预览，再将 `on_tool_call_delta()` 接到同一语义事件总线。目标事件模型仍是：
 
 ```rust
 pub enum ToolPhase {
@@ -631,3 +631,10 @@ P1.5 (AgentReaction) ──→ 情绪/记忆从关键词转向结构化判断 �
 | **Pipeline.lookup()** | 向量查找 | 明确不采用 | 当前不做向量检索 |
 
 这些能力在 P0-P2 实施后会变得更有价值（特别是 Pipeline + P2 的组合），但不属于当前瓶颈。
+
+
+## 2026-05-15 实现索引
+
+- 当前宠物语义事件架构见 `docs/architecture/pet-semantic-events.md`。
+- 历史分阶段方案见 `docs/plan/rig-pet-semantic-events.md`。
+- 已完成提交范围：AgentReaction、PetEvent 协议、PetEventBus、MoodPolicy、memory review、event diagnostics、rig stream status notifications。
