@@ -379,6 +379,10 @@ pub fn spawn_bubble_follower(app: AppHandle) {
     std::thread::spawn(move || {
         let mut prev_pet_pos: Option<(i32, i32)> = None;
         loop {
+            if crate::shutdown::is_requested() {
+                tracing::debug!("[bubble-follower] shutdown requested, exiting");
+                break;
+            }
             if let Some(bubble_win) = app.get_webview_window("bubble") {
                 if bubble_win.is_visible().unwrap_or(false) {
                     let pet = app

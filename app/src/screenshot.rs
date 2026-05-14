@@ -432,12 +432,20 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
     debug!("[screenshot] 进入主循环");
     loop {
         // 每轮重新读取间隔，用户前端调整后下一轮即生效
+        if crate::shutdown::is_requested() {
+            info!("[screenshot] shutdown requested, exiting");
+            break;
+        }
         let interval_sec = ai_pad_core::app_settings::AppSettings::load()
             .appearance
             .screenshot_interval_sec
             .clamp(5, 3600);
         trace!(interval_sec, "[screenshot] sleep begin");
         std::thread::sleep(std::time::Duration::from_secs(interval_sec));
+        if crate::shutdown::is_requested() {
+            info!("[screenshot] shutdown requested after sleep, exiting");
+            break;
+        }
         cycle_count += 1;
         trace!(cycle = cycle_count, "[screenshot] sleep end");
 

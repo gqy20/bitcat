@@ -401,6 +401,10 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
 
     let mut last_warn: Option<std::time::Instant> = None;
     loop {
+        if crate::shutdown::is_requested() {
+            info!("[gamepad_loop] shutdown requested, exiting");
+            break;
+        }
         let pads = match SdlGamepad::list_gamepads(&sdl) {
             Ok(p) => p,
             Err(e) => {
@@ -458,6 +462,13 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
         loop {
             // 配置热重载
             {
+                if crate::shutdown::is_requested() {
+                    alt_tab.release();
+                    ctrl_tab.release();
+                    held_voice.release_keys();
+                    info!("[gamepad_loop] shutdown requested, releasing held keys");
+                    return;
+                }
                 let ws: tauri::State<'_, SharedWindowState> = app.state();
                 if ws.config_reload.load(Ordering::SeqCst) {
                     ws.config_reload.store(false, Ordering::SeqCst);
@@ -759,6 +770,10 @@ pub fn chat_loop(app: &tauri::AppHandle) {
 
     loop {
         // --- 1. 消费 bubble 聊天输入 ---
+        if crate::shutdown::is_requested() {
+            info!("[chat_loop] shutdown requested, exiting");
+            break;
+        }
         let chat_msg = {
             let pc: State<SharedPendingChat> = app.state();
             take_pending_chat(&pc)

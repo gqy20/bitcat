@@ -10,10 +10,15 @@
   const overlay = document.getElementById('overlay');
   const overlayTitle = document.getElementById('overlayTitle');
   const overlayText = document.getElementById('overlayText');
+  const overlayActions = document.getElementById('overlayActions');
+  const restartBtn = document.getElementById('restartBtn');
+  const quitBtn = document.getElementById('quitBtn');
 
   let engine = null;
+  let currentConfig = null;
   let lastTime = performance.now();
   let reported = false;
+  let closing = false;
   let lastLoggedState = null;
 
   function log(msg) {
@@ -74,8 +79,13 @@
     }
 
     handleInput(input) {
-      if (!input || this.ended) return;
+      if (!input) return;
       log(`input type=${input.type || ''} dx=${input.dx ?? ''} dy=${input.dy ?? ''} state=${this.state}`);
+      if (this.ended) {
+        if (input.type === 'confirm') restartGame();
+        else if (input.type === 'cancel') closeEndedGame(this.state);
+        return;
+      }
       if (input.type === 'confirm' && this.state === 'ready') {
         this.state = 'playing';
         return;
@@ -237,11 +247,11 @@
   }
 
   function metricsFor(config) {
-    const margin = 36;
+    const marginX = clamp(Math.floor(window.innerWidth * 0.035), 28, 88);
+    const marginY = clamp(Math.floor(window.innerHeight * 0.06), 34, 96);
     const maxCell = Math.min(
-      Math.floor((window.innerWidth - margin * 2) / config.grid.width),
-      Math.floor((window.innerHeight - margin * 2) / config.grid.height),
-      config.grid.cell_size
+      Math.floor((window.innerWidth - marginX * 2) / config.grid.width),
+      Math.floor((window.innerHeight - marginY * 2) / config.grid.height)
     );
     const cell = Math.max(8, maxCell);
     const w = config.grid.width * cell;
@@ -257,6 +267,7 @@
 
   function setOverlay(kind) {
     if (!engine) return;
+    overlayActions.classList.add('hidden');
     if (kind === 'ready') {
       overlay.classList.remove('hidden');
       overlayTitle.textContent = engine.config.dialogue.start;
@@ -268,26 +279,53 @@
     } else if (kind === 'win') {
       overlay.classList.remove('hidden');
       overlayTitle.textContent = engine.config.dialogue.win;
-      overlayText.textContent = `Score ${engine.score}`;
+      overlayText.textContent = `得分 ${engine.score} · Enter / A 再来一次 · Esc / B 退出`;
+      overlayActions.classList.remove('hidden');
     } else if (kind === 'lose') {
       overlay.classList.remove('hidden');
       overlayTitle.textContent = engine.config.dialogue.lose;
-      overlayText.textContent = `Score ${engine.score}`;
+      overlayText.textContent = `得分 ${engine.score} · Enter / A 再来一次 · Esc / B 退出`;
+      overlayActions.classList.remove('hidden');
+    } else if (kind === 'cancel') {
+      overlay.classList.remove('hidden');
+      overlayTitle.textContent = '已退出';
+      overlayText.textContent = `得分 ${engine.score}`;
     } else {
       overlay.classList.add('hidden');
     }
   }
 
-  async function reportEnd(result) {
-    if (reported) return;
-    reported = true;
-    setOverlay(result);
+  function restartGame() {
+    if (!currentConfig) return;
+    engine = new SnakeEngine(currentConfig);
+    reported = false;
+    closing = false;
+    lastLoggedState = null;
+    lastTime = performance.now();
+    setOverlay('ready');
+    log(`restart game title=${currentConfig.title}`);
+  }
+
+  async function closeEndedGame(result) {
+    if (closing) return;
+    closing = true;
     if (invoke) {
       try {
         await invoke('cmd_game_end', { result, score: engine.score });
       } catch (e) {
         log(`cmd_game_end failed: ${e}`);
       }
+    }
+  }
+
+  function reportEnd(result) {
+    if (reported) return;
+    reported = true;
+    setOverlay(result);
+    log(`end screen shown result=${result} score=${engine.score}`);
+    if (result === 'cancel') {
+      closeEndedGame(result);
+      return;
     }
   }
 
@@ -360,6 +398,10 @@
       engine.handleInput(input);
     });
     window.addEventListener('resize', resizeCanvas);
+    restartBtn.addEventListener('click', restartGame);
+    quitBtn.addEventListener('click', () => {
+      if (engine) closeEndedGame(engine.getState());
+    });
     if (listen) {
       await listen('game-input', (event) => {
         log(`game-input event ${JSON.stringify(event.payload)}`);
@@ -389,6 +431,7 @@
       theme: { head: 'cat', body: 'yarn', food: 'mouse', trail_alpha: 0.55 },
       dialogue: { start: '喵！看我的！', win: '太厉害了喵~', lose: '呜...再来一次！' },
     };
+    currentConfig = config;
     engine = new SnakeEngine(config);
     await initEvents();
     log(`engine ready title=${config.title}`);

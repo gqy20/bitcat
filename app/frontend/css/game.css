@@ -76,7 +76,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 8px;
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .overlay.hidden {
@@ -92,4 +92,32 @@ body {
 .overlay-text {
   font-size: 13px;
   opacity: 0.82;
+}
+
+.overlay-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.overlay-actions.hidden {
+  display: none;
+}
+
+.overlay-actions button {
+  min-width: 96px;
+  height: 36px;
+  padding: 0 14px;
+  color: #f7fbff;
+  font: 700 13px/1 "Segoe UI", "Microsoft YaHei", sans-serif;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.09);
+  cursor: pointer;
+}
+
+.overlay-actions button:hover {
+  background: rgba(255, 209, 102, 0.22);
+  border-color: rgba(255, 209, 102, 0.42);
 }

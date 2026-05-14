@@ -25,6 +25,7 @@ pub mod observation_gate;
 pub mod panel;
 pub mod screenshot;
 pub mod settings;
+pub mod shutdown;
 pub mod snap;
 pub mod tray;
 pub mod tts;
@@ -105,6 +106,9 @@ pub fn run() {
         // ── 窗口事件处理 ──
         // panel 失焦自动隐藏；settings 关闭时拦截并隐藏而非销毁。
         .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                crate::snap::save_visible_pet_position(window.app_handle());
+            }
             if window.label() == "panel" {
                 if let tauri::WindowEvent::Focused(false) = event {
                     let _ = window.hide();
@@ -157,6 +161,7 @@ pub fn run() {
             }
 
             // ── 系统托盘 ──
+            shutdown::install_ctrlc_handler(app.handle().clone());
             tray::create_tray(app.handle())?;
 
             // ── 舞蹈桥接线程 ──

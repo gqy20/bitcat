@@ -19,6 +19,7 @@ pub struct SharedGame {
     pub active: AtomicBool,
     pub startup_seq: std::sync::atomic::AtomicU64,
     pub current_def: Mutex<Option<GameDef>>,
+    pub hidden_windows: Mutex<Vec<String>>,
 }
 
 impl Default for SharedGame {
@@ -28,6 +29,7 @@ impl Default for SharedGame {
             active: AtomicBool::new(false),
             startup_seq: std::sync::atomic::AtomicU64::new(0),
             current_def: Mutex::new(None),
+            hidden_windows: Mutex::new(Vec::new()),
         }
     }
 }
@@ -127,6 +129,12 @@ pub fn start_game(app: &AppHandle, def: GameDef) -> Result<(), String> {
         info!(startup_id, "[game] position window begin");
         position_fullscreen_on_monitor(app, &window);
         info!(startup_id, "[game] position window done");
+        info!(startup_id, "[game] enter focus mode begin");
+        let hidden_windows = hide_companion_windows(app);
+        if let Ok(mut stored) = state.hidden_windows.lock() {
+            *stored = hidden_windows;
+        }
+        info!(startup_id, "[game] enter focus mode done");
         info!(startup_id, "[game] reload window begin");
         window
             .eval("window.location.reload()")
@@ -147,6 +155,7 @@ pub fn start_game(app: &AppHandle, def: GameDef) -> Result<(), String> {
         if let Ok(mut current) = state.current_def.lock() {
             *current = None;
         }
+        restore_companion_windows(app);
         let _ = set_pet_state(app, PetStateName::Idle);
         warn!(error = %e, "[game] 启动失败，已回滚游戏状态");
         return Err(e);
@@ -194,6 +203,42 @@ fn position_fullscreen_on_monitor(app: &AppHandle, window: &tauri::WebviewWindow
     let size = monitor.size();
     let _ = window.set_position(PhysicalPosition::new(pos.x, pos.y));
     let _ = window.set_size(PhysicalSize::new(size.width, size.height));
+}
+
+fn hide_companion_windows(app: &AppHandle) -> Vec<String> {
+    let mut hidden = Vec::new();
+    for label in ["pet", "pet-mini", "pet-snap", "bubble", "panel", "settings"] {
+        let Some(window) = app.get_webview_window(label) else {
+            continue;
+        };
+        if !window.is_visible().unwrap_or(false) {
+            continue;
+        }
+        if let Err(e) = window.hide() {
+            warn!(error = %e, label, "[game] 隐藏辅助窗口失败");
+            continue;
+        }
+        hidden.push(label.to_string());
+    }
+    info!(hidden = ?hidden, "[game] focus mode hidden windows");
+    hidden
+}
+
+fn restore_companion_windows(app: &AppHandle) {
+    let state: tauri::State<'_, SharedGame> = app.state();
+    let labels = state
+        .hidden_windows
+        .lock()
+        .map(|mut labels| std::mem::take(&mut *labels))
+        .unwrap_or_default();
+
+    for label in labels {
+        if let Some(window) = app.get_webview_window(&label) {
+            if let Err(e) = window.show() {
+                warn!(error = %e, label = %label, "[game] 恢复辅助窗口失败");
+            }
+        }
+    }
 }
 
 fn set_pet_state(app: &AppHandle, state: PetStateName) -> Result<(), String> {
@@ -259,6 +304,7 @@ pub fn cmd_game_end(app: AppHandle, result: String, score: u32) -> Result<(), St
             warn!(error = %e, "[game] 设置结束宠物状态失败");
         }
     }
+    restore_companion_windows(&app);
 
     info!(result = %normalized, score, "[game] 已结束");
     Ok(())

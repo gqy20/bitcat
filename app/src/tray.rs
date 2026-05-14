@@ -61,7 +61,7 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 if now_collapsed {
                     if let Some(win) = app.get_webview_window("pet") {
                         if let Ok(pos) = win.outer_position() {
-                            *ws.last_position.lock().unwrap() = Some((pos.x, pos.y));
+                            crate::snap::remember_pet_position(&ws, pos.x, pos.y);
                             info!(x = pos.x, y = pos.y, "保存折叠前位置");
                         }
                     }
@@ -92,7 +92,7 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 crate::settings::toggle_settings(app);
             }
             MENU_EXIT => {
-                app.exit(0);
+                crate::shutdown::request_exit(app, "tray-exit");
             }
             _ => {}
         })

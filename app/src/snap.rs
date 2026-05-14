@@ -71,12 +71,39 @@ fn persist_pet_position(x: i32, y: i32) -> Result<(), String> {
     settings.save()
 }
 
-fn remember_pet_position(ws: &SharedWindowState, x: i32, y: i32) {
+pub fn remember_pet_position(ws: &SharedWindowState, x: i32, y: i32) {
     if let Ok(mut pos) = ws.last_position.lock() {
         *pos = Some((x, y));
     }
     if let Err(e) = persist_pet_position(x, y) {
         warn!(error = %e, x, y, "保存桌宠位置失败");
+    }
+}
+
+/// 将当前可见桌宠窗口的位置写入持久配置。
+pub fn save_visible_pet_position(app: &tauri::AppHandle) {
+    let Some(win) = app
+        .get_webview_window("pet")
+        .filter(|w| w.is_visible().unwrap_or(false))
+        .or_else(|| {
+            app.get_webview_window("pet-mini")
+                .filter(|w| w.is_visible().unwrap_or(false))
+        })
+        .or_else(|| {
+            app.get_webview_window("pet-snap")
+                .filter(|w| w.is_visible().unwrap_or(false))
+        })
+    else {
+        return;
+    };
+
+    match win.outer_position() {
+        Ok(pos) => {
+            let ws: tauri::State<'_, SharedWindowState> = app.state();
+            remember_pet_position(&ws, pos.x, pos.y);
+            info!(label = %win.label(), x = pos.x, y = pos.y, "保存当前可见桌宠位置");
+        }
+        Err(e) => warn!(error = %e, label = %win.label(), "读取当前桌宠位置失败"),
     }
 }
 
@@ -310,6 +337,8 @@ pub async fn cmd_snap_transform(
         warn!(error = %e, "吸附窗口淡入失败");
     }
 
+    remember_pet_position(&ws, x, y);
+
     info!(snap_transform = true, edge = %edge, x = x, y = y, "吸附态切换成功");
     Ok(())
 }
@@ -425,11 +454,58 @@ pub fn get_work_area_for_window(
     mi.rcWork
 }
 
+#[cfg(target_os = "windows")]
+fn get_work_area_for_position(
+    x: i32,
+    y: i32,
+    fallback: &tauri::WebviewWindow,
+) -> windows_sys::Win32::Foundation::RECT {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    };
+
+    let mut mi = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..unsafe { std::mem::zeroed() }
+    };
+    let point = POINT { x, y };
+    let hmon = unsafe { MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST) };
+    let ok = unsafe { GetMonitorInfoW(hmon, &mut mi) != 0 };
+    if ok && mi.rcWork.right > mi.rcWork.left && mi.rcWork.bottom > mi.rcWork.top {
+        info!(
+            saved_x = x,
+            saved_y = y,
+            rcWork_left = mi.rcWork.left,
+            rcWork_top = mi.rcWork.top,
+            rcWork_right = mi.rcWork.right,
+            rcWork_bottom = mi.rcWork.bottom,
+            "get_work_area_for_position: Win32 GetMonitorInfoW 结果"
+        );
+        return mi.rcWork;
+    }
+    warn!(
+        saved_x = x,
+        saved_y = y,
+        "get_work_area_for_position 失败，使用窗口 fallback"
+    );
+    get_work_area_for_window(fallback)
+}
+
 #[cfg(not(target_os = "windows"))]
 pub fn get_work_area_for_window(
     win: &tauri::WebviewWindow,
 ) -> windows_sys::Win32::Foundation::RECT {
     fallback_work_area_for_window(win)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn get_work_area_for_position(
+    _x: i32,
+    _y: i32,
+    fallback: &tauri::WebviewWindow,
+) -> windows_sys::Win32::Foundation::RECT {
+    get_work_area_for_window(fallback)
 }
 
 fn fallback_work_area_for_window(
@@ -473,7 +549,7 @@ pub fn precreate_pet_windows(app: &tauri::AppHandle) -> Result<(), tauri::Error>
         if let (Some(w), Some(pos)) = (app.get_webview_window("pet"), saved_position) {
             match (w.outer_size(), w.scale_factor()) {
                 (Ok(size), Ok(scale)) => {
-                    let work = get_work_area_for_window(&w);
+                    let work = get_work_area_for_position(pos.x, pos.y, &w);
                     let width = ((size.width as f64) / scale).round() as i32;
                     let height = ((size.height as f64) / scale).round() as i32;
                     let (x, y) = clamp_position_to_work_area(pos.x, pos.y, width, height, work);
@@ -490,21 +566,50 @@ pub fn precreate_pet_windows(app: &tauri::AppHandle) -> Result<(), tauri::Error>
         }
         info!("预创建 pet 窗口 (128x128)");
     }
+    if let (Some(w), Some(pos)) = (app.get_webview_window("pet"), saved_position) {
+        match (w.outer_size(), w.scale_factor()) {
+            (Ok(size), Ok(scale)) => {
+                let work = get_work_area_for_position(pos.x, pos.y, &w);
+                let width = ((size.width as f64) / scale).round() as i32;
+                let height = ((size.height as f64) / scale).round() as i32;
+                let (x, y) = clamp_position_to_work_area(pos.x, pos.y, width, height, work);
+                if let Err(e) = w.set_position(PhysicalPosition::new(x, y)) {
+                    warn!(error = %e, x, y, "恢复已有桌宠位置失败");
+                } else {
+                    let ws: tauri::State<'_, SharedWindowState> = app.state();
+                    remember_pet_position(&ws, x, y);
+                    info!(
+                        saved_x = pos.x,
+                        saved_y = pos.y,
+                        x,
+                        y,
+                        "恢复已有 pet 窗口位置"
+                    );
+                }
+            }
+            (Err(e), _) => warn!(error = %e, "读取已有桌宠窗口尺寸失败，跳过位置校正"),
+            (_, Err(e)) => warn!(error = %e, "读取已有桌宠窗口缩放失败，跳过位置校正"),
+        }
+    }
 
     // 折叠窗口 48x48
     if app.get_webview_window("pet-mini").is_none() {
-        WebviewWindowBuilder::new(app, "pet-mini", WebviewUrl::App("pet.html".into()))
-            .title("8Bit Cat Mini")
-            .inner_size(48.0, 48.0)
-            .decorations(false)
-            .transparent(true)
-            .background_color(tauri::webview::Color(0, 0, 0, 0))
-            .shadow(false)
-            .always_on_top(true)
-            .skip_taskbar(true)
-            .resizable(false)
-            .visible(false)
-            .build()?;
+        let mut builder =
+            WebviewWindowBuilder::new(app, "pet-mini", WebviewUrl::App("pet.html".into()))
+                .title("8Bit Cat Mini")
+                .inner_size(48.0, 48.0)
+                .decorations(false)
+                .transparent(true)
+                .background_color(tauri::webview::Color(0, 0, 0, 0))
+                .shadow(false)
+                .always_on_top(true)
+                .skip_taskbar(true)
+                .resizable(false)
+                .visible(false);
+        if let Some(pos) = saved_position {
+            builder = builder.position(pos.x as f64, pos.y as f64);
+        }
+        builder.build()?;
         if let Some(w) = app.get_webview_window("pet-mini") {
             let _ = w.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
         }
@@ -513,18 +618,22 @@ pub fn precreate_pet_windows(app: &tauri::AppHandle) -> Result<(), tauri::Error>
 
     // 吸附窗口 40x120
     if app.get_webview_window("pet-snap").is_none() {
-        WebviewWindowBuilder::new(app, "pet-snap", WebviewUrl::App("pet.html".into()))
-            .title("8Bit Cat Snap")
-            .inner_size(SNAP_W, SNAP_H as f64)
-            .decorations(false)
-            .transparent(true)
-            .background_color(tauri::webview::Color(0, 0, 0, 0))
-            .shadow(false)
-            .always_on_top(true)
-            .skip_taskbar(true)
-            .resizable(false)
-            .visible(false)
-            .build()?;
+        let mut builder =
+            WebviewWindowBuilder::new(app, "pet-snap", WebviewUrl::App("pet.html".into()))
+                .title("8Bit Cat Snap")
+                .inner_size(SNAP_W, SNAP_H as f64)
+                .decorations(false)
+                .transparent(true)
+                .background_color(tauri::webview::Color(0, 0, 0, 0))
+                .shadow(false)
+                .always_on_top(true)
+                .skip_taskbar(true)
+                .resizable(false)
+                .visible(false);
+        if let Some(pos) = saved_position {
+            builder = builder.position(pos.x as f64, pos.y as f64);
+        }
+        builder.build()?;
         if let Some(w) = app.get_webview_window("pet-snap") {
             let _ = w.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
         }
