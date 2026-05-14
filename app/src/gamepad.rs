@@ -25,7 +25,8 @@ use ai_pad_core::hotkey;
 use ai_pad_core::logging::log_preview;
 use ai_pad_core::memory::{LongTermMemory, MemoryStore, ProfileStore};
 use ai_pad_core::pet_event::{
-    tool_event_to_pet_event, PetEvent, PetMode, PetMood, PetNotificationKind,
+    agent_status_to_pet_event, tool_event_to_pet_event, PetEvent, PetMode, PetMood,
+    PetNotificationKind,
 };
 use ai_pad_core::user_profile::UserProfile;
 use std::sync::atomic::Ordering;
@@ -999,18 +1000,18 @@ pub fn run_ai_chat(
     let prefix_for_log = prefix.clone();
     let tool_summaries = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
     let tool_summaries_for_stream = tool_summaries.clone();
-    let mut text_started = false;
+    emit_pet_event(app, PetEvent::ai_thinking());
     let stream_result = rt.block_on(agent.chat_stream(&enriched_msg, move |event| match event {
         AgentStreamEvent::Text { text } => {
             trace!(
                 chunk_chars = text.chars().count(),
                 "{prefix_for_log}{tag}AI chunk"
             );
-            if !text_started {
-                text_started = true;
-                emit_pet_event(&app_for_chunks, PetEvent::ai_thinking());
-            }
             let _ = bubble::append_bubble_chunk(&app_for_chunks, &text);
+        }
+        AgentStreamEvent::Status { status } => {
+            debug!(status = ?status, "{prefix_for_log}{tag}AI stream status");
+            emit_pet_event(&app_for_chunks, agent_status_to_pet_event(status));
         }
         AgentStreamEvent::Tool { event } => {
             debug!(
@@ -1053,6 +1054,18 @@ pub fn run_ai_chat(
         app,
         PetEvent::ClearNotification {
             kind: Some(PetNotificationKind::AiThinking),
+        },
+    );
+    emit_pet_event(
+        app,
+        PetEvent::ClearNotification {
+            kind: Some(PetNotificationKind::AiWriting),
+        },
+    );
+    emit_pet_event(
+        app,
+        PetEvent::ClearNotification {
+            kind: Some(PetNotificationKind::ToolPreparing),
         },
     );
     emit_pet_event(

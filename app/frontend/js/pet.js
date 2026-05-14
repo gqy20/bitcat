@@ -85,6 +85,8 @@ const STATE_CONFIG = {
 
 const NOTIFICATION_CONFIG = {
   ai_thinking: { state: 'talk', ttlMs: 30000 },
+  ai_writing: { state: 'talk', ttlMs: 30000 },
+  tool_preparing: { state: 'talk', ttlMs: 30000 },
   tool_running: { state: 'talk', ttlMs: 30000 },
   tool_blocked: { state: 'confused', ttlMs: 15000 },
   tool_failed: { state: 'confused', ttlMs: 15000 },

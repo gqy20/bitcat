@@ -4,7 +4,7 @@
 //! 与“播放哪一帧动画”拆开。Rig Agent、手柄、游戏等上游只发通知、反应、
 //! 模式和明确动作，前端状态机再负责映射到具体视觉状态与生命周期。
 
-use crate::agent::{ToolPhase, ToolRuntimeEvent};
+use crate::agent::{AgentStreamStatus, ToolPhase, ToolRuntimeEvent};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -44,6 +44,8 @@ pub enum PetEvent {
 #[serde(rename_all = "snake_case")]
 pub enum PetNotificationKind {
     AiThinking,
+    AiWriting,
+    ToolPreparing,
     ToolRunning,
     ToolBlocked,
     ToolFailed,
@@ -84,6 +86,26 @@ impl PetEvent {
         }
     }
 
+    /// AI 已经开始流式输出文本。
+    pub fn ai_writing() -> Self {
+        Self::Notify {
+            kind: PetNotificationKind::AiWriting,
+            body: Some("正在回复...".to_string()),
+            ttl_ms: Some(30_000),
+            refresh: true,
+        }
+    }
+
+    /// AI 正在准备工具调用。
+    pub fn tool_preparing() -> Self {
+        Self::Notify {
+            kind: PetNotificationKind::ToolPreparing,
+            body: Some("准备工具...".to_string()),
+            ttl_ms: Some(30_000),
+            refresh: true,
+        }
+    }
+
     /// 设置情绪反应。
     pub fn react(mood: PetMood) -> Self {
         Self::React {
@@ -116,6 +138,14 @@ impl PetEvent {
     /// 退出。
     pub fn exit() -> Self {
         Self::Exit
+    }
+}
+
+/// 将 Rig 流式状态映射为宠物语义事件。
+pub fn agent_status_to_pet_event(status: AgentStreamStatus) -> PetEvent {
+    match status {
+        AgentStreamStatus::AiWriting => PetEvent::ai_writing(),
+        AgentStreamStatus::ToolPreparing => PetEvent::tool_preparing(),
     }
 }
 
@@ -176,6 +206,21 @@ mod tests {
         };
 
         insta::assert_yaml_snapshot!(event);
+    }
+
+    #[rstest]
+    #[case(AgentStreamStatus::AiWriting, PetNotificationKind::AiWriting)]
+    #[case(AgentStreamStatus::ToolPreparing, PetNotificationKind::ToolPreparing)]
+    fn maps_agent_stream_statuses(
+        #[case] status: AgentStreamStatus,
+        #[case] expected: PetNotificationKind,
+    ) {
+        let mapped = agent_status_to_pet_event(status);
+
+        match mapped {
+            PetEvent::Notify { kind, .. } => assert_eq!(kind, expected),
+            other => panic!("expected notify event, got {other:?}"),
+        }
     }
 
     #[rstest]

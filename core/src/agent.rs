@@ -103,8 +103,17 @@ pub struct ToolRuntimeEvent {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentStreamEvent {
+    Status { status: AgentStreamStatus },
     Text { text: String },
     Tool { event: ToolRuntimeEvent },
+}
+
+/// Rig 流式对话中可直接观察到的高层状态。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentStreamStatus {
+    AiWriting,
+    ToolPreparing,
 }
 
 fn tool_label(tool_name: &str) -> String {
@@ -279,6 +288,7 @@ impl PetAgent {
         let mut chunk_count = 0u32;
         let mut tool_call_count = 0u32;
         let mut final_response_count = 0u32;
+        let mut writing_active = false;
         let mut tool_events =
             std::collections::HashMap::<String, (ToolRuntimeEvent, std::time::Instant)>::new();
         while let Some(item) = stream.next().await {
@@ -286,6 +296,12 @@ impl PetAgent {
                 Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(
                     text,
                 ))) => {
+                    if !writing_active {
+                        writing_active = true;
+                        on_event(AgentStreamEvent::Status {
+                            status: AgentStreamStatus::AiWriting,
+                        });
+                    }
                     accumulated.push_str(&text.text);
                     on_event(AgentStreamEvent::Text {
                         text: text.text.clone(),
@@ -300,6 +316,10 @@ impl PetAgent {
                         ..
                     },
                 )) => {
+                    writing_active = false;
+                    on_event(AgentStreamEvent::Status {
+                        status: AgentStreamStatus::ToolPreparing,
+                    });
                     tool_call_count += 1;
                     let event = planned_tool_event(
                         tool_call.function.name.clone(),
@@ -339,6 +359,7 @@ impl PetAgent {
                     tool_result,
                     internal_call_id,
                 })) => {
+                    writing_active = false;
                     if let Some((planned, started_at)) = tool_events.remove(&internal_call_id) {
                         let elapsed_ms = started_at.elapsed().as_millis().try_into().ok();
                         let event =

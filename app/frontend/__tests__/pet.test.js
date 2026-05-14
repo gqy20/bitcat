@@ -16,6 +16,8 @@ const STATE_CONFIG = {
 
 const NOTIFICATION_CONFIG = {
   ai_thinking: { state: 'talk', ttlMs: 30000 },
+  ai_writing: { state: 'talk', ttlMs: 30000 },
+  tool_preparing: { state: 'talk', ttlMs: 30000 },
   tool_running: { state: 'talk', ttlMs: 30000 },
   tool_blocked: { state: 'confused', ttlMs: 15000 },
   tool_failed: { state: 'confused', ttlMs: 15000 },
@@ -340,6 +342,14 @@ describe('PetStateMachine', () => {
   describe('applyEvent', () => {
     it('notify 事件切换到对应视觉状态', () => {
       pet.applyEvent({ type: 'notify', kind: 'ai_thinking', body: '思考中', ttl_ms: 30000, refresh: true });
+      expect(pet.state).toBe('talk');
+    });
+
+    it('stream status notifications also use talk state', () => {
+      pet.applyEvent({ type: 'notify', kind: 'ai_writing', body: '正在回复', ttl_ms: 30000, refresh: true });
+      expect(pet.state).toBe('talk');
+      pet.clearNotification('ai_writing');
+      pet.applyEvent({ type: 'notify', kind: 'tool_preparing', body: '准备工具', ttl_ms: 30000, refresh: true });
       expect(pet.state).toBe('talk');
     });
 

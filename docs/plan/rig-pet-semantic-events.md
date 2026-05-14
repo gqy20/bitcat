@@ -1,7 +1,7 @@
 # Rig 驱动的宠物语义事件改造方案
 
 > 日期：2026-05-14  
-> 状态：Phase 1-5 已完成（2026-05-14）  
+> 状态：Phase 1-6 已完成（2026-05-15）  
 > 目标：清理旧的 `SetState` 视觉状态事件，把 Rig Agent / Tool 生命周期接入为一套可解释、可测试、可扩展的宠物语义事件。
 
 ## 背景
@@ -21,7 +21,7 @@ AI 回复文本 -> Rust 关键词判断 -> PetCommand::SetState(Happy/Confused/I
 前端 pet-event -> pet.applyEvent() -> 直接切视觉 state
 ```
 
-这会让“语义”和“动画表现”耦合在一起，也让 Rig 已经提供的工具生命周期事件无法自然驱动宠物。Phase 1-5 已将主链路迁移到 tagged `PetEvent`，用 `AgentReaction` 接管最终情绪和长期记忆候选，并通过 `PetEventBus` / `MoodPolicy` 收口事件发送、去重、节流、情绪生命周期与可观察性。
+这会让“语义”和“动画表现”耦合在一起，也让 Rig 已经提供的工具生命周期事件无法自然驱动宠物。Phase 1-6 已将主链路迁移到 tagged `PetEvent`，用 `AgentReaction` 接管最终情绪和长期记忆候选，并通过 `PetEventBus` / `MoodPolicy` 收口事件发送、去重、节流、情绪生命周期与可观察性。Phase 6 进一步从 rig `MultiTurnStreamItem` 派生 `AiWriting` / `ToolPreparing`，让宠物事件时间线能表达模型写作和准备工具的过程。
 
 ## 设计原则
 
@@ -356,10 +356,18 @@ pub struct MemoryCandidate {
 3. 新增 `cmd_get_pet_event_log` IPC，供设置页读取事件队列。
 4. 设置页用量 tab 增加“宠物事件”区域，展示 sent / deduplicated / throttled / emit_failed。
 
-### Phase 6：后续优化
+### Phase 6：Rig 流式细粒度状态（已完成）
 
-1. 将 `PromptHook::on_text_delta()` / `on_tool_call_delta()` 接入更细粒度的“正在组织参数”状态。
-2. 增加 `Focused` 专用动画帧。
+1. 新增 `AgentStreamStatus`，从 rig `MultiTurnStreamItem` 派生 `AiWriting` 和 `ToolPreparing`。
+2. `StreamedAssistantContent::Text` 首次进入文本流时触发 `AiWriting`。
+3. `StreamedAssistantContent::ToolCall` 到达时触发 `ToolPreparing`，随后沿用工具生命周期进入 `ToolRunning`。
+4. 新增 `PetNotificationKind::AiWriting` 和 `PetNotificationKind::ToolPreparing`，前端暂时映射到 `talk`。
+5. 对话结束时统一清理 thinking / writing / preparing / running 通知。
+
+### Phase 7：后续优化
+
+1. 评估是否需要自定义 `PromptHook` 直接消费 `on_text_delta()` / `on_tool_call_delta()`，目前 `MultiTurnStreamItem` 已足够表达主 UI 状态。
+2. 增加 `Focused` / `preparing` 专用动画帧。
 3. 评估 Dance 是否纳入统一状态机。
 4. 把长期记忆 review markdown 接入设置页，支持查看和人工删除。
 
@@ -368,6 +376,7 @@ pub struct MemoryCandidate {
 ### Rust
 
 - `pet_event` 序列化快照：用 `insta::assert_yaml_snapshot!`。
+- `agent_status_to_pet_event()` 参数化测试：`AiWriting` / `ToolPreparing`。
 - `tool_event_to_pet_event()` 参数化测试：
   - `Planned -> Notify(ToolRunning)`
   - `Blocked -> Notify(ToolBlocked)`
@@ -412,8 +421,9 @@ pub struct MemoryCandidate {
 | Phase 3 AgentReaction | 已完成，约 400 行 |
 | Phase 4 EventBus + MoodPolicy + memory review | 已完成，约 500 行 |
 | Phase 5 observability panel | 已完成，约 320 行 |
+| Phase 6 rig stream statuses | 已完成，约 120 行 |
 
-实际实现拆为多笔提交：Phase 1 新协议、Phase 2 Rig 生命周期、旧状态事件清理、Phase 3 AgentReaction + memory candidates、Phase 4 EventBus + MoodPolicy + memory review、Phase 5 observability panel。
+实际实现拆为多笔提交：Phase 1 新协议、Phase 2 Rig 生命周期、旧状态事件清理、Phase 3 AgentReaction + memory candidates、Phase 4 EventBus + MoodPolicy + memory review、Phase 5 observability panel、Phase 6 rig stream statuses。
 
 ## 验收标准
 
