@@ -8,7 +8,7 @@
 //! 面板定位在宠物窗口附近（优先右下），超出屏幕时自动翻边。
 //! 通过全局热键或 Home 键触发 `toggle_panel` 切换显示/隐藏。
 
-use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 use tracing::{info, warn};
 
 const PANEL_CONFIG_PATH: &str = "config/panel_action.yml";
@@ -264,7 +264,7 @@ fn create_panel_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri::E
 
 fn apply_panel_size(panel: &tauri::WebviewWindow) {
     let (panel_w, panel_h) = panel_size_from_config();
-    let _ = panel.set_size(PhysicalSize::new(panel_w as u32, panel_h as u32));
+    let _ = panel.set_size(LogicalSize::new(panel_w, panel_h));
 }
 
 #[cfg(test)]
