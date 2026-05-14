@@ -17,12 +17,14 @@ use crate::tts;
 use crate::voice;
 use ai_pad_core::action::{ActionConfig, ActionDef};
 use ai_pad_core::agent::{AgentStreamEvent, PetAgent};
-use ai_pad_core::bridge::{handle_button_press, resolve_agent_response, PetCommand, PetStateName};
+use ai_pad_core::bridge::{handle_button_press, PetCommand, PetStateName};
 use ai_pad_core::device::button_name;
 use ai_pad_core::hotkey;
 use ai_pad_core::logging::log_preview;
 use ai_pad_core::memory::{should_store, LongTermMemory, MemoryStore, ProfileStore};
-use ai_pad_core::pet_event::{PetEvent, PetMode, PetMood};
+use ai_pad_core::pet_event::{
+    tool_event_to_pet_event, PetEvent, PetMode, PetMood, PetNotificationKind,
+};
 use ai_pad_core::user_profile::UserProfile;
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
@@ -68,9 +70,10 @@ pub fn process_button(button_index: u32) -> Vec<PetEvent> {
     events
 }
 
-/// 解析 AI 回复文本中的情绪/动作指令，生成对应的前端事件。
-pub fn process_agent_response(reply: &str) -> Vec<PetEvent> {
-    commands_to_events(&resolve_agent_response(reply))
+fn emit_pet_event(app: &AppHandle, event: PetEvent) {
+    if let Err(e) = app.emit("pet-event", event) {
+        warn!(error = %e, "emit pet-event failed");
+    }
 }
 
 // ========================================================================
@@ -545,8 +548,8 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                         }
 
                         let events = process_button(idx);
-                        for evt in &events {
-                            let _ = app.emit("pet-event", evt);
+                        for evt in events {
+                            emit_pet_event(app, evt);
                         }
 
                         if let Some(msg) = &agent_msg {
@@ -1000,12 +1003,17 @@ pub fn run_ai_chat(
     let app_for_chunks = app.clone();
     let prefix = log_prefix.to_string();
     let prefix_for_log = prefix.clone();
+    let mut text_started = false;
     let stream_result = rt.block_on(agent.chat_stream(&enriched_msg, move |event| match event {
         AgentStreamEvent::Text { text } => {
             trace!(
                 chunk_chars = text.chars().count(),
                 "{prefix_for_log}{tag}AI chunk"
             );
+            if !text_started {
+                text_started = true;
+                emit_pet_event(&app_for_chunks, PetEvent::ai_thinking());
+            }
             let _ = bubble::append_bubble_chunk(&app_for_chunks, &text);
         }
         AgentStreamEvent::Tool { event } => {
@@ -1014,6 +1022,9 @@ pub fn run_ai_chat(
                 phase = ?event.phase,
                 "{prefix_for_log}{tag}AI tool event"
             );
+            if let Some(pet_event) = tool_event_to_pet_event(&event) {
+                emit_pet_event(&app_for_chunks, pet_event);
+            }
             let _ = bubble::emit_tool_event(
                 &app_for_chunks,
                 bubble::BubbleToolPayload {
@@ -1031,6 +1042,18 @@ pub fn run_ai_chat(
         }
     }));
     let _ = bubble::finalize_bubble(app);
+    emit_pet_event(
+        app,
+        PetEvent::ClearNotification {
+            kind: Some(PetNotificationKind::AiThinking),
+        },
+    );
+    emit_pet_event(
+        app,
+        PetEvent::ClearNotification {
+            kind: Some(PetNotificationKind::ToolRunning),
+        },
+    );
 
     match stream_result {
         Ok(reply) => {
@@ -1071,12 +1094,20 @@ pub fn run_ai_chat(
                 });
             }
 
-            let ai_events = process_agent_response(&reply);
-            for evt in &ai_events {
-                let _ = app.emit("pet-event", evt);
-            }
+            emit_pet_event(app, PetEvent::set_mode(PetMode::Idle));
         }
-        Err(e) => warn!(model = %agent.config.model, error = %e, "{log_prefix} AI 错误"),
+        Err(e) => {
+            emit_pet_event(
+                app,
+                PetEvent::Notify {
+                    kind: PetNotificationKind::ToolFailed,
+                    body: Some(format!("AI 对话失败: {e}")),
+                    ttl_ms: Some(15_000),
+                    refresh: true,
+                },
+            );
+            warn!(model = %agent.config.model, error = %e, "{log_prefix} AI 错误");
+        }
     }
 }
 
@@ -1305,13 +1336,6 @@ mod tests {
         let events = process_button(0);
         assert!(!events.is_empty());
         assert_eq!(events[0], PetEvent::react(PetMood::Happy));
-    }
-
-    #[test]
-    fn test_process_agent_response_happy() {
-        let events = process_agent_response("哈哈哈太有趣了！");
-        assert!(events.iter().any(|e| *e == PetEvent::react(PetMood::Happy)));
-        assert_eq!(events.last().unwrap(), &PetEvent::set_mode(PetMode::Idle));
     }
 
     #[test]

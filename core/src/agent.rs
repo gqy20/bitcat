@@ -12,8 +12,8 @@
 //! 每个工具只需提供名称、描述、参数 schema 和执行函数即可自动实现 `Tool` trait。
 //!
 //! 交互关系：`bridge::handle_button_press` 触发对话 → `PetAgent::chat_stream`
-//! 执行流式推理 → `on_chunk` 回调驱动 bubble 窗口更新 → 返回完整回复后由
-//! `bridge::resolve_agent_response` 决定宠物状态变化。
+//! 执行流式推理 → 回调把文本 chunk 送往 bubble，并把工具生命周期转换为宠物
+//! 语义事件。最终情绪不再由 Rust 关键词猜测，后续由结构化 `AgentReaction` 接管。
 
 use crate::ai_config::AiConfig;
 use crate::permission_hook;
