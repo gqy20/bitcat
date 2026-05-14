@@ -180,12 +180,6 @@ class PetStateMachine {
       }
       return;
     }
-    if (event.state) {
-      if (event.state === 'exit') return;
-      this.setState(event.state);
-    }
-    if (event.walk_to != null) this.walkTo(event.walk_to);
-    if (event.bubble) this.bubble = event.bubble;
   }
 }
 

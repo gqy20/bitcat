@@ -1,0 +1,6 @@
+---
+source: core/src/bridge.rs
+assertion_line: 231
+expression: "PetCommand::PlayDance { name: \"happy_twist\".into() }.to_json_line()"
+---
+{"cmd":"PlayDance","name":"happy_twist"}

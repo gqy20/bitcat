@@ -17,7 +17,7 @@ use crate::tts;
 use crate::voice;
 use ai_pad_core::action::{ActionConfig, ActionDef};
 use ai_pad_core::agent::{AgentStreamEvent, PetAgent};
-use ai_pad_core::bridge::{handle_button_press, PetCommand, PetStateName};
+use ai_pad_core::bridge::{handle_button_press, PetCommand};
 use ai_pad_core::device::button_name;
 use ai_pad_core::hotkey;
 use ai_pad_core::logging::log_preview;
@@ -35,23 +35,10 @@ use tracing::{debug, error, info, instrument, trace, warn};
 // PetEvent：前端事件
 // ========================================================================
 
-fn state_name_to_event(state: PetStateName) -> PetEvent {
-    match state {
-        PetStateName::Idle => PetEvent::set_mode(PetMode::Idle),
-        PetStateName::Sleep => PetEvent::set_mode(PetMode::Sleep),
-        PetStateName::GamePlay => PetEvent::set_mode(PetMode::GamePlay),
-        PetStateName::Talk => PetEvent::ai_thinking(),
-        PetStateName::Happy | PetStateName::GameWin => PetEvent::react(PetMood::Happy),
-        PetStateName::Confused | PetStateName::GameLose => PetEvent::react(PetMood::Confused),
-        PetStateName::Walk => PetEvent::react(PetMood::Focused),
-    }
-}
-
 /// 将桥层命令列表转换为前端事件列表，过滤掉不需要前端处理的命令。
 pub fn commands_to_events(cmds: &[PetCommand]) -> Vec<PetEvent> {
     cmds.iter()
         .filter_map(|cmd| match cmd {
-            PetCommand::SetState { state } => Some(state_name_to_event(*state)),
             PetCommand::WalkTo { x } => Some(PetEvent::walk_to(*x)),
             PetCommand::ShowBubble { text } => Some(PetEvent::show_bubble(text.clone())),
             PetCommand::Exit => Some(PetEvent::exit()),
@@ -64,6 +51,12 @@ pub fn commands_to_events(cmds: &[PetCommand]) -> Vec<PetEvent> {
 pub fn process_button(button_index: u32) -> Vec<PetEvent> {
     let (_agent_msg, pet_cmd) = handle_button_press(button_index, "");
     let mut events = Vec::new();
+    match button_index {
+        11 => events.push(PetEvent::ai_thinking()),
+        10 => events.push(PetEvent::set_mode(PetMode::Sleep)),
+        0 => events.push(PetEvent::react(PetMood::Happy)),
+        _ => {}
+    }
     if let Some(cmd) = pet_cmd {
         events.extend(commands_to_events(&[cmd]));
     }

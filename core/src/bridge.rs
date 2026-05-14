@@ -1,7 +1,8 @@
 //! 手柄 → AI → 宠物动画 桥接层。
 //!
-//! 本模块负责将 SDL2 手柄按键翻译为 AI 对话请求或宠物控制命令，并将 Agent
-//! 回复解析为 `PetCommand` 序列驱动宠物动画状态变化。
+//! 本模块负责将 SDL2 手柄按键翻译为 AI 对话请求或明确宠物动作命令。
+//! Agent 回复的语义反应由 Rig 生命周期事件和后续结构化输出接管，不再在这里
+//! 通过关键词推断情绪。
 //!
 //! `PetStateName` 独立于 `pet::PetState` 存在，是因为 IPC 序列化需要零依赖的
 //! 纯数据枚举——不携带帧索引、计时器等运行时状态，确保 JSON 线路上传输的内容
@@ -9,11 +10,7 @@
 //!
 //! 按键映射流程：`handle_button_press` 根据按钮索引查 `default_button_mapping`，
 //! 返回 (可选 AI 消息, 可选宠物命令) 二元组；app 层的 `gamepad_loop` 消费这对
-//! 结果，分别决定是否发起对话和切换动画。
-//!
-//! Agent 回复处理流程：`resolve_agent_response` 对回复文本做轻量关键词匹配以
-//! 选择情绪状态（Happy / Confused），截断过长文本后生成 `PetCommand` 序列，
-//! 由 app 层依次发送到 pet 窗口。
+//! 结果，分别决定是否发起对话、移动或播放舞蹈。
 
 use serde::{Deserialize, Serialize};
 use tracing::debug;
@@ -22,12 +19,10 @@ use tracing::debug;
 
 /// app 层发送给 pet 窗口的命令，通过 JSON 行协议序列化。
 ///
-/// 每个变体对应一种宠物行为：切换状态、移动、显示气泡文本、播放舞蹈或退出。
+/// 每个变体对应一种明确宠物动作：移动、显示气泡文本、播放舞蹈或退出。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "cmd")]
 pub enum PetCommand {
-    /// 切换状态
-    SetState { state: PetStateName },
     /// 走到指定位置
     WalkTo { x: f32 },
     /// 显示对话气泡文本
@@ -149,25 +144,10 @@ pub fn handle_button_press(
                 } else {
                     user_message.to_string()
                 };
-                (
-                    Some(msg),
-                    Some(PetCommand::SetState {
-                        state: PetStateName::Talk,
-                    }),
-                )
+                (Some(msg), None)
             }
-            SpecialAction::ToggleSleep => (
-                None,
-                Some(PetCommand::SetState {
-                    state: PetStateName::Sleep,
-                }),
-            ),
-            SpecialAction::Praise => (
-                Some("喵~ 谢谢夸奖！".into()),
-                Some(PetCommand::SetState {
-                    state: PetStateName::Happy,
-                }),
-            ),
+            SpecialAction::ToggleSleep => (None, None),
+            SpecialAction::Praise => (Some("喵~ 谢谢夸奖！".into()), None),
             SpecialAction::Wander => {
                 let x = rand_range(50.0, 200.0);
                 (None, Some(PetCommand::WalkTo { x }))
@@ -182,41 +162,6 @@ pub fn handle_button_press(
     } else {
         (None, None)
     }
-}
-
-/// 根据 Agent 回复结果决定宠物状态
-pub fn resolve_agent_response(reply: &str) -> Vec<PetCommand> {
-    debug!(chars = reply.chars().count(), "resolve_agent_response");
-    let mut cmds = Vec::new();
-
-    // 简单关键词检测
-    if reply.contains("错误") || reply.contains("失败") || reply.contains("抱歉") {
-        cmds.push(PetCommand::SetState {
-            state: PetStateName::Confused,
-        });
-    } else if reply.contains("哈哈") || reply.contains("😄") || reply.contains("喵") {
-        cmds.push(PetCommand::SetState {
-            state: PetStateName::Happy,
-        });
-    }
-
-    // 始终显示对话内容（按字符切片，防止 UTF-8 边界 panic）
-    let char_count = reply.chars().count();
-    let short = if char_count > 200 {
-        let truncated: String = reply.chars().take(197).collect();
-        format!("{truncated}...")
-    } else {
-        reply.to_string()
-    };
-    cmds.push(PetCommand::ShowBubble { text: short });
-
-    // 对话结束后回 Idle
-    cmds.push(PetCommand::SetState {
-        state: PetStateName::Idle,
-    });
-
-    debug!(cmd_count = cmds.len(), "resolve_agent_response done");
-    cmds
 }
 
 fn rand_range(lo: f32, hi: f32) -> f32 {
@@ -234,10 +179,10 @@ mod tests {
     // ---- rstest 参数化：按钮映射 ----
 
     #[rstest]
-    #[case(11, "", true, true, "Start → AI chat")]
-    #[case(11, "现在几点了", true, true, "Start with message")]
-    #[case(10, "", false, true, "Select → sleep")]
-    #[case(0, "", true, true, "A → praise")]
+    #[case(11, "", true, false, "Start → AI chat")]
+    #[case(11, "现在几点了", true, false, "Start with message")]
+    #[case(10, "", false, false, "Select → sleep handled by app semantic layer")]
+    #[case(0, "", true, false, "A → praise message")]
     #[case(1, "", false, true, "B → wander")]
     #[case(4, "", false, true, "Y → dance")]
     #[case(99, "", false, false, "Unknown → no action")]
@@ -262,16 +207,6 @@ mod tests {
     // ---- insta 快照：序列化 ----
 
     #[test]
-    fn test_set_state_json_snapshot() {
-        insta::assert_snapshot!(
-            PetCommand::SetState {
-                state: PetStateName::Talk
-            }
-            .to_json_line()
-        );
-    }
-
-    #[test]
     fn test_walk_to_json_snapshot() {
         insta::assert_snapshot!(PetCommand::WalkTo { x: 123.45 }.to_json_line());
     }
@@ -291,91 +226,22 @@ mod tests {
         insta::assert_snapshot!(PetCommand::Exit.to_json_line());
     }
 
+    #[test]
+    fn test_play_dance_json_snapshot() {
+        insta::assert_snapshot!(
+            PetCommand::PlayDance {
+                name: "happy_twist".into()
+            }
+            .to_json_line()
+        );
+    }
+
     // ---- 其他测试 ----
 
     #[test]
     fn test_invalid_json_returns_none() {
         assert!(PetCommand::from_json_line("invalid").is_none());
         assert!(PetCommand::from_json_line("").is_none());
-    }
-
-    #[test]
-    fn test_resolve_happy_response() {
-        let cmds = resolve_agent_response("哈哈哈太有趣了！");
-        assert!(cmds.len() >= 2);
-        let has_happy = cmds.iter().any(|c| {
-            matches!(
-                c,
-                PetCommand::SetState {
-                    state: PetStateName::Happy
-                }
-            )
-        });
-        let has_bubble = cmds
-            .iter()
-            .any(|c| matches!(c, PetCommand::ShowBubble { .. }));
-        assert!(has_happy);
-        assert!(has_bubble);
-    }
-
-    #[test]
-    fn test_resolve_error_response() {
-        let cmds = resolve_agent_response("抱歉，操作失败了");
-        let has_confused = cmds.iter().any(|c| {
-            matches!(
-                c,
-                PetCommand::SetState {
-                    state: PetStateName::Confused
-                }
-            )
-        });
-        assert!(has_confused);
-    }
-
-    #[test]
-    fn test_resolve_long_text_truncated() {
-        let long = "这是一个非常长的回复".repeat(25);
-        let cmds = resolve_agent_response(&long);
-        let bubble = cmds.iter().find_map(|c| match c {
-            PetCommand::ShowBubble { text } => Some(text.clone()),
-            _ => None,
-        });
-        assert!(bubble.is_some());
-        let text = bubble.unwrap();
-        assert_eq!(text.chars().count(), 200);
-        assert!(text.ends_with("..."));
-    }
-
-    #[test]
-    fn test_resolve_short_text_not_truncated() {
-        let short = "短回复，不该截断";
-        let cmds = resolve_agent_response(short);
-        let bubble = cmds.iter().find_map(|c| match c {
-            PetCommand::ShowBubble { text } => Some(text.clone()),
-            _ => None,
-        });
-        assert_eq!(bubble.unwrap(), short);
-    }
-
-    #[test]
-    fn test_resolve_truncate_no_panic_on_utf8_boundary() {
-        let mixed = format!("{}{}", "a".repeat(50), "中文测试");
-        let _ = resolve_agent_response(&mixed);
-        let with_emoji = "喵呜~ 🐱✨ ".repeat(20);
-        let cmds = resolve_agent_response(&with_emoji);
-        assert!(!cmds.is_empty());
-    }
-
-    #[test]
-    fn test_resolve_ends_with_idle() {
-        let cmds = resolve_agent_response("普通回复");
-        let last = cmds.last().unwrap();
-        matches!(
-            last,
-            PetCommand::SetState {
-                state: PetStateName::Idle
-            }
-        );
     }
 
     #[test]

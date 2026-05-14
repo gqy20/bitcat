@@ -287,17 +287,6 @@ class PetStateMachine {
       return;
     }
 
-    // 旧协议兼容：仅用于过渡期调试，AI 主链路不再发送裸 state。
-    if (event.state) {
-      if (event.state === 'exit') return;
-      this.setState(event.state);
-    }
-    if (event.walk_to != null) {
-      this.walkTo(event.walk_to);
-    }
-    if (event.bubble) {
-      this.bubble = event.bubble;
-    }
   }
 }
 
