@@ -495,17 +495,23 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
                 }
             }
 
-            debug!(model = %vision_model, "vision request started");
+            let monitor_count = match config.target {
+                ScreenshotTarget::All => enumerate_displays().len().max(1),
+                ScreenshotTarget::Primary => 1,
+            };
+
+            debug!(model = %vision_model, monitor_count, "vision request started");
             let analysis = match rt.block_on(vision::analyze_screenshot(
                 &ai_config,
                 &VisionConfig::default(),
                 &prompt_cfg,
                 &b64,
-                1,
+                monitor_count,
             )) {
                 Ok(analysis) => {
                     info!(
                         model = %vision_model,
+                        monitor_count,
                         width = w,
                         height = h,
                         chars = analysis.description.chars().count(),
