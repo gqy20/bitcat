@@ -42,11 +42,11 @@ use tracing::{debug, error, info, instrument, trace, warn};
 /// 将桥层命令列表转换为前端事件列表，过滤掉不需要前端处理的命令。
 pub fn commands_to_events(cmds: &[PetCommand]) -> Vec<PetEvent> {
     cmds.iter()
-        .filter_map(|cmd| match cmd {
-            PetCommand::WalkTo { x } => Some(PetEvent::walk_to(*x)),
-            PetCommand::ShowBubble { text } => Some(PetEvent::show_bubble(text.clone())),
-            PetCommand::Exit => Some(PetEvent::exit()),
-            PetCommand::PlayDance { name } => Some(PetEvent::play_dance(name.clone())),
+        .map(|cmd| match cmd {
+            PetCommand::WalkTo { x } => PetEvent::walk_to(*x),
+            PetCommand::ShowBubble { text } => PetEvent::show_bubble(text.clone()),
+            PetCommand::Exit => PetEvent::exit(),
+            PetCommand::PlayDance { name } => PetEvent::play_dance(name.clone()),
         })
         .collect()
 }

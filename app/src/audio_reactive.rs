@@ -158,7 +158,7 @@ fn spawn_fake_music_loop(app: AppHandle, session_id: u64, stop: Arc<AtomicBool>)
             let t = start.elapsed().as_secs_f32();
             let pulse = ((t * std::f32::consts::TAU * 1.7).sin() + 1.0) * 0.5;
             let bass_pulse = ((t * std::f32::consts::TAU * 0.85).sin() + 1.0) * 0.5;
-            let onset = beat % 9 == 0 || (bass_pulse > 0.94 && beat % 3 == 0);
+            let onset = beat.is_multiple_of(9) || (bass_pulse > 0.94 && beat.is_multiple_of(3));
             let silence = (t as u32 % 17) == 13;
 
             emit_frame(
@@ -478,8 +478,12 @@ fn decode_samples(bytes: &[u8], format: SampleFormat, _bits: u16, channels: usiz
         }
     }
 
-    if channels > 0 {
-        out.truncate(out.len() / channels * channels);
+    if let Some(whole_len) = out
+        .len()
+        .checked_div(channels)
+        .map(|frames| frames * channels)
+    {
+        out.truncate(whole_len);
     }
     out
 }

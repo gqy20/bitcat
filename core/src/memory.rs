@@ -538,15 +538,15 @@ fn long_term_entry_matches(entry: &LongTermEntry, query: &LongTermMemoryQuery) -
     if entry.deleted {
         return false;
     }
-    if let Some(min_importance) = query.min_importance {
-        if entry.importance.unwrap_or(0) < min_importance {
-            return false;
-        }
+    if let Some(min_importance) = query.min_importance
+        && entry.importance.unwrap_or(0) < min_importance
+    {
+        return false;
     }
-    if let Some(source) = &query.source {
-        if entry.source.as_deref() != Some(source.as_str()) {
-            return false;
-        }
+    if let Some(source) = &query.source
+        && entry.source.as_deref() != Some(source.as_str())
+    {
+        return false;
     }
     query.tags.iter().all(|tag| entry.tags.contains(tag))
 }

@@ -347,5 +347,5 @@ fn event_type_name(value: &str) -> String {
 }
 
 fn event_payload(event: &PetEvent) -> serde_json::Value {
-    serde_json::to_value(event).unwrap_or_else(|_| serde_json::Value::Null)
+    serde_json::to_value(event).unwrap_or(serde_json::Value::Null)
 }

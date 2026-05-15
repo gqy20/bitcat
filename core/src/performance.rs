@@ -135,9 +135,7 @@ pub fn fail_performance(session_id: u64, error: impl Into<String>) -> Option<Per
 /// 停止当前表现会话；session_id 不匹配时忽略。
 pub fn stop_performance(session_id: u64, reason: impl AsRef<str>) -> Option<PerformanceSession> {
     let mut guard = current_slot().lock().expect("performance mutex poisoned");
-    let Some(session) = guard.as_ref() else {
-        return None;
-    };
+    let session = guard.as_ref()?;
     if session.id != session_id {
         debug!(
             current_id = session.id,
