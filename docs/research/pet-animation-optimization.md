@@ -1,6 +1,7 @@
 # 桌宠动画系统优化研究：借鉴 OpenAI Codex CLI 宠物架构
 
 > **日期**: 2026-05-13
+> **当前状态**: 本文是研究基线。当前本地代码已落地非均匀帧时长、repeat + fallback，以及大部分语义事件/通知生命周期。后续执行计划以 [`docs/plan/pet-animation-visual-roadmap.md`](../plan/pet-animation-visual-roadmap.md) 为准。
 >
 > ## 项目位置关系
 >
