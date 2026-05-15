@@ -53,6 +53,21 @@ const IDLE_BLINK_CLOSED = cloneSprite(IDLE_BASE, [
   [5, 3, 4], [5, 4, 4], [5, 10, 4], [5, 11, 4],
   [6, 3, 2], [6, 4, 2], [6, 10, 2], [6, 11, 2],
 ]);
+const IDLE_EAR_TWITCH = cloneSprite(IDLE_BASE, [
+  [0, 3, 0], [0, 4, 1], [0, 5, 1],
+  [1, 3, 1], [1, 4, 2], [1, 5, 2],
+  [0, 9, 1], [0, 10, 1], [1, 10, 2],
+]);
+const IDLE_LOOK_LEFT = cloneSprite(IDLE_BASE, [
+  [6, 3, 2], [6, 4, 4],
+  [6, 10, 2], [6, 11, 4],
+  [8, 6, 5], [8, 9, 2],
+]);
+const IDLE_LOOK_RIGHT = cloneSprite(IDLE_BASE, [
+  [6, 3, 4], [6, 4, 2],
+  [6, 10, 4], [6, 11, 2],
+  [8, 5, 2], [8, 10, 5],
+]);
 
 // walk: 4 帧。底部脚部位置交替
 const WALK_FRAME_A = IDLE_BASE;
@@ -215,7 +230,15 @@ const SHAKE_SPRITE = cloneSprite(IDLE_BASE, [
 
 // 多帧精灵：每个状态对应一个帧数组（每帧仍是 256 像素）
 const SPRITES = {
-  idle:     [IDLE_BASE, IDLE_BLINK_HALF, IDLE_BLINK_CLOSED, IDLE_BASE],
+  idle:     [
+    IDLE_BASE,
+    IDLE_BLINK_HALF,
+    IDLE_BLINK_CLOSED,
+    IDLE_BASE,
+    IDLE_EAR_TWITCH,
+    IDLE_LOOK_LEFT,
+    IDLE_LOOK_RIGHT,
+  ],
   walk:     [WALK_FRAME_A, WALK_FRAME_B, WALK_FRAME_C, WALK_FRAME_D],
   sleep:    [SLEEP_BASE, SLEEP_BREATHE],
   talk:     [TALK_SMALL, TALK_LARGE, TALK_CLOSED],
@@ -348,7 +371,7 @@ function runSpriteTests() {
   assert('walk_lift_foot', SPRITES.walk[1][12 * SPRITE_W + 4] === 1);
 
   // 状态帧数
-  assert('idle_4_frames', SPRITES.idle.length === 4);
+  assert('idle_7_frames', SPRITES.idle.length === 7);
   assert('walk_4_frames', SPRITES.walk.length === 4);
   assert('sleep_2_frames', SPRITES.sleep.length === 2);
   assert('talk_3_frames', SPRITES.talk.length === 3);

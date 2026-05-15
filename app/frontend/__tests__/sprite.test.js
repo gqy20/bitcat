@@ -74,7 +74,7 @@ describe('SpriteRenderer 数据完整性', () => {
 
   describe('各状态帧数', () => {
     it('基础状态帧数匹配状态机配置', () => {
-      expect(SPRITES.idle.length).toBe(4);
+      expect(SPRITES.idle.length).toBe(7);
       expect(SPRITES.walk.length).toBe(4);
       expect(SPRITES.sleep.length).toBe(2);
       expect(SPRITES.talk.length).toBe(3);
@@ -88,6 +88,12 @@ describe('SpriteRenderer 数据完整性', () => {
   describe('关键像素特征', () => {
     it('idle 闭眼帧眼睛位置为肤色', () => {
       expect(SPRITES.idle[2][6 * SPRITE_W + 3]).toBe(2);
+    });
+
+    it('idle variant 帧包含耳朵和视线变化', () => {
+      expect(SPRITES.idle[4][0 * SPRITE_W + 3]).toBe(0);
+      expect(SPRITES.idle[5][6 * SPRITE_W + 4]).toBe(4);
+      expect(SPRITES.idle[6][6 * SPRITE_W + 3]).toBe(4);
     });
 
     it('talk 大嘴帧嘴巴区域透明', () => {

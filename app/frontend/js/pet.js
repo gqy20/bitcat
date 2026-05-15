@@ -13,6 +13,29 @@ const STATE_CONFIG = {
       { sprite: 0, duration: 1800 },  // 睁眼 — 深呼吸停顿
     ],
     loop: true,
+    variants: [
+      {
+        name: 'ear_twitch',
+        weight: 3,
+        cooldownMinMs: 8000,
+        cooldownMaxMs: 16000,
+        frames: [
+          { sprite: 4, duration: 180 },
+          { sprite: 0, duration: 140 },
+        ],
+      },
+      {
+        name: 'look_around',
+        weight: 2,
+        cooldownMinMs: 12000,
+        cooldownMaxMs: 25000,
+        frames: [
+          { sprite: 5, duration: 360 },
+          { sprite: 6, duration: 360 },
+          { sprite: 0, duration: 240 },
+        ],
+      },
+    ],
   },
   walk: {
     frames: [
@@ -129,8 +152,25 @@ const MODE_STATE = {
   gameplay: 'gameplay',
 };
 
+function timelineDuration(frames) {
+  return frames.reduce(function(s, f) { return s + f.duration; }, 0);
+}
+
+function resolveTimelineSprite(frames, elapsedMs) {
+  const passDuration = timelineDuration(frames);
+  if (passDuration === 0) return 0;
+
+  let elapsed = elapsedMs % passDuration;
+  for (let i = 0; i < frames.length; i++) {
+    if (elapsed < frames[i].duration) return frames[i].sprite;
+    elapsed -= frames[i].duration;
+  }
+  return frames[frames.length - 1].sprite;
+}
+
 class PetStateMachine {
-  constructor() {
+  constructor(options) {
+    options = options || {};
     this.state = 'idle';
     this.frame = 0;
     this.frameTimeMs = 0;
@@ -145,6 +185,10 @@ class PetStateMachine {
     this.reactionMood = 'idle';
     this.reactionExpiresAt = null;
     this.notifications = [];
+    this.random = options.random || Math.random;
+    this.idleVariant = null;
+    this.idleVariantTimeMs = 0;
+    this.nextIdleVariantAtMs = this.scheduleIdleVariantAfter(0);
   }
 
   setState(newState) {
@@ -155,6 +199,10 @@ class PetStateMachine {
     this.stateTimeMs = 0;
     if (newState !== 'walk') {
       this.targetX = null;
+    }
+    this.resetIdleVariant();
+    if (newState === 'idle') {
+      this.nextIdleVariantAtMs = this.scheduleIdleVariantAfter(this.stateTimeMs);
     }
   }
 
@@ -243,7 +291,7 @@ class PetStateMachine {
 
     const config = STATE_CONFIG[this.state] || STATE_CONFIG.idle;
     const frames = config.frames;
-    const passDuration = frames.reduce(function(s, f) { return s + f.duration; }, 0);
+    const passDuration = timelineDuration(frames);
 
     if (passDuration === 0) return;
 
@@ -255,14 +303,10 @@ class PetStateMachine {
       }
     }
 
-    // 时间轴查表：根据 elapsed 定位当前帧
-    let elapsed = this.frameTimeMs % passDuration;
-    for (let i = 0; i < frames.length; i++) {
-      if (elapsed < frames[i].duration) {
-        this.frame = frames[i].sprite;
-        break;
-      }
-      elapsed -= frames[i].duration;
+    if (this.state === 'idle' && this.advanceIdleVariant(config, dtMs)) {
+      // idle variant 已决定当前帧，基础 idle 时间轴继续在后台自然推进。
+    } else {
+      this.frame = resolveTimelineSprite(frames, this.frameTimeMs);
     }
 
     // Walk 移动
@@ -314,6 +358,56 @@ class PetStateMachine {
       return;
     }
 
+  }
+
+  resetIdleVariant() {
+    this.idleVariant = null;
+    this.idleVariantTimeMs = 0;
+  }
+
+  scheduleIdleVariantAfter(baseMs) {
+    const config = STATE_CONFIG.idle;
+    const variants = config.variants || [];
+    if (!variants.length) return Number.POSITIVE_INFINITY;
+
+    const variant = this.pickIdleVariant(variants);
+    return baseMs + variant.cooldownMinMs
+      + this.random() * (variant.cooldownMaxMs - variant.cooldownMinMs);
+  }
+
+  pickIdleVariant(variants) {
+    const totalWeight = variants.reduce(function(sum, variant) {
+      return sum + Math.max(variant.weight || 1, 1);
+    }, 0);
+    let ticket = this.random() * totalWeight;
+    for (let i = 0; i < variants.length; i++) {
+      ticket -= Math.max(variants[i].weight || 1, 1);
+      if (ticket <= 0) return variants[i];
+    }
+    return variants[variants.length - 1];
+  }
+
+  advanceIdleVariant(config, dtMs) {
+    const variants = config.variants || [];
+    if (!variants.length) return false;
+
+    if (!this.idleVariant && this.stateTimeMs >= this.nextIdleVariantAtMs) {
+      this.idleVariant = this.pickIdleVariant(variants);
+      this.idleVariantTimeMs = 0;
+    }
+    if (!this.idleVariant) return false;
+
+    this.idleVariantTimeMs += dtMs;
+    const frames = this.idleVariant.frames || [];
+    const duration = timelineDuration(frames);
+    if (duration === 0 || this.idleVariantTimeMs >= duration) {
+      this.resetIdleVariant();
+      this.nextIdleVariantAtMs = this.scheduleIdleVariantAfter(this.stateTimeMs);
+      return false;
+    }
+
+    this.frame = resolveTimelineSprite(frames, this.idleVariantTimeMs);
+    return true;
   }
 }
 

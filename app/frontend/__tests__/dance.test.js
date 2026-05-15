@@ -9,6 +9,10 @@ import {
 } from '../js/performance/motion.js';
 import { TimelineDancePlayer } from '../js/performance/timeline-dance-player.js';
 import { MusicReactivePlayer } from '../js/performance/music-reactive-player.js';
+import {
+  PerformerHost,
+  shouldInterruptPerformanceForPetEvent,
+} from '../js/performance/performer-host.js';
 
 const metrics = {
   baseX: 10,
@@ -172,5 +176,57 @@ describe('music reactive performance player', () => {
 
     expect(frame.offset).toEqual({ x: 0, y: 0 });
     expect(frame.spriteOptions.offsetY).toBeTypeOf('number');
+  });
+});
+
+describe('performance event priority', () => {
+  it('interrupts only hard pet events', () => {
+    expect(shouldInterruptPerformanceForPetEvent({
+      type: 'notify',
+      kind: 'tool_failed',
+    })).toBe(true);
+    expect(shouldInterruptPerformanceForPetEvent({
+      type: 'notify',
+      kind: 'tool_running',
+    })).toBe(false);
+    expect(shouldInterruptPerformanceForPetEvent({
+      type: 'set_mode',
+      mode: 'sleep',
+    })).toBe(true);
+    expect(shouldInterruptPerformanceForPetEvent({
+      type: 'react',
+      mood: 'happy',
+    })).toBe(false);
+  });
+
+  it('stops active performance and restores semantic state on hard event', async () => {
+    const calls = [];
+    const host = new PerformerHost({
+      getMetrics: async () => metrics,
+      setActiveClass: (active) => calls.push(['active', active]),
+      restoreSemanticState: (reason) => calls.push(['restore', reason]),
+      resetPosition: (_player, reason) => calls.push(['reset', reason]),
+    });
+
+    await host.start(timelinePayload());
+    expect(host.hasActive()).toBe(true);
+
+    const result = host.handlePetEvent({ type: 'notify', kind: 'tool_blocked' });
+
+    expect(result.interrupted).toBe(true);
+    expect(host.hasActive()).toBe(false);
+    expect(calls).toContainEqual(['active', false]);
+    expect(calls).toContainEqual(['restore', 'pet_event_interrupt']);
+    expect(calls).toContainEqual(['reset', 'pet_event_interrupt']);
+  });
+
+  it('keeps active performance for soft background events', async () => {
+    const host = new PerformerHost({ getMetrics: async () => metrics });
+
+    await host.start(timelinePayload());
+    const result = host.handlePetEvent({ type: 'notify', kind: 'ai_writing' });
+
+    expect(result.interrupted).toBe(false);
+    expect(host.hasActive()).toBe(true);
   });
 });

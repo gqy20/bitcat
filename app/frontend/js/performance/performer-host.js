@@ -1,6 +1,20 @@
 import { TimelineDancePlayer } from './timeline-dance-player.js';
 import { MusicReactivePlayer } from './music-reactive-player.js';
 
+const INTERRUPT_NOTIFICATION_KINDS = new Set(['tool_blocked', 'tool_failed']);
+
+export function shouldInterruptPerformanceForPetEvent(event) {
+  if (!event || !event.type) return false;
+
+  if (event.type === 'notify') {
+    return INTERRUPT_NOTIFICATION_KINDS.has(event.kind);
+  }
+  if (event.type === 'set_mode') {
+    return event.mode === 'sleep';
+  }
+  return event.type === 'exit';
+}
+
 export class PerformerHost {
   constructor(callbacks) {
     this.callbacks = callbacks;
@@ -40,11 +54,23 @@ export class PerformerHost {
     if (payload && payload.session_id != null && payload.session_id !== this.active.sessionId) return;
 
     var player = this.active;
+    var reason = (payload && payload.reason) || 'stopped';
     this.active = null;
     if (this.callbacks.setActiveClass) this.callbacks.setActiveClass(false);
+    if (this.callbacks.restoreSemanticState) this.callbacks.restoreSemanticState(reason, player);
     if (this.callbacks.resetPosition) {
-      this.callbacks.resetPosition(player, (payload && payload.reason) || 'stopped');
+      this.callbacks.resetPosition(player, reason);
     }
+  }
+
+  handlePetEvent(event) {
+    if (!this.active || !shouldInterruptPerformanceForPetEvent(event)) {
+      return { interrupted: false };
+    }
+
+    var sessionId = this.active.sessionId;
+    this.stop({ session_id: sessionId, reason: 'pet_event_interrupt' });
+    return { interrupted: true, reason: 'pet_event_interrupt' };
   }
 
   cancel() {

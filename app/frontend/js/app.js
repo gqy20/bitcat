@@ -104,6 +104,11 @@ import { PerformerHost } from './performance/performer-host.js';
       setActiveClass: function(active) {
         bodyEl.classList.toggle('dancing', active);
       },
+      restoreSemanticState: function() {
+        pet.applySemanticState();
+        syncStateClass(pet.state);
+        prevState = pet.state;
+      },
       log: function(msg) {
         console.log(msg);
       },
@@ -756,6 +761,9 @@ import { PerformerHost } from './performance/performer-host.js';
           console.warn('[pet] play_dance 事件处理失败:', err);
         }
         return;
+      }
+      if (performerHost) {
+        performerHost.handlePetEvent(payload);
       }
       pet.applyEvent(payload);
     });

@@ -68,9 +68,35 @@ describe('PetStateMachine', () => {
 
     it('大 dt 直接定位合法帧', () => {
       pet.update(50_000);
-      const maxFrame = Math.max(...STATE_CONFIG.idle.frames.map((frame) => frame.sprite));
+      const maxFrame = Math.max(
+        ...STATE_CONFIG.idle.frames.map((frame) => frame.sprite),
+        ...STATE_CONFIG.idle.variants.flatMap((variant) => variant.frames.map((frame) => frame.sprite)),
+      );
       expect(pet.frame).toBeGreaterThanOrEqual(0);
       expect(pet.frame).toBeLessThanOrEqual(maxFrame);
+    });
+
+    it('idle variant 到冷却时间后偶发播放，再回到基础 idle', () => {
+      const deterministic = new PetStateMachine({ random: () => 0 });
+      deterministic.update(7999);
+      expect(deterministic.idleVariant).toBeNull();
+
+      deterministic.update(1);
+      expect(deterministic.idleVariant.name).toBe('ear_twitch');
+      expect(deterministic.frame).toBe(4);
+
+      deterministic.update(400);
+      expect(deterministic.idleVariant).toBeNull();
+      expect(STATE_CONFIG.idle.frames.map((frame) => frame.sprite)).toContain(deterministic.frame);
+    });
+
+    it('idle variant 不在非 idle 状态触发', () => {
+      const deterministic = new PetStateMachine({ random: () => 0 });
+      deterministic.setState('focused');
+      deterministic.update(20_000);
+
+      expect(deterministic.idleVariant).toBeNull();
+      expect(deterministic.state).toBe('focused');
     });
   });
 
