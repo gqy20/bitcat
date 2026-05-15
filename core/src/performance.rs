@@ -47,6 +47,12 @@ impl PerformancePhase {
     }
 }
 
+impl PerformanceKind {
+    fn blocks_screenshot_observation(self) -> bool {
+        matches!(self, Self::ChoreographedDance | Self::Game)
+    }
+}
+
 /// 当前表现会话快照。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PerformanceSession {
@@ -165,6 +171,15 @@ pub fn is_performing() -> bool {
         .unwrap_or(false)
 }
 
+/// 是否有需要暂停定时截图观察的表现会话。
+pub fn blocks_screenshot_observation() -> bool {
+    current_performance()
+        .map(|session| {
+            session.phase.blocks_background_work() && session.kind.blocks_screenshot_observation()
+        })
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 pub fn reset_for_tests() {
     *current_slot().lock().expect("performance mutex poisoned") = None;
@@ -188,12 +203,26 @@ mod tests {
         reset_for_tests();
         let session = start_performance(PerformanceKind::ChoreographedDance);
         assert!(is_performing());
+        assert!(blocks_screenshot_observation());
 
         update_phase(session.id, PerformancePhase::Active);
         assert!(is_performing());
+        assert!(blocks_screenshot_observation());
 
         stop_performance(session.id, "finished");
         assert!(!is_performing());
+        assert!(!blocks_screenshot_observation());
+    }
+
+    #[test]
+    fn music_reactive_dance_does_not_block_screenshot_observation() {
+        let _guard = test_lock();
+        reset_for_tests();
+        let session = start_performance(PerformanceKind::MusicReactiveDance);
+        update_phase(session.id, PerformancePhase::Active);
+
+        assert!(is_performing());
+        assert!(!blocks_screenshot_observation());
     }
 
     #[test]

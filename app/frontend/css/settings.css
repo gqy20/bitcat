@@ -837,6 +837,54 @@ input[type="checkbox"]:checked::after {
   margin-bottom: 24px;
 }
 
+.resource-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.resource-card {
+  min-width: 0;
+  min-height: 104px;
+  padding: 18px;
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius);
+  background: rgba(23, 28, 36, 0.56);
+}
+
+.resource-card.wide {
+  grid-column: span 2;
+}
+
+.resource-card span {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  margin-bottom: 12px;
+}
+
+.resource-card strong {
+  display: block;
+  color: white;
+  font-family: var(--font-brand);
+  font-size: 26px;
+  font-weight: 780;
+  line-height: 1.08;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.resource-card small {
+  display: block;
+  margin-top: 9px;
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+}
+
+.resource-bar {
+  margin-top: 14px;
+}
+
 .usage-block {
   margin-bottom: 18px;
 }
@@ -1252,7 +1300,6 @@ input[type="checkbox"]:checked::after {
   font-size: 13px;
 }
 
-.inline-hint,
 .empty {
   color: var(--text-faint);
   font-size: var(--text-sm);
@@ -1457,8 +1504,13 @@ input[type="checkbox"]:checked::after {
   }
 
   .overview-grid,
-  .usage-summary {
+  .usage-summary,
+  .resource-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .resource-card.wide {
+    grid-column: span 2;
   }
 
   .two-col,

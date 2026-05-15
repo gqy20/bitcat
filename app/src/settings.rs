@@ -24,6 +24,8 @@ use ai_pad_core::user_profile::UserProfile;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
+use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 use tracing::{info, warn};
 
@@ -149,6 +151,16 @@ pub struct MemoryReviewView {
     pub total_entries: usize,
     pub entries: Vec<LongTermReviewEntry>,
     pub markdown: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ResourceUsageView {
+    pub generated_at: String,
+    pub process_cpu_percent: f64,
+    pub process_memory_mb: f64,
+    pub system_memory_used_mb: f64,
+    pub system_memory_total_mb: f64,
+    pub system_memory_percent: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -368,6 +380,11 @@ pub async fn cmd_get_memory_review(limit: Option<usize>) -> Result<MemoryReviewV
     ))
 }
 
+#[tauri::command]
+pub async fn cmd_get_resource_usage() -> Result<ResourceUsageView, String> {
+    resource_usage_snapshot()
+}
+
 /// Delete one long-term memory entry by its stable id.
 #[tauri::command]
 pub async fn cmd_delete_memory_entry(
@@ -391,6 +408,172 @@ fn memory_review_view(store: &LongTermMemory, limit: usize) -> MemoryReviewView 
         total_entries: store.entries.iter().filter(|entry| !entry.deleted).count(),
         entries: store.review_entries(limit),
         markdown: store.review_markdown(limit),
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ResourceSample {
+    at: Instant,
+    process_kernel_100ns: u64,
+    process_user_100ns: u64,
+}
+
+fn resource_sample_slot() -> &'static Mutex<Option<ResourceSample>> {
+    static SLOT: OnceLock<Mutex<Option<ResourceSample>>> = OnceLock::new();
+    SLOT.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(windows)]
+fn filetime_to_u64(ft: windows_sys::Win32::Foundation::FILETIME) -> u64 {
+    ((ft.dwHighDateTime as u64) << 32) | ft.dwLowDateTime as u64
+}
+
+#[cfg(windows)]
+fn current_process_times_100ns() -> Result<(u64, u64), String> {
+    use windows_sys::Win32::Foundation::FILETIME;
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
+
+    let mut creation = FILETIME {
+        dwLowDateTime: 0,
+        dwHighDateTime: 0,
+    };
+    let mut exit = creation;
+    let mut kernel = creation;
+    let mut user = creation;
+    // Safety: GetCurrentProcess returns a pseudo handle owned by the process; all FILETIME pointers are valid out params.
+    let ok = unsafe {
+        GetProcessTimes(
+            GetCurrentProcess(),
+            &mut creation,
+            &mut exit,
+            &mut kernel,
+            &mut user,
+        )
+    };
+    if ok == 0 {
+        return Err("GetProcessTimes failed".into());
+    }
+    Ok((filetime_to_u64(kernel), filetime_to_u64(user)))
+}
+
+#[cfg(windows)]
+fn current_process_memory_mb() -> Result<f64, String> {
+    use windows_sys::Win32::System::ProcessStatus::{
+        GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+    };
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+    let mut counters = PROCESS_MEMORY_COUNTERS {
+        cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+        PageFaultCount: 0,
+        PeakWorkingSetSize: 0,
+        WorkingSetSize: 0,
+        QuotaPeakPagedPoolUsage: 0,
+        QuotaPagedPoolUsage: 0,
+        QuotaPeakNonPagedPoolUsage: 0,
+        QuotaNonPagedPoolUsage: 0,
+        PagefileUsage: 0,
+        PeakPagefileUsage: 0,
+    };
+    // Safety: pseudo process handle is valid; counters points to an initialized buffer with correct cb size.
+    let ok = unsafe {
+        GetProcessMemoryInfo(
+            GetCurrentProcess(),
+            &mut counters,
+            std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+        )
+    };
+    if ok == 0 {
+        return Err("GetProcessMemoryInfo failed".into());
+    }
+    Ok(counters.WorkingSetSize as f64 / 1024.0 / 1024.0)
+}
+
+#[cfg(windows)]
+fn system_memory_stats() -> Result<(f64, f64, f64), String> {
+    use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+
+    let mut status = MEMORYSTATUSEX {
+        dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
+        dwMemoryLoad: 0,
+        ullTotalPhys: 0,
+        ullAvailPhys: 0,
+        ullTotalPageFile: 0,
+        ullAvailPageFile: 0,
+        ullTotalVirtual: 0,
+        ullAvailVirtual: 0,
+        ullAvailExtendedVirtual: 0,
+    };
+    // Safety: status is an initialized MEMORYSTATUSEX with dwLength set as required by the Win32 API.
+    let ok = unsafe { GlobalMemoryStatusEx(&mut status) };
+    if ok == 0 {
+        return Err("GlobalMemoryStatusEx failed".into());
+    }
+    let total = status.ullTotalPhys as f64 / 1024.0 / 1024.0;
+    let avail = status.ullAvailPhys as f64 / 1024.0 / 1024.0;
+    let used = (total - avail).max(0.0);
+    Ok((used, total, status.dwMemoryLoad as f64))
+}
+
+#[cfg(windows)]
+fn process_cpu_percent() -> Result<f64, String> {
+    let (kernel, user) = current_process_times_100ns()?;
+    let now = Instant::now();
+    let mut guard = resource_sample_slot()
+        .lock()
+        .map_err(|_| "resource sample lock poisoned".to_string())?;
+    let Some(prev) = *guard else {
+        *guard = Some(ResourceSample {
+            at: now,
+            process_kernel_100ns: kernel,
+            process_user_100ns: user,
+        });
+        return Ok(0.0);
+    };
+    *guard = Some(ResourceSample {
+        at: now,
+        process_kernel_100ns: kernel,
+        process_user_100ns: user,
+    });
+    let elapsed = now.duration_since(prev.at).as_secs_f64();
+    if elapsed <= 0.0 {
+        return Ok(0.0);
+    }
+    let process_delta_100ns = kernel.saturating_add(user).saturating_sub(
+        prev.process_kernel_100ns
+            .saturating_add(prev.process_user_100ns),
+    );
+    let cpu_seconds = process_delta_100ns as f64 / 10_000_000.0;
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1) as f64;
+    Ok(((cpu_seconds / elapsed) * 100.0 / cores).clamp(0.0, 100.0))
+}
+
+fn resource_usage_snapshot() -> Result<ResourceUsageView, String> {
+    #[cfg(windows)]
+    {
+        let (system_memory_used_mb, system_memory_total_mb, system_memory_percent) =
+            system_memory_stats()?;
+        Ok(ResourceUsageView {
+            generated_at: chrono::Local::now().to_rfc3339(),
+            process_cpu_percent: process_cpu_percent()?,
+            process_memory_mb: current_process_memory_mb()?,
+            system_memory_used_mb,
+            system_memory_total_mb,
+            system_memory_percent,
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(ResourceUsageView {
+            generated_at: chrono::Local::now().to_rfc3339(),
+            process_cpu_percent: 0.0,
+            process_memory_mb: 0.0,
+            system_memory_used_mb: 0.0,
+            system_memory_total_mb: 0.0,
+            system_memory_percent: 0.0,
+        })
     }
 }
 

@@ -112,6 +112,16 @@ async function mockInvoke(command) {
       markdown: "",
     };
   }
+  if (command === "cmd_get_resource_usage") {
+    return {
+      generated_at: new Date().toISOString(),
+      process_cpu_percent: 4.8,
+      process_memory_mb: 156.4,
+      system_memory_used_mb: 18342,
+      system_memory_total_mb: 32674,
+      system_memory_percent: 56.1,
+    };
+  }
   if (command === "cmd_get_pet_event_log") {
     return { entries: [] };
   }
@@ -457,8 +467,18 @@ function renderAbout(a) {
 }
 
 async function loadUsageDiagnostics() {
-  await Promise.all([loadTokenStats(), loadPetEventLog()]);
+  await Promise.all([loadTokenStats(), loadPetEventLog(), loadResourceUsage()]);
   renderMusicDiagnostics();
+}
+
+async function loadResourceUsage() {
+  try {
+    const usage = await invoke("cmd_get_resource_usage");
+    renderResourceUsage(usage);
+  } catch (e) {
+    log("加载资源占用失败: " + e);
+    renderResourceUsage(null);
+  }
 }
 
 async function loadTokenStats() {
@@ -530,6 +550,16 @@ function renderTokenStats(stats) {
 
   renderUsageBreakdown(today);
   renderUsageSessions(stats?.recent_sessions || []);
+}
+
+function renderResourceUsage(usage) {
+  $("resource-cpu").textContent = usage ? `${formatFixed(usage.process_cpu_percent, 1)}%` : "-";
+  $("resource-process-memory").textContent = usage ? `${formatFixed(usage.process_memory_mb, 1)} MB` : "-";
+  $("resource-system-memory").textContent = usage
+    ? `${formatFixed(usage.system_memory_used_mb / 1024, 1)} / ${formatFixed(usage.system_memory_total_mb / 1024, 1)} GB`
+    : "-";
+  $("resource-system-memory-bar").style.width = usage ? `${Math.round(usage.system_memory_percent)}%` : "0%";
+  $("resource-updated").textContent = usage?.generated_at ? `更新于 ${formatDateTime(usage.generated_at)}` : "读取失败";
 }
 
 function renderUsageBreakdown(today) {
@@ -947,6 +977,13 @@ function escapeAttr(s) { return escapeHtml(s).replace(/"/g, "&quot;"); }
 
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("zh-CN");
+}
+
+function formatFixed(value, digits) {
+  return Number(value || 0).toLocaleString("zh-CN", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
 }
 
 function formatDuration(ms) {

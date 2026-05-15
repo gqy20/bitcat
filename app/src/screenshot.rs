@@ -474,7 +474,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
         };
 
         // 表现会话期间跳过本轮：避免视觉分析回调打断舞蹈、音乐响应或游戏表演
-        if ai_pad_core::performance::is_performing() {
+        if ai_pad_core::performance::blocks_screenshot_observation() {
             debug!(
                 cycle = cycle_count,
                 "[screenshot] performance active，跳过本轮"

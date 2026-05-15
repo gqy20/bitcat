@@ -12,7 +12,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sdl2 = { version = "0.38", features = ["bundled", "static-link"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_System_Power", "Win32_System_RemoteDesktop", "Win32_System_SystemServices", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_Foundation", "Win32_UI_Input", "Win32_UI_Shell", "Win32_System_Com"] }
+windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_System_Power", "Win32_System_ProcessStatus", "Win32_System_RemoteDesktop", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_Foundation", "Win32_UI_Input", "Win32_UI_Shell", "Win32_System_Com"] }
 windows = { version = "0.54", features = ["Win32_Foundation", "Win32_Media_Audio", "Win32_Media_KernelStreaming", "Win32_Media_Multimedia", "Win32_System_Com"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json", "local-time"] }

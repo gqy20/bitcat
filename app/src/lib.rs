@@ -107,6 +107,7 @@ pub fn run() {
             settings::cmd_settings_load,
             settings::cmd_get_token_stats,
             settings::cmd_get_memory_review,
+            settings::cmd_get_resource_usage,
             settings::cmd_delete_memory_entry,
             settings::cmd_settings_save_ai,
             settings::cmd_settings_save_actions,

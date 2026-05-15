@@ -374,6 +374,27 @@
           </div>
 
           <div class="usage-block">
+            <div class="usage-block-title">资源占用</div>
+            <div class="resource-grid">
+              <div class="resource-card">
+                <span>进程 CPU</span>
+                <strong id="resource-cpu">-</strong>
+                <small id="resource-updated">等待采样</small>
+              </div>
+              <div class="resource-card">
+                <span>进程内存</span>
+                <strong id="resource-process-memory">-</strong>
+                <small>当前 Working Set</small>
+              </div>
+              <div class="resource-card wide">
+                <span>系统内存</span>
+                <strong id="resource-system-memory">-</strong>
+                <div class="usage-bar resource-bar"><span id="resource-system-memory-bar"></span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="usage-block">
             <div class="usage-block-title">链路占比</div>
             <div id="usage-breakdown" class="usage-breakdown"></div>
           </div>
