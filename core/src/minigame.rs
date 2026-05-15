@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum MinigameType {
     Snake,
+    Battle,
 }
 
 /// 网格尺寸配置。
@@ -56,6 +57,44 @@ pub struct GameDialogue {
     pub lose: String,
 }
 
+/// 桌宠守护战的宠物侧数值。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BattlePetConfig {
+    pub hp: u32,
+    pub attack: u32,
+    pub auto_attack_ms: u32,
+}
+
+/// 桌宠守护战的怪物数值。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BattleMonsterConfig {
+    pub id: String,
+    pub name: String,
+    pub hp: u32,
+    pub attack: u32,
+    pub attack_interval_ms: u32,
+    pub reward_exp: u32,
+}
+
+/// 桌宠守护战的技能槽位。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BattleSkillConfig {
+    pub id: String,
+    pub name: String,
+    pub cooldown_ms: u32,
+    pub damage: u32,
+    #[serde(default)]
+    pub heal: u32,
+}
+
+/// 桌宠守护战配置；只承载安全边界，实时规则由前端引擎执行。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BattleConfig {
+    pub pet: BattlePetConfig,
+    pub monster: BattleMonsterConfig,
+    pub skills: Vec<BattleSkillConfig>,
+}
+
 /// 迷你游戏完整配置。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct GameDef {
@@ -66,6 +105,8 @@ pub struct GameDef {
     pub rules: GameRules,
     pub theme: GameTheme,
     pub dialogue: GameDialogue,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub battle: Option<BattleConfig>,
 }
 
 impl GameDef {
@@ -101,6 +142,73 @@ impl GameDef {
                 win: "太厉害了喵~".into(),
                 lose: "呜...再来一次！".into(),
             },
+            battle: None,
+        }
+    }
+
+    /// 内置守护召唤战预设。
+    pub fn default_battle() -> Self {
+        Self {
+            game_type: MinigameType::Battle,
+            title: "守护召唤战".into(),
+            grid: GameGrid {
+                width: 30,
+                height: 20,
+                cell_size: 24,
+            },
+            player: PlayerConfig {
+                speed_ms: 140,
+                initial_length: 3,
+            },
+            rules: GameRules {
+                walls_kill: true,
+                self_kill: true,
+                food_count: 1,
+                speed_ramp: 0.95,
+                win_length: 20,
+            },
+            theme: GameTheme {
+                head: "cat".into(),
+                body: "yarn".into(),
+                food: "mouse".into(),
+                trail_alpha: 0.55,
+            },
+            dialogue: GameDialogue {
+                start: "传送门打开了，帮我一起打！".into(),
+                win: "赢啦！材料到手！".into(),
+                lose: "呜...下次我会更强。".into(),
+            },
+            battle: Some(BattleConfig {
+                pet: BattlePetConfig {
+                    hp: 48,
+                    attack: 5,
+                    auto_attack_ms: 1400,
+                },
+                monster: BattleMonsterConfig {
+                    id: "slime".into(),
+                    name: "小史莱姆".into(),
+                    hp: 42,
+                    attack: 4,
+                    attack_interval_ms: 2200,
+                    reward_exp: 8,
+                },
+                skills: vec![
+                    BattleSkillConfig {
+                        id: "heavy_hit".into(),
+                        name: "重击".into(),
+                        cooldown_ms: 3000,
+                        damage: 12,
+                        heal: 0,
+                    },
+                    BattleSkillConfig {
+                        id: "snack".into(),
+                        name: "小鱼干".into(),
+                        cooldown_ms: 6000,
+                        damage: 0,
+                        heal: 10,
+                    },
+                ],
+            }),
         }
     }
 }
@@ -109,6 +217,7 @@ impl GameDef {
 pub fn validate_game_def(def: &GameDef) -> Result<(), String> {
     match def.game_type {
         MinigameType::Snake => validate_snake(def),
+        MinigameType::Battle => validate_battle(def),
     }
 }
 
@@ -172,6 +281,64 @@ fn ensure_choice(name: &str, value: &str, allowed: &[&str]) -> Result<(), String
     }
 }
 
+fn validate_battle(def: &GameDef) -> Result<(), String> {
+    if def.title.trim().is_empty() {
+        return Err("battle title must not be empty".into());
+    }
+    if def.title.chars().count() > 40 {
+        return Err("battle title must be at most 40 chars".into());
+    }
+
+    let battle = def
+        .battle
+        .as_ref()
+        .ok_or_else(|| "battle config is required".to_string())?;
+
+    ensure_range("battle.pet.hp", battle.pet.hp, 1, 999)?;
+    ensure_range("battle.pet.attack", battle.pet.attack, 1, 99)?;
+    ensure_range(
+        "battle.pet.auto_attack_ms",
+        battle.pet.auto_attack_ms,
+        300,
+        10_000,
+    )?;
+
+    if battle.monster.id.trim().is_empty() || battle.monster.name.trim().is_empty() {
+        return Err("battle monster id/name must not be empty".into());
+    }
+    ensure_range("battle.monster.hp", battle.monster.hp, 1, 999)?;
+    ensure_range("battle.monster.attack", battle.monster.attack, 0, 99)?;
+    ensure_range(
+        "battle.monster.attack_interval_ms",
+        battle.monster.attack_interval_ms,
+        500,
+        20_000,
+    )?;
+    ensure_range(
+        "battle.monster.reward_exp",
+        battle.monster.reward_exp,
+        1,
+        999,
+    )?;
+
+    if battle.skills.len() > 4 {
+        return Err("battle supports at most 4 skills".into());
+    }
+    for skill in &battle.skills {
+        if skill.id.trim().is_empty() || skill.name.trim().is_empty() {
+            return Err("battle skill id/name must not be empty".into());
+        }
+        ensure_range("battle.skill.cooldown_ms", skill.cooldown_ms, 500, 60_000)?;
+        if skill.damage == 0 && skill.heal == 0 {
+            return Err("battle skill must deal damage or heal".into());
+        }
+        ensure_range("battle.skill.damage", skill.damage, 0, 999)?;
+        ensure_range("battle.skill.heal", skill.heal, 0, 999)?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,6 +352,18 @@ mod tests {
     #[test]
     fn default_snake_is_valid() {
         assert!(validate_game_def(&GameDef::default_snake()).is_ok());
+    }
+
+    #[test]
+    fn default_battle_is_valid() {
+        assert!(validate_game_def(&GameDef::default_battle()).is_ok());
+    }
+
+    #[test]
+    fn battle_requires_config() {
+        let mut def = GameDef::default_snake();
+        def.game_type = MinigameType::Battle;
+        assert!(validate_game_def(&def).is_err());
     }
 
     #[test]

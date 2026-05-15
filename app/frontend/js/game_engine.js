@@ -211,6 +211,231 @@
     }
   }
 
+  class BattleEngine {
+    constructor(config) {
+      this.config = config;
+      this.battle = config.battle || defaultBattleConfig();
+      this.state = 'ready';
+      this.ended = false;
+      this.score = 0;
+      this.pet = {
+        hp: this.battle.pet.hp,
+        maxHp: this.battle.pet.hp,
+        attack: this.battle.pet.attack,
+        autoAttackMs: this.battle.pet.auto_attack_ms,
+      };
+      this.monster = {
+        ...this.battle.monster,
+        hp: this.battle.monster.hp,
+        maxHp: this.battle.monster.hp,
+        x: 0.62,
+        y: 0.52,
+        vx: 0.000045,
+        hitFlashMs: 0,
+        attackWarnMs: 0,
+      };
+      this.skills = (this.battle.skills || []).map((skill, index) => ({
+        ...skill,
+        slot: index + 1,
+        cooldownLeftMs: 0,
+      }));
+      this.petAttackTimer = this.pet.autoAttackMs;
+      this.monsterAttackTimer = this.monster.attack_interval_ms;
+      this.guardMs = 0;
+      this.floaters = [];
+      this.lastMetrics = null;
+    }
+
+    getState() {
+      return this.state;
+    }
+
+    handleInput(input) {
+      if (!input) return;
+      if (this.ended) {
+        if (input.type === 'confirm' || input.type === 'attack_primary') restartGame();
+        else if (input.type === 'cancel') closeEndedGame(this.state);
+        return;
+      }
+      if (input.type === 'cancel') {
+        this.finish('cancel');
+        return;
+      }
+      if (input.type === 'pause' && (this.state === 'playing' || this.state === 'paused')) {
+        this.state = this.state === 'playing' ? 'paused' : 'playing';
+        return;
+      }
+      if (input.type === 'confirm' && this.state === 'ready') {
+        this.state = 'playing';
+        return;
+      }
+      if (input.type === 'attack_primary') {
+        if (this.state === 'ready') this.state = 'playing';
+        this.attackMonster(this.pet.attack, 'hit');
+        return;
+      }
+      if (input.type === 'skill') {
+        if (this.state === 'ready') this.state = 'playing';
+        this.useSkill(input.slot);
+        return;
+      }
+      if (input.type === 'guard') {
+        if (this.state === 'ready') this.state = 'playing';
+        this.guardMs = Math.max(this.guardMs, 700);
+        this.addFloater('guard', 0.24, 0.64, '#8ecae6');
+        return;
+      }
+      if (input.type === 'direction') {
+        const dx = Math.sign(input.dx || 0);
+        if (dx !== 0) this.monster.x = clamp(this.monster.x + dx * 0.04, 0.30, 0.78);
+      }
+    }
+
+    handlePointer(x, y) {
+      if (this.ended) return;
+      if (this.state === 'ready') this.state = 'playing';
+      if (this.hitTestMonster(x, y)) {
+        this.attackMonster(this.pet.attack, 'tap');
+        return true;
+      }
+      const skill = this.hitTestSkill(x, y);
+      if (skill) {
+        this.useSkill(skill.slot);
+        return true;
+      }
+      return false;
+    }
+
+    update(dtMs) {
+      this.floaters.forEach((f) => {
+        f.age += dtMs;
+        f.y -= dtMs * 0.00008;
+      });
+      this.floaters = this.floaters.filter((f) => f.age < 900);
+      this.skills.forEach((skill) => {
+        skill.cooldownLeftMs = Math.max(0, skill.cooldownLeftMs - dtMs);
+      });
+      this.guardMs = Math.max(0, this.guardMs - dtMs);
+      this.monster.hitFlashMs = Math.max(0, this.monster.hitFlashMs - dtMs);
+
+      if (this.state !== 'playing' || this.ended) return;
+
+      this.monster.x += this.monster.vx * dtMs;
+      if (this.monster.x < 0.36 || this.monster.x > 0.76) this.monster.vx *= -1;
+      this.monster.x = clamp(this.monster.x, 0.34, 0.78);
+
+      this.petAttackTimer -= dtMs;
+      if (this.petAttackTimer <= 0) {
+        this.petAttackTimer += this.pet.autoAttackMs;
+        this.attackMonster(Math.max(1, Math.floor(this.pet.attack * 0.7)), 'auto');
+      }
+
+      this.monsterAttackTimer -= dtMs;
+      this.monster.attackWarnMs = this.monsterAttackTimer <= 650 ? this.monsterAttackTimer : 0;
+      if (this.monsterAttackTimer <= 0) {
+        this.monsterAttackTimer += this.monster.attack_interval_ms;
+        const guarded = this.guardMs > 0;
+        const damage = guarded ? Math.max(1, Math.floor(this.monster.attack * 0.35)) : this.monster.attack;
+        this.pet.hp = Math.max(0, this.pet.hp - damage);
+        this.addFloater(`-${damage}`, 0.23, 0.55, guarded ? '#8ecae6' : '#ff6b6b');
+        if (this.pet.hp <= 0) this.finish('lose');
+      }
+    }
+
+    attackMonster(amount, label) {
+      if (this.ended || this.state === 'paused') return;
+      this.monster.hp = Math.max(0, this.monster.hp - amount);
+      this.monster.hitFlashMs = 130;
+      this.addFloater(`-${amount}`, this.monster.x, this.monster.y - 0.12, label === 'auto' ? '#b8f2e6' : '#ffd166');
+      if (this.monster.attackWarnMs > 0 && label !== 'auto') {
+        this.monsterAttackTimer = Math.max(this.monsterAttackTimer, 900);
+        this.monster.attackWarnMs = 0;
+        this.addFloater('break', this.monster.x, this.monster.y - 0.22, '#70d6ff');
+      }
+      if (this.monster.hp <= 0) {
+        this.score = this.monster.reward_exp;
+        this.finish('win');
+      }
+    }
+
+    useSkill(slot) {
+      const skill = this.skills.find((s) => s.slot === Number(slot));
+      if (!skill || skill.cooldownLeftMs > 0 || this.state === 'paused') return;
+      if (skill.damage > 0) this.attackMonster(skill.damage, 'skill');
+      if (skill.heal > 0) {
+        this.pet.hp = Math.min(this.pet.maxHp, this.pet.hp + skill.heal);
+        this.addFloater(`+${skill.heal}`, 0.23, 0.55, '#95d5b2');
+      }
+      skill.cooldownLeftMs = skill.cooldown_ms;
+    }
+
+    finish(result) {
+      if (this.ended) return;
+      this.ended = true;
+      this.state = result;
+    }
+
+    hitTestMonster(x, y) {
+      if (!this.lastMetrics) return false;
+      const m = this.lastMetrics;
+      const r = monsterRect(m, this.monster);
+      return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+    }
+
+    hitTestSkill(x, y) {
+      if (!this.lastMetrics) return null;
+      return this.skillRects(this.lastMetrics).find((entry) => (
+        x >= entry.x && x <= entry.x + entry.w && y >= entry.y && y <= entry.y + entry.h
+      )) || null;
+    }
+
+    skillRects(metrics) {
+      const size = clamp(Math.floor(metrics.width * 0.055), 44, 64);
+      const gap = 10;
+      const y = metrics.height - size - 28;
+      return this.skills.map((skill, index) => ({
+        ...skill,
+        x: Math.floor(metrics.width / 2 - (this.skills.length * size + (this.skills.length - 1) * gap) / 2 + index * (size + gap)),
+        y,
+        w: size,
+        h: size,
+      }));
+    }
+
+    addFloater(text, x, y, color) {
+      this.floaters.push({ text, x, y, color, age: 0 });
+    }
+
+    render(ctx, metrics) {
+      this.lastMetrics = metrics;
+      ctx.clearRect(0, 0, metrics.width, metrics.height);
+      drawBattleBackdrop(ctx, metrics);
+      drawPetFighter(ctx, metrics, this.pet, this.guardMs);
+      drawMonster(ctx, metrics, this.monster);
+      drawBattleBars(ctx, metrics, this);
+      drawSkillButtons(ctx, metrics, this.skillRects(metrics));
+      drawFloaters(ctx, metrics, this.floaters);
+    }
+  }
+
+  function defaultBattleConfig() {
+    return {
+      pet: { hp: 48, attack: 5, auto_attack_ms: 1400 },
+      monster: {
+        id: 'slime',
+        name: '小史莱姆',
+        hp: 42,
+        attack: 4,
+        attack_interval_ms: 2200,
+        reward_exp: 8,
+      },
+      skills: [
+        { id: 'heavy_hit', name: '重击', cooldown_ms: 3000, damage: 12, heal: 0 },
+        { id: 'snack', name: '小鱼干', cooldown_ms: 6000, damage: 0, heal: 10 },
+      ],
+    };
+  }
+
   function drawSnakePart(ctx, p, cell, head, theme) {
     const pad = Math.max(2, Math.floor(cell * 0.13));
     const x = p.x * cell + pad;
@@ -235,6 +460,131 @@
     ctx.fillRect(x, y, s, s);
     ctx.fillStyle = 'rgba(255,255,255,0.72)';
     ctx.fillRect(x + Math.floor(s * 0.55), y + Math.floor(s * 0.22), Math.max(2, s / 6), Math.max(2, s / 6));
+  }
+
+  function monsterRect(metrics, monster) {
+    const size = clamp(Math.floor(metrics.width * 0.085), 64, 116);
+    return {
+      x: Math.floor(metrics.width * monster.x - size / 2),
+      y: Math.floor(metrics.height * monster.y - size / 2),
+      w: size,
+      h: size,
+    };
+  }
+
+  function drawBattleBackdrop(ctx, metrics) {
+    const cx = metrics.width * 0.58;
+    const cy = metrics.height * 0.52;
+    ctx.save();
+    ctx.fillStyle = 'rgba(8, 12, 16, 0.18)';
+    ctx.fillRect(0, 0, metrics.width, metrics.height);
+    ctx.strokeStyle = 'rgba(112, 214, 255, 0.28)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(cx, cy, clamp(metrics.width * 0.12, 82, 160), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255, 209, 102, 0.24)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, clamp(metrics.width * 0.09, 64, 118), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawPetFighter(ctx, metrics, petState, guardMs) {
+    const x = Math.floor(metrics.width * 0.22);
+    const y = Math.floor(metrics.height * 0.57);
+    const size = clamp(Math.floor(metrics.width * 0.065), 54, 86);
+    ctx.save();
+    if (guardMs > 0) {
+      ctx.strokeStyle = 'rgba(142, 202, 230, 0.78)';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(x + size / 2, y + size / 2, size * 0.68, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#ffd166';
+    ctx.fillRect(x, y, size, size);
+    ctx.fillStyle = '#20242a';
+    ctx.fillRect(x + size * 0.24, y + size * 0.28, size * 0.12, size * 0.12);
+    ctx.fillRect(x + size * 0.64, y + size * 0.28, size * 0.12, size * 0.12);
+    ctx.fillStyle = 'rgba(255,255,255,0.78)';
+    ctx.fillRect(x + size * 0.14, y - 14, size * 0.72, 6);
+    ctx.fillStyle = '#95d5b2';
+    ctx.fillRect(x + size * 0.14, y - 14, size * 0.72 * (petState.hp / petState.maxHp), 6);
+    ctx.restore();
+  }
+
+  function drawMonster(ctx, metrics, monster) {
+    const r = monsterRect(metrics, monster);
+    const shake = monster.hitFlashMs > 0 ? Math.sin(monster.hitFlashMs * 0.6) * 4 : 0;
+    ctx.save();
+    ctx.translate(shake, 0);
+    if (monster.attackWarnMs > 0) {
+      ctx.strokeStyle = 'rgba(255, 107, 107, 0.78)';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(r.x + r.w / 2, r.y + r.h / 2, r.w * 0.72, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.fillStyle = monster.hitFlashMs > 0 ? '#ffafcc' : '#70d6ff';
+    ctx.fillRect(r.x, r.y + r.h * 0.18, r.w, r.h * 0.72);
+    ctx.fillStyle = '#20242a';
+    ctx.fillRect(r.x + r.w * 0.25, r.y + r.h * 0.42, r.w * 0.12, r.h * 0.12);
+    ctx.fillRect(r.x + r.w * 0.62, r.y + r.h * 0.42, r.w * 0.12, r.h * 0.12);
+    ctx.fillStyle = 'rgba(255,255,255,0.78)';
+    ctx.fillRect(r.x + r.w * 0.08, r.y - 16, r.w * 0.84, 7);
+    ctx.fillStyle = '#ef476f';
+    ctx.fillRect(r.x + r.w * 0.08, r.y - 16, r.w * 0.84 * (monster.hp / monster.maxHp), 7);
+    ctx.restore();
+  }
+
+  function drawBattleBars(ctx, metrics, engine) {
+    ctx.save();
+    ctx.fillStyle = '#f7fbff';
+    ctx.font = '700 16px "Segoe UI", "Microsoft YaHei", sans-serif';
+    ctx.fillText(engine.monster.name, 22, 36);
+    ctx.font = '600 13px "Segoe UI", "Microsoft YaHei", sans-serif';
+    ctx.fillText(`Pet ${engine.pet.hp}/${engine.pet.maxHp}`, 22, 58);
+    ctx.fillText(`EXP ${engine.score}`, 22, 78);
+    ctx.restore();
+  }
+
+  function drawSkillButtons(ctx, metrics, skills) {
+    ctx.save();
+    skills.forEach((skill) => {
+      const ready = skill.cooldownLeftMs <= 0;
+      ctx.fillStyle = ready ? 'rgba(255, 209, 102, 0.78)' : 'rgba(20, 24, 30, 0.68)';
+      ctx.strokeStyle = ready ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.16)';
+      ctx.lineWidth = 2;
+      ctx.fillRect(skill.x, skill.y, skill.w, skill.h);
+      ctx.strokeRect(skill.x, skill.y, skill.w, skill.h);
+      ctx.fillStyle = ready ? '#20242a' : '#f7fbff';
+      ctx.font = '800 18px "Segoe UI", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(String(skill.slot), skill.x + skill.w / 2, skill.y + 24);
+      ctx.font = '700 11px "Segoe UI", "Microsoft YaHei", sans-serif';
+      ctx.fillText(skill.name.slice(0, 4), skill.x + skill.w / 2, skill.y + skill.h - 10);
+      if (!ready) {
+        ctx.fillStyle = 'rgba(0,0,0,0.32)';
+        const h = skill.h * (skill.cooldownLeftMs / skill.cooldown_ms);
+        ctx.fillRect(skill.x, skill.y + skill.h - h, skill.w, h);
+      }
+    });
+    ctx.textAlign = 'start';
+    ctx.restore();
+  }
+
+  function drawFloaters(ctx, metrics, floaters) {
+    ctx.save();
+    ctx.font = '800 18px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    floaters.forEach((f) => {
+      ctx.globalAlpha = clamp(1 - f.age / 900, 0, 1);
+      ctx.fillStyle = f.color;
+      ctx.fillText(f.text, metrics.width * f.x, metrics.height * f.y);
+    });
+    ctx.restore();
   }
 
   function resizeCanvas() {
@@ -271,7 +621,7 @@
     if (kind === 'ready') {
       overlay.classList.remove('hidden');
       overlayTitle.textContent = engine.config.dialogue.start;
-      overlayText.textContent = '方向键 / WASD 开始';
+      overlayText.textContent = engine instanceof BattleEngine ? 'Space / A 点击攻击，1/2 或 X/Y 释放技能' : '方向键 / WASD 开始';
     } else if (kind === 'paused') {
       overlay.classList.remove('hidden');
       overlayTitle.textContent = '暂停';
@@ -279,25 +629,31 @@
     } else if (kind === 'win') {
       overlay.classList.remove('hidden');
       overlayTitle.textContent = engine.config.dialogue.win;
-      overlayText.textContent = `得分 ${engine.score} · Enter / A 再来一次 · Esc / B 退出`;
+      overlayText.textContent = `奖励 ${engine.score} · Enter / A 再来一次 · Esc / B 退出`;
       overlayActions.classList.remove('hidden');
     } else if (kind === 'lose') {
       overlay.classList.remove('hidden');
       overlayTitle.textContent = engine.config.dialogue.lose;
-      overlayText.textContent = `得分 ${engine.score} · Enter / A 再来一次 · Esc / B 退出`;
+      overlayText.textContent = `奖励 ${engine.score} · Enter / A 再来一次 · Esc / B 退出`;
       overlayActions.classList.remove('hidden');
     } else if (kind === 'cancel') {
       overlay.classList.remove('hidden');
       overlayTitle.textContent = '已退出';
-      overlayText.textContent = `得分 ${engine.score}`;
+      overlayText.textContent = `奖励 ${engine.score}`;
     } else {
       overlay.classList.add('hidden');
     }
   }
 
+  function createEngine(config) {
+    return config && config.game_type === 'battle'
+      ? new BattleEngine(config)
+      : new SnakeEngine(config);
+  }
+
   function restartGame() {
     if (!currentConfig) return;
-    engine = new SnakeEngine(currentConfig);
+    engine = createEngine(currentConfig);
     reported = false;
     closing = false;
     lastLoggedState = null;
@@ -332,7 +688,9 @@
   function updateHud() {
     titleEl.textContent = engine.config.title;
     scoreEl.textContent = String(engine.score);
-    lengthEl.textContent = String(engine.snake.length);
+    lengthEl.textContent = engine instanceof BattleEngine
+      ? `${engine.monster.hp}/${engine.monster.maxHp}`
+      : String(engine.snake.length);
   }
 
   function loop(now) {
@@ -344,7 +702,7 @@
       updateHud();
       const state = engine.getState();
       if (state !== lastLoggedState) {
-        log(`state changed ${lastLoggedState || '<none>'} -> ${state} score=${engine.score} len=${engine.snake.length}`);
+        log(`state changed ${lastLoggedState || '<none>'} -> ${state} score=${engine.score}`);
         lastLoggedState = state;
       }
       if (state === 'ready' || state === 'paused') {
@@ -359,6 +717,45 @@
   }
 
   function toInputFromKey(e) {
+    if (engine instanceof BattleEngine) {
+      switch (e.key) {
+        case ' ':
+        case 'j':
+        case 'J':
+          return { type: 'attack_primary' };
+        case 'Enter':
+          return { type: 'confirm' };
+        case '1':
+        case 'k':
+        case 'K':
+          return { type: 'skill', slot: 1 };
+        case '2':
+        case 'l':
+        case 'L':
+          return { type: 'skill', slot: 2 };
+        case '3':
+        case 'i':
+        case 'I':
+          return { type: 'skill', slot: 3 };
+        case 'Shift':
+          return { type: 'guard' };
+        case 'ArrowLeft':
+        case 'a':
+        case 'A':
+          return { type: 'direction', dx: -1, dy: 0 };
+        case 'ArrowRight':
+        case 'd':
+        case 'D':
+          return { type: 'direction', dx: 1, dy: 0 };
+        case 'Escape':
+          return { type: 'cancel' };
+        case 'p':
+        case 'P':
+          return { type: 'pause' };
+        default:
+          return null;
+      }
+    }
     switch (e.key) {
       case 'ArrowUp':
       case 'w':
@@ -398,6 +795,13 @@
       engine.handleInput(input);
     });
     window.addEventListener('resize', resizeCanvas);
+    canvas.addEventListener('pointerdown', (e) => {
+      if (!(engine instanceof BattleEngine)) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      if (engine.handlePointer(x, y)) e.preventDefault();
+    });
     restartBtn.addEventListener('click', restartGame);
     quitBtn.addEventListener('click', () => {
       if (engine) closeEndedGame(engine.getState());
@@ -424,6 +828,7 @@
       log(`cmd_get_current_game failed: ${e}`);
     }
     config = config || {
+      game_type: 'snake',
       title: '毛线球大作战',
       grid: { width: 30, height: 20, cell_size: 24 },
       player: { speed_ms: 140, initial_length: 3 },
@@ -432,12 +837,12 @@
       dialogue: { start: '喵！看我的！', win: '太厉害了喵~', lose: '呜...再来一次！' },
     };
     currentConfig = config;
-    engine = new SnakeEngine(config);
+    engine = createEngine(config);
     await initEvents();
     log(`engine ready title=${config.title}`);
     requestAnimationFrame(loop);
   }
 
-  window.GameEngineTest = { SnakeEngine, createRng };
+  window.GameEngineTest = { SnakeEngine, BattleEngine, createRng };
   init();
 })();

@@ -60,6 +60,17 @@ pub async fn cmd_execute_panel_action(id: String, app: AppHandle) -> Result<(), 
                 );
                 Ok(())
             }
+            "battle" => {
+                hide_panel(&app)?;
+                crate::action_bus::ActionBus::dispatch(
+                    &app,
+                    crate::action_bus::Action::PlayBattleDefault,
+                    crate::action_bus::ActionSource::Frontend {
+                        cmd: "cmd_execute_panel_action:battle".into(),
+                    },
+                );
+                Ok(())
+            }
             "settings" => {
                 crate::settings::toggle_settings(&app);
                 hide_panel(&app)?;

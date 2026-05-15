@@ -20,6 +20,7 @@ pub mod audio_reactive;
 pub mod bubble;
 pub mod commands;
 pub mod game;
+pub mod game_input;
 pub mod gamepad;
 pub mod joystick;
 pub mod observation_gate;
@@ -72,6 +73,7 @@ pub fn run() {
             audio_reactive::cmd_start_wasapi_music_dance,
             audio_reactive::cmd_stop_music_dance,
             game::cmd_start_game,
+            game::cmd_start_battle,
             game::cmd_start_game_with_def,
             game::cmd_get_current_game,
             game::cmd_game_end,

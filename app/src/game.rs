@@ -5,7 +5,7 @@
 //! core crate 只提供可序列化配置和参数边界。
 
 use ai_pad_core::bridge::PetStateName;
-use ai_pad_core::minigame::{validate_game_def, GameDef};
+use ai_pad_core::minigame::{validate_game_def, GameDef, MinigameType};
 use ai_pad_core::pet_event::{PetEvent, PetMode, PetMood};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -60,6 +60,21 @@ pub fn game_phase(app: &AppHandle) -> &'static str {
 /// 启动内置 Snake 游戏，供 ActionBus 和 IPC 共用。
 pub fn start_default_game(app: &AppHandle) -> Result<(), String> {
     start_game(app, GameDef::default_snake())
+}
+
+/// 启动内置守护召唤战，复用同一个透明 game 窗口。
+pub fn start_default_battle(app: &AppHandle) -> Result<(), String> {
+    start_game(app, GameDef::default_battle())
+}
+
+/// 返回当前游戏类型，供输入层决定手柄按钮语义。
+pub fn current_game_type(app: &AppHandle) -> Option<MinigameType> {
+    let state: tauri::State<'_, SharedGame> = app.state();
+    state
+        .current_def
+        .lock()
+        .ok()
+        .and_then(|current| current.as_ref().map(|def| def.game_type))
 }
 
 /// 应用启动时预创建游戏窗口，避免从面板 IPC 回调里临时创建 WebView。
@@ -261,6 +276,13 @@ fn set_pet_state(app: &AppHandle, state: PetStateName) -> Result<(), String> {
 pub fn cmd_start_game(app: AppHandle) -> Result<(), String> {
     info!("[game] cmd_start_game invoked");
     start_default_game(&app)
+}
+
+/// 前端请求启动内置守护召唤战。
+#[tauri::command]
+pub fn cmd_start_battle(app: AppHandle) -> Result<(), String> {
+    info!("[game] cmd_start_battle invoked");
+    start_default_battle(&app)
 }
 
 /// 前端或后续 AI 工具请求按配置启动游戏。

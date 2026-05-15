@@ -67,6 +67,13 @@ actions:
     type: builtin
     command: game
 
+  battle:
+    label: 守护战
+    icon: "⚔"
+    order: 75
+    type: builtin
+    command: battle
+
   settings:
     label: 设置
     icon: "⚙️"

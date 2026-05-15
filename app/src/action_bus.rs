@@ -43,6 +43,8 @@ pub enum Action {
     PlayDance(String),
     /// 启动默认迷你游戏
     PlayGameDefault,
+    /// 启动默认守护召唤战
+    PlayBattleDefault,
     /// 立即截图 + Vision 分析
     ScreenshotNow,
     /// 启动程序（launch 动作）
@@ -168,6 +170,12 @@ impl ActionBus {
                 info!(?source, action = "PlayGameDefault", "action dispatch");
                 if let Err(e) = crate::game::start_default_game(app) {
                     warn!(error = %e, "play game action failed");
+                }
+            }
+            Action::PlayBattleDefault => {
+                info!(?source, action = "PlayBattleDefault", "action dispatch");
+                if let Err(e) = crate::game::start_default_battle(app) {
+                    warn!(error = %e, "play battle action failed");
                 }
             }
             Action::ScreenshotNow => {
@@ -341,6 +349,7 @@ mod tests {
             Action::SubmitChat("你好".into()),
             Action::PlayDance("happy".into()),
             Action::PlayGameDefault,
+            Action::PlayBattleDefault,
             Action::ScreenshotNow,
             Action::Launch {
                 program: "code".into(),

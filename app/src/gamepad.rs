@@ -11,6 +11,7 @@
 
 use crate::bubble;
 use crate::commands::SharedWindowState;
+use crate::game_input::{emit_game_input, GameInput};
 use crate::joystick::{self, SdlGamepad};
 use crate::panel;
 use crate::pet_event_bus::SharedPetEventBus;
@@ -477,27 +478,58 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                         }
 
                         if game_active {
-                            match name {
-                                "A" => {
-                                    info!("→ 游戏确认");
-                                    let _ = app.emit(
-                                        "game-input",
-                                        serde_json::json!({ "type": "confirm" }),
-                                    );
+                            let is_battle = matches!(
+                                crate::game::current_game_type(app),
+                                Some(ai_pad_core::minigame::MinigameType::Battle)
+                            );
+                            if is_battle {
+                                match name {
+                                    "A" => {
+                                        info!("→ 战斗普通攻击");
+                                        emit_game_input(app, GameInput::AttackPrimary);
+                                    }
+                                    "B" => {
+                                        info!("→ 游戏取消");
+                                        emit_game_input(app, GameInput::Cancel);
+                                    }
+                                    "X" => {
+                                        info!("→ 战斗技能 1");
+                                        emit_game_input(app, GameInput::Skill { slot: 1 });
+                                    }
+                                    "Y" => {
+                                        info!("→ 战斗技能 2");
+                                        emit_game_input(app, GameInput::Skill { slot: 2 });
+                                    }
+                                    "L1" => {
+                                        info!("→ 战斗防御");
+                                        emit_game_input(app, GameInput::Guard);
+                                    }
+                                    "R1" => {
+                                        info!("→ 战斗技能 3");
+                                        emit_game_input(app, GameInput::Skill { slot: 3 });
+                                    }
+                                    "Start" => {
+                                        info!("→ 游戏暂停");
+                                        emit_game_input(app, GameInput::Pause);
+                                    }
+                                    _ => {}
                                 }
-                                "B" => {
-                                    info!("→ 游戏取消");
-                                    let _ = app.emit(
-                                        "game-input",
-                                        serde_json::json!({ "type": "cancel" }),
-                                    );
+                            } else {
+                                match name {
+                                    "A" => {
+                                        info!("→ 游戏确认");
+                                        emit_game_input(app, GameInput::Confirm);
+                                    }
+                                    "B" => {
+                                        info!("→ 游戏取消");
+                                        emit_game_input(app, GameInput::Cancel);
+                                    }
+                                    "Start" => {
+                                        info!("→ 游戏暂停");
+                                        emit_game_input(app, GameInput::Pause);
+                                    }
+                                    _ => {}
                                 }
-                                "Start" => {
-                                    info!("→ 游戏暂停");
-                                    let _ = app
-                                        .emit("game-input", serde_json::json!({ "type": "pause" }));
-                                }
-                                _ => {}
                             }
                             continue;
                         }
@@ -669,14 +701,7 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                 if hat != prev_hat {
                     if let Some((dx, dy)) = hat {
                         info!(dx = dx, dy = dy, "→ 游戏方向");
-                        let _ = app.emit(
-                            "game-input",
-                            serde_json::json!({
-                                "type": "direction",
-                                "dx": dx,
-                                "dy": -dy,
-                            }),
-                        );
+                        emit_game_input(app, GameInput::Direction { dx, dy: -dy });
                     }
                 }
             } else if panel_visible {
