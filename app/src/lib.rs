@@ -16,6 +16,7 @@
 //! 使用了 Win32 API。这些 unsafe 的安全前提在各子模块的 `//!` 中单独说明。
 
 pub mod action_bus;
+pub mod audio_reactive;
 pub mod bubble;
 pub mod commands;
 pub mod game;
@@ -47,6 +48,7 @@ pub fn run() {
         .manage(commands::SharedPet::default())
         .manage(commands::SharedWindowState::default())
         .manage(bubble::SharedBubble::new())
+        .manage(audio_reactive::SharedAudioReactive::default())
         .manage(voice::SharedVoice::new())
         .manage(observation_gate::SharedObservationGate::default())
         .manage(screenshot::SharedScreenshotState::default())
@@ -66,6 +68,9 @@ pub fn run() {
             commands::cmd_play_dance,
             commands::cmd_performance_finished,
             commands::cmd_get_window_state,
+            audio_reactive::cmd_start_fake_music_dance,
+            audio_reactive::cmd_start_wasapi_music_dance,
+            audio_reactive::cmd_stop_music_dance,
             game::cmd_start_game,
             game::cmd_start_game_with_def,
             game::cmd_get_current_game,
