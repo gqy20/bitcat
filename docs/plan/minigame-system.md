@@ -3,7 +3,7 @@
 > 状态：Phase 1 已完成（2026-05-13，提交 `a2105ff`）
 > 关联文档：
 > - 产品定位：[gdd/core-gameplay.md](../gdd/core-gameplay.md) §八、Mini-Game 定位
-> - GameDef schema：[plan/structured-output-design.md](structured-output-design.md) §3.2
+> - GameDef schema 历史草案：[plan/archive/structured-output-design.md](archive/structured-output-design.md) §3.2
 > - 路线图：[roadmap.md](../roadmap.md) §A2
 
 ## 一、核心设计决策

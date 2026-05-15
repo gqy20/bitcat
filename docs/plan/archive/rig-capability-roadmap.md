@@ -634,5 +634,5 @@ P1.5 (AgentReaction) ──→ 情绪/记忆从关键词转向结构化判断 �
 ## 2026-05-15 实现索引
 
 - 当前宠物语义事件架构见 `docs/architecture/pet-semantic-events.md`。
-- 历史分阶段方案见 `docs/plan/rig-pet-semantic-events.md`。
+- 历史分阶段方案见 `docs/plan/archive/rig-pet-semantic-events.md`。
 - 已完成提交范围：AgentReaction、PetEvent 协议、PetEventBus、MoodPolicy、memory review、event diagnostics、rig stream status notifications。

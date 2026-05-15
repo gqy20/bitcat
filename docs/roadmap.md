@@ -94,7 +94,7 @@ Agent 管理线应优先复用现有栈：
 - 前端 dancePlayer 劫持渲染循环，播完交还控制权
 - 用户目录 `~/.ai-pad/dances/` 优先，内置预设 `config/dances/` 兜底
 
-详细设计：[plan/structured-output-design.md](plan/structured-output-design.md)
+详细设计：[plan/archive/structured-output-design.md](plan/archive/structured-output-design.md)
 
 ### A2. 迷你游戏引擎
 
@@ -137,19 +137,19 @@ panel → cmd_start_game → app/src/game.rs 动态创建 game 窗口
 
 已完成第一轮规范化：大文本不再裸写 INFO，前端日志桥和 chat/vision/memory 等高价值链路已收敛到 tracing 字段；`AGENTS.md` / `CLAUDE.md` 已补充日志规范。下一步只保留少量持续治理：新增功能必须继续使用 `log_preview()` 和稳定字段，避免把结构化数据塞回普通日志。
 
-详细设计：[plan/logging-standardization.md](plan/logging-standardization.md)
+详细设计：[plan/archive/logging-standardization.md](plan/archive/logging-standardization.md)
 
 ### B2. Token 全链路追踪
 
 已完成 MVP：chat / vision / screen_summary / memory_aggregation 的 input/output/cache token 明细写入 `~/.ai-pad/logs/token_usage.jsonl`，最近会话汇总写入 `~/.ai-pad/logs/token_sessions.json`，并通过设置页 `cmd_get_token_stats` 展示今日消耗、最近会话和各链路占比。下一步是把统计用于决策：先观察真实用量，再决定是否优化工具 schema、上下文注入或模型路由。
 
-详细设计：[plan/token-tracking.md](plan/token-tracking.md)
+详细设计：[plan/archive/token-tracking.md](plan/archive/token-tracking.md)
 
 ### B3. 结构化输出（Extractor 改造）
 
 已完成主链路与 cleanup：vision / screen_summary / memory aggregation 都已接入 rig `Extractor`，分别输出 `VisionAnalysis`、`StructuredSummary`、`ProfileAggregation`，token 用量也改为读取 `ExtractionResponse.usage`。旧 raw request / text parser / Anthropic usage parser 已删除，不再生效的 `screen_summary.max_summary_chars` 配置也已移除；保留基于 Anthropic `tool_use` 协议的 wiremock 回归测试。
 
-详细设计：[plan/rig-capability-roadmap.md](plan/rig-capability-roadmap.md) §P0
+详细设计：[plan/archive/rig-capability-roadmap.md](plan/archive/rig-capability-roadmap.md) §P0
 
 ### B4. 工具运行时与开销优化（谨慎，不做关键词意图识别）
 
@@ -167,7 +167,7 @@ panel → cmd_start_game → app/src/game.rs 动态创建 game 窗口
 
 下一步主线建议：先做游戏部分。游戏工具应直接复用 B4 已完成的事件协议、UI 分层和审计日志；不要再引入关键词分类或额外小模型判断。
 
-详细设计：[plan/rig-capability-roadmap.md](plan/rig-capability-roadmap.md) §P1
+详细设计：[plan/archive/rig-capability-roadmap.md](plan/archive/rig-capability-roadmap.md) §P1
 
 ### B5. grep-first 文本记忆检索
 
