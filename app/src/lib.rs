@@ -77,6 +77,7 @@ pub fn run() {
             game::cmd_start_game_with_def,
             game::cmd_get_current_game,
             game::cmd_game_end,
+            game::cmd_battle_pet_event,
             game::cmd_game_log,
             panel::cmd_show_panel,
             panel::cmd_hide_panel,

@@ -342,6 +342,33 @@ pub fn cmd_game_end(app: AppHandle, result: String, score: u32) -> Result<(), St
     Ok(())
 }
 
+/// Battle 前端在低频语义节点上回传桌宠表现事件。
+#[tauri::command]
+pub fn cmd_battle_pet_event(app: AppHandle, kind: String) -> Result<(), String> {
+    let event = match kind.trim().to_ascii_lowercase().as_str() {
+        "start" => PetEvent::ShowBubble {
+            text: "传送门打开了，帮我一起打！".into(),
+        },
+        "attack" | "skill" => PetEvent::react(PetMood::Focused),
+        "guard" => PetEvent::react(PetMood::Caring),
+        "break" => PetEvent::react(PetMood::Excited),
+        "win" => PetEvent::React {
+            mood: PetMood::Happy,
+            speech: Some("赢啦！".into()),
+            ttl_ms: Some(8_000),
+        },
+        "lose" => PetEvent::React {
+            mood: PetMood::Confused,
+            speech: Some("呜...下次再练。".into()),
+            ttl_ms: Some(8_000),
+        },
+        other => return Err(format!("未知战斗宠物事件: {other}")),
+    };
+    let bus: tauri::State<'_, crate::pet_event_bus::SharedPetEventBus> = app.state();
+    bus.emit(&app, event);
+    Ok(())
+}
+
 /// 前端调试日志桥接。
 #[tauri::command]
 pub fn cmd_game_log(msg: String) -> Result<(), String> {

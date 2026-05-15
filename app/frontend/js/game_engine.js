@@ -26,6 +26,10 @@
     console.log('[game]', msg);
   }
 
+  function emitBattlePet(kind) {
+    if (invoke) invoke('cmd_battle_pet_event', { kind }).catch(() => {});
+  }
+
   function clamp(n, min, max) {
     return Math.max(min, Math.min(max, n));
   }
@@ -244,6 +248,7 @@
       this.guardMs = 0;
       this.floaters = [];
       this.lastMetrics = null;
+      this.startedNotified = false;
     }
 
     getState() {
@@ -267,22 +272,27 @@
       }
       if (input.type === 'confirm' && this.state === 'ready') {
         this.state = 'playing';
+        this.notifyStart();
         return;
       }
       if (input.type === 'attack_primary') {
         if (this.state === 'ready') this.state = 'playing';
+        this.notifyStart();
         this.attackMonster(this.pet.attack, 'hit');
         return;
       }
       if (input.type === 'skill') {
         if (this.state === 'ready') this.state = 'playing';
+        this.notifyStart();
         this.useSkill(input.slot);
         return;
       }
       if (input.type === 'guard') {
         if (this.state === 'ready') this.state = 'playing';
+        this.notifyStart();
         this.guardMs = Math.max(this.guardMs, 700);
         this.addFloater('guard', 0.24, 0.64, '#8ecae6');
+        emitBattlePet('guard');
         return;
       }
       if (input.type === 'direction') {
@@ -294,6 +304,7 @@
     handlePointer(x, y) {
       if (this.ended) return;
       if (this.state === 'ready') this.state = 'playing';
+      this.notifyStart();
       if (this.hitTestMonster(x, y)) {
         this.attackMonster(this.pet.attack, 'tap');
         return true;
@@ -304,6 +315,12 @@
         return true;
       }
       return false;
+    }
+
+    notifyStart() {
+      if (this.startedNotified) return;
+      this.startedNotified = true;
+      emitBattlePet('start');
     }
 
     update(dtMs) {
@@ -351,6 +368,9 @@
         this.monsterAttackTimer = Math.max(this.monsterAttackTimer, 900);
         this.monster.attackWarnMs = 0;
         this.addFloater('break', this.monster.x, this.monster.y - 0.22, '#70d6ff');
+        emitBattlePet('break');
+      } else if (label !== 'auto') {
+        emitBattlePet(label === 'skill' ? 'skill' : 'attack');
       }
       if (this.monster.hp <= 0) {
         this.score = this.monster.reward_exp;
@@ -373,6 +393,7 @@
       if (this.ended) return;
       this.ended = true;
       this.state = result;
+      if (result === 'win' || result === 'lose') emitBattlePet(result);
     }
 
     hitTestMonster(x, y) {
