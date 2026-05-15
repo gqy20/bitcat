@@ -378,6 +378,11 @@
         const damage = guarded ? Math.max(1, Math.floor(this.monster.attack * 0.35)) : this.monster.attack;
         this.pet.hp = Math.max(0, this.pet.hp - damage);
         this.addFloater(`-${damage}`, 0.23, 0.55, guarded ? '#8ecae6' : '#ff6b6b');
+        emitBattlePet('pet_hit', {
+          source: guarded ? 'guarded_hit' : 'monster',
+          damage,
+          hpRatio: this.petHpRatio(),
+        });
         if (this.pet.hp <= 0) this.finish('lose');
       }
     }

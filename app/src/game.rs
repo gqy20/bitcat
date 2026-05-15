@@ -429,35 +429,67 @@ pub fn cmd_game_end(app: AppHandle, result: String, score: u32) -> Result<(), St
 /// Battle 前端在低频语义节点上回传桌宠表现事件。
 #[tauri::command]
 pub fn cmd_battle_pet_event(app: AppHandle, event: BattlePetEventPayload) -> Result<(), String> {
-    let kind = event.kind.trim().to_ascii_lowercase();
-    let pet_event = match kind.as_str() {
-        "start" => PetEvent::ShowBubble {
-            text: "传送门打开了，帮我一起打！".into(),
-        },
-        "attack" | "skill" => PetEvent::react(PetMood::Focused),
-        "guard" => PetEvent::react(PetMood::Caring),
-        "interrupt" => PetEvent::React {
-            mood: PetMood::Excited,
-            speech: Some("打断成功！".into()),
-            ttl_ms: Some(3_000),
-        },
-        "win" => PetEvent::React {
-            mood: PetMood::Happy,
-            speech: Some("赢啦！".into()),
-            ttl_ms: Some(8_000),
-        },
-        "lose" => PetEvent::React {
-            mood: PetMood::Confused,
-            speech: Some("呜...下次再练。".into()),
-            ttl_ms: Some(8_000),
-        },
-        other => return Err(format!("未知战斗宠物事件: {other}")),
-    };
+    let kind = normalized_battle_event_kind(&event);
+    let pet_events = map_battle_pet_events(&event)?;
     let source = event_source_preview(&event);
     info!(kind = %kind, source = %source, "[battle] pet event");
     let bus: tauri::State<'_, crate::pet_event_bus::SharedPetEventBus> = app.state();
-    bus.emit(&app, pet_event);
+    for pet_event in pet_events {
+        bus.emit(&app, pet_event);
+    }
     Ok(())
+}
+
+fn normalized_battle_event_kind(event: &BattlePetEventPayload) -> String {
+    event.kind.trim().to_ascii_lowercase()
+}
+
+fn map_battle_pet_events(event: &BattlePetEventPayload) -> Result<Vec<PetEvent>, String> {
+    let mapped = match normalized_battle_event_kind(event).as_str() {
+        "start" => vec![PetEvent::ShowBubble {
+            text: "传送门打开了，帮我一起打！".into(),
+        }],
+        "attack" => vec![PetEvent::React {
+            mood: PetMood::Focused,
+            speech: None,
+            ttl_ms: Some(1_200),
+        }],
+        "skill" => vec![PetEvent::React {
+            mood: PetMood::Excited,
+            speech: None,
+            ttl_ms: Some(1_500),
+        }],
+        "guard" => vec![PetEvent::React {
+            mood: PetMood::Caring,
+            speech: Some("护住了！".into()),
+            ttl_ms: Some(1_800),
+        }],
+        "interrupt" => vec![PetEvent::React {
+            mood: PetMood::Excited,
+            speech: Some("打断成功！".into()),
+            ttl_ms: Some(3_000),
+        }],
+        "pet_hit" => {
+            let low_hp = event.hp_ratio.is_some_and(|hp| hp <= 0.35);
+            vec![PetEvent::React {
+                mood: PetMood::Confused,
+                speech: low_hp.then(|| "有点危险...".into()),
+                ttl_ms: Some(if low_hp { 3_000 } else { 1_400 }),
+            }]
+        }
+        "win" => vec![PetEvent::React {
+            mood: PetMood::Happy,
+            speech: Some("赢啦！".into()),
+            ttl_ms: Some(8_000),
+        }],
+        "lose" => vec![PetEvent::React {
+            mood: PetMood::Confused,
+            speech: Some("呜...下次再练。".into()),
+            ttl_ms: Some(8_000),
+        }],
+        other => return Err(format!("未知战斗宠物事件: {other}")),
+    };
+    Ok(mapped)
 }
 
 fn event_source_preview(event: &BattlePetEventPayload) -> String {
@@ -494,7 +526,8 @@ pub fn cmd_game_log(msg: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{event_source_preview, BattlePetEventPayload};
+    use super::{event_source_preview, map_battle_pet_events, BattlePetEventPayload};
+    use ai_pad_core::pet_event::{PetEvent, PetMood};
 
     #[test]
     fn battle_event_preview_keeps_structured_fields() {
@@ -510,6 +543,48 @@ mod tests {
         assert_eq!(
             event_source_preview(&event),
             "source=skill skill=scratch damage=9 hp_ratio=0.42 interrupted=true"
+        );
+    }
+
+    #[test]
+    fn battle_event_mapping_marks_low_pet_hp() {
+        let event = BattlePetEventPayload {
+            kind: "pet_hit".to_string(),
+            source: Some("monster".to_string()),
+            skill_id: None,
+            damage: Some(4),
+            hp_ratio: Some(0.25),
+            interrupted: false,
+        };
+
+        assert_eq!(
+            map_battle_pet_events(&event).unwrap(),
+            vec![PetEvent::React {
+                mood: PetMood::Confused,
+                speech: Some("有点危险...".into()),
+                ttl_ms: Some(3_000),
+            }]
+        );
+    }
+
+    #[test]
+    fn battle_event_mapping_uses_excited_for_skill() {
+        let event = BattlePetEventPayload {
+            kind: "skill".to_string(),
+            source: Some("skill".to_string()),
+            skill_id: Some("scratch".to_string()),
+            damage: Some(8),
+            hp_ratio: Some(0.8),
+            interrupted: false,
+        };
+
+        assert_eq!(
+            map_battle_pet_events(&event).unwrap(),
+            vec![PetEvent::React {
+                mood: PetMood::Excited,
+                speech: None,
+                ttl_ms: Some(1_500),
+            }]
         );
     }
 }
