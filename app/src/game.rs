@@ -7,10 +7,15 @@
 use ai_pad_core::bridge::PetStateName;
 use ai_pad_core::minigame::{validate_game_def, GameDef, MinigameType};
 use ai_pad_core::pet_event::{PetEvent, PetMode, PetMood};
+use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
 use tracing::{info, warn};
+#[cfg(windows)]
+use windows_sys::Win32::Foundation::POINT;
+#[cfg(windows)]
+use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 /// 游戏窗口共享状态。
 pub struct SharedGame {
@@ -19,6 +24,13 @@ pub struct SharedGame {
     pub startup_seq: std::sync::atomic::AtomicU64,
     pub current_def: Mutex<Option<GameDef>>,
     pub hidden_windows: Mutex<Vec<String>>,
+}
+
+/// Game 窗口内的逻辑坐标，用于透明覆盖层判断鼠标是否命中热点区域。
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct GameCursorPosition {
+    pub x: f64,
+    pub y: f64,
 }
 
 impl Default for SharedGame {
@@ -144,6 +156,7 @@ pub fn start_game(app: &AppHandle, def: GameDef) -> Result<(), String> {
         info!(startup_id, "[game] position window begin");
         position_fullscreen_on_monitor(app, &window);
         info!(startup_id, "[game] position window done");
+        configure_game_input_capture(&window, !overlay_mode);
         info!(startup_id, overlay_mode, "[game] enter window mode begin");
         let hidden_windows = hide_companion_windows(app, overlay_mode);
         if let Ok(mut stored) = state.hidden_windows.lock() {
@@ -169,6 +182,9 @@ pub fn start_game(app: &AppHandle, def: GameDef) -> Result<(), String> {
         state.active.store(false, Ordering::SeqCst);
         if let Ok(mut current) = state.current_def.lock() {
             *current = None;
+        }
+        if let Some(window) = app.get_webview_window("game") {
+            configure_game_input_capture(&window, true);
         }
         restore_companion_windows(app);
         let _ = set_pet_state(app, PetStateName::Idle);
@@ -218,6 +234,16 @@ fn position_fullscreen_on_monitor(app: &AppHandle, window: &tauri::WebviewWindow
     let size = monitor.size();
     let _ = window.set_position(PhysicalPosition::new(pos.x, pos.y));
     let _ = window.set_size(PhysicalSize::new(size.width, size.height));
+}
+
+fn configure_game_input_capture(window: &tauri::WebviewWindow, enabled: bool) {
+    if let Err(e) = window.set_ignore_cursor_events(!enabled) {
+        warn!(
+            error = %e,
+            enabled,
+            "[game] 设置游戏窗口鼠标捕获失败"
+        );
+    }
 }
 
 fn hide_companion_windows(app: &AppHandle, overlay_mode: bool) -> Vec<String> {
@@ -307,6 +333,47 @@ pub fn cmd_get_current_game(shared: tauri::State<'_, SharedGame>) -> Result<Game
         .ok_or_else(|| "当前没有活动游戏".to_string())
 }
 
+/// 切换 game 窗口是否接管鼠标。Battle 覆盖层默认透传，只在热点区域临时捕获。
+#[tauri::command]
+pub fn cmd_game_set_input_capture(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let Some(window) = app.get_webview_window("game") else {
+        return Ok(());
+    };
+    configure_game_input_capture(&window, enabled);
+    Ok(())
+}
+
+/// 读取鼠标在 game 窗口中的逻辑坐标，供透明覆盖层前端做热点命中判断。
+#[tauri::command]
+pub fn cmd_game_cursor_position(app: AppHandle) -> Result<GameCursorPosition, String> {
+    let Some(window) = app.get_webview_window("game") else {
+        return Err("game window not found".to_string());
+    };
+    let window_pos = window.outer_position().map_err(|e| e.to_string())?;
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    let (cursor_x, cursor_y) = current_cursor_position_physical()?;
+    Ok(GameCursorPosition {
+        x: f64::from(cursor_x - window_pos.x) / scale,
+        y: f64::from(cursor_y - window_pos.y) / scale,
+    })
+}
+
+#[cfg(windows)]
+fn current_cursor_position_physical() -> Result<(i32, i32), String> {
+    let mut point = POINT { x: 0, y: 0 };
+    let ok = unsafe { GetCursorPos(&mut point) };
+    if ok == 0 {
+        Err("GetCursorPos failed".to_string())
+    } else {
+        Ok((point.x, point.y))
+    }
+}
+
+#[cfg(not(windows))]
+fn current_cursor_position_physical() -> Result<(i32, i32), String> {
+    Err("game cursor polling is only supported on Windows".to_string())
+}
+
 /// 游戏结束回调。result 支持 win / lose / cancel。
 #[tauri::command]
 pub fn cmd_game_end(app: AppHandle, result: String, score: u32) -> Result<(), String> {
@@ -323,6 +390,7 @@ pub fn cmd_game_end(app: AppHandle, result: String, score: u32) -> Result<(), St
     }
 
     if let Some(w) = app.get_webview_window("game") {
+        configure_game_input_capture(&w, true);
         let _ = w.hide();
     }
 

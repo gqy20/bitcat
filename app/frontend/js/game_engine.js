@@ -30,6 +30,13 @@
     if (invoke) invoke('cmd_battle_pet_event', { kind }).catch(() => {});
   }
 
+  function setGameInputCapture(enabled) {
+    if (!invoke) return Promise.resolve();
+    return invoke('cmd_game_set_input_capture', { enabled }).catch((e) => {
+      log(`cmd_game_set_input_capture failed: ${e}`);
+    });
+  }
+
   function clamp(n, min, max) {
     return Math.max(min, Math.min(max, n));
   }
@@ -249,6 +256,10 @@
       this.floaters = [];
       this.lastMetrics = null;
       this.startedNotified = false;
+      this.inputCapture = null;
+      this.inputCaptureCheckMs = 0;
+      this.inputCaptureInFlight = false;
+      this.inputCaptureSupported = Boolean(invoke);
     }
 
     getState() {
@@ -324,6 +335,7 @@
     }
 
     update(dtMs) {
+      this.updateInputCapture(dtMs);
       this.floaters.forEach((f) => {
         f.age += dtMs;
         f.y -= dtMs * 0.00008;
@@ -393,7 +405,43 @@
       if (this.ended) return;
       this.ended = true;
       this.state = result;
+      this.setInputCapture(true);
       if (result === 'win' || result === 'lose') emitBattlePet(result);
+    }
+
+    updateInputCapture(dtMs) {
+      if (!this.inputCaptureSupported || this.inputCaptureInFlight) return;
+      this.inputCaptureCheckMs -= dtMs;
+      if (this.inputCaptureCheckMs > 0) return;
+      this.inputCaptureCheckMs = 70;
+      this.inputCaptureInFlight = true;
+      invoke('cmd_game_cursor_position')
+        .then((pos) => {
+          const enabled = this.isInteractiveAt(pos?.x, pos?.y);
+          this.setInputCapture(enabled);
+        })
+        .catch((e) => {
+          this.inputCaptureSupported = false;
+          log(`cmd_game_cursor_position disabled: ${e}`);
+        })
+        .finally(() => {
+          this.inputCaptureInFlight = false;
+        });
+    }
+
+    setInputCapture(enabled) {
+      if (!this.inputCaptureSupported || this.inputCapture === enabled) return;
+      this.inputCapture = enabled;
+      setGameInputCapture(enabled);
+    }
+
+    isInteractiveAt(x, y) {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+      if (this.state === 'ready' || this.state === 'paused' || this.ended) {
+        return this.hitTestOverlay(x, y);
+      }
+      if (this.state !== 'playing') return false;
+      return this.hitTestMonster(x, y) || Boolean(this.hitTestSkill(x, y));
     }
 
     hitTestMonster(x, y) {
@@ -408,6 +456,16 @@
       return this.skillRects(this.lastMetrics).find((entry) => (
         x >= entry.x && x <= entry.x + entry.w && y >= entry.y && y <= entry.y + entry.h
       )) || null;
+    }
+
+    hitTestOverlay(x, y) {
+      if (!this.lastMetrics) return false;
+      const m = this.lastMetrics;
+      const w = Math.min(460, m.width * 0.82);
+      const h = this.ended ? 220 : 180;
+      const left = (m.width - w) / 2;
+      const top = (m.height - h) / 2;
+      return x >= left && x <= left + w && y >= top && y <= top + h;
     }
 
     skillRects(metrics) {
