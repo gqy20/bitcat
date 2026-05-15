@@ -4,19 +4,80 @@
 
 ## [Unreleased]
 
+---
+
+## [0.1.3] - 2026-05-15
+
+AI 语义事件、长期记忆、音乐响应舞动、守护战斗模式和宠物动画表现更新，准备作为 0.1.2 后的桌宠智能表现版本发布。
+
 ### 新增
+
+- **宠物语义事件**：新增 tagged `PetEvent` 协议，主链路从旧的裸视觉 state 迁移到 `Notify` / `React` / `SetMode` / `WalkTo` / `ShowBubble` / `PlayDance` 等语义事件。
+- **Rig 生命周期状态**：对话流新增 `AiWriting`、`ToolPreparing`、`ToolRunning`、`ToolBlocked`、`ToolFailed` 等通知，宠物动画可跟随模型写作和工具执行状态变化。
+- **AgentReaction 收尾**：对话结束后用结构化输出生成最终情绪、speech 和长期记忆候选，不再依赖回复文本关键词猜测。
+- **长期记忆工具**：新增 `search_memory` 与 `remember` 工具，长期记忆支持按文本、标签、来源、重要度进行 grep-first 检索。
+- **长期记忆 JSONL 存储**：长期记忆主文件切换为 `~/.ai-pad/memory/long_term.jsonl`，一行一条记录，包含稳定 id、标签、重要度、来源和软删除字段。
+- **宠物事件总线**：新增 `PetEventBus` 和 `MoodPolicy`，集中处理事件去重、低优先级节流、情绪 TTL、覆盖规则和最近事件日志。
+- **事件诊断面板**：设置页新增宠物事件诊断，可查看最近 50 条事件的发送、去重、节流和失败原因。
+- **记忆审查面板**：设置页新增长期记忆审查和删除入口，便于人工查看、清理和校正 AI 记住的内容。
+- **资源诊断**：设置页新增进程内存和系统内存使用情况。
+- **音乐响应舞动**：新增 fake source 与 WASAPI loopback 音乐舞动数据源，后端发送 energy / bass / onset / silence 帧，前端以 sprite-only 方式驱动宠物动作。
+- **音乐舞动控制**：设置页、托盘菜单和宠物右键菜单新增音乐舞动启动/停止入口与诊断显示。
+- **统一表演管线**：新增 performance session / timeline player / performer host，舞蹈和音乐响应动作复用统一播放宿主。
+- **宠物右键菜单**：新增宠物窗口上下文菜单，并补充停止舞动、设置等常用入口。
+- **小游戏守护战斗模式**：新增 Guardian Battle 模式、战斗输入热点、战斗事件结构化和战斗事件到宠物反应的映射。
+- **面板游戏入口增强**：面板配置加入守护战斗入口，小游戏窗口和手柄输入支持战斗状态下的专用处理。
+- **专注与准备动画帧**：前端新增 `focused` 和 `preparing` 精灵帧，用于专注观察和工具准备状态。
+- **宠物 idle ambient variants**：前端 idle 状态新增耳朵动和左右看的偶发动画，长时间待机不再只循环基础眨眼。
+- **宠物外部资产草案**：新增 spritesheet manifest 设计草案，规划 `manifest.json` + `sprites.png` 的外部宠物资产格式。
 
 ### 修复
 
+- 修复面板 `launch` 入口在 Windows 上无法可靠启动 URL、目录或 shell 关联项的问题，改为走 Windows shell fallback。
+- 修复音乐响应舞动停止与切换时的稳定性问题，避免旧 session 残留继续推送帧。
+- 修复小游戏战斗模式下宠物窗口被错误覆盖或丢失状态的问题。
+- 修复守护战斗输入热点捕获不稳定的问题。
+- 修复战斗事件和宠物反应之间的映射遗漏，使胜负、受击和阶段变化能正确驱动宠物表现。
+- 修复表演自然结束或被宠物硬事件中断后恢复语义状态不够即时的问题，恢复时会立刻重绘当前宠物帧。
+
 ### 变更
+
+- AI 主链路移除旧 `SetState` 视觉事件路径，宠物前端统一消费 tagged 语义事件。
+- 删除 `resolve_agent_response()` 关键词情绪推断和 `should_store()` 关键词记忆规则，相关判断改由结构化 `AgentReaction` 与 `memory_candidates` 驱动。
+- `perform_dance` / `play_dance` 纳入统一 performance session，舞蹈播放期间的状态、停止和诊断更加一致。
+- 设置页重构为更密集的控制台式布局，记忆、用量、资源和音乐诊断信息集中呈现。
+- 气泡、宠物和设置页的工具/表演状态文案收敛为更稳定的生命周期表现。
+- 前端宠物测试入口改用语义事件样例；`pet.js`、`sprite.js` 开始导出模块，`pet.html` / `test.html` 改用 module script。
+- 宠物表演期间的事件优先级明确化：工具阻塞、工具失败、睡眠和退出会中断表演，普通 AI 写作/工具运行/情绪事件作为后台语义状态等待恢复。
 
 ### 性能
 
+- 音乐响应舞动默认只做 canvas 内 sprite 动作，不高频移动真实桌面窗口，降低 WebView、设置页和右键菜单卡顿风险。
+- 宠物事件总线对重复通知和低优先级情绪做去重/节流，减少前端无意义状态刷新。
+- 设置页音乐诊断做低频刷新，避免音频帧高频重绘 DOM。
+
 ### 移除
+
+- 移除旧的裸 `SetState` IPC 主路径和对应快照，保留明确动作类事件。
+- 移除长期记忆关键词式 `should_store` 规则。
+- 移除舞蹈播放中分散的旧动作会话逻辑，改由统一 performance 管线承接。
 
 ### 工具链
 
+- 新增前端性能/舞动相关 Vitest 覆盖，验证 timeline dance、music reactive player 和宠物事件状态机。
+- 前端宠物和精灵测试改为直接导入真实 `pet.js` / `sprite.js` 实现，避免测试复制旧状态机导致失真。
+- 增加 `sysinfo` 等运行诊断依赖，用于设置页资源统计。
+
 ### 文档
+
+- 新增宠物语义事件架构文档，说明 `PetEvent`、`PetEventBus`、`MoodPolicy`、AgentReaction 和前端状态优先级。
+- 新增 Claude Code 桌宠看管计划，规划只读 hook、会话状态和后续权限控制路线。
+- 新增音乐响应舞动调研与实现计划，梳理 WASAPI、fake source、舞感状态机和窗口摆动边界。
+- 新增宠物动画视觉路线图和研究补充。
+- 新增宠物 spritesheet manifest 计划，梳理外部宠物资产布局、schema、loader fallback、校验规则和迁移阶段。
+- 重写 `docs/guide` 用户指南，使入门、配置、AI 对话、手柄、截图、舞蹈/音乐/小游戏和排障与当前代码一致。
+- 梳理 `docs/plan`：新增计划索引，将 token tracking、日志规范、宠物语义事件、结构化输出和 rig capability roadmap 等已完成方案移入 `docs/plan/archive/`。
+- 更新 README、roadmap、AGENTS.md、CLAUDE.md 和记忆取舍文档，补充长期记忆 JSONL、语义事件、音乐舞动和计划归档说明。
 
 ---
 

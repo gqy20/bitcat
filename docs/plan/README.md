@@ -8,6 +8,7 @@
 |------|------|--------|
 | [minigame-system.md](minigame-system.md) | Phase 1 已完成，Phase 2/3 活跃 | 补 Memory/Catch、游戏配置/分数持久化、AI `perform_game` / `play_game` 工具 |
 | [pet-animation-visual-roadmap.md](pet-animation-visual-roadmap.md) | 活跃，承接桌宠动画研究的下一步实现 | 修正前端测试真实化、补 focused/preparing 精灵、定义表演优先级 |
+| [pet-spritesheet-manifest.md](pet-spritesheet-manifest.md) | 草案，外部宠物资产格式设计 | 先导出内置猫 fixture，再做 manifest loader |
 | [music-reactive-dance-research.md](music-reactive-dance-research.md) | 第一版可用，舞感状态机仍活跃 | 扩展音乐状态机、fake source 模式、后端特征字段和调参入口 |
 | [claude-code-agent-watch.md](claude-code-agent-watch.md) | 设计草案，未开始 | 先做只读 Hook MVP，观察 Claude Code 会话状态 |
 | [3d-architecture.md](3d-architecture.md) | 规划中，未开始 | 等 2D 桌宠/游戏主线稳定后再评估 Three.js/voxel 迁移 |
