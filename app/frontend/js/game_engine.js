@@ -410,7 +410,6 @@
       this.lastMetrics = metrics;
       ctx.clearRect(0, 0, metrics.width, metrics.height);
       drawBattleBackdrop(ctx, metrics);
-      drawPetFighter(ctx, metrics, this.pet, this.guardMs);
       drawMonster(ctx, metrics, this.monster);
       drawBattleBars(ctx, metrics, this);
       drawSkillButtons(ctx, metrics, this.skillRects(metrics));
@@ -491,30 +490,6 @@
     ctx.restore();
   }
 
-  function drawPetFighter(ctx, metrics, petState, guardMs) {
-    const x = Math.floor(metrics.width * 0.22);
-    const y = Math.floor(metrics.height * 0.57);
-    const size = clamp(Math.floor(metrics.width * 0.065), 54, 86);
-    ctx.save();
-    if (guardMs > 0) {
-      ctx.strokeStyle = 'rgba(142, 202, 230, 0.78)';
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.arc(x + size / 2, y + size / 2, size * 0.68, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.fillStyle = '#ffd166';
-    ctx.fillRect(x, y, size, size);
-    ctx.fillStyle = '#20242a';
-    ctx.fillRect(x + size * 0.24, y + size * 0.28, size * 0.12, size * 0.12);
-    ctx.fillRect(x + size * 0.64, y + size * 0.28, size * 0.12, size * 0.12);
-    ctx.fillStyle = 'rgba(255,255,255,0.78)';
-    ctx.fillRect(x + size * 0.14, y - 14, size * 0.72, 6);
-    ctx.fillStyle = '#95d5b2';
-    ctx.fillRect(x + size * 0.14, y - 14, size * 0.72 * (petState.hp / petState.maxHp), 6);
-    ctx.restore();
-  }
-
   function drawMonster(ctx, metrics, monster) {
     const r = monsterRect(metrics, monster);
     const shake = monster.hitFlashMs > 0 ? Math.sin(monster.hitFlashMs * 0.6) * 4 : 0;
@@ -545,8 +520,12 @@
     ctx.font = '700 16px "Segoe UI", "Microsoft YaHei", sans-serif';
     ctx.fillText(engine.monster.name, 22, 36);
     ctx.font = '600 13px "Segoe UI", "Microsoft YaHei", sans-serif';
-    ctx.fillText(`Pet ${engine.pet.hp}/${engine.pet.maxHp}`, 22, 58);
+    ctx.fillText(`桌宠 HP ${engine.pet.hp}/${engine.pet.maxHp}`, 22, 58);
     ctx.fillText(`EXP ${engine.score}`, 22, 78);
+    if (engine.guardMs > 0) {
+      ctx.fillStyle = '#8ecae6';
+      ctx.fillText('Guard', 22, 98);
+    }
     ctx.restore();
   }
 

@@ -635,7 +635,12 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
             // Voice 按住检测
             let mut voice_just_released = false;
             let mut voice_just_pressed = false;
-            if let Some(ref config) = action_config {
+            if game_active {
+                if held_voice.is_held() {
+                    held_voice.cancel();
+                    debug!("[voice] 游戏运行中，取消语音按住态");
+                }
+            } else if let Some(ref config) = action_config {
                 let mut voice_bits: u32 = 0;
                 for (name, action_def) in &config.actions {
                     if action_def.action_type == "voice" {
@@ -1306,6 +1311,10 @@ impl HeldCombo {
         }
     }
 
+    pub fn is_held(&self) -> bool {
+        self.held
+    }
+
     pub fn press_keys(&mut self, config: &ai_pad_core::action::ActionConfig) {
         let mut vks = Vec::new();
         for action_def in config.actions.values() {
@@ -1328,6 +1337,12 @@ impl HeldCombo {
             let _ = hotkey::key_up(vk);
         }
         info!("→ 输入法语音热键已松开");
+    }
+
+    pub fn cancel(&mut self) {
+        self.release_keys();
+        self.held = false;
+        self.vks.clear();
     }
 }
 

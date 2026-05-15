@@ -45,6 +45,37 @@ Tauri 窗口属性：
 | 暂停 | P | Start |
 | 退出 | Escape | B |
 
+#### Battle 输入隔离补充（2026-05-15）
+
+`Battle` 属于桌宠旁边的轻量战斗，不应复用普通桌宠按钮语义。进入 `game_active` 后，手柄输入必须先进入 `GameInput`，并且跳过普通宠物动作、`actions.yml` 动作、语音按住态和全局键盘别名。
+
+当前语义映射：
+
+| 操作 | 键盘 | 手柄 | 说明 |
+|------|------|------|------|
+| 普通攻击 | Space / J / 点击怪物 | A | 可打断怪物攻击预警 |
+| 技能 1 | 1 / K | X | 默认重击 |
+| 技能 2 | 2 / L | Y | 默认治疗/道具技能 |
+| 防御 | Shift | L1 | 降低下一次伤害 |
+| 暂停 | P | Start | 游戏内部暂停 |
+| 退出 | Escape | B | 结束/退出游戏 |
+
+注意：`actions.yml` 中 Y 默认是 `voice`，因此仅在“按下瞬间”跳过 ActionBus 不够。`gamepad_loop` 后段的 `voice` 按住检测也必须在 `game_active` 时禁用，否则 Y 会同时触发 Battle 技能和语音输入。
+
+全局键盘快捷键同样需要隔离：`CommandOrControl+Alt+Space` 面板热键和 `actions.yml.keyboard_shortcut` 在 `game_busy` 期间只记录 debug 并跳过分发。
+
+### 1.2.1 游戏窗口模式
+
+Snake 这类专注型小游戏使用 focus mode：隐藏 `pet / pet-mini / pet-snap / bubble / panel / settings`，让游戏独占屏幕交互。
+
+Battle 使用 overlay mode：只隐藏 `bubble / panel / settings`，保留真实桌宠窗口。游戏 canvas 只负责怪物、传送门、血条、技能按钮和伤害数字，不再绘制临时假宠物。桌宠本体通过 `PetEvent::SetMode(GamePlay)`、胜负状态和后续 performance 事件参与战斗表现。
+
+下一步风险需要实际运行验证：
+
+- 全屏透明 game 窗口 `always_on_top` 时，是否会遮挡真实桌宠的点击/拖拽。
+- Battle overlay 下鼠标点击怪物和拖拽桌宠是否会相互抢输入。
+- 退出 Battle 后隐藏/恢复窗口顺序是否稳定。
+
 ### 1.3 架构模式：复用 Dance 系统
 
 舞蹈系统是已验证的生产级模板，游戏系统照搬同一架构：

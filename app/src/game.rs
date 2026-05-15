@@ -91,6 +91,7 @@ pub fn precreate_game_window(app: &AppHandle) -> Result<(), String> {
 /// 启动指定游戏定义。
 pub fn start_game(app: &AppHandle, def: GameDef) -> Result<(), String> {
     validate_game_def(&def)?;
+    let overlay_mode = matches!(def.game_type, MinigameType::Battle);
 
     let state: tauri::State<'_, SharedGame> = app.state();
     let startup_id = state.startup_seq.fetch_add(1, Ordering::SeqCst) + 1;
@@ -143,12 +144,12 @@ pub fn start_game(app: &AppHandle, def: GameDef) -> Result<(), String> {
         info!(startup_id, "[game] position window begin");
         position_fullscreen_on_monitor(app, &window);
         info!(startup_id, "[game] position window done");
-        info!(startup_id, "[game] enter focus mode begin");
-        let hidden_windows = hide_companion_windows(app);
+        info!(startup_id, overlay_mode, "[game] enter window mode begin");
+        let hidden_windows = hide_companion_windows(app, overlay_mode);
         if let Ok(mut stored) = state.hidden_windows.lock() {
             *stored = hidden_windows;
         }
-        info!(startup_id, "[game] enter focus mode done");
+        info!(startup_id, overlay_mode, "[game] enter window mode done");
         info!(startup_id, "[game] reload window begin");
         window
             .eval("window.location.reload()")
@@ -219,9 +220,14 @@ fn position_fullscreen_on_monitor(app: &AppHandle, window: &tauri::WebviewWindow
     let _ = window.set_size(PhysicalSize::new(size.width, size.height));
 }
 
-fn hide_companion_windows(app: &AppHandle) -> Vec<String> {
+fn hide_companion_windows(app: &AppHandle, overlay_mode: bool) -> Vec<String> {
     let mut hidden = Vec::new();
-    for label in ["pet", "pet-mini", "pet-snap", "bubble", "panel", "settings"] {
+    let labels: &[&str] = if overlay_mode {
+        &["bubble", "panel", "settings"]
+    } else {
+        &["pet", "pet-mini", "pet-snap", "bubble", "panel", "settings"]
+    };
+    for label in labels {
         let Some(window) = app.get_webview_window(label) else {
             continue;
         };
@@ -234,7 +240,7 @@ fn hide_companion_windows(app: &AppHandle) -> Vec<String> {
         }
         hidden.push(label.to_string());
     }
-    info!(hidden = ?hidden, "[game] focus mode hidden windows");
+    info!(hidden = ?hidden, overlay_mode, "[game] hidden companion windows");
     hidden
 }
 

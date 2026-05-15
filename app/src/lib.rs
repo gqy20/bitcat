@@ -307,6 +307,13 @@ pub fn run() {
                                 if sc == &shortcut_for_handler
                                     && evt.state() == ShortcutState::Pressed
                                 {
+                                    if crate::game::is_game_busy(&handler_app) {
+                                        debug!(
+                                            shortcut = "CommandOrControl+Alt+Space",
+                                            "游戏运行中，跳过全局热键"
+                                        );
+                                        return;
+                                    }
                                     action_bus::ActionBus::dispatch(
                                         &handler_app,
                                         action_bus::Action::TogglePanel,
@@ -357,6 +364,14 @@ pub fn run() {
                                 if matched == &sc_expected
                                     && evt.state() == ShortcutState::Pressed
                                 {
+                                    if crate::game::is_game_busy(&handler_app) {
+                                        debug!(
+                                            button = %btn,
+                                            shortcut = %lbl,
+                                            "游戏运行中，跳过键盘别名"
+                                        );
+                                        return;
+                                    }
                                     debug!(button = %btn, shortcut = %lbl, "键盘别名触发");
                                     action_bus::ActionBus::dispatch(
                                         &handler_app,
