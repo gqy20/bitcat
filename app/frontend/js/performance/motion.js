@@ -55,16 +55,16 @@ export function computeMusicDanceOffset(action, progress, time, metrics, intensi
 
   switch (action) {
     case 'jump':
-      y = -Math.sin(Math.min(progress, 1) * Math.PI) * (metrics.screenH * 0.025 + power * metrics.screenH * 0.045);
-      x = Math.sin(time * 0.01) * (metrics.screenW * 0.01 + power * metrics.screenW * 0.018);
+      y = -Math.sin(Math.min(progress, 1) * Math.PI) * (metrics.screenH * 0.012 + power * metrics.screenH * 0.025);
+      x = Math.sin(time * 0.01) * (metrics.screenW * 0.006 + power * metrics.screenW * 0.012);
       break;
     case 'shake':
-      x = Math.sin(time * 0.08) * (metrics.screenW * 0.012 + power * metrics.screenW * 0.035);
-      y = Math.sin(time * 0.045) * (metrics.screenH * 0.006 + power * metrics.screenH * 0.012);
+      x = Math.sin(time * 0.08) * (metrics.screenW * 0.006 + power * metrics.screenW * 0.018);
+      y = Math.sin(time * 0.045) * (metrics.screenH * 0.004 + power * metrics.screenH * 0.008);
       break;
     case 'wave':
-      y = -Math.abs(Math.sin(time * 0.012)) * (metrics.screenH * 0.014 + power * metrics.screenH * 0.026);
-      x = Math.sin(time * 0.006) * metrics.screenW * 0.01;
+      y = -Math.abs(Math.sin(time * 0.012)) * (metrics.screenH * 0.008 + power * metrics.screenH * 0.014);
+      x = Math.sin(time * 0.006) * metrics.screenW * 0.005;
       break;
   }
 

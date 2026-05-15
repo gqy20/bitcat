@@ -42,7 +42,7 @@ export class MusicReactivePlayer {
       this.targetEnergy = 0;
     }
 
-    this.energy += (this.targetEnergy - this.energy) * 0.18;
+    this.energy += (this.targetEnergy - this.energy) * 0.12;
 
     if (this.onsetMs > 360) {
       this.action = this.energy > 0.28 ? 'wave' : 'idle';

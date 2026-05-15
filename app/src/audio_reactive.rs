@@ -32,6 +32,9 @@ pub struct MusicDanceFrame {
     pub silence: bool,
 }
 
+const FAKE_FRAME_MS: u64 = 100;
+const WASAPI_POLL_MS: u64 = 80;
+
 #[tauri::command]
 pub fn cmd_start_fake_music_dance(
     app: AppHandle,
@@ -49,9 +52,17 @@ pub fn cmd_start_wasapi_music_dance(
 }
 
 #[tauri::command]
-pub fn cmd_stop_music_dance(shared: tauri::State<'_, SharedAudioReactive>) -> Result<(), String> {
-    stop_current(&shared, "user_stop");
+pub fn cmd_stop_music_dance(
+    app: AppHandle,
+    shared: tauri::State<'_, SharedAudioReactive>,
+) -> Result<(), String> {
+    stop_music_dance(&app, &shared, "user_stop");
     Ok(())
+}
+
+/// 停止当前音乐响应数据源，并通知前端结束对应表演。
+pub fn stop_music_dance(app: &AppHandle, shared: &SharedAudioReactive, reason: &'static str) {
+    stop_current(shared, Some(app), reason);
 }
 
 fn start_music_source(
@@ -59,7 +70,7 @@ fn start_music_source(
     shared: &tauri::State<'_, SharedAudioReactive>,
     source: &'static str,
 ) -> Result<u64, String> {
-    stop_current(shared, "replaced");
+    stop_current(shared.inner(), Some(&app), "replaced");
 
     let session = ai_pad_core::performance::start_performance(
         ai_pad_core::performance::PerformanceKind::MusicReactiveDance,
@@ -92,17 +103,25 @@ fn start_music_source(
     Ok(session.id)
 }
 
-fn stop_current(shared: &tauri::State<'_, SharedAudioReactive>, reason: &'static str) {
+fn stop_current(shared: &SharedAudioReactive, app: Option<&AppHandle>, reason: &'static str) {
     let Ok(mut guard) = shared.current.lock() else {
         return;
     };
     if let Some(run) = guard.take() {
         run.stop.store(true, Ordering::Relaxed);
         ai_pad_core::performance::stop_performance(run.session_id, reason);
+        if let Some(app) = app {
+            emit_stop(app, run.session_id, reason);
+        }
     }
 }
 
 fn finish_source(app: &AppHandle, session_id: u64, reason: &str) {
+    emit_stop(app, session_id, reason);
+    ai_pad_core::performance::stop_performance(session_id, reason);
+}
+
+fn emit_stop(app: &AppHandle, session_id: u64, reason: &str) {
     let _ = app.emit(
         "performance-stop",
         serde_json::json!({
@@ -110,7 +129,6 @@ fn finish_source(app: &AppHandle, session_id: u64, reason: &str) {
             "reason": reason,
         }),
     );
-    ai_pad_core::performance::stop_performance(session_id, reason);
 }
 
 fn emit_frame(app: &AppHandle, frame: MusicDanceFrame) {
@@ -122,14 +140,18 @@ fn emit_frame(app: &AppHandle, frame: MusicDanceFrame) {
 fn spawn_fake_music_loop(app: AppHandle, session_id: u64, stop: Arc<AtomicBool>) {
     tauri::async_runtime::spawn(async move {
         let start = Instant::now();
-        let mut tick = tokio::time::interval(Duration::from_millis(50));
+        let mut tick = tokio::time::interval(Duration::from_millis(FAKE_FRAME_MS));
         let mut beat = 0u64;
-
         loop {
             tick.tick().await;
             if stop.load(Ordering::Relaxed) {
-                finish_source(&app, session_id, "stopped");
-                return;
+                break;
+            }
+            if !ai_pad_core::performance::is_performing() {
+                break;
+            }
+            if crate::shutdown::is_requested() {
+                break;
             }
 
             beat += 1;
@@ -299,8 +321,18 @@ fn wasapi_loopback(
     unsafe { audio_client.Start() }.map_err(|e| format!("IAudioClient Start failed: {e}"))?;
 
     let mut previous_energy = 0.0f32;
+    let mut frame_bucket = EnergyStats {
+        energy: 0.0,
+        bass: 0.0,
+        silence: true,
+    };
+    let mut has_bucket = false;
+    let mut bucket_onset = false;
     while !stop.load(Ordering::Relaxed) {
-        std::thread::sleep(Duration::from_millis(45));
+        if !ai_pad_core::performance::is_performing() || crate::shutdown::is_requested() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(WASAPI_POLL_MS));
         let mut packet = unsafe { capture.GetNextPacketSize() }
             .map_err(|e| format!("GetNextPacketSize failed: {e}"))?;
 
@@ -327,16 +359,31 @@ fn wasapi_loopback(
             let onset = !stats.silence && stats.energy > previous_energy + 0.16;
             previous_energy = previous_energy * 0.82 + stats.energy * 0.18;
 
-            on_frame(MusicDanceFrame {
-                session_id,
-                energy: stats.energy,
-                bass: stats.bass,
-                onset,
-                silence: silent || stats.silence,
-            });
+            frame_bucket.energy = frame_bucket.energy.max(stats.energy);
+            frame_bucket.bass = frame_bucket.bass.max(stats.bass);
+            frame_bucket.silence = frame_bucket.silence && (silent || stats.silence);
+            has_bucket = true;
+            bucket_onset = bucket_onset || onset;
 
             packet = unsafe { capture.GetNextPacketSize() }
                 .map_err(|e| format!("GetNextPacketSize failed: {e}"))?;
+        }
+
+        if has_bucket {
+            on_frame(MusicDanceFrame {
+                session_id,
+                energy: frame_bucket.energy,
+                bass: frame_bucket.bass,
+                onset: bucket_onset,
+                silence: frame_bucket.silence,
+            });
+            frame_bucket = EnergyStats {
+                energy: 0.0,
+                bass: 0.0,
+                silence: true,
+            };
+            has_bucket = false;
+            bucket_onset = false;
         }
     }
 

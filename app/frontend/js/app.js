@@ -44,6 +44,7 @@ import { PerformerHost } from './performance/performer-host.js';
 
   // 表现播放器：统一接管固定舞蹈、音乐响应舞动和后续 AI 即兴表演。
   let performerHost = null;
+  let performerMoveState = { at: 0, x: null, y: null };
   let screenshotFeedbackTimer = null;
 
   // Tauri 2 正确的 API 路径：getCurrentWindow() 不是 getCurrent()
@@ -553,11 +554,21 @@ import { PerformerHost } from './performance/performer-host.js';
     var Pos = window.__TAURI__.window.PhysicalPosition;
     var ox = offset && Number.isFinite(offset.x) ? offset.x : 0;
     var oy = offset && Number.isFinite(offset.y) ? offset.y : 0;
+    var nextX = Math.round(m.baseX + ox);
+    var nextY = Math.round(m.baseY + oy);
+    var now = performance.now();
+    var minInterval = player && player.kind === 'music-reactive' ? 66 : 33;
+    if (
+      performerMoveState.x != null &&
+      now - performerMoveState.at < minInterval &&
+      Math.abs(nextX - performerMoveState.x) < 4 &&
+      Math.abs(nextY - performerMoveState.y) < 4
+    ) {
+      return;
+    }
+    performerMoveState = { at: now, x: nextX, y: nextY };
     try {
-      win.setPosition(new Pos(
-        Math.round(m.baseX + ox),
-        Math.round(m.baseY + oy)
-      ));
+      win.setPosition(new Pos(nextX, nextY));
     } catch (_) {}
   }
 
@@ -594,6 +605,7 @@ import { PerformerHost } from './performance/performer-host.js';
       notifyPerformanceFinished(sessionId, reason);
       return;
     }
+    performerMoveState = { at: 0, x: null, y: null };
 
     var Pos = window.__TAURI__.window.PhysicalPosition;
     var duration = 250;

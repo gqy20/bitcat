@@ -22,6 +22,18 @@ let SNAPSHOT = null;
 const dirty = { ai: false, actions: false, prompts: false, appearance: false };
 // 当前激活 tab
 let currentTab = "ai";
+let musicDiagnosticsBound = false;
+const MUSIC_STATE = {
+  status: "idle",
+  source: "-",
+  sessionId: null,
+  energy: 0,
+  bass: 0,
+  onset: false,
+  silence: true,
+  updatedAt: null,
+  error: null,
+};
 
 // ---- 工具 ----
 
@@ -344,6 +356,7 @@ function renderAbout(a) {
 
 async function loadUsageDiagnostics() {
   await Promise.all([loadTokenStats(), loadPetEventLog(), loadMemoryReview()]);
+  renderMusicDiagnostics();
 }
 
 async function loadTokenStats() {
@@ -500,6 +513,145 @@ function renderPetEventLog(logView) {
   }).join("");
 }
 
+function bindMusicDiagnostics() {
+  if (musicDiagnosticsBound) return;
+  musicDiagnosticsBound = true;
+  const eventApi = window.__TAURI__?.event;
+  if (!eventApi?.listen) return;
+
+  eventApi.listen("performance-start", (event) => {
+    const payload = event.payload || {};
+    if (payload.kind !== "music-reactive") return;
+    Object.assign(MUSIC_STATE, {
+      status: "active",
+      source: payload.source || MUSIC_STATE.source || "-",
+      sessionId: payload.session_id || null,
+      energy: 0,
+      bass: 0,
+      onset: false,
+      silence: false,
+      updatedAt: new Date(),
+      error: null,
+    });
+    renderMusicDiagnostics();
+  });
+
+  eventApi.listen("performance-frame", (event) => {
+    const payload = event.payload || {};
+    if (typeof payload.energy !== "number" && typeof payload.bass !== "number") return;
+    Object.assign(MUSIC_STATE, {
+      status: "active",
+      sessionId: payload.session_id || MUSIC_STATE.sessionId,
+      energy: clamp01(payload.energy),
+      bass: clamp01(payload.bass),
+      onset: Boolean(payload.onset),
+      silence: Boolean(payload.silence),
+      updatedAt: new Date(),
+      error: null,
+    });
+    renderMusicDiagnostics();
+  });
+
+  eventApi.listen("performance-stop", (event) => {
+    const payload = event.payload || {};
+    if (payload.session_id && MUSIC_STATE.sessionId && payload.session_id !== MUSIC_STATE.sessionId) return;
+    MUSIC_STATE.status = "stopped";
+    MUSIC_STATE.updatedAt = new Date();
+    renderMusicDiagnostics();
+  });
+
+  eventApi.listen("performance-error", (event) => {
+    const payload = event.payload || {};
+    Object.assign(MUSIC_STATE, {
+      status: "error",
+      sessionId: payload.session_id || MUSIC_STATE.sessionId,
+      error: payload.message || String(payload.error || "unknown error"),
+      updatedAt: new Date(),
+    });
+    renderMusicDiagnostics();
+  });
+}
+
+async function startMusicDance(source) {
+  const command = source === "wasapi" ? "cmd_start_wasapi_music_dance" : "cmd_start_fake_music_dance";
+  Object.assign(MUSIC_STATE, {
+    status: "starting",
+    source,
+    error: null,
+    updatedAt: new Date(),
+  });
+  renderMusicDiagnostics();
+  try {
+    const sessionId = await invoke(command);
+    Object.assign(MUSIC_STATE, {
+      status: "active",
+      source,
+      sessionId,
+      updatedAt: new Date(),
+      error: null,
+    });
+    renderMusicDiagnostics();
+    toast(source === "wasapi" ? "WASAPI started" : "Fake music started", "ok");
+  } catch (e) {
+    Object.assign(MUSIC_STATE, {
+      status: "error",
+      error: String(e),
+      updatedAt: new Date(),
+    });
+    renderMusicDiagnostics();
+    toast("Music start failed: " + String(e), "err");
+  }
+}
+
+async function stopMusicDance() {
+  try {
+    await invoke("cmd_stop_music_dance");
+    Object.assign(MUSIC_STATE, {
+      status: "stopped",
+      updatedAt: new Date(),
+    });
+    renderMusicDiagnostics();
+    toast("Music stopped", "ok");
+  } catch (e) {
+    MUSIC_STATE.error = String(e);
+    MUSIC_STATE.status = "error";
+    MUSIC_STATE.updatedAt = new Date();
+    renderMusicDiagnostics();
+    toast("Music stop failed: " + String(e), "err");
+  }
+}
+
+function renderMusicDiagnostics() {
+  const box = $("music-diagnostics");
+  if (!box) return;
+  const energyPct = Math.round(clamp01(MUSIC_STATE.energy) * 100);
+  const bassPct = Math.round(clamp01(MUSIC_STATE.bass) * 100);
+  const session = MUSIC_STATE.sessionId || "-";
+  const updated = MUSIC_STATE.updatedAt ? MUSIC_STATE.updatedAt.toLocaleTimeString("zh-CN") : "-";
+  const error = MUSIC_STATE.error ? `<div class="music-error">${escapeHtml(MUSIC_STATE.error)}</div>` : "";
+  box.innerHTML = `
+    <div class="music-status-grid">
+      <div class="music-kv"><span>Status</span><strong>${escapeHtml(MUSIC_STATE.status)}</strong></div>
+      <div class="music-kv"><span>Source</span><strong>${escapeHtml(MUSIC_STATE.source)}</strong></div>
+      <div class="music-kv"><span>Session</span><strong>${escapeHtml(session)}</strong></div>
+      <div class="music-kv"><span>Updated</span><strong>${escapeHtml(updated)}</strong></div>
+    </div>
+    <div class="music-meter-row">
+      <div class="music-meter-label"><span>Energy</span><strong>${energyPct}%</strong></div>
+      <div class="music-meter"><span style="width:${energyPct}%"></span></div>
+    </div>
+    <div class="music-meter-row">
+      <div class="music-meter-label"><span>Bass</span><strong>${bassPct}%</strong></div>
+      <div class="music-meter bass"><span style="width:${bassPct}%"></span></div>
+    </div>
+    <div class="music-flags">
+      <span class="${MUSIC_STATE.onset ? "on" : ""}">onset</span>
+      <span class="${MUSIC_STATE.silence ? "on" : ""}">silence</span>
+    </div>
+    ${error}
+  `;
+}
+
 function renderMemoryReview(review) {
   const box = $("memory-review");
   if (!box) return;
@@ -649,6 +801,13 @@ function bindGlobal() {
   $("usage-refresh").addEventListener("click", loadUsageDiagnostics);
   const memoryRefresh = $("memory-refresh");
   if (memoryRefresh) memoryRefresh.addEventListener("click", loadMemoryReview);
+  const musicFake = $("music-fake");
+  if (musicFake) musicFake.addEventListener("click", () => startMusicDance("fake"));
+  const musicWasapi = $("music-wasapi");
+  if (musicWasapi) musicWasapi.addEventListener("click", () => startMusicDance("wasapi"));
+  const musicStop = $("music-stop");
+  if (musicStop) musicStop.addEventListener("click", stopMusicDance);
+  bindMusicDiagnostics();
   $("ai-key-toggle").addEventListener("click", () => {
     const el = $("ai-key");
     el.type = el.type === "password" ? "text" : "password";
@@ -679,6 +838,10 @@ function formatDuration(ms) {
   if (value < 1000) return `${value}ms`;
   if (value < 60_000) return `${(value / 1000).toFixed(1)}s`;
   return `${Math.round(value / 60_000)}m`;
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
 }
 
 function formatDateTime(value) {

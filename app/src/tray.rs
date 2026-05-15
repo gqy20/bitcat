@@ -17,6 +17,7 @@ const MENU_EXIT: &str = "exit";
 const PET_MENU_CHAT: &str = "pet-context-chat";
 const PET_MENU_SCREENSHOT: &str = "pet-context-screenshot";
 const PET_MENU_PANEL: &str = "pet-context-panel";
+const PET_MENU_STOP_DANCE: &str = "pet-context-stop-dance";
 const PET_MENU_COLLAPSE: &str = "pet-context-collapse";
 const PET_MENU_TOP: &str = "pet-context-top";
 const PET_MENU_MORE: &str = "pet-context-more";
@@ -92,6 +93,7 @@ pub fn handle_pet_context_menu_event(app: &AppHandle, event: MenuEvent) {
                 tracing::warn!(error = %e, "打开快捷面板失败");
             }
         }
+        PET_MENU_STOP_DANCE => stop_dance(app),
         PET_MENU_COLLAPSE => {
             let _ = toggle_pet_collapse(app);
         }
@@ -129,6 +131,16 @@ pub async fn cmd_show_pet_context_menu(
     let panel_item = MenuItem::with_id(&app, PET_MENU_PANEL, "打开快捷面板", true, None::<&str>)
         .map_err(|e| e.to_string())?;
     let separator_primary = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
+    let is_performing = ai_pad_core::performance::is_performing();
+    let stop_dance_item = MenuItem::with_id(
+        &app,
+        PET_MENU_STOP_DANCE,
+        "停止舞动",
+        is_performing,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
+    let separator_performance = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
     let collapse_item = CheckMenuItem::with_id(
         &app,
         PET_MENU_COLLAPSE,
@@ -164,6 +176,8 @@ pub async fn cmd_show_pet_context_menu(
             &screenshot_item,
             &panel_item,
             &separator_primary,
+            &stop_dance_item,
+            &separator_performance,
             &collapse_item,
             &top_item,
             &separator_state,
@@ -196,6 +210,21 @@ fn analyze_current_screen(app: &AppHandle) {
             tracing::warn!(error = %e, "截图失败");
         }
     });
+}
+
+fn stop_dance(app: &AppHandle) {
+    let shared = app.state::<crate::audio_reactive::SharedAudioReactive>();
+    crate::audio_reactive::stop_music_dance(app, shared.inner(), "menu_stop");
+    if let Some(session) = ai_pad_core::performance::current_performance() {
+        let _ = app.emit(
+            "performance-stop",
+            serde_json::json!({
+                "session_id": session.id,
+                "reason": "menu_stop",
+            }),
+        );
+        ai_pad_core::performance::stop_performance(session.id, "menu_stop");
+    }
 }
 
 fn toggle_pet_collapse(app: &AppHandle) -> bool {

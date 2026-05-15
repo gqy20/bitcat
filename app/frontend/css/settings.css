@@ -730,6 +730,128 @@ input[type="checkbox"]:checked::after {
   gap: 8px;
 }
 
+.music-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.music-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.music-diagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(24, 29, 39, 0.58);
+}
+
+.music-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.music-kv {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.music-kv span,
+.music-meter-label span {
+  display: block;
+  color: #8d98a9;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.music-kv strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 4px;
+  color: #edf3ff;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.music-meter-row {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.music-meter-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.music-meter-label strong {
+  color: #dce4ef;
+  font-size: 12px;
+}
+
+.music-meter {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.music-meter span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #48c6ef, #6f86d6);
+  transition: width 80ms linear;
+}
+
+.music-meter.bass span {
+  background: linear-gradient(90deg, #f6d365, #fda085);
+}
+
+.music-flags {
+  display: flex;
+  gap: 8px;
+}
+
+.music-flags span {
+  padding: 5px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  color: #7d8797;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.music-flags span.on {
+  border-color: rgba(72, 198, 239, 0.35);
+  color: #e9f7ff;
+  background: rgba(72, 198, 239, 0.16);
+}
+
+.music-error {
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 91, 91, 0.32);
+  border-radius: 8px;
+  color: #ffd9d9;
+  font-size: 12px;
+  background: rgba(255, 91, 91, 0.1);
+}
+
 .pet-event {
   display: grid;
   grid-template-columns: 145px 118px minmax(0, 1fr);
@@ -1193,6 +1315,10 @@ input[type="checkbox"]:checked::after {
   .usage-session,
   .pet-event {
     grid-template-columns: 1fr;
+  }
+
+  .music-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .memory-body {
