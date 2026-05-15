@@ -735,11 +735,18 @@
     }, 1400);
   }
 
-  // ========== 右键菜单已统一到系统托盘 ==========
+  // ========== 右键菜单 ==========
 
   function setupContextMenu() {
     bodyEl.addEventListener('contextmenu', (e) => {
       e.preventDefault();
+      if (!window.__TAURI__ || !window.__TAURI__.core) return;
+      window.__TAURI__.core.invoke('cmd_show_pet_context_menu', {
+        x: e.clientX,
+        y: e.clientY
+      }).catch(function(err) {
+        console.warn('[pet] 打开右键菜单失败:', err);
+      });
     });
   }
 

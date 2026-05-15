@@ -55,6 +55,7 @@ pub fn run() {
         .manage(SharedPendingChat::new())
         .manage(SharedChatCore::new())
         .manage(SharedAgent::new())
+        .on_menu_event(tray::handle_pet_context_menu_event)
         // ── IPC 命令注册 ──
         .invoke_handler(tauri::generate_handler![
             commands::cmd_set_state,
@@ -86,6 +87,7 @@ pub fn run() {
             snap::cmd_snap_transform,
             snap::cmd_unsnap_transform,
             snap::cmd_get_snap_preview,
+            tray::cmd_show_pet_context_menu,
             screenshot::cmd_screenshot_now,
             gamepad::cmd_submit_chat,
             gamepad::cmd_open_chat,

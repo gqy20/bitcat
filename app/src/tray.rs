@@ -1,9 +1,9 @@
 use crate::commands::SharedWindowState;
 use std::sync::atomic::Ordering;
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem},
+    menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Emitter, Manager,
+    AppHandle, Emitter, LogicalPosition, Manager, WebviewWindow,
 };
 use tracing::info;
 
@@ -13,6 +13,13 @@ const MENU_TOP: &str = "top";
 const MENU_RELOAD: &str = "reload";
 const MENU_SETTINGS: &str = "settings";
 const MENU_EXIT: &str = "exit";
+
+const PET_MENU_SCREENSHOT: &str = "pet-context-screenshot";
+const PET_MENU_COLLAPSE: &str = "pet-context-collapse";
+const PET_MENU_TOP: &str = "pet-context-top";
+const PET_MENU_RELOAD: &str = "pet-context-reload";
+const PET_MENU_SETTINGS: &str = "pet-context-settings";
+const PET_MENU_EXIT: &str = "pet-context-exit";
 
 pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let settings_item = MenuItem::with_id(app, MENU_SETTINGS, "设置…", true, None::<&str>)?;
@@ -45,45 +52,17 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| match event.id.as_ref() {
             MENU_SCREENSHOT => {
-                let app_clone = app.clone();
-                std::thread::spawn(move || {
-                    if let Err(e) = crate::screenshot::do_screenshot_now(&app_clone) {
-                        tracing::warn!(error = %e, "托盘截图失败");
-                    }
-                });
+                analyze_current_screen(app);
             }
             MENU_COLLAPSE => {
-                let ws: tauri::State<'_, SharedWindowState> = app.state();
-                let now_collapsed = !ws.collapsed.load(Ordering::SeqCst);
-                ws.collapsed.store(now_collapsed, Ordering::SeqCst);
-
-                // 折叠前保存当前窗口位置，展开时用此坐标重建
-                if now_collapsed {
-                    if let Some(win) = app.get_webview_window("pet") {
-                        if let Ok(pos) = win.outer_position() {
-                            crate::snap::remember_pet_position(&ws, pos.x, pos.y);
-                            info!(x = pos.x, y = pos.y, "保存折叠前位置");
-                        }
-                    }
-                }
-
+                let now_collapsed = toggle_pet_collapse(app);
                 let label = if now_collapsed { "展开" } else { "折叠" };
-                info!(collapsed = now_collapsed, "托盘: {}", label);
                 let _ = collapse_item.set_text(label);
-                let _ = app.emit("pet-toggle-collapse", now_collapsed);
             }
             MENU_TOP => {
-                let ws: tauri::State<'_, SharedWindowState> = app.state();
-                let now_top = !ws.always_on_top.load(Ordering::SeqCst);
-                ws.always_on_top.store(now_top, Ordering::SeqCst);
-
+                let now_top = toggle_pet_always_on_top(app);
                 let label = if now_top { "取消置顶" } else { "置顶" };
-                info!(always_on_top = now_top, "托盘: {}", label);
                 let _ = top_item.set_text(label);
-
-                if let Some(win) = app.get_webview_window("pet") {
-                    let _ = win.set_always_on_top(now_top);
-                }
             }
             MENU_RELOAD => {
                 ws_reload_config(app);
@@ -99,6 +78,140 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .build(app)?;
 
     Ok(())
+}
+
+pub fn handle_pet_context_menu_event(app: &AppHandle, event: MenuEvent) {
+    match event.id.as_ref() {
+        PET_MENU_SCREENSHOT => analyze_current_screen(app),
+        PET_MENU_COLLAPSE => {
+            let _ = toggle_pet_collapse(app);
+        }
+        PET_MENU_TOP => {
+            let _ = toggle_pet_always_on_top(app);
+        }
+        PET_MENU_RELOAD => ws_reload_config(app),
+        PET_MENU_SETTINGS => crate::settings::toggle_settings(app),
+        PET_MENU_EXIT => crate::shutdown::request_exit(app, "pet-context-exit"),
+        _ => {}
+    }
+}
+
+#[tauri::command]
+pub async fn cmd_show_pet_context_menu(
+    window: WebviewWindow,
+    app: AppHandle,
+    x: f64,
+    y: f64,
+) -> Result<(), String> {
+    let ws: tauri::State<'_, SharedWindowState> = app.state();
+    let collapsed = ws.collapsed.load(Ordering::SeqCst);
+    let always_on_top = ws.always_on_top.load(Ordering::SeqCst);
+
+    let settings_item = MenuItem::with_id(&app, PET_MENU_SETTINGS, "设置…", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let screenshot_item = MenuItem::with_id(
+        &app,
+        PET_MENU_SCREENSHOT,
+        "分析当前屏幕",
+        true,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
+    let separator_primary = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
+    let collapse_label = if collapsed { "展开" } else { "折叠" };
+    let collapse_item =
+        MenuItem::with_id(&app, PET_MENU_COLLAPSE, collapse_label, true, None::<&str>)
+            .map_err(|e| e.to_string())?;
+    let top_label = if always_on_top {
+        "取消置顶"
+    } else {
+        "置顶"
+    };
+    let top_item = MenuItem::with_id(&app, PET_MENU_TOP, top_label, true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let separator_state = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
+    let reload_item = MenuItem::with_id(&app, PET_MENU_RELOAD, "重新载入配置", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let exit_item = MenuItem::with_id(&app, PET_MENU_EXIT, "退出 8Bit Cat", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+
+    let menu = Menu::with_items(
+        &app,
+        &[
+            &settings_item,
+            &screenshot_item,
+            &separator_primary,
+            &collapse_item,
+            &top_item,
+            &separator_state,
+            &reload_item,
+            &exit_item,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    window
+        .popup_menu_at(&menu, LogicalPosition::new(x, y))
+        .map_err(|e| e.to_string())
+}
+
+fn analyze_current_screen(app: &AppHandle) {
+    let app_clone = app.clone();
+    std::thread::spawn(move || {
+        if let Err(e) = crate::screenshot::do_screenshot_now(&app_clone) {
+            tracing::warn!(error = %e, "截图失败");
+        }
+    });
+}
+
+fn toggle_pet_collapse(app: &AppHandle) -> bool {
+    let ws: tauri::State<'_, SharedWindowState> = app.state();
+    let now_collapsed = !ws.collapsed.load(Ordering::SeqCst);
+    ws.collapsed.store(now_collapsed, Ordering::SeqCst);
+
+    // 折叠前保存当前窗口位置，展开时用此坐标重建。
+    if now_collapsed {
+        if let Some(win) = visible_pet_window(app) {
+            if let Ok(pos) = win.outer_position() {
+                crate::snap::remember_pet_position(&ws, pos.x, pos.y);
+                info!(x = pos.x, y = pos.y, "保存折叠前位置");
+            }
+        }
+    }
+
+    let label = if now_collapsed { "展开" } else { "折叠" };
+    info!(collapsed = now_collapsed, "宠物菜单: {}", label);
+    let _ = app.emit("pet-toggle-collapse", now_collapsed);
+    now_collapsed
+}
+
+fn toggle_pet_always_on_top(app: &AppHandle) -> bool {
+    let ws: tauri::State<'_, SharedWindowState> = app.state();
+    let now_top = !ws.always_on_top.load(Ordering::SeqCst);
+    ws.always_on_top.store(now_top, Ordering::SeqCst);
+
+    let label = if now_top { "取消置顶" } else { "置顶" };
+    info!(always_on_top = now_top, "宠物菜单: {}", label);
+    for label in ["pet", "pet-mini", "pet-snap"] {
+        if let Some(win) = app.get_webview_window(label) {
+            let _ = win.set_always_on_top(now_top);
+        }
+    }
+    let _ = app.emit("pet-toggle-top", now_top);
+    now_top
+}
+
+fn visible_pet_window(app: &AppHandle) -> Option<WebviewWindow> {
+    app.get_webview_window("pet")
+        .filter(|w| w.is_visible().unwrap_or(false))
+        .or_else(|| {
+            app.get_webview_window("pet-mini")
+                .filter(|w| w.is_visible().unwrap_or(false))
+        })
+        .or_else(|| {
+            app.get_webview_window("pet-snap")
+                .filter(|w| w.is_visible().unwrap_or(false))
+        })
 }
 
 /// 重载 config/actions.yml / config/panel_action.yml / config/prompts.yml，通知 gamepad_loop 刷新。
@@ -138,6 +251,12 @@ mod tests {
             MENU_RELOAD,
             MENU_SETTINGS,
             MENU_EXIT,
+            PET_MENU_SCREENSHOT,
+            PET_MENU_COLLAPSE,
+            PET_MENU_TOP,
+            PET_MENU_RELOAD,
+            PET_MENU_SETTINGS,
+            PET_MENU_EXIT,
         ];
         let mut sorted = ids;
         sorted.sort();
