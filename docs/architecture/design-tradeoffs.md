@@ -42,7 +42,7 @@
 
 长期记忆应优先演进为“可 grep 的文本记忆系统”：
 
-- append-only JSONL / Markdown 片段，字段稳定；
+- 一行一条的 JSONL record / Markdown 片段，字段稳定；
 - 每条记录保留时间、来源、标签、摘要、原始短文本；
 - 需要召回时先用关键词、时间范围、最近活动、文件名等可解释条件筛出候选；
 - 把候选片段交给大模型做最终判断和压缩；
@@ -65,7 +65,7 @@
 ```text
 ~/.ai-pad/memory/
 ├── chat_summary.json          # 当前滚动摘要，继续保留
-├── memory_entries.jsonl       # append-only，可 grep
+├── long_term.jsonl            # 当前有效长期记忆 record，可 grep，deleted 软删除
 ├── daily/2026-05-13.md        # 可选：按天沉淀的人类可读摘要
 └── index/
     └── tags.json              # 可选：轻量标签索引，不是向量索引

@@ -381,9 +381,9 @@ async function loadMemoryReview() {
   }
 }
 
-async function deleteMemoryEntry(index) {
+async function deleteMemoryEntry(id) {
   try {
-    const review = await invoke("cmd_delete_memory_entry", { index, limit: 20 });
+    const review = await invoke("cmd_delete_memory_entry", { id, limit: 20 });
     renderMemoryReview(review);
     toast("Memory deleted", "ok");
   } catch (e) {
@@ -522,10 +522,10 @@ function renderMemoryReview(review) {
         <div class="memory-entry">
           <div class="memory-entry-head">
             <strong>${escapeHtml(entry.title)}</strong>
-            <button class="btn small danger memory-delete" type="button" data-index="${escapeAttr(entry.index)}">Delete</button>
+            <button class="btn small danger memory-delete" type="button" data-id="${escapeAttr(entry.id)}">Delete</button>
           </div>
           <div class="memory-entry-meta">
-            <span>#${formatNumber(entry.index + 1)}</span>
+            <span>${escapeHtml(entry.id)}</span>
             <span>${escapeHtml(entry.timestamp)}</span>
             <span>${escapeHtml(source)}</span>
             <span>importance ${escapeHtml(importance)}</span>
@@ -543,9 +543,9 @@ function renderMemoryReview(review) {
 
   box.querySelectorAll(".memory-delete").forEach(btn => {
     btn.addEventListener("click", () => {
-      const index = Number(btn.dataset.index);
-      if (Number.isInteger(index) && confirm("Delete this memory entry?")) {
-        deleteMemoryEntry(index);
+      const id = btn.dataset.id;
+      if (id && confirm("Delete this memory entry?")) {
+        deleteMemoryEntry(id);
       }
     });
   });

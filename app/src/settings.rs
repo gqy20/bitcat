@@ -368,15 +368,15 @@ pub async fn cmd_get_memory_review(limit: Option<usize>) -> Result<MemoryReviewV
     ))
 }
 
-/// Delete one long-term memory entry by the stable index shown in the review view.
+/// Delete one long-term memory entry by its stable id.
 #[tauri::command]
 pub async fn cmd_delete_memory_entry(
-    index: usize,
+    id: String,
     limit: Option<usize>,
 ) -> Result<MemoryReviewView, String> {
     let mut store = LongTermMemory::load();
-    if !store.delete_entry(index) {
-        return Err(format!("memory entry index {index} does not exist"));
+    if !store.delete_entry_by_id(&id) {
+        return Err(format!("memory entry id {id} does not exist"));
     }
     store.save()?;
     Ok(memory_review_view(
@@ -388,7 +388,7 @@ pub async fn cmd_delete_memory_entry(
 fn memory_review_view(store: &LongTermMemory, limit: usize) -> MemoryReviewView {
     MemoryReviewView {
         generated_at: chrono::Local::now().to_rfc3339(),
-        total_entries: store.entries.len(),
+        total_entries: store.entries.iter().filter(|entry| !entry.deleted).count(),
         entries: store.review_entries(limit),
         markdown: store.review_markdown(limit),
     }

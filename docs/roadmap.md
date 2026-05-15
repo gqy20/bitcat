@@ -108,7 +108,7 @@ panel → cmd_start_game → app/src/game.rs 动态创建 game 窗口
       → cmd_game_end(result, score) → 关闭窗口 + 切换 pet 状态
 ```
 
-下一步继续复用 A1 的模式：模型通过工具提交结构化 `GameDef` → Rust validate / save → game 窗口运行游戏 → 结束联动 pet 状态。
+下一步继续复用 A1 的模式：模型通过工具提交结构化 `GameDef` → Rust validate / save → game 窗口运行游戏 → 结束联动 pet 状态。当前底层已经可以启动任意 `GameDef`：`cmd_start_game_with_def` / `start_game(GameDef)` 已落地，`ActionBus::PlayGameDefault` 和面板入口会启动默认 Snake。尚未完成的是把这个能力注册成 AI 可调用的 `play_game` / `perform_game` 工具，以及把生成的游戏配置持久化到用户目录。
 
 三种原型游戏共享同一个 GameEngine 类：
 
@@ -155,7 +155,7 @@ panel → cmd_start_game → app/src/game.rs 动态创建 game 窗口
 
 当前 12 个工具仍全量注册到每次对话，但 B4 第一阶段已经完成了更基础的运行时治理：工具调用不再混入 bubble 正文，而是通过结构化事件单独呈现；普通工具显示低干扰状态条，舞蹈这类表演型工具显示“正在编舞 / 准备开跳”并短暂退场；工具结果会写入 `~/.ai-pad/logs/tool_events.jsonl`，用于后续统计成功率、耗时和拦截次数。
 
-新的原则保持不变：**默认相信大模型自己选择工具，Rust 负责 schema、权限、生命周期事件、审计和体验呈现**。B4 现在已经足够支撑下一阶段游戏工具接入：未来 `start_game` / `play_game` 这类表演型或互动型工具应复用 `ToolKind::Performance` 或扩展出更精细的 kind，让 bubble 退到辅助位置，把主视觉交给 pet/panel/game 窗口。
+新的原则保持不变：**默认相信大模型自己选择工具，Rust 负责 schema、权限、生命周期事件、审计和体验呈现**。B4 现在已经足够支撑下一阶段游戏工具接入：未来 AI 层 `perform_game` / `play_game` 这类表演型或互动型工具应复用 `ToolKind::Performance` 或扩展出更精细的 kind，让 bubble 退到辅助位置，把主视觉交给 pet/panel/game 窗口；底层 `start_game(GameDef)` 已经存在，工具只需要接入这条通道。
 
 建议拆分：
 
@@ -171,7 +171,7 @@ panel → cmd_start_game → app/src/game.rs 动态创建 game 窗口
 
 ### B5. grep-first 文本记忆检索
 
-当前滚动窗口策略（最近 20 条）无长期召回能力，重要讨论会被闲聊挤出。但本项目不采用 Embeddings / Vector RAG：记忆规模和使用方式更适合可 grep 的结构化文本。长期方向是 append-only JSONL / Markdown 记忆，配合 `rg` 风格检索、时间范围、来源和标签筛选，再让大模型对候选片段做判断和压缩。
+长期记忆的 grep-first 主链路已落地：`LongTermMemory` 使用 `~/.ai-pad/memory/long_term.jsonl`，一行一条当前有效 record，包含稳定 `id`、`created_at` 和 `deleted` 软删除字段；`record_candidate()` / `remember` 写入结构化候选，`retrieve_with()` 按 text/tag/source/min_importance 做可解释召回并最多返回 20 条候选，设置页按 id 审查和软删除。本项目仍不采用 Embeddings / Vector RAG；后续 B5 剩余工作是上下文瘦身和候选压缩：减少默认预塞长期记忆，让模型更多通过 `search_memory` 按需取候选，再自行判断语义相关性。
 
 详细取舍：[architecture/design-tradeoffs.md](architecture/design-tradeoffs.md)
 
@@ -429,11 +429,11 @@ A1+A2+E1/E2+C1 ──→ D1(Steam) MVP 差异化更完整
 | **B3 cleanup** | 删除旧 raw helper / parser / 惰性配置 | 已完成，净删为主 | 0 | Done |
 | **E1** | AI 编码工具会话监听 | ~350-650 行 | 0 | P1，参考 oc-claw |
 | **E2** | 桌宠化 Agent 状态管理 | ~250-500 行 | 0 | P1，复用 pet/bubble/panel |
-| **A2** | 迷你游戏引擎 | Phase 1 已完成；Phase 2 待接 AI + Memory/Catch | 0 | P1 |
+| **A2** | 迷你游戏引擎 | Phase 1 已完成；`start_game(GameDef)` / `cmd_start_game_with_def` 已可启动任意 GameDef；Phase 2 待接 AI 工具 + Memory/Catch + 持久化 | 0 | P1 |
 | **B4** | 工具运行时与开销优化 | ~250-450 行（B4.1-B4.3）+ ~50-150 行（B4.4） | 0 | P1，1-2 天；B4.5 实验项 |
 | **E3** | 远程/多工作区 Agent 管理 | ~400-800 行 | SSH 可选 | P2 |
 | **A3** | 内容扩展 | ~200-350 行/种 | 0 | P2，0.5-1 天/种 |
-| **B5** | grep-first 文本记忆 | ~250-450 行 | 0 | P2，1-3 天 |
+| **B5** | grep-first 文本记忆 | JSONL/id/软删除/search_memory 主链路已完成；剩余上下文瘦身和候选压缩 | 0 | Done/P2 follow-up |
 | **C1** | 3D 体素化 | ~1200-1800 行 | three.js | P3，4-8 天 |
 | **C2** | 动画增强 | ~300-500 行 | 0 | P3，1-3 天 |
 | **C3** | 3D 游戏生成 | ~700-1000 行 | cannon-es 等 | P3，3-6 天 |
@@ -450,7 +450,7 @@ A1+A2+E1/E2+C1 ──→ D1(Steam) MVP 差异化更完整
 ├── dances/              # AI 生成的舞蹈 (A1)
 ├── games/               # AI 生成的游戏 (A2)
 ├── screenshots/         # 已有
-├── memory/              # 已有 → 升级为可 grep 的文本记忆 (B5)
+├── memory/              # 已有：chat_summary.json + long_term.jsonl grep-first 记忆
 ├── logs/
 │   ├── ai-pad.YYYY-MM-DD.log
 │   ├── token_usage.jsonl    # Token 追踪行日志 (B2)

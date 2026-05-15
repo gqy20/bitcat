@@ -99,7 +99,7 @@ set ANTHROPIC_MODEL=claude-sonnet-4-20250514             # 可选
 ~/.ai-pad/
 ├── memory/
 │   ├── chat_summary.json      # 短期对话记忆（最近 20 条）
-│   ├── long_term.json          # 长期记忆
+│   ├── long_term.jsonl         # 长期记忆（一行一条，可 grep）
 │   └── profile.json            # AI 聚合用户画像
 ├── screenshots/
 │   └── 2026-05-13/             # 按日期存储的截图和分析

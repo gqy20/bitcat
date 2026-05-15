@@ -161,7 +161,7 @@ rig 支持 `dynamic_tools()`，但当前只有 12 个工具，固定 schema 成�
 - 默认：聊天、时间、最近活动、舞蹈
 - 开发模式：`shell`、`read_file`、`search_memory`、`run_project_test`
 - 系统控制模式：`launch_program`、`send_hotkey`、`force_foreground`、`read_clipboard`
-- 娱乐模式：`perform_dance`、`play_dance`、未来 `perform_game`
+- 娱乐模式：`perform_dance`、`play_dance`、未来 AI 工具层的 `perform_game` / `play_game`（底层 `start_game(GameDef)` 已存在）
 
 能力包应由用户显式模式、设置页、面板入口或长期使用数据启用；不要回到关键词意图分类。
 
@@ -439,7 +439,7 @@ UI 分层：
 
 ### 后续方向
 
-1. **游戏工具优先复用 B4 协议**：后续做游戏部分时，`start_game` / `play_game` / `submit_game_action` 等工具应直接产出同一套 `AgentStreamEvent::Tool`，并复用 `tool_events.jsonl` 记录耗时、成功/失败和短 preview。
+1. **游戏工具优先复用 B4 协议**：游戏窗口、默认 Snake、`start_game(GameDef)` 和 `cmd_start_game_with_def` 已经落地；后续接 AI 工具时，`perform_game` / `play_game` / `submit_game_action` 等工具应直接产出同一套 `AgentStreamEvent::Tool`，并复用 `tool_events.jsonl` 记录耗时、成功/失败和短 preview。
 2. **互动型工具 UI 分层**：游戏不应走普通工具状态条的长期展示。bubble 只负责短提示，主视觉交给 game/panel/pet；必要时可在 `ToolKind` 上扩展 `Interactive`，但不要先做过度抽象。
 3. **补齐约束语义**：把舞蹈动作、步骤数量、时长范围、窗口句柄整数类型，以及未来游戏动作枚举等校验逐步沉到类型/schema 层，减少仅靠描述文字约束。
 4. **新增语义工具雏形**：`set_pet_mood` / `remember` / `ask_user_confirmation` 仍有价值，但排在游戏主线之后，因为它们主要替代旧关键词规则和隐式权限流程。
@@ -536,7 +536,7 @@ pub struct MemoryCandidate {
 ```
 ~/.ai-pad/memory/
   chat_summary.json        — 当前滚动摘要，继续保留
-  memory_entries.jsonl     — append-only 记忆条目，可 grep
+  long_term.jsonl          — 一行一条长期记忆 record，可 grep，deleted 软删除
   daily/YYYY-MM-DD.md      — 可选：按天沉淀的人类可读摘要
   index/tags.json          — 可选：轻量标签索引，不是向量索引
 ```
@@ -551,14 +551,12 @@ pub struct MemoryCandidate {
 
 ### 实施路径
 
-1. 将对话记忆从单一滚动 JSON 扩展为 append-only `memory_entries.jsonl`。
-2. 每条记录写入稳定字段：`timestamp`、`source`、`tags`、`summary`、`text_preview`、`confidence`、`expires_at`。
-3. 由 `AgentReaction.memory_candidates` 或 `remember` 工具提供记忆候选，Rust 负责校验、去重和落盘。
-4. 增加 `search_memory(query, since, tags, limit)` helper，底层使用文本扫描/grep 风格匹配。
-5. 增加 `search_memory` 工具，让模型按需查询长期记忆，而不是每次由 Rust 预塞大量上下文。
-6. `build_context()` 从“只取最近 N 条”变为“极短最近摘要 + 必要用户画像”；候选上下文优先由模型主动检索。
-7. 对 grep 候选再用模型做相关性判断和压缩，输出可注入的短上下文。
-8. 保持所有文件可人类阅读，避免二进制索引成为唯一真相。
+1. 已完成：将长期记忆迁移为 `long_term.jsonl`，每条记录有稳定 `id`、`created_at`、`summary`、`tags`、`importance`、`source`、原始短文本和 `deleted` 软删除字段。
+2. 已完成：由 `AgentReaction.memory_candidates` 或 `remember` 工具提供记忆候选，Rust 负责长度、标签、重要度和落盘。
+3. 已完成：`search_memory` / `retrieve_with()` 以 text/tag/source/min_importance 做 grep-first 候选召回，最多返回 20 条给模型判断。
+4. 待做：`build_context()` 从“预塞较多历史”进一步瘦身为“极短最近摘要 + 必要用户画像”；长期候选优先由模型主动检索。
+5. 待评估：对 grep 候选再用模型做相关性判断和压缩，输出可注入的短上下文；只有真实对话证明需要时再加。
+6. 保持所有文件可人类阅读，避免二进制索引成为唯一真相。
 
 ### 与 rig 能力的关系
 
@@ -597,11 +595,11 @@ rig 的 Embeddings / Pipeline.lookup 仍然是可用能力，但当前明确不�
              └ 替换 should_store 关键词记忆判断
 
 1-3天      P2: grep-first 文本记忆与按需检索
-             ├ memory_entries.jsonl
-             ├ search_memory helper + tool
-             ├ 模型生成记忆候选，Rust 校验落盘
+             ├ long_term.jsonl + stable id + soft delete ✓
+             ├ search_memory helper + tool ✓
+             ├ 模型生成记忆候选，Rust 校验落盘 ✓
              ├ 固定上下文瘦身
-             └ grep 候选 + 大模型压缩上下文
+             └ grep 候选 + 大模型压缩上下文（待评估）
 ```
 
 ### 各方案的协同效应

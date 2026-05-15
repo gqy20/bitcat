@@ -142,8 +142,9 @@ Long-term memory is now driven by structured `memory_candidates`, not keyword ru
 - `importance`
 - `source`
 - original truncated user/assistant text
+- stable `id`, `created_at`, and soft-delete `deleted`
 
-It exposes `retrieve_with()` for text/tag/source/importance filtering and `review_entries()` / `review_markdown()` for human-readable review. Settings uses `cmd_get_memory_review` / `cmd_delete_memory_entry` to list and delete entries by stable review index. The design stays grep-first and intentionally avoids embeddings/vector RAG.
+It exposes `retrieve_with()` for text/tag/source/importance filtering and `review_entries()` / `review_markdown()` for human-readable review. Settings uses `cmd_get_memory_review` / `cmd_delete_memory_entry` to list entries and soft-delete them by stable id. Rust only recalls up to 20 grep-first candidates; the model decides semantic relevance. The design intentionally avoids embeddings/vector RAG.
 
 The main Agent also exposes two semantic memory tools:
 
@@ -158,7 +159,7 @@ Relevant coverage:
 - `core/src/mood_policy.rs`: TTL defaults, explicit TTL, throttling, priority override.
 - `app/src/pet_event_bus.rs`: mood TTL preparation, deduplication, event log snapshots.
 - `core/src/agent_reaction.rs`: sanitization and fallback behavior.
-- `core/src/memory.rs`: candidate storage, filtered retrieval, review markdown, deletion by review index.
+- `core/src/memory.rs`: JSONL candidate storage, filtered retrieval, review markdown, deletion by stable id.
 - `core/src/tools.rs`: `search_memory` and `remember` argument parsing and execution.
 - `app/src/settings.rs`: memory review/delete IPC serialization.
 - `app/frontend/__tests__/pet.test.js`: notification mapping, reaction TTL, mode priority.

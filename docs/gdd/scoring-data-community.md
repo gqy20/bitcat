@@ -297,7 +297,7 @@ Steam 负责: 存储 / 排名 / 展示 / 同步
 
 ~/.8bit/
 ├── chat_summary.json      ← 已有
-├── long_term.json         ← 已有
+├── long_term.jsonl        ← 已有：长期记忆，一行一条
 ├── profile.json           ← 已有
 ├── adventure_log.jsonl   ← 新增：每局冒险日志
 │   └── 每条记录:
@@ -497,4 +497,4 @@ Phase 3 (接近发布): 社区功能
 ```
 
 **当前阶段: Phase 0。不需要建任何数据库或评分系统。**
-现有的 `chat_summary.json` / `long_term.json` / `profile.json` JSON 架构就是未来所有游戏数据的存储范式。
+现有的 `chat_summary.json` / `long_term.jsonl` / `profile.json` 结构化文本架构就是未来所有游戏数据的存储范式。

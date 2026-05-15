@@ -504,7 +504,8 @@ async fn generate_with_retry(agent: &PetAgent, prompt: &str) -> Result<DanceDef,
 ### Phase 2：游戏（部分完成，继续复用同样模式）
 
 > 已完成：`core/src/minigame.rs`、`app/src/game.rs`、独立 `game` 窗口、Snake 前端、3×3 面板入口、手柄输入独占和宠物结果状态联动。
-> 待完成：AI 工具、Memory/Catch、持久化游戏配置与分数。
+> 已部分完成：底层 `start_game(GameDef)`、`cmd_start_game_with_def` 和默认 Snake 面板入口已可复用同一套窗口生命周期。
+> 待完成：AI 工具注册、Memory/Catch、持久化游戏配置与分数。
 
 | 步骤 | 文件 | 改动 | 行数 |
 |------|------|------|------|
@@ -514,10 +515,11 @@ async fn generate_with_retry(agent: &PetAgent, prompt: &str) -> Result<DanceDef,
 | 4 | `app/src/gamepad.rs` | 游戏激活时 D-pad/A/B/Start 独占转发 | 已完成 |
 | 5 | `app/frontend/js/game_engine.js` | Snake 引擎 + Canvas 2D 渲染 | 已完成 |
 | 6 | `app/frontend/js/panel.js` / `panel.css` | 3×3 面板 + 游戏入口 | 已完成 |
-| 7 | `core/src/agent.rs` / `tools.rs` | 新增 `perform_game` / `play_game` 工具 | 待做 |
-| 8 | `game_engine.js` | Memory + Catch 引擎注册 | 待做 |
-| 9 | `config/minigames.yml` | 默认配置与难度预设 | 待做 |
-| 10 | 测试 | AI 工具、Memory/Catch、持久化分数 | 待做 |
+| 7 | `app/src/game.rs` | `start_game(GameDef)` / `cmd_start_game_with_def`，供面板和未来 AI 工具复用 | 已完成 |
+| 8 | `core/src/agent.rs` / `tools.rs` | 新增 `perform_game` / `play_game` 工具，调用已存在的 GameDef 启动通道 | 待做 |
+| 9 | `game_engine.js` | Memory + Catch 引擎注册 | 待做 |
+| 10 | `config/minigames.yml` | 默认配置与难度预设 | 待做 |
+| 11 | 测试 | AI 工具、Memory/Catch、持久化分数 | 待做 |
 
 **当前 A2 Phase 1：已提交 `a2105ff`；下一步是 AI 工具与多游戏体系。**
 

@@ -2,12 +2,12 @@
 //!
 //! 设计遵循 grep-first 原则：所有持久化产物均为可搜索的结构化文本
 //! （JSON / JSONL），不引入向量数据库或 Embedding，方便 `rg`、
-//! 人工审查和大模型共同读取。记忆检索先用关键词等可解释条件筛选候选，
+//! 人工审查和大模型共同读取。记忆检索先用标签、来源、重要度和文本包含等可解释条件筛选候选，
 //! 再交给大模型判断压缩。
 //!
 //! 三层各自持久化到 `~/.ai-pad/memory/`：
 //! - **MemoryStore** — `chat_summary.json`，滚动窗口短期记忆，直接注入 prompt
-//! - **LongTermMemory** — `long_term.json`，原始对话按需关键词检索注入
+//! - **LongTermMemory** — `long_term.jsonl`，原始对话按需候选召回注入
 //! - **ProfileStore** — `profile.json`，AI 定期聚合的用户画像摘要
 //!
 //! 与 `agent.rs`（对话后写入）、`bridge.rs`（构建上下文）交互。
@@ -219,6 +219,10 @@ fn truncate_chars(s: &str, max_chars: usize) -> String {
 /// `aggregated` 标记表示该条目已被 AI 聚合到画像中，容量不足时优先淘汰。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LongTermEntry {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub created_at: String,
     pub timestamp: String,
     pub user_msg: String,
     pub ai_reply: String,
@@ -232,11 +236,13 @@ pub struct LongTermEntry {
     pub source: Option<String>,
     #[serde(default)]
     pub aggregated: bool,
+    #[serde(default)]
+    pub deleted: bool,
 }
 
-/// 长期记忆存储：保存原始对话原文，按关键词相关性检索并注入 prompt。
+/// 长期记忆存储：保存结构化 JSONL 记录，按硬过滤和轻量文本包含召回候选。
 ///
-/// 超出容量时优先淘汰已聚合条目，保持未聚合数据供下次聚合使用。
+/// 超出容量时优先淘汰已聚合条目，软删除条目保留在账本中供 grep 和审查。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LongTermMemory {
     pub entries: Vec<LongTermEntry>,
@@ -254,7 +260,9 @@ pub struct LongTermMemoryQuery {
 /// 可人工审查的长期记忆条目视图。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct LongTermReviewEntry {
-    pub index: usize,
+    pub id: String,
+    pub deleted: bool,
+    pub created_at: String,
     pub timestamp: String,
     pub title: String,
     pub tags: Vec<String>,
@@ -265,10 +273,10 @@ pub struct LongTermReviewEntry {
     pub ai_reply: String,
 }
 
-/// 返回长期记忆文件路径 `~/.ai-pad/memory/long_term.json`。
+/// 返回长期记忆文件路径 `~/.ai-pad/memory/long_term.jsonl`。
 fn long_term_file_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
-    Ok(home.join(".ai-pad").join("memory").join("long_term.json"))
+    Ok(home.join(".ai-pad").join("memory").join("long_term.jsonl"))
 }
 
 impl LongTermMemory {
@@ -289,15 +297,7 @@ impl LongTermMemory {
             };
         }
         match fs::read_to_string(&path) {
-            Ok(content) => match serde_json::from_str::<LongTermMemory>(&content) {
-                Ok(store) => store,
-                Err(e) => {
-                    warn!(error = %e, "解析长期记忆文件失败");
-                    Self {
-                        entries: Vec::new(),
-                    }
-                }
-            },
+            Ok(content) => load_long_term_jsonl(&content),
             Err(e) => {
                 warn!(error = %e, "读取长期记忆文件失败");
                 Self {
@@ -309,9 +309,12 @@ impl LongTermMemory {
 
     /// 追加一条记录。超过 max_entries 时淘汰最旧的未聚合条目。
     pub fn record(&mut self, user_msg: &str, ai_reply: &str, max_entries: usize) {
-        let timestamp = chrono::Local::now().format("%m-%d %H:%M").to_string();
+        let now = chrono::Local::now();
+        let timestamp = now.format("%m-%d %H:%M").to_string();
         let reply_truncated: String = ai_reply.chars().take(400).collect();
         self.entries.push(LongTermEntry {
+            id: next_memory_id(self.entries.len()),
+            created_at: now.to_rfc3339(),
             timestamp,
             user_msg: user_msg.to_string(),
             ai_reply: reply_truncated,
@@ -320,6 +323,7 @@ impl LongTermMemory {
             importance: None,
             source: Some("conversation".to_string()),
             aggregated: false,
+            deleted: false,
         });
         self.enforce_max_entries(max_entries);
     }
@@ -332,9 +336,12 @@ impl LongTermMemory {
         ai_reply: &str,
         max_entries: usize,
     ) {
-        let timestamp = chrono::Local::now().format("%m-%d %H:%M").to_string();
+        let now = chrono::Local::now();
+        let timestamp = now.format("%m-%d %H:%M").to_string();
         let reply_truncated: String = ai_reply.chars().take(240).collect();
         self.entries.push(LongTermEntry {
+            id: next_memory_id(self.entries.len()),
+            created_at: now.to_rfc3339(),
             timestamp,
             user_msg: user_msg.to_string(),
             ai_reply: reply_truncated,
@@ -343,16 +350,22 @@ impl LongTermMemory {
             importance: Some(candidate.importance),
             source: Some("agent_reaction".to_string()),
             aggregated: false,
+            deleted: false,
         });
         self.enforce_max_entries(max_entries);
     }
 
     fn enforce_max_entries(&mut self, max_entries: usize) {
-        while self.entries.len() > max_entries {
-            if let Some(pos) = self.entries.iter().position(|e| e.aggregated) {
+        while self.entries.iter().filter(|e| !e.deleted).count() > max_entries {
+            if let Some(pos) = self.entries.iter().position(|e| e.aggregated && !e.deleted) {
                 self.entries.remove(pos);
             } else {
-                self.entries.remove(0);
+                match self.entries.iter().position(|e| !e.deleted) {
+                    Some(pos) => {
+                        self.entries.remove(pos);
+                    }
+                    None => break,
+                }
             }
         }
     }
@@ -374,52 +387,32 @@ impl LongTermMemory {
             return String::new();
         }
 
-        let mut scored: Vec<(usize, f32)> = self
+        let mut candidates: Vec<usize> = self
             .entries
             .iter()
             .enumerate()
             .filter(|(_, e)| long_term_entry_matches(e, query))
-            .map(|(i, e)| {
-                let text = format!(
-                    "{} {} {} {}",
-                    e.summary.as_deref().unwrap_or(""),
-                    e.tags.join(" "),
-                    e.user_msg,
-                    e.ai_reply
-                );
-                let mut score = relevance_score(&text, &query.text);
-                if let Some(importance) = e.importance {
-                    score += f32::from(importance.min(5)) * 0.02;
-                }
-                if !query.tags.is_empty() {
-                    score += 0.1;
-                }
-                (i, score)
-            })
-            .filter(|(_, s)| *s > 0.05)
+            .filter(|(_, e)| query_matches_entry(e, &query.text))
+            .map(|(i, _)| i)
             .collect();
 
-        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        scored.truncate(10);
+        candidates.sort_by(|a, b| {
+            let left = &self.entries[*a];
+            let right = &self.entries[*b];
+            right
+                .importance
+                .unwrap_or(0)
+                .cmp(&left.importance.unwrap_or(0))
+                .then_with(|| right.created_at.cmp(&left.created_at))
+        });
+        candidates.truncate(20);
 
-        let header = "[相关记忆]\n";
+        let header = "[memory candidates]\n";
         let mut result = String::from(header);
         let mut used = header.chars().count();
-        for (idx, _) in &scored {
+        for idx in &candidates {
             let e = &self.entries[*idx];
-            let line = if let Some(summary) = &e.summary {
-                let tags = if e.tags.is_empty() {
-                    String::new()
-                } else {
-                    format!(" #{}", e.tags.join(" #"))
-                };
-                format!(
-                    "[{}] {}{} | {} | {}\n",
-                    e.timestamp, summary, tags, e.user_msg, e.ai_reply
-                )
-            } else {
-                format!("[{}] {} | {}\n", e.timestamp, e.user_msg, e.ai_reply)
-            };
+            let line = memory_candidate_line(e);
             if used + line.chars().count() > budget_chars {
                 break;
             }
@@ -429,13 +422,13 @@ impl LongTermMemory {
         if result == header {
             return String::new();
         }
-        result.push_str("[/相关记忆]\n");
+        result.push_str("[/memory candidates]\n");
         result
     }
 
     /// 生成可 grep、可人工审查的 Markdown 记忆视图。
     pub fn review_markdown(&self, limit: usize) -> String {
-        if self.entries.is_empty() {
+        if self.entries.iter().all(|entry| entry.deleted) {
             return "# Long-term Memory\n\nNo entries.\n".to_string();
         }
 
@@ -443,12 +436,10 @@ impl LongTermMemory {
         for entry in self.review_entries(limit) {
             out.push_str(&format!(
                 "## {}. {} ({})\n\n",
-                entry.index + 1,
-                entry.title,
-                entry.timestamp
+                entry.id, entry.title, entry.timestamp
             ));
             out.push_str(&format!(
-                "- source: {}\n- importance: {}\n- tags: {}\n- aggregated: {}\n\n",
+                "- source: {}\n- importance: {}\n- tags: {}\n- aggregated: {}\n- deleted: {}\n\n",
                 entry.source.as_deref().unwrap_or("unknown"),
                 entry
                     .importance
@@ -459,7 +450,8 @@ impl LongTermMemory {
                 } else {
                     entry.tags.join(", ")
                 },
-                entry.aggregated
+                entry.aggregated,
+                entry.deleted
             ));
             out.push_str(&format!(
                 "- user: {}\n- assistant: {}\n\n",
@@ -473,11 +465,13 @@ impl LongTermMemory {
     pub fn review_entries(&self, limit: usize) -> Vec<LongTermReviewEntry> {
         self.entries
             .iter()
-            .enumerate()
             .rev()
+            .filter(|entry| !entry.deleted)
             .take(limit)
-            .map(|(index, entry)| LongTermReviewEntry {
-                index,
+            .map(|entry| LongTermReviewEntry {
+                id: entry.id.clone(),
+                deleted: entry.deleted,
+                created_at: entry.created_at.clone(),
                 timestamp: entry.timestamp.clone(),
                 title: entry
                     .summary
@@ -493,25 +487,28 @@ impl LongTermMemory {
             .collect()
     }
 
-    /// Delete one long-term memory entry by its stable review index.
-    pub fn delete_entry(&mut self, index: usize) -> bool {
-        if index >= self.entries.len() {
+    /// Delete one long-term memory entry by stable id.
+    pub fn delete_entry_by_id(&mut self, id: &str) -> bool {
+        let Some(entry) = self.entries.iter_mut().find(|entry| entry.id == id) else {
             return false;
-        }
-        self.entries.remove(index);
+        };
+        entry.deleted = true;
         true
     }
 
     /// 标记所有条目为已聚合
     pub fn mark_all_aggregated(&mut self) {
-        for e in &mut self.entries {
+        for e in self.entries.iter_mut().filter(|e| !e.deleted) {
             e.aggregated = true;
         }
     }
 
     /// 取出未聚合的条目
     pub fn unaggregated_entries(&self) -> Vec<&LongTermEntry> {
-        self.entries.iter().filter(|e| !e.aggregated).collect()
+        self.entries
+            .iter()
+            .filter(|e| !e.aggregated && !e.deleted)
+            .collect()
     }
 
     /// 持久化到磁盘（原子写入：先写临时文件再 rename）。
@@ -520,10 +517,15 @@ impl LongTermMemory {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
         }
-        let json = serde_json::to_string(self).map_err(|e| format!("序列化失败: {e}"))?;
+        let mut jsonl = String::new();
+        for entry in &self.entries {
+            let line = serde_json::to_string(entry).map_err(|e| format!("序列化失败: {e}"))?;
+            jsonl.push_str(&line);
+            jsonl.push('\n');
+        }
         let mut tmp = tempfile::NamedTempFile::new_in(path.parent().unwrap())
             .map_err(|e| format!("创建临时文件失败: {e}"))?;
-        std::io::Write::write_all(&mut tmp, json.as_bytes())
+        std::io::Write::write_all(&mut tmp, jsonl.as_bytes())
             .map_err(|e| format!("写入临时文件失败: {e}"))?;
         tmp.persist(&path)
             .map_err(|e| format!("原子替换失败: {e}"))?;
@@ -533,6 +535,9 @@ impl LongTermMemory {
 }
 
 fn long_term_entry_matches(entry: &LongTermEntry, query: &LongTermMemoryQuery) -> bool {
+    if entry.deleted {
+        return false;
+    }
     if let Some(min_importance) = query.min_importance {
         if entry.importance.unwrap_or(0) < min_importance {
             return false;
@@ -544,6 +549,107 @@ fn long_term_entry_matches(entry: &LongTermEntry, query: &LongTermMemoryQuery) -
         }
     }
     query.tags.iter().all(|tag| entry.tags.contains(tag))
+}
+
+fn load_long_term_jsonl(content: &str) -> LongTermMemory {
+    let mut entries = Vec::new();
+    for (line_no, line) in content.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<LongTermEntry>(line) {
+            Ok(mut entry) => {
+                normalize_loaded_long_term_entry(&mut entry, line_no);
+                entries.push(entry);
+            }
+            Err(e) => {
+                warn!(
+                    line = line_no + 1,
+                    error = %e,
+                    "解析长期 JSONL 记忆行失败，已跳过"
+                );
+            }
+        }
+    }
+    LongTermMemory { entries }
+}
+
+fn normalize_loaded_long_term_entry(entry: &mut LongTermEntry, index: usize) {
+    if entry.id.trim().is_empty() {
+        entry.id = format!("mem_imported_{index:06}");
+    }
+    if entry.created_at.trim().is_empty() {
+        entry.created_at = entry.timestamp.clone();
+    }
+}
+
+fn next_memory_id(index: usize) -> String {
+    let now = chrono::Local::now();
+    format!("mem_{}_{index:04}", now.format("%Y%m%d%H%M%S%3f"))
+}
+
+fn query_matches_entry(entry: &LongTermEntry, query: &str) -> bool {
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return true;
+    }
+
+    let haystack = format!(
+        "{} {} {} {}",
+        entry.summary.as_deref().unwrap_or(""),
+        entry.tags.join(" "),
+        entry.user_msg,
+        entry.ai_reply
+    )
+    .to_lowercase();
+
+    if haystack.contains(&query) {
+        return true;
+    }
+
+    query
+        .split_whitespace()
+        .filter(|term| !term.is_empty())
+        .any(|term| haystack.contains(term))
+        || query_char_windows_match(&haystack, &query)
+}
+
+fn query_char_windows_match(haystack: &str, query: &str) -> bool {
+    if query.split_whitespace().count() > 1 {
+        return false;
+    }
+    let chars: Vec<char> = query.chars().filter(|c| !c.is_whitespace()).collect();
+    if chars.len() < 4 {
+        return false;
+    }
+    chars
+        .windows(3)
+        .map(|window| window.iter().collect::<String>())
+        .any(|window| haystack.contains(&window))
+}
+
+fn memory_candidate_line(entry: &LongTermEntry) -> String {
+    let tags = if entry.tags.is_empty() {
+        "none".to_string()
+    } else {
+        entry.tags.join(",")
+    };
+    let summary = entry.summary.as_deref().unwrap_or(entry.user_msg.as_str());
+    format!(
+        "id={} created_at={} source={} importance={} tags=[{}]\nsummary={}\ncontext={} | {}\n",
+        entry.id,
+        entry.created_at,
+        entry.source.as_deref().unwrap_or("unknown"),
+        entry
+            .importance
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "unknown".to_string()),
+        tags,
+        summary,
+        entry.user_msg,
+        entry.ai_reply
+    )
 }
 
 // ---- Layer 2: 聚合画像（AI 定期生成） ----
@@ -638,21 +744,6 @@ impl ProfileStore {
         self.profile_text = new_profile.to_string();
         self.updated_at = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
     }
-}
-
-/// 简单相关性评分：query 中的词出现在目标文本中的比例
-fn relevance_score(text: &str, query: &str) -> f32 {
-    use std::collections::HashSet;
-    let query_words: HashSet<&str> = query.split_whitespace().collect();
-    if query_words.is_empty() {
-        return 0.0;
-    }
-    let text_lower = text.to_lowercase();
-    let count = query_words
-        .iter()
-        .filter(|w| text_lower.contains(&w.to_lowercase()))
-        .count();
-    count as f32 / query_words.len() as f32
 }
 
 // ---- AI 聚合：从原始记录生成画像摘要 ----
@@ -834,7 +925,7 @@ mod tests {
         let ctx = store.retrieve("8Bit Cat", 500);
 
         assert!(ctx.contains("用户正在开发 8Bit Cat 桌宠项目"));
-        assert!(ctx.contains("#project"));
+        assert!(ctx.contains("tags=[project]"));
     }
 
     #[test]
@@ -902,17 +993,20 @@ mod tests {
     }
 
     #[test]
-    fn test_delete_entry_removes_review_index() {
+    fn test_delete_entry_by_id_soft_deletes() {
         let mut store = LongTermMemory {
             entries: Vec::new(),
         };
         store.record("first", "one", 10);
         store.record("second", "two", 10);
+        let first_id = store.entries[0].id.clone();
 
-        assert!(store.delete_entry(0));
-        assert_eq!(store.entries.len(), 1);
-        assert_eq!(store.entries[0].user_msg, "second");
-        assert!(!store.delete_entry(99));
+        assert!(store.delete_entry_by_id(&first_id));
+        assert_eq!(store.entries.len(), 2);
+        assert!(store.entries[0].deleted);
+        assert_eq!(store.review_entries(10).len(), 1);
+        assert_eq!(store.review_entries(10)[0].user_msg, "second");
+        assert!(!store.delete_entry_by_id("missing"));
     }
 
     #[test]
@@ -1143,9 +1237,9 @@ mod tests {
         store.record("帮我提醒明天交 PR", "收到，明天会提醒的", 100);
 
         let ctx = store.retrieve("8Bit 项目进展", 500);
-        assert!(ctx.contains("[相关记忆]"));
+        assert!(ctx.contains("[memory candidates]"));
         assert!(ctx.contains("8Bit Cat"));
-        assert!(ctx.contains("[/相关记忆]"));
+        assert!(ctx.contains("[/memory candidates]"));
     }
 
     #[test]
@@ -1245,25 +1339,6 @@ mod tests {
         assert!(!store.updated_at.is_empty());
     }
 
-    // ---- relevance_score 测试 ----
-
-    #[test]
-    fn test_relevance_score_exact_match() {
-        let score = relevance_score("我在做 8Bit Cat 项目", "8Bit 项目");
-        assert!(score > 0.5);
-    }
-
-    #[test]
-    fn test_relevance_score_no_match() {
-        let score = relevance_score("今天天气不错", "量子力学");
-        assert!(score < 0.1);
-    }
-
-    #[test]
-    fn test_relevance_score_empty_query() {
-        assert_eq!(relevance_score("anything", ""), 0.0);
-    }
-
     // ---- aggregate_profile 测试 ----
 
     #[tokio::test]
@@ -1294,6 +1369,8 @@ mod tests {
             .await;
 
         let entries = vec![LongTermEntry {
+            id: "mem_test_1".into(),
+            created_at: "2026-05-12T14:23:00+08:00".into(),
             timestamp: "05-12 14:23".into(),
             user_msg: "我叫小明".into(),
             ai_reply: "你好小明！".into(),
@@ -1302,6 +1379,7 @@ mod tests {
             importance: None,
             source: Some("test".into()),
             aggregated: false,
+            deleted: false,
         }];
         let refs: Vec<&LongTermEntry> = entries.iter().collect();
 
@@ -1345,6 +1423,8 @@ mod tests {
             .await;
 
         let entries = vec![LongTermEntry {
+            id: "mem_test_2".into(),
+            created_at: "2026-05-12T15:00:00+08:00".into(),
             timestamp: "05-12 15:00".into(),
             user_msg: "我在做 Rust 项目".into(),
             ai_reply: "什么项目？".into(),
@@ -1353,6 +1433,7 @@ mod tests {
             importance: None,
             source: Some("test".into()),
             aggregated: false,
+            deleted: false,
         }];
         let refs: Vec<&LongTermEntry> = entries.iter().collect();
 
@@ -1390,6 +1471,8 @@ mod tests {
             .await;
 
         let entries = vec![LongTermEntry {
+            id: "mem_test_3".into(),
+            created_at: "2026-05-12T14:23:00+08:00".into(),
             timestamp: "05-12 14:23".into(),
             user_msg: "我叫小明".into(),
             ai_reply: "你好".into(),
@@ -1398,6 +1481,7 @@ mod tests {
             importance: None,
             source: Some("test".into()),
             aggregated: false,
+            deleted: false,
         }];
         let refs: Vec<&LongTermEntry> = entries.iter().collect();
 

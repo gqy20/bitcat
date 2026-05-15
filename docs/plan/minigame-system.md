@@ -216,7 +216,7 @@ AI 生成游戏配置的路径（Level 1）：
 
 ```
 用户聊天"我想玩个游戏"
-  → AI 识别意图 → 调用 play_game 工具
+  → 普通对话 Agent 自行决定调用 play_game 工具
   → 提交 GameDef 结构化参数（JsonSchema 约束）
   → Rust 验证 bounds → 保存到 ~/.ai-pad/games/
   → 同上流程启动游戏
@@ -268,8 +268,8 @@ minigame.rs     ███████              180  (15%)
 
 本节是基于 2026-05 的当前仓库状态补充的实施路线。原设计的方向仍然成立，但落地入口需要贴合现有架构：
 
-- 当前项目已经有 `app/src/action_bus.rs`，并且舞蹈入口已通过 `ActionBus::PlayDance` 归一分发。Phase 1 已新增 `Action::PlayGameDefault`，面板入口和未来工具入口应继续走同一条动作语义。
-- 舞蹈系统的成熟模式是 `core::dance` 持久化与请求通道 → app bridge 消费 → 前端播放。游戏可复用这个思路，但 Phase 1 先走预设 `GameDef`，等窗口生命周期和输入独占稳定后再接 AI 工具。
+- 当前项目已经有 `app/src/action_bus.rs`，并且舞蹈入口已通过 `ActionBus::PlayDance` 归一分发。Phase 1 已新增 `Action::PlayGameDefault`，面板入口会启动默认 Snake；`app/src/game.rs` 也已经提供 `start_game(GameDef)` / `cmd_start_game_with_def`，未来 AI 工具应直接复用这条 GameDef 启动通道。
+- 舞蹈系统的成熟模式是 `core::dance` 持久化与请求通道 → app bridge 消费 → 前端播放。游戏可复用这个思路；当前窗口生命周期、输入独占和默认 Snake 已稳定，下一步是把 AI 工具注册到 agent/tools，并补齐 GameDef 持久化和更多引擎。
 - `panel.js` 已扩为 3×3，保留原 6 个入口并新增"游戏 / 设置 / 聊天"。后续新增入口时要同步 `COLS/ROWS`、面板尺寸和手柄导航边界。
 - `gamepad_loop` 已实现游戏激活优先级：game active > panel visible > voice held > 普通动作/滚轮。游戏激活时 D-pad/A/B/Start 转发为 `game-input`，普通滚轮和宠物动作暂停。
 - Tauri capabilities 已加入 `"game"`，动态 `game` 窗口可以使用 Tauri event / invoke API。
@@ -399,8 +399,8 @@ AI 路径推迟到 Phase 2：
 
 目标：让普通对话 Agent 自行决定何时启动游戏，而不是 Rust 侧做关键词分类。
 
-- `core/src/tools.rs` 增加 `perform_game`：AI 提交完整 `GameDef`，Rust validate 后保存并触发启动。
-- 可选增加 `play_game`：按已保存名称或内置预设启动。
+- `core/src/tools.rs` 增加 `perform_game`：AI 提交完整 `GameDef`，Rust validate 后保存，并通过 app 层已有 `start_game(GameDef)` 通道触发启动。
+- 增加 `play_game`：按已保存名称或内置预设启动；默认 Snake 的非 AI 启动路径已经由 `ActionBus::PlayGameDefault` / `cmd_start_game` 覆盖。
 - `core/src/agent.rs` 注册游戏工具；`core/src/prompts.rs` 补充能力说明。
 - 不做 Rust 侧关键词匹配，不做小分类器；遵循现有原则，让模型在普通对话中自行选择工具。
 

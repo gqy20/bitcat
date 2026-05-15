@@ -140,6 +140,8 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
 3. 游戏期间宠物进入 `GamePlay` 状态，结束后按 win / lose / cancel 切换表现
 4. `GameDef` 会校验网格尺寸、速度、胜利长度和主题枚举，防止异常配置导致越界或卡死
 
+当前面板入口会通过 `ActionBus::PlayGameDefault` 启动默认 Snake；底层 `start_game(GameDef)` / `cmd_start_game_with_def` 已能启动指定配置。AI 层 `perform_game` / `play_game` 工具还未注册，下一步会复用这条通道。
+
 ## 记忆系统（两层存储 + AI 画像）
 
 ### 第一层：短期对话记忆
@@ -150,9 +152,9 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
 
 ### 第二层：长期记忆
 
-- 通过启发式规则（关键词匹配 + 长度阈值）筛选值得长期保存的对话
-- 支持按关键词相关性评分检索
-- 持久化到 `~/.ai-pad/memory/long_term.json`
+- 对话结束后由 `AgentReaction.memory_candidates` 或 `remember` 工具写入长期记忆，Rust 只做 schema、长度、标签和重要度边界校验
+- 支持按 text/tag/source/min_importance 做 grep-first 候选召回，最多返回 20 条交给模型判断语义相关性
+- 持久化到 `~/.ai-pad/memory/long_term.jsonl`，一行一条当前有效记录，包含稳定 `id` 和 `deleted` 软删除字段
 
 ### AI 聚合画像
 
@@ -200,7 +202,7 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
 ├── core/                   # 纯逻辑库（无 UI 依赖）
 │   └── src/
 │       ├── lib.rs          # 模块入口
-│       ├── agent.rs        # AI Agent (rig-core + Anthropic SDK), 8+ Tool, 流式 chat_stream, tracing span
+│       ├── agent.rs        # AI Agent (rig-core + Anthropic SDK), 内置 Tool, 流式 chat_stream, tracing span
 │       ├── bridge.rs       # 手柄→AI→宠物桥接层, PetCommand IPC 协议, 按键映射
 │       ├── ai_config.rs    # 从 ~/.claude/settings.json 或环境变量读取 API 配置
 │       ├── action.rs       # 动作定义与加载（hotkey/launch/voice/script），配置嵌入 + 多路径查找
@@ -212,14 +214,14 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
 │       ├── device.rs       # SDL2 按键编号 → 名称映射
 │       ├── hotkey.rs       # Win32 SendInput 键鼠模拟 + force_foreground
 │       ├── pet.rs          # 桌宠状态机（Idle/Walk/Sleep/Talk/Happy/Confused/Dance）
-│       ├── memory.rs       # 两层记忆系统：短期滚动窗口 + 长期关键词检索 + AI 聚合画像
+│       ├── memory.rs       # 两层记忆系统：短期滚动窗口 + 长期 JSONL 候选召回 + AI 聚合画像
 │       ├── vision.rs       # Vision API 请求构建/响应解析
 │       ├── screenshot.rs   # 截图类型定义、dHash、resize/JPEG、存储 + 7天清理
 │       ├── screen_summary.rs # 屏幕活动摘要存储 + 最近 N 条截图注入 prompt
 │       ├── minigame.rs     # 迷你游戏 GameDef schema 与校验
 │       ├── tool_events.rs  # 工具运行时事件审计日志
 │       ├── token_tracker.rs # Token 用量 JSONL + session 聚合
-│       └── tools.rs        # AI Tool 实现（launch/shell/read_file/get_time/recent_screenshots/hotkey/clipboard/foreground/perform_dance/play_dance）
+│       └── tools.rs        # AI Tool 实现（launch/shell/read_file/get_time/recent_screenshots/hotkey/clipboard/foreground/perform_dance/play_dance/search_memory/remember）
 └── app/                    # Tauri 2.0 应用
     ├── tauri.conf.json     # 窗口、权限、withGlobalTauri
     ├── capabilities/
@@ -408,8 +410,8 @@ language: "zh-CN"         # 首选语言（空则自动判断）
 | `perform_dance` | AI 直接提交完整 DanceDef，保存并立即播放 |
 | `play_dance` | 播放已保存的舞蹈 |
 
-- 按 Start 键触发对话，AI 回复关键词驱动桌宠状态切换（"哈哈"/"喵"→Happy, "错误"/"失败"→Confused, 舞蹈相关→Dance）
-- 对话记忆**两层存储**：短期滚动窗口（默认 20 条）+ 长期关键词检索 + AI 聚合画像
+- 按 Start 键触发对话，流式回复、工具生命周期和最终 `AgentReaction` 会通过 tagged `PetEvent` 驱动桌宠状态
+- 对话记忆**两层存储**：短期滚动窗口（默认 20 条）+ 长期 JSONL grep-first 候选召回 + AI 聚合画像
 - 所有持久化到 `~/.ai-pad/memory/`
 - Agent 方法带 `#[instrument]` tracing span，完整记录工具调用链路
 - Token 用量写入 `~/.ai-pad/logs/token_usage.jsonl`，最近会话聚合写入 `~/.ai-pad/logs/token_sessions.json`

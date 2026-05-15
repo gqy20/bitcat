@@ -159,7 +159,7 @@ app 层通过 `SharedPetEventBus` 统一发送 `pet-event`，集中处理去重�
 
 长期记忆由 `AgentReaction.memory_candidates` 或 `remember` 工具驱动写入 `LongTermMemory`，不再使用关键词式 `should_store` 判断。结构化条目保留 `summary` / `tags` / `importance` / `source`，并提供 `retrieve_with()` 按 text/tag/source/min_importance 过滤，以及 `review_entries()` / `review_markdown()` 供设置页审查和人工删除。
 
-长期记忆检索坚持 **grep-first**：优先使用 append-only JSONL / Markdown / 稳定字段，让记忆可以被 `rg`、人工审查和大模型共同读取。不要引入 Embeddings / Vector RAG / 向量数据库作为主线方案；当前取舍见 `docs/architecture/design-tradeoffs.md`。需要召回历史时，先用关键词、时间范围、来源、标签等可解释条件筛出候选，再交给大模型判断和压缩。
+长期记忆检索坚持 **grep-first**：优先使用一行一条的 JSONL record / Markdown / 稳定字段，让记忆可以被 `rg`、人工审查和大模型共同读取。当前长期记忆主文件是 `~/.ai-pad/memory/long_term.jsonl`，保存当前有效记录，通过 `deleted: true` 软删除，不做 tombstone event sourcing。不要引入 Embeddings / Vector RAG / 向量数据库作为主线方案；当前取舍见 `docs/architecture/design-tradeoffs.md`。需要召回历史时，先用文本、来源、标签、重要度等可解释条件筛出候选，再交给大模型判断和压缩。
 
 ### 用户画像
 

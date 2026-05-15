@@ -775,7 +775,7 @@ mod tests {
 
         assert!(result.success);
         assert!(result.output.contains("grep-first memory"));
-        assert!(result.output.contains("#memory"));
+        assert!(result.output.contains("tags=[memory,preference]"));
     }
 
     #[test]
