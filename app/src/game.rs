@@ -7,7 +7,7 @@
 use ai_pad_core::bridge::PetStateName;
 use ai_pad_core::minigame::{validate_game_def, GameDef, MinigameType};
 use ai_pad_core::pet_event::{PetEvent, PetMode, PetMood};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
@@ -31,6 +31,22 @@ pub struct SharedGame {
 pub struct GameCursorPosition {
     pub x: f64,
     pub y: f64,
+}
+
+/// Battle 前端上报给桌宠事件总线的语义事件。
+#[derive(Debug, Clone, Deserialize)]
+pub struct BattlePetEventPayload {
+    pub kind: String,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub skill_id: Option<String>,
+    #[serde(default)]
+    pub damage: Option<i32>,
+    #[serde(default)]
+    pub hp_ratio: Option<f32>,
+    #[serde(default)]
+    pub interrupted: bool,
 }
 
 impl Default for SharedGame {
@@ -412,14 +428,19 @@ pub fn cmd_game_end(app: AppHandle, result: String, score: u32) -> Result<(), St
 
 /// Battle 前端在低频语义节点上回传桌宠表现事件。
 #[tauri::command]
-pub fn cmd_battle_pet_event(app: AppHandle, kind: String) -> Result<(), String> {
-    let event = match kind.trim().to_ascii_lowercase().as_str() {
+pub fn cmd_battle_pet_event(app: AppHandle, event: BattlePetEventPayload) -> Result<(), String> {
+    let kind = event.kind.trim().to_ascii_lowercase();
+    let pet_event = match kind.as_str() {
         "start" => PetEvent::ShowBubble {
             text: "传送门打开了，帮我一起打！".into(),
         },
         "attack" | "skill" => PetEvent::react(PetMood::Focused),
         "guard" => PetEvent::react(PetMood::Caring),
-        "break" => PetEvent::react(PetMood::Excited),
+        "interrupt" => PetEvent::React {
+            mood: PetMood::Excited,
+            speech: Some("打断成功！".into()),
+            ttl_ms: Some(3_000),
+        },
         "win" => PetEvent::React {
             mood: PetMood::Happy,
             speech: Some("赢啦！".into()),
@@ -432,9 +453,31 @@ pub fn cmd_battle_pet_event(app: AppHandle, kind: String) -> Result<(), String> 
         },
         other => return Err(format!("未知战斗宠物事件: {other}")),
     };
+    let source = event_source_preview(&event);
+    info!(kind = %kind, source = %source, "[battle] pet event");
     let bus: tauri::State<'_, crate::pet_event_bus::SharedPetEventBus> = app.state();
-    bus.emit(&app, event);
+    bus.emit(&app, pet_event);
     Ok(())
+}
+
+fn event_source_preview(event: &BattlePetEventPayload) -> String {
+    let mut parts = Vec::new();
+    if let Some(source) = &event.source {
+        parts.push(format!("source={source}"));
+    }
+    if let Some(skill_id) = &event.skill_id {
+        parts.push(format!("skill={skill_id}"));
+    }
+    if let Some(damage) = event.damage {
+        parts.push(format!("damage={damage}"));
+    }
+    if let Some(hp_ratio) = event.hp_ratio {
+        parts.push(format!("hp_ratio={hp_ratio:.2}"));
+    }
+    if event.interrupted {
+        parts.push("interrupted=true".to_string());
+    }
+    parts.join(" ")
 }
 
 /// 前端调试日志桥接。
@@ -447,4 +490,26 @@ pub fn cmd_game_log(msg: String) -> Result<(), String> {
         "[game-js]"
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{event_source_preview, BattlePetEventPayload};
+
+    #[test]
+    fn battle_event_preview_keeps_structured_fields() {
+        let event = BattlePetEventPayload {
+            kind: "interrupt".to_string(),
+            source: Some("skill".to_string()),
+            skill_id: Some("scratch".to_string()),
+            damage: Some(9),
+            hp_ratio: Some(0.42),
+            interrupted: true,
+        };
+
+        assert_eq!(
+            event_source_preview(&event),
+            "source=skill skill=scratch damage=9 hp_ratio=0.42 interrupted=true"
+        );
+    }
 }

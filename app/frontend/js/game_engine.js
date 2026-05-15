@@ -26,8 +26,17 @@
     console.log('[game]', msg);
   }
 
-  function emitBattlePet(kind) {
-    if (invoke) invoke('cmd_battle_pet_event', { kind }).catch(() => {});
+  function emitBattlePet(kind, detail = {}) {
+    if (!invoke) return;
+    const event = {
+      kind,
+      source: detail.source || null,
+      skill_id: detail.skillId || null,
+      damage: Number.isFinite(detail.damage) ? detail.damage : null,
+      hp_ratio: Number.isFinite(detail.hpRatio) ? detail.hpRatio : null,
+      interrupted: Boolean(detail.interrupted),
+    };
+    invoke('cmd_battle_pet_event', { event }).catch(() => {});
   }
 
   function setGameInputCapture(enabled) {
@@ -252,6 +261,8 @@
       }));
       this.petAttackTimer = this.pet.autoAttackMs;
       this.monsterAttackTimer = this.monster.attack_interval_ms;
+      this.attackWarnWindowMs = 700;
+      this.interruptDelayMs = Math.max(900, Math.floor(this.monster.attack_interval_ms * 0.55));
       this.guardMs = 0;
       this.floaters = [];
       this.lastMetrics = null;
@@ -289,7 +300,7 @@
       if (input.type === 'attack_primary') {
         if (this.state === 'ready') this.state = 'playing';
         this.notifyStart();
-        this.attackMonster(this.pet.attack, 'hit');
+        this.attackMonster(this.pet.attack, 'hit', { source: 'button' });
         return;
       }
       if (input.type === 'skill') {
@@ -303,7 +314,7 @@
         this.notifyStart();
         this.guardMs = Math.max(this.guardMs, 700);
         this.addFloater('guard', 0.24, 0.64, '#8ecae6');
-        emitBattlePet('guard');
+        emitBattlePet('guard', { source: 'guard', hpRatio: this.petHpRatio() });
         return;
       }
       if (input.type === 'direction') {
@@ -313,11 +324,11 @@
     }
 
     handlePointer(x, y) {
-      if (this.ended) return;
+      if (this.ended) return false;
       if (this.state === 'ready') this.state = 'playing';
       this.notifyStart();
       if (this.hitTestMonster(x, y)) {
-        this.attackMonster(this.pet.attack, 'tap');
+        this.attackMonster(this.pet.attack, 'tap', { source: 'pointer' });
         return true;
       }
       const skill = this.hitTestSkill(x, y);
@@ -360,7 +371,7 @@
       }
 
       this.monsterAttackTimer -= dtMs;
-      this.monster.attackWarnMs = this.monsterAttackTimer <= 650 ? this.monsterAttackTimer : 0;
+      this.monster.attackWarnMs = this.monsterAttackTimer <= this.attackWarnWindowMs ? this.monsterAttackTimer : 0;
       if (this.monsterAttackTimer <= 0) {
         this.monsterAttackTimer += this.monster.attack_interval_ms;
         const guarded = this.guardMs > 0;
@@ -371,18 +382,19 @@
       }
     }
 
-    attackMonster(amount, label) {
+    attackMonster(amount, label, detail = {}) {
       if (this.ended || this.state === 'paused') return;
       this.monster.hp = Math.max(0, this.monster.hp - amount);
       this.monster.hitFlashMs = 130;
       this.addFloater(`-${amount}`, this.monster.x, this.monster.y - 0.12, label === 'auto' ? '#b8f2e6' : '#ffd166');
       if (this.monster.attackWarnMs > 0 && label !== 'auto') {
-        this.monsterAttackTimer = Math.max(this.monsterAttackTimer, 900);
-        this.monster.attackWarnMs = 0;
-        this.addFloater('break', this.monster.x, this.monster.y - 0.22, '#70d6ff');
-        emitBattlePet('break');
+        this.interruptMonsterAttack({ ...detail, damage: amount });
       } else if (label !== 'auto') {
-        emitBattlePet(label === 'skill' ? 'skill' : 'attack');
+        emitBattlePet(label === 'skill' ? 'skill' : 'attack', {
+          ...detail,
+          damage: amount,
+          hpRatio: this.monsterHpRatio(),
+        });
       }
       if (this.monster.hp <= 0) {
         this.score = this.monster.reward_exp;
@@ -393,7 +405,7 @@
     useSkill(slot) {
       const skill = this.skills.find((s) => s.slot === Number(slot));
       if (!skill || skill.cooldownLeftMs > 0 || this.state === 'paused') return;
-      if (skill.damage > 0) this.attackMonster(skill.damage, 'skill');
+      if (skill.damage > 0) this.attackMonster(skill.damage, 'skill', { source: 'skill', skillId: skill.id });
       if (skill.heal > 0) {
         this.pet.hp = Math.min(this.pet.maxHp, this.pet.hp + skill.heal);
         this.addFloater(`+${skill.heal}`, 0.23, 0.55, '#95d5b2');
@@ -406,7 +418,28 @@
       this.ended = true;
       this.state = result;
       this.setInputCapture(true);
-      if (result === 'win' || result === 'lose') emitBattlePet(result);
+      if (result === 'win' || result === 'lose') {
+        emitBattlePet(result, { hpRatio: result === 'win' ? this.monsterHpRatio() : this.petHpRatio() });
+      }
+    }
+
+    interruptMonsterAttack(detail = {}) {
+      this.monsterAttackTimer = Math.max(this.monsterAttackTimer, this.interruptDelayMs);
+      this.monster.attackWarnMs = 0;
+      this.addFloater('interrupt', this.monster.x, this.monster.y - 0.22, '#70d6ff');
+      emitBattlePet('interrupt', {
+        ...detail,
+        hpRatio: this.monsterHpRatio(),
+        interrupted: true,
+      });
+    }
+
+    monsterHpRatio() {
+      return this.monster.maxHp > 0 ? this.monster.hp / this.monster.maxHp : 0;
+    }
+
+    petHpRatio() {
+      return this.pet.maxHp > 0 ? this.pet.hp / this.pet.maxHp : 0;
     }
 
     updateInputCapture(dtMs) {
