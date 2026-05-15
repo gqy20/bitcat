@@ -25,7 +25,8 @@ use crate::token_tracker::{
 use crate::tool_events::{ToolEventRecord, record_tool_event};
 use crate::tools::{
     self, ClipboardArgs, ForegroundArgs, GetTimeArgs, HotkeyArgs, LaunchArgs, PerformDanceArgs,
-    PlayDanceArgs, ReadFileArgs, RecentScreenshotsArgs, ShellArgs, ToolError,
+    PlayDanceArgs, ReadFileArgs, RecentScreenshotsArgs, RememberArgs, SearchMemoryArgs, ShellArgs,
+    ToolError,
 };
 use futures::StreamExt;
 use rig::agent::Agent;
@@ -123,6 +124,8 @@ fn tool_label(tool_name: &str) -> String {
         "read_file" => "读取文件",
         "get_time" => "查看时间",
         "recent_screenshots" => "查看屏幕记录",
+        "search_memory" => "检索记忆",
+        "remember" => "保存记忆",
         "send_hotkey" => "发送快捷键",
         "read_clipboard" => "读取剪贴板",
         "force_foreground" => "切换窗口",
@@ -251,6 +254,8 @@ impl PetAgent {
             .tool(ReadFileTool)
             .tool(GetTimeTool)
             .tool(RecentScreenshotsTool)
+            .tool(SearchMemoryTool)
+            .tool(RememberTool)
             .tool(HotkeyTool)
             .tool(ClipboardTool)
             .tool(ForegroundTool)
@@ -493,6 +498,22 @@ define_tool_sync!(
 );
 
 define_tool_sync!(
+    SearchMemoryTool,
+    "search_memory",
+    "Search grep-first long-term memory with text, tags, source, and importance filters.",
+    SearchMemoryArgs,
+    tools::execute_search_memory_live
+);
+
+define_tool_sync!(
+    RememberTool,
+    "remember",
+    "Store an explicit durable long-term memory note with optional importance and tags.",
+    RememberArgs,
+    tools::execute_remember
+);
+
+define_tool_sync!(
     HotkeyTool,
     "send_hotkey",
     "模拟键盘快捷键组合（如 Alt+Tab 切窗口、Ctrl+C 复制）",
@@ -597,6 +618,19 @@ mod tests {
         assert!(schema.contains("\"full\""));
         assert!(schema.contains("\"date\""));
         assert!(schema.contains("\"time\""));
+    }
+
+    #[tokio::test]
+    async fn test_memory_tool_definitions() {
+        let search = SearchMemoryTool.definition(String::new()).await;
+        assert_eq!(search.name, "search_memory");
+        let search_schema = serde_json::to_string(&search.parameters).unwrap();
+        assert!(search_schema.contains("min_importance"));
+
+        let remember = RememberTool.definition(String::new()).await;
+        assert_eq!(remember.name, "remember");
+        let remember_schema = serde_json::to_string(&remember.parameters).unwrap();
+        assert!(remember_schema.contains("importance"));
     }
 
     #[tokio::test]

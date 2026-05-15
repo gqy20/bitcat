@@ -112,14 +112,14 @@ Current visual mapping:
 |---|---|
 | `AiThinking` | `talk` |
 | `AiWriting` | `talk` |
-| `ToolPreparing` | `talk` |
+| `ToolPreparing` | `preparing` |
 | `ToolRunning` | `talk` |
 | `ToolBlocked` | `confused` |
 | `ToolFailed` | `confused` |
 | `Sleep` mode | `sleep` |
 | `GamePlay` mode | `gameplay` |
 | `Happy` / `Caring` / `Excited` moods | `happy` |
-| `Focused` mood | `talk` |
+| `Focused` mood | `focused` |
 | `Sleepy` mood | `sleep` |
 
 Notification events temporarily override reaction mood. Long-lived modes such as `Sleep` and `GamePlay` have higher priority than notifications. `React.ttl_ms` lets final mood expire back to idle/current semantic state.
@@ -143,7 +143,12 @@ Long-term memory is now driven by structured `memory_candidates`, not keyword ru
 - `source`
 - original truncated user/assistant text
 
-It exposes `retrieve_with()` for text/tag/source/importance filtering and `review_entries()` / `review_markdown()` for human-readable review. The design stays grep-first and intentionally avoids embeddings/vector RAG.
+It exposes `retrieve_with()` for text/tag/source/importance filtering and `review_entries()` / `review_markdown()` for human-readable review. Settings uses `cmd_get_memory_review` / `cmd_delete_memory_entry` to list and delete entries by stable review index. The design stays grep-first and intentionally avoids embeddings/vector RAG.
+
+The main Agent also exposes two semantic memory tools:
+
+- `search_memory`: grep-first retrieval with text, tags, source, importance, and character-budget filters.
+- `remember`: explicit long-term note creation with normalized tags and clamped importance.
 
 ## Testing
 
@@ -153,7 +158,9 @@ Relevant coverage:
 - `core/src/mood_policy.rs`: TTL defaults, explicit TTL, throttling, priority override.
 - `app/src/pet_event_bus.rs`: mood TTL preparation, deduplication, event log snapshots.
 - `core/src/agent_reaction.rs`: sanitization and fallback behavior.
-- `core/src/memory.rs`: candidate storage, filtered retrieval, review markdown.
+- `core/src/memory.rs`: candidate storage, filtered retrieval, review markdown, deletion by review index.
+- `core/src/tools.rs`: `search_memory` and `remember` argument parsing and execution.
+- `app/src/settings.rs`: memory review/delete IPC serialization.
 - `app/frontend/__tests__/pet.test.js`: notification mapping, reaction TTL, mode priority.
 
 Recommended verification after touching this path:
@@ -169,7 +176,6 @@ cd app/frontend && npx vitest run
 
 Next likely improvements:
 
-- add dedicated `focused` / `preparing` animation frames instead of mapping all active work to `talk`;
-- expose long-term memory review/delete actions in settings;
 - evaluate hook-level `on_tool_call_delta()` only if argument-delta previews are needed;
-- consider semantic tools like `search_memory`, `remember`, or `ask_user_confirmation` before expanding low-level shell usage.
+- consider `ask_user_confirmation` before expanding low-level shell usage;
+- add settings-side editing or tag cleanup only if manual review starts needing it.

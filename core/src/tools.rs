@@ -10,8 +10,10 @@
 //! 与 `agent.rs`（注册工具到 rig Agent）和 `bridge.rs`（解析工具调用）交互。
 
 use crate::action::launch_program;
+use crate::agent_reaction::MemoryCandidate;
 use crate::dance::{DanceDef, DanceStep};
 use crate::logging::log_preview;
+use crate::memory::{LongTermMemory, LongTermMemoryQuery};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -42,6 +44,8 @@ pub fn truncate_chars(s: &str, max: usize) -> String {
 
 const SHELL_TIMEOUT_SECS: u64 = 30;
 const MAX_OUTPUT_CHARS: usize = 8000;
+const DEFAULT_MEMORY_TOOL_BUDGET_CHARS: usize = 1600;
+const DEFAULT_LONG_TERM_MEMORY_MAX_ENTRIES: usize = 200;
 
 // ---- Tool 参数定义 ----
 
@@ -117,6 +121,38 @@ pub struct RecentScreenshotsArgs {
 
 fn default_screenshot_count() -> Option<u32> {
     Some(3)
+}
+
+/// `search_memory` tool arguments for grep-first long-term memory retrieval.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct SearchMemoryArgs {
+    /// Text query used for explainable keyword retrieval.
+    pub query: String,
+    /// Optional tags that every returned entry must contain.
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Optional source filter, for example `agent_reaction` or `remember_tool`.
+    #[serde(default)]
+    pub source: Option<String>,
+    /// Optional minimum importance from 1 to 5.
+    #[serde(default)]
+    pub min_importance: Option<u8>,
+    /// Character budget for returned memory context.
+    #[serde(default)]
+    pub limit_chars: Option<usize>,
+}
+
+/// `remember` tool arguments for explicitly adding a durable memory note.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct RememberArgs {
+    /// Durable memory text to store.
+    pub text: String,
+    /// Optional importance from 1 to 5. Defaults to 4.
+    #[serde(default)]
+    pub importance: Option<u8>,
+    /// Optional review/search tags.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 // ---- Tool 执行结果 ----
@@ -270,6 +306,113 @@ pub fn execute_recent_screenshots(
         ));
     }
     ToolResult::ok(lines.join("\n"))
+}
+
+/// Search an already-loaded long-term memory store with structured filters.
+pub fn execute_search_memory(args: &SearchMemoryArgs, store: &LongTermMemory) -> ToolResult {
+    let query = args.query.trim();
+    if query.is_empty() && args.tags.is_empty() && args.source.is_none() {
+        return ToolResult::err("search_memory requires query, tags, or source");
+    }
+
+    let budget = args
+        .limit_chars
+        .unwrap_or(DEFAULT_MEMORY_TOOL_BUDGET_CHARS)
+        .clamp(200, 4000);
+    let result = store.retrieve_with(
+        &LongTermMemoryQuery {
+            text: query.to_string(),
+            tags: normalize_memory_tags(&args.tags),
+            source: args.source.as_ref().and_then(|s| {
+                let trimmed = s.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            }),
+            min_importance: args.min_importance.map(|v| v.clamp(1, 5)),
+        },
+        budget,
+    );
+
+    if result.is_empty() {
+        ToolResult::ok("No matching long-term memory found.")
+    } else {
+        ToolResult::ok(result)
+    }
+}
+
+/// Search the persisted long-term memory store.
+pub fn execute_search_memory_live(args: &SearchMemoryArgs) -> ToolResult {
+    let store = LongTermMemory::load();
+    execute_search_memory(args, &store)
+}
+
+/// Add one explicit durable memory note to an already-loaded store.
+pub fn execute_remember_into(
+    args: &RememberArgs,
+    store: &mut LongTermMemory,
+    max_entries: usize,
+) -> ToolResult {
+    let text = args.text.trim();
+    if text.is_empty() {
+        return ToolResult::err("remember requires non-empty text");
+    }
+
+    let candidate = MemoryCandidate {
+        text: truncate_chars(text, 500),
+        importance: args.importance.unwrap_or(4).clamp(1, 5),
+        tags: normalize_memory_tags(&args.tags),
+    };
+    store.record_candidate(
+        &candidate,
+        "remember tool request",
+        &candidate.text,
+        max_entries,
+    );
+    if let Some(entry) = store.entries.last_mut() {
+        entry.source = Some("remember_tool".to_string());
+    }
+    ToolResult::ok(format!(
+        "Remembered long-term note with importance {} and {} tag(s).",
+        candidate.importance,
+        candidate.tags.len()
+    ))
+}
+
+/// Add one explicit durable memory note to the persisted long-term store.
+pub fn execute_remember(args: &RememberArgs) -> ToolResult {
+    let mut store = LongTermMemory::load();
+    let result = execute_remember_into(args, &mut store, DEFAULT_LONG_TERM_MEMORY_MAX_ENTRIES);
+    if !result.success {
+        return result;
+    }
+    match store.save() {
+        Ok(()) => result,
+        Err(e) => ToolResult::err(format!("failed to save long-term memory: {e}")),
+    }
+}
+
+fn normalize_memory_tags(tags: &[String]) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for tag in tags {
+        let cleaned = tag
+            .trim()
+            .trim_start_matches('#')
+            .chars()
+            .take(32)
+            .collect::<String>()
+            .to_lowercase();
+        if cleaned.is_empty() || normalized.contains(&cleaned) {
+            continue;
+        }
+        normalized.push(cleaned);
+        if normalized.len() >= 8 {
+            break;
+        }
+    }
+    normalized
 }
 
 // ---- 新增工具：Hotkey / Clipboard / Foreground ----
@@ -591,6 +734,74 @@ mod tests {
         let json = r#"{"count": 5}"#;
         let args: RecentScreenshotsArgs = serde_json::from_str(json).unwrap();
         assert_eq!(args.count, Some(5));
+    }
+
+    #[test]
+    fn test_search_memory_args_defaults() {
+        let json = r#"{"query":"grep memory"}"#;
+        let args: SearchMemoryArgs = serde_json::from_str(json).unwrap();
+        assert_eq!(args.query, "grep memory");
+        assert!(args.tags.is_empty());
+        assert_eq!(args.source, None);
+        assert_eq!(args.min_importance, None);
+    }
+
+    #[test]
+    fn test_execute_search_memory_with_filters() {
+        let mut store = LongTermMemory {
+            entries: Vec::new(),
+        };
+        store.record_candidate(
+            &MemoryCandidate {
+                text: "User prefers grep-first memory retrieval".into(),
+                importance: 5,
+                tags: vec!["memory".into(), "preference".into()],
+            },
+            "remember this",
+            "ok",
+            10,
+        );
+
+        let result = execute_search_memory(
+            &SearchMemoryArgs {
+                query: "grep memory".into(),
+                tags: vec!["#Memory".into()],
+                source: Some("agent_reaction".into()),
+                min_importance: Some(4),
+                limit_chars: Some(500),
+            },
+            &store,
+        );
+
+        assert!(result.success);
+        assert!(result.output.contains("grep-first memory"));
+        assert!(result.output.contains("#memory"));
+    }
+
+    #[test]
+    fn test_execute_remember_into_normalizes_tags_and_importance() {
+        let mut store = LongTermMemory {
+            entries: Vec::new(),
+        };
+        let result = execute_remember_into(
+            &RememberArgs {
+                text: " User likes quiet focused UI ".into(),
+                importance: Some(9),
+                tags: vec!["#Preference".into(), "preference".into(), "".into()],
+            },
+            &mut store,
+            10,
+        );
+
+        assert!(result.success);
+        assert_eq!(store.entries.len(), 1);
+        assert_eq!(
+            store.entries[0].summary.as_deref(),
+            Some("User likes quiet focused UI")
+        );
+        assert_eq!(store.entries[0].importance, Some(5));
+        assert_eq!(store.entries[0].tags, vec!["preference"]);
+        assert_eq!(store.entries[0].source.as_deref(), Some("remember_tool"));
     }
 
     #[test]

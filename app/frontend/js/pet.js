@@ -57,6 +57,24 @@ const STATE_CONFIG = {
     repeat: 2,
     fallback: 'idle',
   },
+  focused: {
+    frames: [
+      { sprite: 0, duration: 700 },
+      { sprite: 1, duration: 140 },
+      { sprite: 0, duration: 520 },
+      { sprite: 2, duration: 120 },
+    ],
+    loop: true,
+  },
+  preparing: {
+    frames: [
+      { sprite: 1, duration: 180 },
+      { sprite: 2, duration: 180 },
+      { sprite: 1, duration: 180 },
+      { sprite: 0, duration: 260 },
+    ],
+    loop: true,
+  },
   gameplay: {
     frames: [
       { sprite: 0, duration: 300 },
@@ -86,7 +104,7 @@ const STATE_CONFIG = {
 const NOTIFICATION_CONFIG = {
   ai_thinking: { state: 'talk', ttlMs: 30000 },
   ai_writing: { state: 'talk', ttlMs: 30000 },
-  tool_preparing: { state: 'talk', ttlMs: 30000 },
+  tool_preparing: { state: 'preparing', ttlMs: 30000 },
   tool_running: { state: 'talk', ttlMs: 30000 },
   tool_blocked: { state: 'confused', ttlMs: 15000 },
   tool_failed: { state: 'confused', ttlMs: 15000 },
@@ -98,7 +116,7 @@ const MOOD_STATE = {
   idle: 'idle',
   happy: 'happy',
   confused: 'confused',
-  focused: 'talk',
+  focused: 'focused',
   caring: 'happy',
   excited: 'happy',
   sleepy: 'sleep',

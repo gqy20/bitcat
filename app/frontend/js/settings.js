@@ -343,7 +343,7 @@ function renderAbout(a) {
 }
 
 async function loadUsageDiagnostics() {
-  await Promise.all([loadTokenStats(), loadPetEventLog()]);
+  await Promise.all([loadTokenStats(), loadPetEventLog(), loadMemoryReview()]);
 }
 
 async function loadTokenStats() {
@@ -368,6 +368,26 @@ async function loadPetEventLog() {
   } catch (e) {
     log("加载宠物事件失败: " + e);
     renderPetEventLog(null);
+  }
+}
+
+async function loadMemoryReview() {
+  try {
+    const review = await invoke("cmd_get_memory_review", { limit: 20 });
+    renderMemoryReview(review);
+  } catch (e) {
+    log("load memory review failed: " + e);
+    renderMemoryReview(null);
+  }
+}
+
+async function deleteMemoryEntry(index) {
+  try {
+    const review = await invoke("cmd_delete_memory_entry", { index, limit: 20 });
+    renderMemoryReview(review);
+    toast("Memory deleted", "ok");
+  } catch (e) {
+    toast("Delete failed: " + String(e), "err");
   }
 }
 
@@ -480,6 +500,57 @@ function renderPetEventLog(logView) {
   }).join("");
 }
 
+function renderMemoryReview(review) {
+  const box = $("memory-review");
+  if (!box) return;
+  const entries = review?.entries || [];
+  if (!entries.length) {
+    box.innerHTML = `<div class="empty">No long-term memory entries</div>`;
+    return;
+  }
+
+  box.innerHTML = `
+    <div class="memory-meta">
+      <span>${formatNumber(review.total_entries)} total</span>
+      <span>${escapeHtml(formatDateTime(review.generated_at))}</span>
+    </div>
+    ${entries.map(entry => {
+      const tags = (entry.tags || []).map(tag => `<span>#${escapeHtml(tag)}</span>`).join("");
+      const source = entry.source || "unknown";
+      const importance = entry.importance == null ? "?" : entry.importance;
+      return `
+        <div class="memory-entry">
+          <div class="memory-entry-head">
+            <strong>${escapeHtml(entry.title)}</strong>
+            <button class="btn small danger memory-delete" type="button" data-index="${escapeAttr(entry.index)}">Delete</button>
+          </div>
+          <div class="memory-entry-meta">
+            <span>#${formatNumber(entry.index + 1)}</span>
+            <span>${escapeHtml(entry.timestamp)}</span>
+            <span>${escapeHtml(source)}</span>
+            <span>importance ${escapeHtml(importance)}</span>
+            ${entry.aggregated ? "<span>aggregated</span>" : ""}
+          </div>
+          <div class="memory-tags">${tags || "<span>untagged</span>"}</div>
+          <div class="memory-body">
+            <p>${escapeHtml(entry.user_msg)}</p>
+            <p>${escapeHtml(entry.ai_reply)}</p>
+          </div>
+        </div>
+      `;
+    }).join("")}
+  `;
+
+  box.querySelectorAll(".memory-delete").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const index = Number(btn.dataset.index);
+      if (Number.isInteger(index) && confirm("Delete this memory entry?")) {
+        deleteMemoryEntry(index);
+      }
+    });
+  });
+}
+
 // ---- 保存 / 重置 ----
 
 async function saveAll() {
@@ -576,6 +647,8 @@ function bindGlobal() {
   $("btn-save").addEventListener("click", saveAll);
   $("btn-reset").addEventListener("click", resetCurrent);
   $("usage-refresh").addEventListener("click", loadUsageDiagnostics);
+  const memoryRefresh = $("memory-refresh");
+  if (memoryRefresh) memoryRefresh.addEventListener("click", loadMemoryReview);
   $("ai-key-toggle").addEventListener("click", () => {
     const el = $("ai-key");
     el.type = el.type === "password" ? "text" : "password";

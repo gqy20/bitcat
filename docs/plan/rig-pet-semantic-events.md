@@ -361,15 +361,15 @@ pub struct MemoryCandidate {
 1. 新增 `AgentStreamStatus`，从 rig `MultiTurnStreamItem` 派生 `AiWriting` 和 `ToolPreparing`。
 2. `StreamedAssistantContent::Text` 首次进入文本流时触发 `AiWriting`。
 3. `StreamedAssistantContent::ToolCall` 到达时触发 `ToolPreparing`，随后沿用工具生命周期进入 `ToolRunning`。
-4. 新增 `PetNotificationKind::AiWriting` 和 `PetNotificationKind::ToolPreparing`，前端暂时映射到 `talk`。
+4. 新增 `PetNotificationKind::AiWriting` 和 `PetNotificationKind::ToolPreparing`，前端分别映射到 `talk` / `preparing`。
 5. 对话结束时统一清理 thinking / writing / preparing / running 通知。
 
 ### Phase 7：后续优化
 
 1. 评估是否需要自定义 `PromptHook` 直接消费 `on_text_delta()` / `on_tool_call_delta()`，目前 `MultiTurnStreamItem` 已足够表达主 UI 状态。
-2. 增加 `Focused` / `preparing` 专用动画帧。
+2. `Focused` / `preparing` 专用动画帧已接入前端状态机。
 3. 评估 Dance 是否纳入统一状态机。
-4. 把长期记忆 review markdown 接入设置页，支持查看和人工删除。
+4. 长期记忆 review markdown 已接入设置页，支持查看和人工删除。
 
 ## 测试计划
 

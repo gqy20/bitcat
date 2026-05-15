@@ -14,6 +14,7 @@
 use crate::commands::SharedWindowState;
 use ai_pad_core::action::{ActionConfig, ActionDef, Defaults};
 use ai_pad_core::app_settings::{AiOverride, AppSettings, AppearanceSettings};
+use ai_pad_core::memory::{LongTermMemory, LongTermReviewEntry};
 use ai_pad_core::prompts::PromptsConfig;
 use ai_pad_core::token_tracker::{
     load_sessions, token_sessions_path, token_usage_path, totals_for_date, TokenSession,
@@ -140,6 +141,14 @@ pub struct TokenStatsView {
     pub today: TokenTotals,
     pub recent_sessions: Vec<TokenSessionView>,
     pub paths: TokenStatsPaths,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MemoryReviewView {
+    pub generated_at: String,
+    pub total_entries: usize,
+    pub entries: Vec<LongTermReviewEntry>,
+    pub markdown: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -347,6 +356,42 @@ pub async fn cmd_get_token_stats() -> Result<TokenStatsView, String> {
             sessions_json: sessions_path.to_string_lossy().into_owned(),
         },
     })
+}
+
+/// Return a reviewable view of grep-first long-term memory.
+#[tauri::command]
+pub async fn cmd_get_memory_review(limit: Option<usize>) -> Result<MemoryReviewView, String> {
+    let store = LongTermMemory::load();
+    Ok(memory_review_view(
+        &store,
+        limit.unwrap_or(20).clamp(1, 100),
+    ))
+}
+
+/// Delete one long-term memory entry by the stable index shown in the review view.
+#[tauri::command]
+pub async fn cmd_delete_memory_entry(
+    index: usize,
+    limit: Option<usize>,
+) -> Result<MemoryReviewView, String> {
+    let mut store = LongTermMemory::load();
+    if !store.delete_entry(index) {
+        return Err(format!("memory entry index {index} does not exist"));
+    }
+    store.save()?;
+    Ok(memory_review_view(
+        &store,
+        limit.unwrap_or(20).clamp(1, 100),
+    ))
+}
+
+fn memory_review_view(store: &LongTermMemory, limit: usize) -> MemoryReviewView {
+    MemoryReviewView {
+        generated_at: chrono::Local::now().to_rfc3339(),
+        total_entries: store.entries.len(),
+        entries: store.review_entries(limit),
+        markdown: store.review_markdown(limit),
+    }
 }
 
 /// 从 aliases 中挑选最合适的中文标签（优先含中文的条目；退化为第一个；空则用 name 当 fallback 由调用方决定）
@@ -579,5 +624,20 @@ mod tests {
         assert_eq!(view.session_id, "s1");
         assert_eq!(view.models, vec!["model-a"]);
         assert_eq!(view.record_count, 3);
+    }
+
+    #[test]
+    fn test_memory_review_view_serializable() {
+        let mut store = LongTermMemory {
+            entries: Vec::new(),
+        };
+        store.record("remember me", "ok", 10);
+
+        let view = memory_review_view(&store, 5);
+        let json = serde_json::to_string(&view).expect("memory review serialize");
+
+        assert_eq!(view.total_entries, 1);
+        assert!(json.contains("entries"));
+        assert!(json.contains("markdown"));
     }
 }

@@ -9,6 +9,8 @@ const STATE_CONFIG = {
   talk:     { frameCount: 3, frameDuration: 300, autoIdleTimeout: 5000 },
   happy:    { frameCount: 3, frameDuration: 200, autoIdleTimeout: 2000 },
   confused: { frameCount: 2, frameDuration: 400, autoIdleTimeout: 3000 },
+  focused:  { frameCount: 4, frameDuration: 400, autoIdleTimeout: null },
+  preparing:{ frameCount: 4, frameDuration: 200, autoIdleTimeout: null },
   gameplay: { frameCount: 2, frameDuration: 300, autoIdleTimeout: null },
   gamewin:  { frameCount: 3, frameDuration: 200, autoIdleTimeout: 3000 },
   gamelose: { frameCount: 2, frameDuration: 400, autoIdleTimeout: 3000 },
@@ -17,7 +19,7 @@ const STATE_CONFIG = {
 const NOTIFICATION_CONFIG = {
   ai_thinking: { state: 'talk', ttlMs: 30000 },
   ai_writing: { state: 'talk', ttlMs: 30000 },
-  tool_preparing: { state: 'talk', ttlMs: 30000 },
+  tool_preparing: { state: 'preparing', ttlMs: 30000 },
   tool_running: { state: 'talk', ttlMs: 30000 },
   tool_blocked: { state: 'confused', ttlMs: 15000 },
   tool_failed: { state: 'confused', ttlMs: 15000 },
@@ -29,7 +31,7 @@ const MOOD_STATE = {
   idle: 'idle',
   happy: 'happy',
   confused: 'confused',
-  focused: 'talk',
+  focused: 'focused',
   caring: 'happy',
   excited: 'happy',
   sleepy: 'sleep',
@@ -345,17 +347,22 @@ describe('PetStateMachine', () => {
       expect(pet.state).toBe('talk');
     });
 
-    it('stream status notifications also use talk state', () => {
+    it('stream status notifications use dedicated visual states', () => {
       pet.applyEvent({ type: 'notify', kind: 'ai_writing', body: '正在回复', ttl_ms: 30000, refresh: true });
       expect(pet.state).toBe('talk');
       pet.clearNotification('ai_writing');
       pet.applyEvent({ type: 'notify', kind: 'tool_preparing', body: '准备工具', ttl_ms: 30000, refresh: true });
-      expect(pet.state).toBe('talk');
+      expect(pet.state).toBe('preparing');
     });
 
     it('react 事件切换情绪', () => {
       pet.applyEvent({ type: 'react', mood: 'happy', speech: null });
       expect(pet.state).toBe('happy');
+    });
+
+    it('focused mood uses its own visual state', () => {
+      pet.applyEvent({ type: 'react', mood: 'focused', speech: null });
+      expect(pet.state).toBe('focused');
     });
 
     it('react ttl expires back to idle', () => {

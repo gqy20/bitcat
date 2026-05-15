@@ -9,7 +9,7 @@
 | 已用 | 未用 |
 |------|------|
 | AgentBuilder + preamble | Pipeline（链式处理） |
-| Tool trait + 10 个工具定义 | TypedPrompt（提示词类型化） |
+| Tool trait + 12 个工具定义 | TypedPrompt（提示词类型化） |
 | stream_prompt / prompt | Embeddings（明确不采用，见取舍文档） |
 | PermissionHook + HookAction | dynamic_tools（动态工具集） |
 | MultiTurnStreamItem 流式消费 + AiWriting/ToolPreparing 派生 | .context() / .dynamic_context() |
@@ -33,7 +33,7 @@ P0 主链路与宠物语义事件 Phase 1-6 已完成：
 - `agent_reaction::extract_agent_reaction()` 已使用 rig `Extractor<AgentReaction>` 替代关键词情绪推断和关键词记忆写入。
 - `PetAgent::chat_stream()` 已从 rig `MultiTurnStreamItem` 派生 `AgentStreamStatus::AiWriting` / `ToolPreparing`，并保留文本 chunk 与工具生命周期事件分流。
 - `pet_event::PetEvent`、`PetEventBus`、`MoodPolicy` 已成为宠物状态主协议，设置页可查看最近 50 条事件决策日志。
-- 长期记忆写入由 `memory_candidates` 驱动，并提供 `retrieve_with()` / `review_markdown()` 的 grep-first 审查路径。
+- 长期记忆写入由 `memory_candidates` 或 `remember` 工具驱动，并提供 `retrieve_with()` / `review_markdown()` / 设置页删除的 grep-first 审查路径。
 
 ## 调研结论：把模型从回答者提升为行为导演
 
@@ -50,7 +50,7 @@ rig 已经提供了这套架构所需的支点：
 
 | rig 能力 | 当前用法 | 更充分的用法 |
 |----------|----------|--------------|
-| `AgentBuilder` + Tool | 全量注册 10 个工具 | 保持模型自主选择，同时把工具从底层 API 提升为语义能力 |
+| `AgentBuilder` + Tool | 全量注册 12 个工具 | 保持模型自主选择，同时把工具从底层 API 提升为语义能力 |
 | `stream_prompt().multi_turn()` | 流式文本 + 工具调用 + `AiWriting` / `ToolPreparing` | 继续作为 UI 状态主来源，必要时再下钻到 hook delta |
 | `PromptHook::on_tool_call` | shell 黑名单 | 扩展为权限、审计、状态事件和异常终止控制 |
 | `PromptHook::on_tool_result` | 未完整使用 | 记录成功/失败、耗时、结果摘要，并反馈 UI |
@@ -91,7 +91,7 @@ pub enum PetMood {
 }
 ```
 
-当前采用第一种实现路径：继续保留主对话流式输出，结束后用一次轻量 Extractor 生成 `AgentReaction`。Rust 只校验 mood 枚举、记忆字段和长度，不再猜测自然语言。未来若需要更主动的中途行为，可再评估 `set_pet_mood` / `remember` 语义工具。
+当前采用第一种实现路径：继续保留主对话流式输出，结束后用一次轻量 Extractor 生成 `AgentReaction`。Rust 只校验 mood 枚举、记忆字段和长度，不再猜测自然语言。`remember` / `search_memory` 已作为语义工具接入；未来若需要更主动的中途行为，可再评估 `set_pet_mood`。
 
 #### 2. PromptHook / MultiTurnStreamItem 作为运行时总线（部分落地）
 
@@ -154,7 +154,7 @@ pub enum ToolPhase {
 
 #### 5. dynamic_tools 不是当前主线
 
-rig 支持 `dynamic_tools()`，但当前只有 10 个工具，固定 schema 成本还不是核心瓶颈。过早根据意图裁剪工具，反而可能削弱模型自主规划。
+rig 支持 `dynamic_tools()`，但当前只有 12 个工具，固定 schema 成本还不是核心瓶颈。过早根据意图裁剪工具，反而可能削弱模型自主规划。
 
 更稳的中间方案是显式能力包：
 
@@ -339,7 +339,7 @@ pub enum ActivityCategory {
 
 ### 问题
 
-当前所有 10 个工具在每次对话时**全量注册**到 AgentBuilder，无论用户意图是什么：
+当前所有 12 个工具在每次对话时**全量注册**到 AgentBuilder，无论用户意图是什么：
 
 ```
 每次对话固定开销（来自 prompt-token-budget.md）：
@@ -586,7 +586,7 @@ rig 的 Embeddings / Pipeline.lookup 仍然是可用能力，但当前明确不�
              ├ 扩展 PromptHook: result / delta / terminate
              ├ bubble/pet 工具状态 UI
              ├ 工具调用统计：次数、成功率、耗时、拦截
-             ├ 新增语义工具：remember / set_pet_mood / ask_confirmation
+             ├ 新增语义工具：remember / search_memory / set_pet_mood / ask_confirmation
              ├ 基于真实数据压缩 schema 和描述
              └ 决定是否需要 feature-flag 实验
 

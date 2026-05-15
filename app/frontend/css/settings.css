@@ -791,6 +791,88 @@ input[type="checkbox"]:checked::after {
   white-space: nowrap;
 }
 
+.memory-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.memory-review {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.memory-meta,
+.memory-entry-meta,
+.memory-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.memory-meta span,
+.memory-entry-meta span,
+.memory-tags span {
+  border: 1px solid rgba(122, 167, 255, 0.16);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: #b9c7da;
+  background: rgba(122, 167, 255, 0.055);
+  font-size: 11px;
+}
+
+.memory-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(24, 29, 39, 0.55);
+}
+
+.memory-entry-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.memory-entry-head strong {
+  color: #dbe8ff;
+  font-size: 13px;
+  font-weight: 720;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.memory-body p {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 8px;
+  color: #aeb8ca;
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.btn.danger {
+  border-color: rgba(255, 138, 138, 0.24);
+  color: #ffb4b4;
+  background: rgba(255, 138, 138, 0.08);
+}
+
 .action-item {
   margin-bottom: 8px;
   padding: 12px 14px;
@@ -1110,6 +1192,10 @@ input[type="checkbox"]:checked::after {
   .action-item .ai-head,
   .usage-session,
   .pet-event {
+    grid-template-columns: 1fr;
+  }
+
+  .memory-body {
     grid-template-columns: 1fr;
   }
 

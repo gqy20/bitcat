@@ -252,7 +252,7 @@ pub struct LongTermMemoryQuery {
 }
 
 /// 可人工审查的长期记忆条目视图。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct LongTermReviewEntry {
     pub index: usize,
     pub timestamp: String,
@@ -491,6 +491,15 @@ impl LongTermMemory {
                 ai_reply: truncate_chars(&entry.ai_reply, 180),
             })
             .collect()
+    }
+
+    /// Delete one long-term memory entry by its stable review index.
+    pub fn delete_entry(&mut self, index: usize) -> bool {
+        if index >= self.entries.len() {
+            return false;
+        }
+        self.entries.remove(index);
+        true
     }
 
     /// 标记所有条目为已聚合
@@ -890,6 +899,20 @@ mod tests {
         assert!(markdown.contains("用户正在实现 mood + memory"));
         assert!(markdown.contains("source: agent_reaction"));
         assert!(markdown.contains("tags: project"));
+    }
+
+    #[test]
+    fn test_delete_entry_removes_review_index() {
+        let mut store = LongTermMemory {
+            entries: Vec::new(),
+        };
+        store.record("first", "one", 10);
+        store.record("second", "two", 10);
+
+        assert!(store.delete_entry(0));
+        assert_eq!(store.entries.len(), 1);
+        assert_eq!(store.entries[0].user_msg, "second");
+        assert!(!store.delete_entry(99));
     }
 
     #[test]

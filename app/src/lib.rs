@@ -99,6 +99,8 @@ pub fn run() {
             pet_event_bus::cmd_get_pet_event_log,
             settings::cmd_settings_load,
             settings::cmd_get_token_stats,
+            settings::cmd_get_memory_review,
+            settings::cmd_delete_memory_entry,
             settings::cmd_settings_save_ai,
             settings::cmd_settings_save_actions,
             settings::cmd_settings_save_prompts,
