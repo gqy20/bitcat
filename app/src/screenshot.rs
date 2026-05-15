@@ -473,11 +473,11 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             continue;
         };
 
-        // 跳舞期间跳过本轮：避免视觉分析回调打断舞蹈表演
-        if ai_pad_core::dance::is_dancing() {
+        // 表现会话期间跳过本轮：避免视觉分析回调打断舞蹈、音乐响应或游戏表演
+        if ai_pad_core::performance::is_performing() {
             debug!(
                 cycle = cycle_count,
-                "[screenshot] is_dancing=true，跳过本轮"
+                "[screenshot] performance active，跳过本轮"
             );
             continue;
         }

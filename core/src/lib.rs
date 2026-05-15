@@ -27,6 +27,7 @@
 //! - `logging` — 日志工具函数（log_preview 等）
 //! - `permission_hook` — rig-core 工具调用的权限拦截钩子
 //! - `panel_action` — 弹出面板快捷入口配置
+//! - `performance` — 表现会话状态，统一舞蹈、音乐响应与游戏接管
 //! - `screen_summary` — 截图摘要注入 prompt 构建
 //! - `tool_events` — 工具运行时事件审计日志
 //! - `token_tracker` — Token 用量统计与持久化
@@ -47,6 +48,7 @@ pub mod memory;
 pub mod minigame;
 pub mod mood_policy;
 pub mod panel_action;
+pub mod performance;
 pub mod permission_hook;
 pub mod pet;
 pub mod pet_event;

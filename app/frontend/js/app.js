@@ -1,7 +1,13 @@
 // app.js — Tauri 事件监听 + 主循环入口 + 右键菜单 + 折叠/展开 + 拖拽
 
+import { PerformerHost } from './performance/performer-host.js';
+
 (function() {
   'use strict';
+
+  const SpriteRenderer = window.SpriteRenderer;
+  const PetState = window.PetState;
+  const Particles = window.Particles;
 
   // ---- 嘴巴热区判定（纯函数，可独立测试）----
   // 热区覆盖精灵嘴巴/腮红区域：正常态 x[32,96] y[56,96] (canvas 坐标)
@@ -36,8 +42,8 @@
   // 当前窗口是否为吸附竖条窗口
   let isSnapWindow = false;
 
-  // 舞蹈播放器（非 null 时劫持渲染循环）
-  let dancePlayer = null;  // { steps, index, repeatIndex, time, loop }
+  // 表现播放器：统一接管固定舞蹈、音乐响应舞动和后续 AI 即兴表演。
+  let performerHost = null;
   let screenshotFeedbackTimer = null;
 
   // Tauri 2 正确的 API 路径：getCurrentWindow() 不是 getCurrent()
@@ -81,6 +87,26 @@
     canvas = document.getElementById('sprite');
     ctx = canvas.getContext('2d');
     bodyEl = document.body;
+    performerHost = new PerformerHost({
+      getMetrics: async function() {
+        var win = getCurrentWin();
+        return win ? await getDanceScreenMetrics(win) : null;
+      },
+      applyOffset: applyPerformerOffset,
+      resetPosition: resetPerformerPosition,
+      renderSprite: function(action, opts) {
+        SpriteRenderer.renderSprite(ctx, action, 0, pet.facingRight, 8, opts);
+      },
+      setFacingRight: function(facingRight) {
+        pet.facingRight = facingRight;
+      },
+      setActiveClass: function(active) {
+        bodyEl.classList.toggle('dancing', active);
+      },
+      log: function(msg) {
+        console.log(msg);
+      },
+    });
 
     // 检测当前窗口类型
     const win = getCurrentWin();
@@ -494,9 +520,8 @@
     lastTime = now;
 
     if (!collapsed) {
-      if (dancePlayer) {
-        // 舞蹈模式：按时间轴切换动作帧
-        updateDance(dt);
+      if (performerHost && performerHost.hasActive()) {
+        performerHost.update(dt);
       } else {
         // 正常模式：状态机驱动
         pet.update(dt);
@@ -518,127 +543,16 @@
     requestAnimationFrame(loop);
   }
 
-  function stepRepeat(step) {
-    var repeat = Number(step && step.repeat);
-    if (!Number.isFinite(repeat) || repeat < 1) return 1;
-    return Math.max(1, Math.floor(repeat));
-  }
-
-  function advanceDanceStep() {
-    var step = dancePlayer.steps[dancePlayer.index];
-    var repeat = stepRepeat(step);
-
-    if (dancePlayer.repeatIndex + 1 < repeat) {
-      dancePlayer.repeatIndex++;
-      console.log('[dance] 重复步骤', dancePlayer.index, 'repeat', dancePlayer.repeatIndex + 1, '/', repeat);
-      return true;
-    }
-
-    dancePlayer.repeatIndex = 0;
-    dancePlayer.index++;
-    console.log('[dance] 切换到步骤', dancePlayer.index, '/', dancePlayer.steps.length);
-
-    if (dancePlayer.index < dancePlayer.steps.length) {
-      return true;
-    }
-
-    if (dancePlayer.loop_) {
-      dancePlayer.index = 0;
-      console.log('[dance] 循环，从头开始');
-      return true;
-    }
-
-    console.log('[dance] 舞蹈播放完毕');
-    resetDancePosition('finished');
-    return false;
-  }
-
-  function updateDance(dt) {
-    dancePlayer.time += dt;
-    dancePlayer.elapsed += dt;
-
-    // 硬上限：总累计时长超过 max_duration_ms 则停止，即便 loop_ 为 true
-    if (dancePlayer.maxDurationMs != null && dancePlayer.elapsed >= dancePlayer.maxDurationMs) {
-      console.log('[dance] 达到 max_duration_ms=' + dancePlayer.maxDurationMs + '，停止');
-      resetDancePosition('max_duration');
-      return;
-    }
-
-    var step = dancePlayer.steps[dancePlayer.index];
-    while (step && dancePlayer.time >= step.duration_ms) {
-      dancePlayer.time -= step.duration_ms;
-      if (!advanceDanceStep()) return;
-      step = dancePlayer.steps[dancePlayer.index];
-    }
-
-    var currentAction = step.action;
-    var progress = dancePlayer.time / step.duration_ms;  // 0..1 当前步骤内进度
-    var opts = {};
-
-    // 窗口级大幅度动画（基于屏幕百分比）
-    applyDanceWindowMove(currentAction, progress, dancePlayer.time);
-
-    // 精灵内小幅补充动画（叠加在窗口移动之上）
-    switch (currentAction) {
-      case 'jump':
-        var jumpH = -Math.sin(progress * Math.PI) * 18;
-        opts.offsetY = jumpH;
-        break;
-      case 'spin':
-        var flipCount = Math.floor(dancePlayer.time / 60);
-        pet.facingRight = flipCount % 2 === 0;
-        break;
-      case 'wave':
-        opts.offsetY = -Math.abs(Math.sin(progress * Math.PI * 4)) * 9;
-        break;
-      case 'shake':
-        opts.offsetX = Math.sin(dancePlayer.time * 0.06) * 10;
-        break;
-    }
-
-    SpriteRenderer.renderSprite(ctx, currentAction, 0, pet.facingRight, 8, opts);
-  }
-
-  /// 基于屏幕百分比计算窗口偏移并移动窗口
-  function applyDanceWindowMove(action, progress, time) {
-    var m = dancePlayer.metrics;
+  function applyPerformerOffset(player, offset) {
+    var m = player.metrics;
     if (!m) return;
 
     var win = getCurrentWin();
     if (!win) return;
 
     var Pos = window.__TAURI__.window.PhysicalPosition;
-    var ox = 0, oy = 0;
-
-    switch (action) {
-      case 'jump': {
-        // 大跳跃：窗口沿弧线上移屏幕高度约 22%，并带一点横向冲刺
-        var jumpRange = m.screenH * 0.22;
-        oy = -Math.sin(progress * Math.PI) * jumpRange;
-        // 跳跃时横向位移增加舞台感
-        ox = Math.sin(progress * Math.PI) * (m.screenW * 0.08);
-        break;
-      }
-      case 'spin': {
-        // 旋转时窗口做明显椭圆摆动（模拟旋转离心力）
-        ox = Math.sin(time * 0.03) * (m.screenW * 0.12);
-        oy = Math.cos(time * 0.025) * (m.screenH * 0.04);
-        break;
-      }
-      case 'wave': {
-        // 挥手节奏：上下浮动屏幕高度约 8%
-        oy = -Math.abs(Math.sin(progress * Math.PI * 4)) * (m.screenH * 0.08);
-        break;
-      }
-      case 'shake': {
-        // 大幅左右抖动：单侧约 20% 屏宽，左右总摆幅约 40%
-        ox = Math.sin(time * 0.05) * (m.screenW * 0.20);
-        // Y 轴抖动增加不稳定感
-        oy = Math.sin(time * 0.07) * (m.screenH * 0.025);
-        break;
-      }
-    }
-
+    var ox = offset && Number.isFinite(offset.x) ? offset.x : 0;
+    var oy = offset && Number.isFinite(offset.y) ? offset.y : 0;
     try {
       win.setPosition(new Pos(
         Math.round(m.baseX + ox),
@@ -647,39 +561,37 @@
     } catch (_) {}
   }
 
-  /// 舞舞结束：平滑归位到基准位置
-  async function notifyDanceFinished(reason) {
+  async function notifyPerformanceFinished(sessionId, reason) {
     if (!window.__TAURI__ || !window.__TAURI__.core) return;
     try {
-      await window.__TAURI__.core.invoke('cmd_dance_finished', {
+      await window.__TAURI__.core.invoke('cmd_performance_finished', {
+        sessionId: sessionId,
         reason: reason || 'finished'
       });
     } catch (err) {
-      console.warn('[dance] 通知后端舞蹈结束失败:', err);
+      console.warn('[performance] notify finished failed:', err);
     }
   }
 
-  async function resetDancePosition(reason) {
-    if (!dancePlayer) return;
+  async function resetPerformerPosition(player, reason) {
+    if (!player) return;
 
-    var m = dancePlayer.metrics;
-    dancePlayer = null;
-    bodyEl.classList.remove('dancing');
+    var m = player.metrics;
+    var sessionId = player.sessionId;
 
     if (!m) {
-      notifyDanceFinished(reason);
+      notifyPerformanceFinished(sessionId, reason);
       return;
     }
 
     var win = getCurrentWin();
     if (!win) {
-      notifyDanceFinished(reason);
+      notifyPerformanceFinished(sessionId, reason);
       return;
     }
 
-    // 获取当前实际位置作为起点（舞蹈过程中可能已漂移）
     try { var curPos = await win.outerPosition(); } catch (_) {
-      notifyDanceFinished(reason);
+      notifyPerformanceFinished(sessionId, reason);
       return;
     }
 
@@ -699,7 +611,7 @@
       if (t < 1) {
         requestAnimationFrame(frame);
       } else {
-        notifyDanceFinished(reason);
+        notifyPerformanceFinished(sessionId, reason);
       }
     }
     requestAnimationFrame(frame);
@@ -850,26 +762,28 @@
       applyAlwaysOnTop();
     });
 
-    // 舞蹈播放事件（Rust 侧 cmd_play_dance 发出）
-    window.__TAURI__.event.listen('play-dance', async (event) => {
-      var payload = event.payload;
-      console.log('[dance] 收到播放指令:', payload.name, '-', payload.steps.length, '步, loop=', payload.loop_, 'max_ms=', payload.max_duration_ms);
+    window.__TAURI__.event.listen('performance-start', async (event) => {
+      if (!performerHost) return;
+      await performerHost.start(event.payload || {});
+    });
 
-      var win = getCurrentWin();
-      var metrics = win ? await getDanceScreenMetrics(win) : null;
+    window.__TAURI__.event.listen('performance-frame', (event) => {
+      if (!performerHost) return;
+      performerHost.frame(event.payload || {});
+    });
 
-      dancePlayer = {
-        steps: payload.steps,
-        index: 0,
-        repeatIndex: 0,
-        time: 0,
-        elapsed: 0,
-        maxDurationMs: typeof payload.max_duration_ms === 'number' ? payload.max_duration_ms : null,
-        loop_: payload.loop_ !== false,
-        metrics: metrics,
-      };
-      bodyEl.classList.add('dancing');
-      console.log('[dance] ▶ 舞蹈播放器启动, 屏幕:', metrics ? metrics.screenW + 'x' + metrics.screenH : '未知');
+    window.__TAURI__.event.listen('performance-stop', (event) => {
+      if (!performerHost) return;
+      performerHost.stop(event.payload || {});
+    });
+
+    window.__TAURI__.event.listen('performance-error', (event) => {
+      console.warn('[performance] error:', event.payload);
+      if (!performerHost) return;
+      performerHost.stop({
+        session_id: event.payload && event.payload.session_id,
+        reason: 'error',
+      });
     });
   }
 

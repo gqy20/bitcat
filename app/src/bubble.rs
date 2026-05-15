@@ -220,10 +220,10 @@ pub struct BubbleToolPayload {
 pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
     let state: State<SharedBubble> = app.state();
 
-    if ai_pad_core::dance::is_dancing() {
+    if ai_pad_core::performance::is_performing() {
         debug!(
             text_len = text.chars().count(),
-            "bubble skipped while dancing"
+            "bubble skipped while performance is active"
         );
         return Ok(());
     }

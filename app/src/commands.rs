@@ -131,13 +131,14 @@ pub fn cmd_get_status(shared: tauri::State<'_, SharedPet>) -> Result<PetStatus, 
     Ok(get_status(&pet, &bubble))
 }
 
-/// 前端舞蹈播放器结束时回报，用于精确复位后端舞蹈状态。
+/// 前端表现播放器结束时回报，用于精确复位后端表现状态。
 #[tauri::command]
-pub fn cmd_dance_finished(reason: Option<String>) -> Result<(), String> {
-    ai_pad_core::dance::set_dancing(false);
+pub fn cmd_performance_finished(session_id: u64, reason: Option<String>) -> Result<(), String> {
+    ai_pad_core::performance::stop_performance(session_id, reason.as_deref().unwrap_or("finished"));
     info!(
+        session_id,
         reason = reason.as_deref().unwrap_or("finished"),
-        "[cmd] 舞蹈播放结束"
+        "[cmd] 表现会话结束"
     );
     Ok(())
 }
@@ -799,10 +800,12 @@ mod tests {
     }
 
     #[test]
-    fn test_dance_finished_resets_dancing_flag() {
-        ai_pad_core::dance::set_dancing(true);
-        cmd_dance_finished(Some("finished".into())).unwrap();
-        assert!(!ai_pad_core::dance::is_dancing());
+    fn test_performance_finished_resets_performing_state() {
+        let session = ai_pad_core::performance::start_performance(
+            ai_pad_core::performance::PerformanceKind::ChoreographedDance,
+        );
+        cmd_performance_finished(session.id, Some("finished".into())).unwrap();
+        assert!(!ai_pad_core::performance::is_performing());
     }
 }
 

@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, info, warn};
 
@@ -263,21 +262,6 @@ pub fn request_play_dance(req: PlayDanceRequest) -> Result<(), String> {
             Err("舞蹈事件通道未初始化".to_string())
         }
     }
-}
-
-// ---- 舞蹈进行态开关（供截图循环等观察）----
-
-static IS_DANCING: AtomicBool = AtomicBool::new(false);
-
-/// 查询当前是否正在跳舞
-pub fn is_dancing() -> bool {
-    IS_DANCING.load(Ordering::Relaxed)
-}
-
-/// 设置舞蹈进行态（由 app 层 bridge 在 emit/超时时调用）
-pub fn set_dancing(on: bool) {
-    IS_DANCING.store(on, Ordering::Relaxed);
-    debug!(on, "[dance] IS_DANCING 更新");
 }
 
 // ---- 测试 ----
