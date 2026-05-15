@@ -737,9 +737,38 @@
 
   // ========== 右键菜单 ==========
 
+  function contextMenuCanvasPoint(e) {
+    var rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    return {
+      x: Math.round((e.clientX - rect.left) * canvas.width / rect.width),
+      y: Math.round((e.clientY - rect.top) * canvas.height / rect.height),
+    };
+  }
+
+  function isRenderedPetPixel(e) {
+    var point = contextMenuCanvasPoint(e);
+    if (!point) return true;
+    var radius = 3;
+    var left = Math.max(0, point.x - radius);
+    var top = Math.max(0, point.y - radius);
+    var width = Math.min(canvas.width - left, radius * 2 + 1);
+    var height = Math.min(canvas.height - top, radius * 2 + 1);
+    try {
+      var data = ctx.getImageData(left, top, width, height).data;
+      for (var i = 3; i < data.length; i += 4) {
+        if (data[i] > 16) return true;
+      }
+      return false;
+    } catch (_) {
+      return true;
+    }
+  }
+
   function setupContextMenu() {
-    bodyEl.addEventListener('contextmenu', (e) => {
+    canvas.addEventListener('contextmenu', (e) => {
       e.preventDefault();
+      if (!isRenderedPetPixel(e)) return;
       if (!window.__TAURI__ || !window.__TAURI__.core) return;
       window.__TAURI__.core.invoke('cmd_show_pet_context_menu', {
         x: e.clientX,

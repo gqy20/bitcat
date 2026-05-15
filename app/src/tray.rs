@@ -1,7 +1,7 @@
 use crate::commands::SharedWindowState;
 use std::sync::atomic::Ordering;
 use tauri::{
-    menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem},
+    menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu},
     tray::TrayIconBuilder,
     AppHandle, Emitter, LogicalPosition, Manager, WebviewWindow,
 };
@@ -14,9 +14,12 @@ const MENU_RELOAD: &str = "reload";
 const MENU_SETTINGS: &str = "settings";
 const MENU_EXIT: &str = "exit";
 
+const PET_MENU_CHAT: &str = "pet-context-chat";
 const PET_MENU_SCREENSHOT: &str = "pet-context-screenshot";
+const PET_MENU_PANEL: &str = "pet-context-panel";
 const PET_MENU_COLLAPSE: &str = "pet-context-collapse";
 const PET_MENU_TOP: &str = "pet-context-top";
+const PET_MENU_MORE: &str = "pet-context-more";
 const PET_MENU_RELOAD: &str = "pet-context-reload";
 const PET_MENU_SETTINGS: &str = "pet-context-settings";
 const PET_MENU_EXIT: &str = "pet-context-exit";
@@ -82,7 +85,13 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
 pub fn handle_pet_context_menu_event(app: &AppHandle, event: MenuEvent) {
     match event.id.as_ref() {
+        PET_MENU_CHAT => open_chat(app),
         PET_MENU_SCREENSHOT => analyze_current_screen(app),
+        PET_MENU_PANEL => {
+            if let Err(e) = crate::panel::show_panel(app) {
+                tracing::warn!(error = %e, "打开快捷面板失败");
+            }
+        }
         PET_MENU_COLLAPSE => {
             let _ = toggle_pet_collapse(app);
         }
@@ -107,30 +116,43 @@ pub async fn cmd_show_pet_context_menu(
     let collapsed = ws.collapsed.load(Ordering::SeqCst);
     let always_on_top = ws.always_on_top.load(Ordering::SeqCst);
 
-    let settings_item = MenuItem::with_id(&app, PET_MENU_SETTINGS, "设置…", true, None::<&str>)
+    let chat_item = MenuItem::with_id(&app, PET_MENU_CHAT, "和我说话", true, None::<&str>)
         .map_err(|e| e.to_string())?;
     let screenshot_item = MenuItem::with_id(
         &app,
         PET_MENU_SCREENSHOT,
-        "分析当前屏幕",
+        "观察当前屏幕",
         true,
         None::<&str>,
     )
     .map_err(|e| e.to_string())?;
-    let separator_primary = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
-    let collapse_label = if collapsed { "展开" } else { "折叠" };
-    let collapse_item =
-        MenuItem::with_id(&app, PET_MENU_COLLAPSE, collapse_label, true, None::<&str>)
-            .map_err(|e| e.to_string())?;
-    let top_label = if always_on_top {
-        "取消置顶"
-    } else {
-        "置顶"
-    };
-    let top_item = MenuItem::with_id(&app, PET_MENU_TOP, top_label, true, None::<&str>)
+    let panel_item = MenuItem::with_id(&app, PET_MENU_PANEL, "打开快捷面板", true, None::<&str>)
         .map_err(|e| e.to_string())?;
+    let separator_primary = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
+    let collapse_item = CheckMenuItem::with_id(
+        &app,
+        PET_MENU_COLLAPSE,
+        "折叠显示",
+        true,
+        collapsed,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
+    let top_item = CheckMenuItem::with_id(
+        &app,
+        PET_MENU_TOP,
+        "保持置顶",
+        true,
+        always_on_top,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
     let separator_state = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
+    let settings_item = MenuItem::with_id(&app, PET_MENU_SETTINGS, "设置…", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
     let reload_item = MenuItem::with_id(&app, PET_MENU_RELOAD, "重新载入配置", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let more_menu = Submenu::with_id_and_items(&app, PET_MENU_MORE, "更多", true, &[&reload_item])
         .map_err(|e| e.to_string())?;
     let exit_item = MenuItem::with_id(&app, PET_MENU_EXIT, "退出 8Bit Cat", true, None::<&str>)
         .map_err(|e| e.to_string())?;
@@ -138,13 +160,15 @@ pub async fn cmd_show_pet_context_menu(
     let menu = Menu::with_items(
         &app,
         &[
-            &settings_item,
+            &chat_item,
             &screenshot_item,
+            &panel_item,
             &separator_primary,
             &collapse_item,
             &top_item,
             &separator_state,
-            &reload_item,
+            &settings_item,
+            &more_menu,
             &exit_item,
         ],
     )
@@ -153,6 +177,16 @@ pub async fn cmd_show_pet_context_menu(
     window
         .popup_menu_at(&menu, LogicalPosition::new(x, y))
         .map_err(|e| e.to_string())
+}
+
+fn open_chat(app: &AppHandle) {
+    crate::action_bus::ActionBus::dispatch(
+        app,
+        crate::action_bus::Action::OpenChat,
+        crate::action_bus::ActionSource::Frontend {
+            cmd: "pet-context-chat".into(),
+        },
+    );
 }
 
 fn analyze_current_screen(app: &AppHandle) {
@@ -251,9 +285,12 @@ mod tests {
             MENU_RELOAD,
             MENU_SETTINGS,
             MENU_EXIT,
+            PET_MENU_CHAT,
             PET_MENU_SCREENSHOT,
+            PET_MENU_PANEL,
             PET_MENU_COLLAPSE,
             PET_MENU_TOP,
+            PET_MENU_MORE,
             PET_MENU_RELOAD,
             PET_MENU_SETTINGS,
             PET_MENU_EXIT,

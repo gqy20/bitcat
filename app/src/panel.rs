@@ -127,10 +127,19 @@ pub async fn cmd_panel_log(msg: String) -> Result<(), String> {
 /// 显示面板窗口并定位到宠物附近，由前端导航按键触发。
 #[tauri::command]
 pub async fn cmd_show_panel(app: AppHandle) -> Result<(), String> {
+    show_panel(&app)
+}
+
+/// 显示面板窗口并定位到宠物附近，供 IPC、菜单和动作总线复用。
+pub fn show_panel(app: &AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("panel") {
         apply_panel_size(&w);
-        position_near_pet(&app, &w);
+        position_near_pet(app, &w);
         w.show().map_err(|e| e.to_string())?;
+        w.set_focus().map_err(|e| e.to_string())?;
+    } else {
+        let w = create_panel_window(app).map_err(|e| e.to_string())?;
+        position_near_pet(app, &w);
         w.set_focus().map_err(|e| e.to_string())?;
     }
     Ok(())
