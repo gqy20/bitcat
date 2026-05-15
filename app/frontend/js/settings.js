@@ -3,9 +3,8 @@
 // - 左侧 tab 切换 + dirty 检测
 // - 底部保存/取消/重置，Esc 关闭
 
-const { invoke } = window.__TAURI__.core;
+const invoke = window.__TAURI__?.core?.invoke || mockInvoke;
 
-// 按键绑定类型：unbound 代表未绑定（保存时会从 actions.yml 中移除该按键）
 const ACTION_TYPES = ["unbound", "launch", "hotkey", "script", "voice", "screenshot"];
 const ACTION_TYPE_LABELS = {
   unbound: "未绑定",
@@ -16,12 +15,9 @@ const ACTION_TYPE_LABELS = {
   screenshot: "立即截图",
 };
 
-// 全量快照（来自后端）
 let SNAPSHOT = null;
-// 各分类 dirty 标记
-const dirty = { ai: false, actions: false, prompts: false, appearance: false };
-// 当前激活 tab
-let currentTab = "ai";
+const dirty = { ai: false, user: false, actions: false, prompts: false, appearance: false };
+let currentTab = "overview";
 let musicDiagnosticsBound = false;
 let musicDiagnosticsRenderTimer = null;
 const MUSIC_STATE = {
@@ -37,14 +33,97 @@ const MUSIC_STATE = {
 };
 const MUSIC_DIAGNOSTICS_RENDER_MS = 500;
 
-// ---- 工具 ----
+async function mockInvoke(command) {
+  if (command === "cmd_settings_load") {
+    return {
+      ai: {
+        overlay: {},
+        effective: {
+          base_url: "https://api.anthropic.com",
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 256000,
+        },
+        has_effective_key: true,
+      },
+      user: {
+        name: "小顾",
+        role: "独立开发者",
+        preferences: ["回答先给结论", "代码改动保持克制"],
+        context: "正在打磨 8Bit Cat 的桌面体验。",
+        language: "zh-CN",
+      },
+      actions: {
+        defaults: { terminal: "powershell", window: "maximized" },
+        actions: {},
+      },
+      prompts: {
+        agent: { preamble: "" },
+        vision: { prompt: "", prompt_multi: "" },
+        memory: { max_entries: 20, max_context_chars: 6000 },
+        screen_summary: { interval_min: 5 },
+      },
+      appearance: {
+        always_on_top: false,
+        default_collapsed: false,
+        tts_enabled: true,
+        global_shortcut: "CommandOrControl+Alt+Space",
+        screenshot_interval_sec: 30,
+      },
+      about: {
+        version: "preview",
+        app_settings_path: "~/.ai-pad/app_settings.json",
+        actions_yml_hint: "config/actions.yml",
+        prompts_yml_hint: "config/prompts.yml",
+      },
+      button_catalog: [
+        { name: "Start", label: "开始", position: "中间偏右", order: 1 },
+        { name: "A", label: "确认", position: "右侧下", order: 2 },
+        { name: "B", label: "返回", position: "右侧右", order: 3 },
+      ],
+    };
+  }
+  if (command === "cmd_get_token_stats") {
+    return {
+      generated_at: new Date().toISOString(),
+      today: {
+        record_count: 12,
+        input_tokens: 14520,
+        output_tokens: 8230,
+        total_tokens: 22750,
+        cache_read_tokens: 3600,
+        cache_write_tokens: 910,
+        chat_total_tokens: 15800,
+        vision_total_tokens: 3600,
+        screen_summary_total_tokens: 2400,
+        memory_aggregation_total_tokens: 950,
+      },
+      recent_sessions: [],
+      paths: {
+        usage_jsonl: "~/.ai-pad/logs/token_usage.jsonl",
+        sessions_json: "~/.ai-pad/logs/token_sessions.json",
+      },
+    };
+  }
+  if (command === "cmd_get_memory_review") {
+    return {
+      generated_at: new Date().toISOString(),
+      total_entries: 2,
+      entries: [],
+      markdown: "",
+    };
+  }
+  if (command === "cmd_get_pet_event_log") {
+    return { entries: [] };
+  }
+  return null;
+}
 
 function log(msg) {
   try { invoke("cmd_settings_log", { msg: String(msg) }); } catch {}
 }
 
 function toast(text, kind = "ok") {
-  const el = document.getElementById("toast");
+  const el = $("toast");
   el.textContent = text;
   el.classList.remove("hidden", "ok", "err");
   el.classList.add(kind);
@@ -56,17 +135,17 @@ function $(id) { return document.getElementById(id); }
 
 function markDirty(tab) {
   dirty[tab] = true;
-  const nav = document.querySelector(`.nav-item[data-tab="${tab}"]`);
+  const nav = document.querySelector(`.nav-item[data-tab="${tab === "user" ? "memory" : tab}"]`);
   if (nav) nav.classList.add("dirty");
 }
+
 function clearDirty(tab) {
   dirty[tab] = false;
-  const nav = document.querySelector(`.nav-item[data-tab="${tab}"]`);
+  const nav = document.querySelector(`.nav-item[data-tab="${tab === "user" ? "memory" : tab}"]`);
   if (nav) nav.classList.remove("dirty");
 }
-function anyDirty() { return Object.values(dirty).some(Boolean); }
 
-// ---- Tab 切换 ----
+function anyDirty() { return Object.values(dirty).some(Boolean); }
 
 function switchTab(name) {
   currentTab = name;
@@ -77,9 +156,8 @@ function switchTab(name) {
     s.classList.toggle("hidden", s.dataset.pane !== name);
   });
   if (name === "usage") loadUsageDiagnostics();
+  if (name === "memory") loadMemoryReview();
 }
-
-// ---- 渲染各分类 ----
 
 function renderAi(ai) {
   $("ai-key").value = ai.overlay.api_key || "";
@@ -88,16 +166,44 @@ function renderAi(ai) {
   $("ai-maxtokens").value = ai.overlay.max_tokens == null ? "" : ai.overlay.max_tokens;
 
   const eff = ai.effective;
-  $("ai-effective").innerHTML =
+  const effectiveHtml =
     `<div class="effective-title">当前生效</div>` +
     `<div class="effective-item"><span>API Key</span><b>${ai.has_effective_key ? "已配置" : "未配置"}</b></div>` +
     `<div class="effective-item"><span>Base URL</span><b title="${escapeAttr(eff.base_url)}">${escapeHtml(eff.base_url)}</b></div>` +
     `<div class="effective-item"><span>模型</span><b title="${escapeAttr(eff.model)}">${escapeHtml(eff.model)}</b></div>` +
-    `<div class="effective-item"><span>Max Tokens</span><b>${formatNumber(eff.max_tokens)}</b></div>`;
+    `<div class="effective-item"><span>最大 token</span><b>${formatNumber(eff.max_tokens)}</b></div>`;
+  $("ai-effective").innerHTML = effectiveHtml;
+  $("overview-effective").innerHTML = effectiveHtml;
+  $("ov-ai-model").textContent = eff.model || "-";
+  $("ov-ai-key").textContent = ai.has_effective_key ? "API Key 已配置" : "API Key 未配置";
 
   ["ai-key", "ai-baseurl", "ai-model", "ai-maxtokens"].forEach(id => {
     $(id).oninput = () => markDirty("ai");
   });
+}
+
+function renderUser(user) {
+  $("u-name").value = user?.name || "";
+  $("u-role").value = user?.role || "";
+  $("u-language").value = user?.language || "";
+  $("u-context").value = user?.context || "";
+  $("u-preferences").value = Array.isArray(user?.preferences) ? user.preferences.join("\n") : "";
+  ["u-name", "u-role", "u-language", "u-context", "u-preferences"].forEach(id => {
+    $(id).oninput = () => markDirty("user");
+  });
+}
+
+function collectUser() {
+  return {
+    name: $("u-name").value.trim(),
+    role: $("u-role").value.trim(),
+    preferences: $("u-preferences").value
+      .split(/\r?\n/)
+      .map(value => value.trim())
+      .filter(Boolean),
+    context: $("u-context").value.trim(),
+    language: $("u-language").value.trim(),
+  };
 }
 
 function renderActions(actionsView) {
@@ -109,14 +215,12 @@ function renderActions(actionsView) {
   const list = $("actions-list");
   list.innerHTML = "";
 
-  // 优先按 button_catalog 渲染（覆盖 buttons.yml 里的全部按键）
   const catalog = Array.isArray(SNAPSHOT.button_catalog) ? SNAPSHOT.button_catalog : [];
   if (catalog.length > 0) {
     for (const item of catalog) {
       const def = actionsView.actions[item.name] || null;
       list.appendChild(renderActionItem(item, def));
     }
-    // 补充 catalog 之外、但 actions.yml 里已有的自定义按键（若有）
     const catalogNames = new Set(catalog.map(i => i.name));
     Object.keys(actionsView.actions).sort().forEach(key => {
       if (catalogNames.has(key)) return;
@@ -126,7 +230,6 @@ function renderActions(actionsView) {
       ));
     });
   } else {
-    // 退化：没有 catalog 时按已配置按键渲染
     Object.keys(actionsView.actions).sort().forEach(key => {
       list.appendChild(renderActionItem(
         { name: key, label: "", position: "", order: 0 },
@@ -187,23 +290,11 @@ function workingActionType(def) {
   return def ? def.action_type : "unbound";
 }
 
-function actionSummary(type, def) {
-  if (!def || type === "unbound") return "未写入";
-  if (type === "launch") return def.program ? `打开 ${def.program}` : "启动程序";
-  if (type === "hotkey") return def.command || "按键序列";
-  if (type === "script") return def.command || "脚本命令";
-  if (type === "voice") return "语音触发";
-  if (type === "screenshot") return "立即截图分析";
-  return ACTION_TYPE_LABELS[type] || type;
-}
-
 function renderActionBody(body, def, onChange = () => {}) {
   body.innerHTML = "";
   const t = def.action_type;
-  if (t === "unbound") {
-    body.innerHTML = "";
-    return;
-  }
+  if (t === "unbound") return;
+
   const mk = (label, id, val, type = "text") => {
     const row = document.createElement("div");
     row.className = "row";
@@ -214,7 +305,6 @@ function renderActionBody(body, def, onChange = () => {}) {
       onChange();
       markDirty("actions");
     };
-    return row;
   };
   const mkToggle = (label, id, val) => {
     const row = document.createElement("div");
@@ -269,7 +359,7 @@ function collectActions() {
   document.querySelectorAll(".action-item").forEach(el => {
     const key = el.dataset.key;
     const type = el.querySelector(".a-type").value;
-    if (type === "unbound") return; // 未绑定：不写入 actions.yml
+    if (type === "unbound") return;
     const def = { type };
     const getVal = (f) => {
       const node = el.querySelector(`input[data-field="${f}"]`);
@@ -294,12 +384,21 @@ function collectActions() {
       const delay = parseFloat(getVal("voice-delay")) || 1.0;
       def.voice = { trigger: trig, delay };
     }
-    // 键盘热键（可选，所有动作类型都可绑定）
     const kbd = (getVal("kbd") || "").trim();
     if (kbd) def.keyboard_shortcut = kbd;
     actions[key] = def;
   });
   return { defaults, actions };
+}
+
+function actionSummary(type, def) {
+  if (!def || type === "unbound") return "未写入";
+  if (type === "launch") return def.program ? `打开 ${def.program}` : "启动程序";
+  if (type === "hotkey") return def.command || "按键序列";
+  if (type === "script") return def.command || "脚本命令";
+  if (type === "voice") return "语音触发";
+  if (type === "screenshot") return "立即截图分析";
+  return ACTION_TYPE_LABELS[type] || type;
 }
 
 function renderPrompts(p) {
@@ -332,6 +431,7 @@ function renderAppearance(a) {
   $("a-tts").checked = a.tts_enabled;
   $("a-shortcut").value = a.global_shortcut;
   $("a-ss-interval").value = a.screenshot_interval_sec ?? 30;
+  updateOverviewAppearance(a);
 
   ["a-top","a-collapsed","a-tts"].forEach(id => { $(id).onchange = () => markDirty("appearance"); });
   ["a-shortcut","a-ss-interval"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
@@ -357,21 +457,20 @@ function renderAbout(a) {
 }
 
 async function loadUsageDiagnostics() {
-  await Promise.all([loadTokenStats(), loadPetEventLog(), loadMemoryReview()]);
+  await Promise.all([loadTokenStats(), loadPetEventLog()]);
   renderMusicDiagnostics();
 }
 
 async function loadTokenStats() {
   const status = $("usage-status");
-  if (!status) return;
-  status.textContent = "读取中...";
+  if (status) status.textContent = "读取中...";
   try {
     const stats = await invoke("cmd_get_token_stats");
     renderTokenStats(stats);
-    status.textContent = `更新于 ${formatDateTime(stats.generated_at)}`;
+    if (status) status.textContent = `更新于 ${formatDateTime(stats.generated_at)}`;
   } catch (e) {
     log("加载 token 统计失败: " + e);
-    status.textContent = "读取失败：" + String(e);
+    if (status) status.textContent = "读取失败：" + String(e);
     renderTokenStats(null);
   }
 }
@@ -391,7 +490,7 @@ async function loadMemoryReview() {
     const review = await invoke("cmd_get_memory_review", { limit: 20 });
     renderMemoryReview(review);
   } catch (e) {
-    log("load memory review failed: " + e);
+    log("加载长期记忆失败: " + e);
     renderMemoryReview(null);
   }
 }
@@ -400,9 +499,9 @@ async function deleteMemoryEntry(id) {
   try {
     const review = await invoke("cmd_delete_memory_entry", { id, limit: 20 });
     renderMemoryReview(review);
-    toast("Memory deleted", "ok");
+    toast("记忆已删除", "ok");
   } catch (e) {
-    toast("Delete failed: " + String(e), "err");
+    toast("删除失败：" + String(e), "err");
   }
 }
 
@@ -424,6 +523,7 @@ function renderTokenStats(stats) {
   $("usage-io").textContent = `${formatNumber(today.input_tokens)} / ${formatNumber(today.output_tokens)}`;
   $("usage-cache").textContent = `${formatNumber(today.cache_read_tokens)} / ${formatNumber(today.cache_write_tokens)}`;
   $("usage-records").textContent = formatNumber(today.record_count);
+  $("ov-usage-total").textContent = formatNumber(today.total_tokens);
   $("usage-paths").textContent = stats
     ? `${stats.paths.usage_jsonl}\n${stats.paths.sessions_json}`
     : "-";
@@ -458,7 +558,7 @@ function renderUsageBreakdown(today) {
 function renderUsageSessions(sessions) {
   const box = $("usage-sessions");
   if (!sessions.length) {
-    box.innerHTML = `<div class="empty">暂无会话记录</div>`;
+    box.innerHTML = `<div class="empty">暂无会话记录。开始一次对话后，这里会显示最近的 token 明细。</div>`;
     return;
   }
 
@@ -478,7 +578,7 @@ function renderUsageSessions(sessions) {
           <span>${escapeHtml(formatDateTime(session.ended_at))}</span>
         </div>
         <div class="usage-session-sub">
-          <span>${escapeHtml((session.models || []).join(", ") || "unknown model")}</span>
+          <span>${escapeHtml((session.models || []).join(", ") || "未知模型")}</span>
           <span>${formatNumber(session.record_count)} 条 · ${formatDuration(session.elapsed_ms_total)}</span>
         </div>
         <div class="usage-session-parts">${parts || "<span>无分类明细</span>"}</div>
@@ -492,7 +592,7 @@ function renderPetEventLog(logView) {
   if (!box) return;
   const entries = logView?.entries || [];
   if (!entries.length) {
-    box.innerHTML = `<div class="empty">暂无宠物事件</div>`;
+    box.innerHTML = `<div class="empty">暂无宠物事件。事件发送、去重和节流记录会显示在这里。</div>`;
     return;
   }
 
@@ -601,7 +701,7 @@ async function startMusicDance(source) {
       error: null,
     });
     renderMusicDiagnostics();
-    toast(source === "wasapi" ? "WASAPI started" : "Fake music started", "ok");
+    toast(source === "wasapi" ? "WASAPI 已启动" : "模拟音乐已启动", "ok");
   } catch (e) {
     Object.assign(MUSIC_STATE, {
       status: "error",
@@ -609,7 +709,7 @@ async function startMusicDance(source) {
       updatedAt: new Date(),
     });
     renderMusicDiagnostics();
-    toast("Music start failed: " + String(e), "err");
+    toast("音乐启动失败：" + String(e), "err");
   }
 }
 
@@ -621,13 +721,13 @@ async function stopMusicDance() {
       updatedAt: new Date(),
     });
     renderMusicDiagnostics();
-    toast("Music stopped", "ok");
+    toast("音乐响应已停止", "ok");
   } catch (e) {
     MUSIC_STATE.error = String(e);
     MUSIC_STATE.status = "error";
     MUSIC_STATE.updatedAt = new Date();
     renderMusicDiagnostics();
-    toast("Music stop failed: " + String(e), "err");
+    toast("停止失败：" + String(e), "err");
   }
 }
 
@@ -641,22 +741,22 @@ function renderMusicDiagnostics() {
   const error = MUSIC_STATE.error ? `<div class="music-error">${escapeHtml(MUSIC_STATE.error)}</div>` : "";
   box.innerHTML = `
     <div class="music-status-grid">
-      <div class="music-kv"><span>Status</span><strong>${escapeHtml(MUSIC_STATE.status)}</strong></div>
-      <div class="music-kv"><span>Source</span><strong>${escapeHtml(MUSIC_STATE.source)}</strong></div>
-      <div class="music-kv"><span>Session</span><strong>${escapeHtml(session)}</strong></div>
-      <div class="music-kv"><span>Updated</span><strong>${escapeHtml(updated)}</strong></div>
+      <div class="music-kv"><span>状态</span><strong>${escapeHtml(MUSIC_STATE.status)}</strong></div>
+      <div class="music-kv"><span>来源</span><strong>${escapeHtml(MUSIC_STATE.source)}</strong></div>
+      <div class="music-kv"><span>会话</span><strong>${escapeHtml(session)}</strong></div>
+      <div class="music-kv"><span>更新</span><strong>${escapeHtml(updated)}</strong></div>
     </div>
     <div class="music-meter-row">
-      <div class="music-meter-label"><span>Energy</span><strong>${energyPct}%</strong></div>
+      <div class="music-meter-label"><span>能量</span><strong>${energyPct}%</strong></div>
       <div class="music-meter"><span style="width:${energyPct}%"></span></div>
     </div>
     <div class="music-meter-row">
-      <div class="music-meter-label"><span>Bass</span><strong>${bassPct}%</strong></div>
+      <div class="music-meter-label"><span>低频</span><strong>${bassPct}%</strong></div>
       <div class="music-meter bass"><span style="width:${bassPct}%"></span></div>
     </div>
     <div class="music-flags">
-      <span class="${MUSIC_STATE.onset ? "on" : ""}">onset</span>
-      <span class="${MUSIC_STATE.silence ? "on" : ""}">silence</span>
+      <span class="${MUSIC_STATE.onset ? "on" : ""}">起拍</span>
+      <span class="${MUSIC_STATE.silence ? "on" : ""}">静音</span>
     </div>
     ${error}
   `;
@@ -666,14 +766,15 @@ function renderMemoryReview(review) {
   const box = $("memory-review");
   if (!box) return;
   const entries = review?.entries || [];
+  updateOverviewMemory(review);
   if (!entries.length) {
-    box.innerHTML = `<div class="empty">No long-term memory entries</div>`;
+    box.innerHTML = `<div class="empty">还没有长期记忆。对话结束后，猫猫会把值得保留的内容放在这里供你审查。</div>`;
     return;
   }
 
   box.innerHTML = `
     <div class="memory-meta">
-      <span>${formatNumber(review.total_entries)} total</span>
+      <span>${formatNumber(review.total_entries)} 条记忆</span>
       <span>${escapeHtml(formatDateTime(review.generated_at))}</span>
     </div>
     ${entries.map(entry => {
@@ -684,16 +785,16 @@ function renderMemoryReview(review) {
         <div class="memory-entry">
           <div class="memory-entry-head">
             <strong>${escapeHtml(entry.title)}</strong>
-            <button class="btn small danger memory-delete" type="button" data-id="${escapeAttr(entry.id)}">Delete</button>
+            <button class="btn small danger memory-delete" type="button" data-id="${escapeAttr(entry.id)}">删除</button>
           </div>
           <div class="memory-entry-meta">
             <span>${escapeHtml(entry.id)}</span>
             <span>${escapeHtml(entry.timestamp)}</span>
             <span>${escapeHtml(source)}</span>
-            <span>importance ${escapeHtml(importance)}</span>
-            ${entry.aggregated ? "<span>aggregated</span>" : ""}
+            <span>重要度 ${escapeHtml(importance)}</span>
+            ${entry.aggregated ? "<span>已聚合</span>" : ""}
           </div>
-          <div class="memory-tags">${tags || "<span>untagged</span>"}</div>
+          <div class="memory-tags">${tags || "<span>未标记</span>"}</div>
           <div class="memory-body">
             <p>${escapeHtml(entry.user_msg)}</p>
             <p>${escapeHtml(entry.ai_reply)}</p>
@@ -706,20 +807,17 @@ function renderMemoryReview(review) {
   box.querySelectorAll(".memory-delete").forEach(btn => {
     btn.addEventListener("click", () => {
       const id = btn.dataset.id;
-      if (id && confirm("Delete this memory entry?")) {
+      if (id && confirm("确定删除这条长期记忆？")) {
         deleteMemoryEntry(id);
       }
     });
   });
 }
 
-// ---- 保存 / 重置 ----
-
 async function saveAll() {
   try {
     if (dirty.ai) {
       const keyRaw = $("ai-key").value;
-      // 非空校验：如果用户明确输入了（非空白），允许保存；空串视为"清除覆盖"
       const payload = {
         api_key: keyRaw === "" ? null : keyRaw,
         base_url: $("ai-baseurl").value === "" ? null : $("ai-baseurl").value,
@@ -732,6 +830,10 @@ async function saveAll() {
       }
       await invoke("cmd_settings_save_ai", { payload });
       clearDirty("ai");
+    }
+    if (dirty.user) {
+      await invoke("cmd_settings_save_user", { payload: collectUser() });
+      clearDirty("user");
     }
     if (dirty.actions) {
       await invoke("cmd_settings_save_actions", { payload: collectActions() });
@@ -746,8 +848,7 @@ async function saveAll() {
       clearDirty("appearance");
     }
     await invoke("cmd_settings_apply");
-    toast("已保存 ✓", "ok");
-    // 重新拉快照，刷新 effective
+    toast("已保存", "ok");
     await loadSnapshot();
   } catch (e) {
     log("保存失败: " + e);
@@ -756,11 +857,11 @@ async function saveAll() {
 }
 
 async function resetCurrent() {
-  if (currentTab === "about" || currentTab === "usage") return;
+  if (["overview", "about", "usage", "memory"].includes(currentTab)) return;
   if (!confirm(`确定将「${tabLabel(currentTab)}」重置为默认？`)) return;
   try {
     await invoke("cmd_settings_reset", { category: currentTab });
-    toast("已重置 ✓", "ok");
+    toast("已重置", "ok");
     await loadSnapshot();
     clearDirty(currentTab);
   } catch (e) {
@@ -769,21 +870,21 @@ async function resetCurrent() {
 }
 
 function tabLabel(t) {
-  return ({ ai: "AI 模型", actions: "按键绑定", prompts: "Prompt", appearance: "外观行为" })[t] || t;
+  return ({ ai: "AI 与对话", user: "记忆与画像", actions: "按键与操作", prompts: "提示词", appearance: "外观与行为" })[t] || t;
 }
-
-// ---- 主流程 ----
 
 async function loadSnapshot() {
   try {
     SNAPSHOT = await invoke("cmd_settings_load");
     renderAi(SNAPSHOT.ai);
+    renderUser(SNAPSHOT.user);
     renderActions(SNAPSHOT.actions);
     renderPrompts(SNAPSHOT.prompts);
     renderAppearance(SNAPSHOT.appearance);
     renderAbout(SNAPSHOT.about);
     loadUsageDiagnostics();
-    ["ai", "actions", "prompts", "appearance"].forEach(clearDirty);
+    loadMemoryReview();
+    ["ai", "user", "actions", "prompts", "appearance"].forEach(clearDirty);
   } catch (e) {
     log("加载失败: " + e);
     toast("加载配置失败：" + String(e), "err");
@@ -801,6 +902,9 @@ function bindGlobal() {
   document.querySelectorAll(".nav-item").forEach(btn => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
+  document.querySelectorAll(".quick-link[data-go]").forEach(btn => {
+    btn.addEventListener("click", () => switchTab(btn.dataset.go));
+  });
   $("btn-close").addEventListener("click", tryClose);
   $("btn-cancel").addEventListener("click", async () => {
     await loadSnapshot();
@@ -809,18 +913,20 @@ function bindGlobal() {
   $("btn-save").addEventListener("click", saveAll);
   $("btn-reset").addEventListener("click", resetCurrent);
   $("usage-refresh").addEventListener("click", loadUsageDiagnostics);
-  const memoryRefresh = $("memory-refresh");
-  if (memoryRefresh) memoryRefresh.addEventListener("click", loadMemoryReview);
-  const musicFake = $("music-fake");
-  if (musicFake) musicFake.addEventListener("click", () => startMusicDance("fake"));
-  const musicWasapi = $("music-wasapi");
-  if (musicWasapi) musicWasapi.addEventListener("click", () => startMusicDance("wasapi"));
-  const musicStop = $("music-stop");
-  if (musicStop) musicStop.addEventListener("click", stopMusicDance);
+  $("overview-refresh").addEventListener("click", () => {
+    loadUsageDiagnostics();
+    loadMemoryReview();
+  });
+  $("memory-refresh").addEventListener("click", loadMemoryReview);
+  $("music-fake").addEventListener("click", () => startMusicDance("fake"));
+  $("music-wasapi").addEventListener("click", () => startMusicDance("wasapi"));
+  $("music-stop").addEventListener("click", stopMusicDance);
   bindMusicDiagnostics();
   $("ai-key-toggle").addEventListener("click", () => {
     const el = $("ai-key");
-    el.type = el.type === "password" ? "text" : "password";
+    const show = el.type === "password";
+    el.type = show ? "text" : "password";
+    $("ai-key-toggle").setAttribute("aria-label", show ? "隐藏 API Key" : "显示 API Key");
   });
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape") tryClose();
@@ -831,12 +937,12 @@ function bindGlobal() {
   });
 }
 
-// ---- utils ----
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   })[c]);
 }
+
 function escapeAttr(s) { return escapeHtml(s).replace(/"/g, "&quot;"); }
 
 function formatNumber(value) {
@@ -866,6 +972,15 @@ function formatDateTime(value) {
   });
 }
 
+function updateOverviewAppearance(appearance) {
+  $("ov-screenshot").textContent = `${formatNumber(appearance?.screenshot_interval_sec ?? 30)} 秒`;
+}
+
+function updateOverviewMemory(review) {
+  $("ov-memory-total").textContent = formatNumber(review?.total_entries || 0);
+  $("ov-memory-time").textContent = review?.generated_at ? `更新于 ${formatDateTime(review.generated_at)}` : "等待记录";
+}
+
 function formatPetDecision(value) {
   if (value === "sent") return "已发送";
   if (value === "deduplicated") return "已去重";
@@ -889,7 +1004,6 @@ function compactPayload(payload) {
   return JSON.stringify(copy);
 }
 
-// 启动
 document.addEventListener("DOMContentLoaded", () => {
   bindGlobal();
   loadSnapshot();

@@ -28,8 +28,8 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 use tracing::{info, warn};
 
 const WINDOW_LABEL: &str = "settings";
-const WINDOW_W: f64 = 720.0;
-const WINDOW_H: f64 = 520.0;
+const WINDOW_W: f64 = 1040.0;
+const WINDOW_H: f64 = 720.0;
 
 // ---- 窗口生命周期 ----
 
@@ -63,7 +63,7 @@ fn create_settings_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri
     WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::App("settings.html".into()))
         .title("8Bit Cat 设置")
         .inner_size(WINDOW_W, WINDOW_H)
-        .min_inner_size(540.0, 400.0)
+        .min_inner_size(860.0, 560.0)
         .decorations(false)
         .transparent(false)
         .shadow(true)
