@@ -107,6 +107,7 @@ import { PerformerHost } from './performance/performer-host.js';
       restoreSemanticState: function() {
         pet.applySemanticState();
         syncStateClass(pet.state);
+        SpriteRenderer.renderSprite(ctx, pet.state, pet.frame, pet.facingRight, 8);
         prevState = pet.state;
       },
       log: function(msg) {

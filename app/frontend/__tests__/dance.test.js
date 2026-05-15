@@ -229,4 +229,18 @@ describe('performance event priority', () => {
     expect(result.interrupted).toBe(false);
     expect(host.hasActive()).toBe(true);
   });
+
+  it('restores semantic state on natural stop too', async () => {
+    const calls = [];
+    const host = new PerformerHost({
+      getMetrics: async () => metrics,
+      restoreSemanticState: (reason) => calls.push(['restore', reason]),
+    });
+
+    await host.start(timelinePayload());
+    host.stop({ session_id: 7, reason: 'finished' });
+
+    expect(host.hasActive()).toBe(false);
+    expect(calls).toContainEqual(['restore', 'finished']);
+  });
 });

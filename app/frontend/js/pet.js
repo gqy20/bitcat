@@ -365,6 +365,8 @@ class PetStateMachine {
     this.idleVariantTimeMs = 0;
   }
 
+  // Schedule the next ambient idle motion. The selected variant is not stored here;
+  // selection is repeated at trigger time so test-injected randomness stays simple.
   scheduleIdleVariantAfter(baseMs) {
     const config = STATE_CONFIG.idle;
     const variants = config.variants || [];
@@ -375,6 +377,7 @@ class PetStateMachine {
       + this.random() * (variant.cooldownMaxMs - variant.cooldownMinMs);
   }
 
+  // Weighted choice for ambient idle motions.
   pickIdleVariant(variants) {
     const totalWeight = variants.reduce(function(sum, variant) {
       return sum + Math.max(variant.weight || 1, 1);
@@ -387,6 +390,8 @@ class PetStateMachine {
     return variants[variants.length - 1];
   }
 
+  // Idle variants are temporary overlay timelines. The base idle timeline keeps
+  // advancing underneath, so returning from a variant does not restart breathing.
   advanceIdleVariant(config, dtMs) {
     const variants = config.variants || [];
     if (!variants.length) return false;

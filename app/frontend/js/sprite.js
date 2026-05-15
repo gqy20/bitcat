@@ -42,7 +42,7 @@ function cloneSprite(base, mods) {
   return out;
 }
 
-// idle: 4 帧。睁 → 半眯 → 闭 → 睁
+// idle: 基础眨眼帧 + ambient variants（耳朵动、左右看）。
 const IDLE_BLINK_HALF = cloneSprite(IDLE_BASE, [
   // 眼睛上半留肤色，下半保留眼黑
   [6, 3, 2], [6, 4, 2], [6, 10, 2], [6, 11, 2],
