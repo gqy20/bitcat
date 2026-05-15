@@ -229,6 +229,44 @@ pub struct MusicDanceFrame {
 - pending guard，未完成移动不排队。
 - 位移小于 10-20px。
 - 托盘停止入口保留。
+- 必须先做边界计算，任何窗口级位移都不能让宠物跳出当前显示器工作区。
+
+### 窗口摆动边界计算
+
+当前固定舞蹈和早期音乐舞动都存在一个风险：窗口 offset 直接叠加到起始坐标上，如果宠物靠近屏幕边缘，`jump` / `shake` / `wave` 可能把窗口推到工作区之外。音乐模式长期运行时这个问题更明显，因为它不是短时间编排动作，而是持续响应音频。
+
+后续如果恢复窗口级动作，应先把“动作位移”拆成两个阶段：
+
+```js
+const desired = computeDanceOffset(action, progress, time, metrics, intensity);
+const safe = clampWindowOffset(desired, {
+  baseX,
+  baseY,
+  windowW,
+  windowH,
+  workLeft,
+  workTop,
+  workRight,
+  workBottom,
+  margin,
+});
+```
+
+`clampWindowOffset` 的职责：
+
+- 以当前显示器 work area 为边界，而不是整个虚拟桌面。
+- 考虑窗口实际宽高和 DPI 后的物理尺寸。
+- 保留 8-16px 安全边距，避免宠物贴到屏幕外沿。
+- 当 base position 已经靠边时，自动压缩某一方向的动作幅度，而不是硬裁剪造成顿挫。
+- 多显示器场景下，以宠物起始点所在显示器为准，不允许一次舞动跨屏。
+
+建议测试覆盖：
+
+- 宠物在屏幕中央时 offset 不变。
+- 靠左时负向 x offset 被压缩。
+- 靠右时正向 x offset 被压缩。
+- 靠上跳跃时负向 y offset 被压缩。
+- 多显示器负坐标 work area 下仍然正确。
 
 ## 参考资料
 

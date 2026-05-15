@@ -17,8 +17,8 @@ use ai_pad_core::app_settings::{AiOverride, AppSettings, AppearanceSettings};
 use ai_pad_core::memory::{LongTermMemory, LongTermReviewEntry};
 use ai_pad_core::prompts::PromptsConfig;
 use ai_pad_core::token_tracker::{
-    load_sessions, token_sessions_path, token_usage_path, totals_for_date, TokenSession,
-    TokenTotals,
+    load_sessions, read_usage_records, token_sessions_path, token_usage_path, TokenRecord,
+    TokenSession, TokenTotals,
 };
 use ai_pad_core::user_profile::UserProfile;
 use serde::{Deserialize, Serialize};
@@ -141,8 +141,17 @@ pub struct AboutInfo {
 pub struct TokenStatsView {
     pub generated_at: String,
     pub today: TokenTotals,
+    pub selected_model: Option<String>,
+    pub models: Vec<TokenModelUsageView>,
     pub recent_sessions: Vec<TokenSessionView>,
     pub paths: TokenStatsPaths,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TokenModelUsageView {
+    pub model: String,
+    pub record_count: u32,
+    pub total_tokens: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -344,17 +353,39 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
     })
 }
 
-/// 返回 Token 用量统计：今日汇总 + 最近 10 个 session 明细。
+/// 返回 Token 用量统计：今日汇总 + 模型列表 + 最近 10 个 session 明细。
 #[tauri::command]
-pub async fn cmd_get_token_stats() -> Result<TokenStatsView, String> {
+pub async fn cmd_get_token_stats(model: Option<String>) -> Result<TokenStatsView, String> {
     let usage_path = token_usage_path()?;
     let sessions_path = token_sessions_path()?;
     let today = chrono::Local::now().date_naive();
-    let today_totals = totals_for_date(&usage_path, today)?;
+    let selected_model = model.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() || trimmed == "__all" {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    });
+    let records = read_usage_records(&usage_path)?;
+    let today_records = records_for_date(&records, today);
+    let today_totals = totals_for_records(today_records.iter().copied().filter(|record| {
+        selected_model
+            .as_ref()
+            .map(|model| record.model == *model)
+            .unwrap_or(true)
+    }));
+    let models = model_usage_options(today_records.iter().copied());
     let sessions = load_sessions(&sessions_path)?;
     let recent_sessions = sessions
         .sessions
         .iter()
+        .filter(|session| {
+            selected_model
+                .as_ref()
+                .map(|model| session.models.iter().any(|m| m == model))
+                .unwrap_or(true)
+        })
         .take(10)
         .map(token_session_view)
         .collect();
@@ -362,12 +393,54 @@ pub async fn cmd_get_token_stats() -> Result<TokenStatsView, String> {
     Ok(TokenStatsView {
         generated_at: chrono::Local::now().to_rfc3339(),
         today: today_totals,
+        selected_model,
+        models,
         recent_sessions,
         paths: TokenStatsPaths {
             usage_jsonl: usage_path.to_string_lossy().into_owned(),
             sessions_json: sessions_path.to_string_lossy().into_owned(),
         },
     })
+}
+
+fn records_for_date(records: &[TokenRecord], date: chrono::NaiveDate) -> Vec<&TokenRecord> {
+    let date_prefix = date.format("%Y-%m-%d").to_string();
+    records
+        .iter()
+        .filter(|record| record.timestamp.starts_with(&date_prefix))
+        .collect()
+}
+
+fn totals_for_records<'a>(records: impl Iterator<Item = &'a TokenRecord>) -> TokenTotals {
+    let mut totals = TokenTotals::default();
+    for record in records {
+        totals.add_record(record);
+    }
+    totals
+}
+
+fn model_usage_options<'a>(
+    records: impl Iterator<Item = &'a TokenRecord>,
+) -> Vec<TokenModelUsageView> {
+    let mut by_model: HashMap<String, TokenModelUsageView> = HashMap::new();
+    for record in records {
+        let entry = by_model
+            .entry(record.model.clone())
+            .or_insert_with(|| TokenModelUsageView {
+                model: record.model.clone(),
+                record_count: 0,
+                total_tokens: 0,
+            });
+        entry.record_count = entry.record_count.saturating_add(1);
+        entry.total_tokens = entry.total_tokens.saturating_add(record.total_tokens);
+    }
+    let mut models: Vec<_> = by_model.into_values().collect();
+    models.sort_by(|a, b| {
+        b.total_tokens
+            .cmp(&a.total_tokens)
+            .then_with(|| a.model.cmp(&b.model))
+    });
+    models
 }
 
 /// Return a reviewable view of grep-first long-term memory.

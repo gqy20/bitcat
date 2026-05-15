@@ -286,6 +286,21 @@
               <input id="a-ss-interval" type="number" min="5" max="3600" step="5" placeholder="30" />
             </div>
           </div>
+
+          <div class="section-panel">
+            <div class="section-head music-title">
+              <div>
+                <h3>表演与舞动</h3>
+                <span>音乐响应舞蹈属于宠物行为；运行状态会同步到诊断页。</span>
+              </div>
+              <div class="music-actions">
+                <button id="music-fake" class="btn small" type="button">模拟</button>
+                <button id="music-wasapi" class="btn small" type="button">WASAPI</button>
+                <button id="music-stop" class="btn small ghost" type="button">停止</button>
+              </div>
+            </div>
+            <div id="music-diagnostics" class="music-diagnostics"></div>
+          </div>
         </section>
 
         <section class="tab hidden" data-pane="prompts">
@@ -349,9 +364,14 @@
             <div>
               <p class="eyebrow">Diagnostics</p>
               <h1>用量与诊断</h1>
-              <p class="hint">本机 token、宠物事件和音乐响应诊断，不上传、不同步。</p>
+              <p class="hint">本机 token、资源占用和宠物事件诊断，不上传、不同步。</p>
             </div>
-            <button id="usage-refresh" class="btn small" type="button">刷新</button>
+            <div class="usage-toolbar">
+              <select id="usage-model" aria-label="按模型筛选用量">
+                <option value="__all">全部模型</option>
+              </select>
+              <button id="usage-refresh" class="btn small" type="button">刷新</button>
+            </div>
           </div>
 
           <div class="usage-summary">
@@ -410,15 +430,8 @@
           </div>
 
           <div class="usage-block">
-            <div class="usage-block-title music-title">
-              <span>音乐响应舞蹈</span>
-              <div class="music-actions">
-                <button id="music-fake" class="btn small" type="button">模拟</button>
-                <button id="music-wasapi" class="btn small" type="button">WASAPI</button>
-                <button id="music-stop" class="btn small ghost" type="button">停止</button>
-              </div>
-            </div>
-            <div id="music-diagnostics" class="music-diagnostics"></div>
+            <div class="usage-block-title">音乐响应状态</div>
+            <div id="music-diagnostics-usage" class="music-diagnostics compact"></div>
           </div>
 
           <details class="quiet-details usage-paths">

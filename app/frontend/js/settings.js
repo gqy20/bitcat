@@ -18,6 +18,7 @@ const ACTION_TYPE_LABELS = {
 let SNAPSHOT = null;
 const dirty = { ai: false, user: false, actions: false, prompts: false, appearance: false };
 let currentTab = "overview";
+let selectedUsageModel = "__all";
 let musicDiagnosticsBound = false;
 let musicDiagnosticsRenderTimer = null;
 const MUSIC_STATE = {
@@ -97,6 +98,11 @@ async function mockInvoke(command) {
         screen_summary_total_tokens: 2400,
         memory_aggregation_total_tokens: 950,
       },
+      selected_model: null,
+      models: [
+        { model: "claude-sonnet-4-20250514", record_count: 8, total_tokens: 18200 },
+        { model: "claude-opus-4-20250514", record_count: 4, total_tokens: 4550 },
+      ],
       recent_sessions: [],
       paths: {
         usage_jsonl: "~/.ai-pad/logs/token_usage.jsonl",
@@ -485,7 +491,8 @@ async function loadTokenStats() {
   const status = $("usage-status");
   if (status) status.textContent = "读取中...";
   try {
-    const stats = await invoke("cmd_get_token_stats");
+    const model = selectedUsageModel === "__all" ? null : selectedUsageModel;
+    const stats = await invoke("cmd_get_token_stats", { model });
     renderTokenStats(stats);
     if (status) status.textContent = `更新于 ${formatDateTime(stats.generated_at)}`;
   } catch (e) {
@@ -539,10 +546,11 @@ function renderTokenStats(stats) {
     memory_aggregation_total_tokens: 0,
   };
   const today = stats?.today || empty;
-  $("usage-total").textContent = formatNumber(today.total_tokens);
-  $("usage-io").textContent = `${formatNumber(today.input_tokens)} / ${formatNumber(today.output_tokens)}`;
-  $("usage-cache").textContent = `${formatNumber(today.cache_read_tokens)} / ${formatNumber(today.cache_write_tokens)}`;
-  $("usage-records").textContent = formatNumber(today.record_count);
+  renderUsageModelSelect(stats);
+  $("usage-total").innerHTML = metricValue(today.total_tokens);
+  $("usage-io").innerHTML = pairedMetric("输入", today.input_tokens, "输出", today.output_tokens);
+  $("usage-cache").innerHTML = pairedMetric("读", today.cache_read_tokens, "写", today.cache_write_tokens);
+  $("usage-records").innerHTML = metricValue(today.record_count, "条");
   $("ov-usage-total").textContent = formatNumber(today.total_tokens);
   $("usage-paths").textContent = stats
     ? `${stats.paths.usage_jsonl}\n${stats.paths.sessions_json}`
@@ -552,11 +560,28 @@ function renderTokenStats(stats) {
   renderUsageSessions(stats?.recent_sessions || []);
 }
 
+function renderUsageModelSelect(stats) {
+  const select = $("usage-model");
+  if (!select || !stats) return;
+  const models = stats.models || [];
+  const current = stats.selected_model || "__all";
+  selectedUsageModel = current;
+  const options = [
+    `<option value="__all">全部模型</option>`,
+    ...models.map(item => {
+      const detail = `${compactNumber(item.total_tokens)} · ${formatNumber(item.record_count)} 条`;
+      return `<option value="${escapeAttr(item.model)}">${escapeHtml(item.model)} (${escapeHtml(detail)})</option>`;
+    }),
+  ].join("");
+  if (select.innerHTML !== options) select.innerHTML = options;
+  select.value = current;
+}
+
 function renderResourceUsage(usage) {
-  $("resource-cpu").textContent = usage ? `${formatFixed(usage.process_cpu_percent, 1)}%` : "-";
-  $("resource-process-memory").textContent = usage ? `${formatFixed(usage.process_memory_mb, 1)} MB` : "-";
-  $("resource-system-memory").textContent = usage
-    ? `${formatFixed(usage.system_memory_used_mb / 1024, 1)} / ${formatFixed(usage.system_memory_total_mb / 1024, 1)} GB`
+  $("resource-cpu").innerHTML = usage ? metricValue(formatFixed(usage.process_cpu_percent, 1), "%") : "-";
+  $("resource-process-memory").innerHTML = usage ? metricValue(formatFixed(usage.process_memory_mb, 1), "MB") : "-";
+  $("resource-system-memory").innerHTML = usage
+    ? pairedMetric("已用", `${formatFixed(usage.system_memory_used_mb / 1024, 1)} GB`, "总量", `${formatFixed(usage.system_memory_total_mb / 1024, 1)} GB`)
     : "-";
   $("resource-system-memory-bar").style.width = usage ? `${Math.round(usage.system_memory_percent)}%` : "0%";
   $("resource-updated").textContent = usage?.generated_at ? `更新于 ${formatDateTime(usage.generated_at)}` : "读取失败";
@@ -762,14 +787,16 @@ async function stopMusicDance() {
 }
 
 function renderMusicDiagnostics() {
-  const box = $("music-diagnostics");
-  if (!box) return;
+  const boxes = ["music-diagnostics", "music-diagnostics-usage"]
+    .map(id => document.getElementById(id))
+    .filter(Boolean);
+  if (!boxes.length) return;
   const energyPct = Math.round(clamp01(MUSIC_STATE.energy) * 100);
   const bassPct = Math.round(clamp01(MUSIC_STATE.bass) * 100);
   const session = MUSIC_STATE.sessionId || "-";
   const updated = MUSIC_STATE.updatedAt ? MUSIC_STATE.updatedAt.toLocaleTimeString("zh-CN") : "-";
   const error = MUSIC_STATE.error ? `<div class="music-error">${escapeHtml(MUSIC_STATE.error)}</div>` : "";
-  box.innerHTML = `
+  const html = `
     <div class="music-status-grid">
       <div class="music-kv"><span>状态</span><strong>${escapeHtml(MUSIC_STATE.status)}</strong></div>
       <div class="music-kv"><span>来源</span><strong>${escapeHtml(MUSIC_STATE.source)}</strong></div>
@@ -790,6 +817,7 @@ function renderMusicDiagnostics() {
     </div>
     ${error}
   `;
+  boxes.forEach(box => { box.innerHTML = html; });
 }
 
 function renderMemoryReview(review) {
@@ -805,30 +833,36 @@ function renderMemoryReview(review) {
   box.innerHTML = `
     <div class="memory-meta">
       <span>${formatNumber(review.total_entries)} 条记忆</span>
-      <span>${escapeHtml(formatDateTime(review.generated_at))}</span>
+      <span>最近更新 ${escapeHtml(formatDateTime(review.generated_at))}</span>
     </div>
     ${entries.map(entry => {
       const tags = (entry.tags || []).map(tag => `<span>#${escapeHtml(tag)}</span>`).join("");
       const source = entry.source || "unknown";
       const importance = entry.importance == null ? "?" : entry.importance;
+      const summary = entry.ai_reply || entry.user_msg || "";
       return `
         <div class="memory-entry">
           <div class="memory-entry-head">
-            <strong>${escapeHtml(entry.title)}</strong>
-            <button class="btn small danger memory-delete" type="button" data-id="${escapeAttr(entry.id)}">删除</button>
+            <div>
+              <strong>${escapeHtml(entry.title)}</strong>
+              <p>${escapeHtml(summary)}</p>
+            </div>
+            <button class="icon-btn danger memory-delete" type="button" data-id="${escapeAttr(entry.id)}" aria-label="删除记忆" title="删除记忆">×</button>
           </div>
           <div class="memory-entry-meta">
-            <span>${escapeHtml(entry.id)}</span>
             <span>${escapeHtml(entry.timestamp)}</span>
             <span>${escapeHtml(source)}</span>
             <span>重要度 ${escapeHtml(importance)}</span>
             ${entry.aggregated ? "<span>已聚合</span>" : ""}
           </div>
           <div class="memory-tags">${tags || "<span>未标记</span>"}</div>
-          <div class="memory-body">
-            <p>${escapeHtml(entry.user_msg)}</p>
-            <p>${escapeHtml(entry.ai_reply)}</p>
-          </div>
+          <details class="memory-detail">
+            <summary>查看原文</summary>
+            <div class="memory-body">
+              <p><b>用户</b>${escapeHtml(entry.user_msg)}</p>
+              <p><b>回复</b>${escapeHtml(entry.ai_reply)}</p>
+            </div>
+          </details>
         </div>
       `;
     }).join("")}
@@ -943,6 +977,10 @@ function bindGlobal() {
   $("btn-save").addEventListener("click", saveAll);
   $("btn-reset").addEventListener("click", resetCurrent);
   $("usage-refresh").addEventListener("click", loadUsageDiagnostics);
+  $("usage-model").addEventListener("change", () => {
+    selectedUsageModel = $("usage-model").value || "__all";
+    loadTokenStats();
+  });
   $("overview-refresh").addEventListener("click", () => {
     loadUsageDiagnostics();
     loadMemoryReview();
@@ -977,6 +1015,31 @@ function escapeAttr(s) { return escapeHtml(s).replace(/"/g, "&quot;"); }
 
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("zh-CN");
+}
+
+function compactNumber(value) {
+  const num = Number(value || 0);
+  if (Math.abs(num) >= 1_000_000) return `${formatFixed(num / 1_000_000, 1)}m`;
+  if (Math.abs(num) >= 10_000) return `${formatFixed(num / 1000, 1)}k`;
+  return formatNumber(num);
+}
+
+function formatMetricPart(value) {
+  return typeof value === "number" ? compactNumber(value) : String(value ?? "-");
+}
+
+function metricValue(value, unit = "") {
+  const suffix = unit ? `<small>${escapeHtml(unit)}</small>` : "";
+  return `<span class="metric-main">${escapeHtml(formatMetricPart(value))}${suffix}</span>`;
+}
+
+function pairedMetric(leftLabel, leftValue, rightLabel, rightValue) {
+  return `
+    <span class="metric-pair">
+      <span><b>${escapeHtml(formatMetricPart(leftValue))}</b><small>${escapeHtml(leftLabel)}</small></span>
+      <span><b>${escapeHtml(formatMetricPart(rightValue))}</b><small>${escapeHtml(rightLabel)}</small></span>
+    </span>
+  `;
 }
 
 function formatFixed(value, digits) {
