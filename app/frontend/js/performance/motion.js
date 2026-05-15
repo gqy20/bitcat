@@ -100,13 +100,13 @@ export function computeMusicSpriteOptions(action, progress, time, intensity) {
 
   switch (action) {
     case 'jump':
-      opts.offsetY = -Math.sin(Math.min(progress, 1) * Math.PI) * (12 + power * 20);
+      opts.offsetY = -Math.sin(Math.min(progress, 1) * Math.PI) * (14 + power * 24);
       break;
     case 'shake':
-      opts.offsetX = Math.sin(time * 0.08) * (4 + power * 12);
+      opts.offsetX = Math.sin(time * 0.08) * (6 + power * 18);
       break;
     case 'wave':
-      opts.offsetY = -Math.abs(Math.sin(time * 0.015)) * (4 + power * 10);
+      opts.offsetY = -Math.abs(Math.sin(time * 0.015)) * (6 + power * 14);
       break;
   }
 

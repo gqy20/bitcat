@@ -67,7 +67,7 @@ export class PerformerHost {
     }
     if (this.callbacks.applyOffset) this.callbacks.applyOffset(this.active, frame.offset);
     if (this.callbacks.renderSprite) {
-      this.callbacks.renderSprite(frame.action, frame.spriteOptions || {});
+      this.callbacks.renderSprite(frame.action, frame.spriteOptions || {}, frame.spriteScale);
     }
     return true;
   }

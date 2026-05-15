@@ -163,4 +163,14 @@ describe('music reactive performance player', () => {
     for (let i = 0; i < 20; i++) player.update(100);
     expect(player.action).toBe('idle');
   });
+
+  it('keeps music reactive playback inside the pet canvas', () => {
+    const player = new MusicReactivePlayer({ session_id: 9, kind: 'music-reactive' }, metrics);
+
+    player.handleFrame({ energy: 1, bass: 1, onset: true });
+    const frame = player.update(16);
+
+    expect(frame.offset).toEqual({ x: 0, y: 0 });
+    expect(frame.spriteOptions.offsetY).toBeTypeOf('number');
+  });
 });

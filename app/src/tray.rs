@@ -10,6 +10,7 @@ use tracing::info;
 const MENU_SCREENSHOT: &str = "screenshot";
 const MENU_COLLAPSE: &str = "collapse";
 const MENU_TOP: &str = "top";
+const MENU_STOP_DANCE: &str = "stop-dance";
 const MENU_RELOAD: &str = "reload";
 const MENU_SETTINGS: &str = "settings";
 const MENU_EXIT: &str = "exit";
@@ -32,6 +33,7 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let separator_primary = PredefinedMenuItem::separator(app)?;
     let collapse_item = MenuItem::with_id(app, MENU_COLLAPSE, "折叠", true, None::<&str>)?;
     let top_item = MenuItem::with_id(app, MENU_TOP, "取消置顶", true, None::<&str>)?;
+    let stop_dance_item = MenuItem::with_id(app, MENU_STOP_DANCE, "停止舞动", true, None::<&str>)?;
     let separator_state = PredefinedMenuItem::separator(app)?;
     let reload_item = MenuItem::with_id(app, MENU_RELOAD, "重新载入配置", true, None::<&str>)?;
     let exit_item = MenuItem::with_id(app, MENU_EXIT, "退出 8Bit Cat", true, None::<&str>)?;
@@ -44,6 +46,7 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             &separator_primary,
             &collapse_item,
             &top_item,
+            &stop_dance_item,
             &separator_state,
             &reload_item,
             &exit_item,
@@ -68,6 +71,7 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 let label = if now_top { "取消置顶" } else { "置顶" };
                 let _ = top_item.set_text(label);
             }
+            MENU_STOP_DANCE => stop_dance(app),
             MENU_RELOAD => {
                 ws_reload_config(app);
             }

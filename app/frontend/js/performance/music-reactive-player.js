@@ -1,6 +1,5 @@
 import {
   clamp01,
-  computeMusicDanceOffset,
   computeMusicSpriteOptions,
 } from './motion.js';
 
@@ -9,6 +8,7 @@ export class MusicReactivePlayer {
     this.kind = 'music-reactive';
     this.sessionId = payload.session_id;
     this.metrics = metrics;
+    this.spriteScale = 6;
     this.time = 0;
     this.energy = 0;
     this.targetEnergy = 0;
@@ -55,8 +55,13 @@ export class MusicReactivePlayer {
     return {
       done: false,
       action: this.action,
-      offset: computeMusicDanceOffset(this.action, progress, this.time, this.metrics, intensity),
-      spriteOptions: sprite.opts,
+      offset: { x: 0, y: 0 },
+      spriteScale: this.spriteScale,
+      spriteOptions: {
+        ...sprite.opts,
+        baseX: 16,
+        baseY: 18,
+      },
       facingRight: sprite.facingRight,
     };
   }

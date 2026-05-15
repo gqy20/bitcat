@@ -23,6 +23,7 @@ const dirty = { ai: false, actions: false, prompts: false, appearance: false };
 // 当前激活 tab
 let currentTab = "ai";
 let musicDiagnosticsBound = false;
+let musicDiagnosticsRenderTimer = null;
 const MUSIC_STATE = {
   status: "idle",
   source: "-",
@@ -34,6 +35,7 @@ const MUSIC_STATE = {
   updatedAt: null,
   error: null,
 };
+const MUSIC_DIAGNOSTICS_RENDER_MS = 500;
 
 // ---- 工具 ----
 
@@ -549,7 +551,7 @@ function bindMusicDiagnostics() {
       updatedAt: new Date(),
       error: null,
     });
-    renderMusicDiagnostics();
+    scheduleMusicDiagnosticsRender();
   });
 
   eventApi.listen("performance-stop", (event) => {
@@ -570,6 +572,14 @@ function bindMusicDiagnostics() {
     });
     renderMusicDiagnostics();
   });
+}
+
+function scheduleMusicDiagnosticsRender() {
+  if (musicDiagnosticsRenderTimer) return;
+  musicDiagnosticsRenderTimer = setTimeout(() => {
+    musicDiagnosticsRenderTimer = null;
+    renderMusicDiagnostics();
+  }, MUSIC_DIAGNOSTICS_RENDER_MS);
 }
 
 async function startMusicDance(source) {

@@ -205,22 +205,28 @@ function getSprite(state, frame) {
 }
 
 // 渲染指定帧到 Canvas，可左右翻转 + 像素偏移
-// opts: { offsetX, offsetY } — 用于舞蹈动画（jump 上移、shake 抖动）
+// opts: { offsetX, offsetY, baseX, baseY } — 用于舞蹈动画（jump 上移、shake 抖动）
 function renderSprite(ctx, state, frame, facingRight, scale, opts) {
   scale = scale || 8;
   opts = opts || {};
   var ox = opts.offsetX || 0;
   var oy = opts.offsetY || 0;
+  var bx = opts.baseX || 0;
+  var by = opts.baseY || 0;
   const data = getSprite(state, frame);
   const totalW = SPRITE_W * scale;
   const totalH = SPRITE_H * scale;
+  const canvasW = ctx.canvas ? ctx.canvas.width : totalW;
+  const canvasH = ctx.canvas ? ctx.canvas.height : totalH;
 
-  ctx.clearRect(0, 0, totalW, totalH);
+  ctx.clearRect(0, 0, canvasW, canvasH);
 
   ctx.save();
   if (facingRight === false) {
-    ctx.translate(totalW, 0);
+    ctx.translate(bx + totalW, by);
     ctx.scale(-1, 1);
+  } else {
+    ctx.translate(bx, by);
   }
 
   for (let row = 0; row < SPRITE_H; row++) {

@@ -95,8 +95,8 @@ import { PerformerHost } from './performance/performer-host.js';
       },
       applyOffset: applyPerformerOffset,
       resetPosition: resetPerformerPosition,
-      renderSprite: function(action, opts) {
-        SpriteRenderer.renderSprite(ctx, action, 0, pet.facingRight, 8, opts);
+      renderSprite: function(action, opts, scale) {
+        SpriteRenderer.renderSprite(ctx, action, 0, pet.facingRight, scale || 8, opts);
       },
       setFacingRight: function(facingRight) {
         pet.facingRight = facingRight;
