@@ -34,10 +34,10 @@
 
   <div id="summary" class="summary"></div>
 
-  <script src="/js/sprite.js"></script>
-  <script src="/js/pet.js"></script>
+  <script type="module" src="/js/sprite.js"></script>
+  <script type="module" src="/js/pet.js"></script>
   <script src="/js/particles.js"></script>
-  <script>
+  <script type="module">
     function renderResults(containerId, results) {
       const el = document.getElementById(containerId);
       let passed = 0, failed = 0;
@@ -52,7 +52,7 @@
     }
 
     // 创建动画预览：每个状态一个画布，循环播放帧
-    const states = ['idle', 'walk', 'sleep', 'talk', 'happy', 'confused'];
+    const states = ['idle', 'walk', 'sleep', 'talk', 'happy', 'confused', 'focused', 'preparing'];
     const previewRow = document.getElementById('previews');
     const previewCtxs = {};
     states.forEach(state => {
@@ -69,7 +69,7 @@
       previewCtxs[state] = canvas.getContext('2d');
     });
 
-    // 动画循环：每个 state 按其 frameDuration 推进
+    // 动画循环：按真实时间轴配置推进
     const stateConfig = PetState.STATE_CONFIG;
     const stateAnims = {};
     states.forEach(s => stateAnims[s] = { frame: 0, t: 0, facing: true });
@@ -80,10 +80,18 @@
       states.forEach(s => {
         const a = stateAnims[s];
         const cfg = stateConfig[s];
+        const frames = cfg.frames || [];
+        const passDuration = frames.reduce((sum, f) => sum + f.duration, 0);
         a.t += dt;
-        while (a.t >= cfg.frameDuration) {
-          a.t -= cfg.frameDuration;
-          a.frame = (a.frame + 1) % cfg.frameCount;
+        if (passDuration > 0) {
+          let elapsed = a.t % passDuration;
+          for (const frame of frames) {
+            if (elapsed < frame.duration) {
+              a.frame = frame.sprite;
+              break;
+            }
+            elapsed -= frame.duration;
+          }
         }
         // walk 状态来回翻转方向
         if (s === 'walk' && a.frame === 0 && a.t < 50) a.facing = !a.facing;

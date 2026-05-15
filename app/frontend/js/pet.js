@@ -428,11 +428,11 @@ function runPetTests() {
 
   // applyEvent
   const pet11 = new PetStateMachine();
-  pet11.applyEvent({ state: 'talk' });
+  pet11.applyEvent({ type: 'notify', kind: 'ai_writing', body: 'hello', ttl_ms: 30000, refresh: true });
   assert('apply_event_state', pet11.state === 'talk');
-  pet11.applyEvent({ bubble: 'hello' });
+  pet11.applyEvent({ type: 'show_bubble', text: 'hello' });
   assert('apply_event_bubble', pet11.bubble === 'hello');
-  pet11.applyEvent({ walk_to: 200 });
+  pet11.applyEvent({ type: 'walk_to', x: 200 });
   assert('apply_event_walk', pet11.state === 'walk' && pet11.targetX === 200);
 
   // ===== 大 dt 掉帧恢复测试 =====
@@ -454,3 +454,5 @@ function runPetTests() {
 if (typeof window !== 'undefined') {
   window.PetState = { PetStateMachine, STATE_CONFIG, runPetTests };
 }
+
+export { PetStateMachine, STATE_CONFIG, runPetTests };

@@ -124,6 +124,40 @@ const CONFUSED_RIGHT = cloneSprite(IDLE_BASE, [
   [8, 9, 5], [8, 10, 5],
 ]);
 
+// focused: 安静专注。眼睛更亮，嘴巴收小，身体不夸张晃动。
+const FOCUSED_BASE = cloneSprite(IDLE_BASE, [
+  [4, 3, 1], [4, 4, 3], [4, 10, 3], [4, 11, 1],
+  [5, 3, 4], [5, 4, 4], [5, 10, 4], [5, 11, 4],
+  [8, 5, 2], [8, 9, 2],
+  [8, 7, 5], [8, 8, 5],
+]);
+const FOCUSED_BLINK = cloneSprite(FOCUSED_BASE, [
+  [5, 3, 4], [5, 4, 4], [5, 10, 4], [5, 11, 4],
+  [6, 3, 2], [6, 4, 2], [6, 10, 2], [6, 11, 2],
+  [7, 3, 4], [7, 4, 4], [7, 10, 4], [7, 11, 4],
+]);
+const FOCUSED_GLANCE = cloneSprite(FOCUSED_BASE, [
+  [6, 3, 2], [6, 4, 4], [6, 10, 2], [6, 11, 4],
+]);
+
+// preparing: 工具准备/执行前的忙碌感。用速度线和小嘴表现“正在处理”。
+const PREPARING_BASE = cloneSprite(IDLE_BASE, [
+  [1, 1, 1], [2, 1, 1], [3, 0, 1],
+  [1, 14, 1], [2, 14, 1], [3, 15, 1],
+  [6, 3, 4], [6, 4, 2], [6, 10, 2], [6, 11, 4],
+  [8, 7, 0], [8, 8, 0], [8, 9, 5],
+]);
+const PREPARING_LEFT = cloneSprite(PREPARING_BASE, [
+  [1, 1, 0], [2, 1, 0], [3, 0, 0],
+  [4, 1, 1], [5, 1, 1],
+  [8, 6, 5], [8, 10, 2],
+]);
+const PREPARING_RIGHT = cloneSprite(PREPARING_BASE, [
+  [1, 14, 0], [2, 14, 0], [3, 15, 0],
+  [4, 14, 1], [5, 14, 1],
+  [8, 6, 2], [8, 10, 5],
+]);
+
 // ---- 舞蹈动作帧（基于 IDLE_BASE 的变体）----
 
 // jump: 腾空 — 脚部全清 + 笑眼 + 大嘴（渲染层再加 y 上移）
@@ -187,6 +221,8 @@ const SPRITES = {
   talk:     [TALK_SMALL, TALK_LARGE, TALK_CLOSED],
   happy:    [HAPPY_BASE, HAPPY_BLINK, HAPPY_BASE],
   confused: [CONFUSED_LEFT, CONFUSED_RIGHT],
+  focused:  [FOCUSED_BASE, FOCUSED_BLINK, FOCUSED_BASE, FOCUSED_GLANCE],
+  preparing:[PREPARING_BASE, PREPARING_LEFT, PREPARING_RIGHT, PREPARING_BASE],
   gameplay: [HAPPY_BASE, HAPPY_BLINK],
   gamewin:  [HAPPY_BASE, HAPPY_BLINK, HAPPY_BASE],
   gamelose: [CONFUSED_LEFT, CONFUSED_RIGHT],
@@ -318,6 +354,8 @@ function runSpriteTests() {
   assert('talk_3_frames', SPRITES.talk.length === 3);
   assert('happy_3_frames', SPRITES.happy.length === 3);
   assert('confused_2_frames', SPRITES.confused.length === 2);
+  assert('focused_4_frames', SPRITES.focused.length === 4);
+  assert('preparing_4_frames', SPRITES.preparing.length === 4);
 
   return results;
 }
@@ -329,3 +367,15 @@ if (typeof window !== 'undefined') {
     getSprite, renderSprite, renderMini, runSpriteTests, cloneSprite,
   };
 }
+
+export {
+  SPRITES,
+  PALETTE,
+  SPRITE_W,
+  SPRITE_H,
+  getSprite,
+  renderSprite,
+  renderMini,
+  runSpriteTests,
+  cloneSprite,
+};
