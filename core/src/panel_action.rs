@@ -232,7 +232,7 @@ mod tests {
         let config = PanelActionConfig::load("config/panel_action.yml").unwrap();
         let vm = config.to_view_model();
         assert_eq!((vm.width, vm.height, vm.columns, vm.rows), (480, 520, 3, 4));
-        assert_eq!(vm.actions.len(), 11);
+        assert_eq!(vm.actions.len(), 12);
         let ids: Vec<&str> = vm.actions.iter().map(|action| action.id.as_str()).collect();
         assert_eq!(
             ids,
@@ -247,7 +247,8 @@ mod tests {
                 "memory",
                 "catch",
                 "battle",
-                "settings"
+                "settings",
+                "chat"
             ]
         );
     }
