@@ -5,6 +5,7 @@
   const watchHeader = document.getElementById("watch-header");
   const stack = document.getElementById("stack");
   const watchCount = document.getElementById("watch-count");
+  const watchActions = document.querySelector(".watch-actions");
   const collapsed = new Set(JSON.parse(localStorage.getItem("agentWatchCollapsed") || "[]"));
   let folded = localStorage.getItem("agentWatchFolded") === "true";
   let latest = null;
@@ -242,6 +243,22 @@
     return String(session.status || "").toLowerCase() === "error";
   }
 
+  function attentionRank(session) {
+    const status = String(session.status || "").toLowerCase();
+    if (status === "waiting" || status === "error") return 0;
+    if (status === "done") return 1;
+    if (status === "working" || status === "tool_running" || status === "compacting") return 2;
+    return 3;
+  }
+
+  function sortedSessions(sessions) {
+    return [...sessions].sort((left, right) => {
+      const byAttention = attentionRank(left) - attentionRank(right);
+      if (byAttention) return byAttention;
+      return Number(left.age_sec ?? 0) - Number(right.age_sec ?? 0);
+    });
+  }
+
   function responseExcerpt(value) {
     const lines = markdownText(value)
       .split(/\r?\n/)
@@ -306,7 +323,7 @@
   }
 
   function metaOf(session) {
-    const parts = [agentSourceLabel(session.source), session.status_label || session.status];
+    const parts = [session.status_label || session.status];
     if (session.tool_name) parts.push(toolLabel(session.tool_name));
     if (typeof session.age_sec === "number") parts.push(`${session.age_sec}s 前`);
     return parts.join(" / ");
@@ -318,6 +335,18 @@
     return source || "Agent";
   }
 
+  function agentSourceShort(source) {
+    if (source === "codex") return "CX";
+    if (source === "claude_code") return "CC";
+    return "AI";
+  }
+
+  function agentSourceClass(source) {
+    if (source === "codex") return "codex";
+    if (source === "claude_code") return "claude";
+    return "agent";
+  }
+
   function render(snapshot) {
     latest = snapshot || latest;
     const sessions = latest?.sessions || [];
@@ -327,16 +356,16 @@
       setFolded(false);
       return;
     }
-    stack.innerHTML = sessions.slice(0, 3).map((session) => {
+    stack.innerHTML = sortedSessions(sessions).slice(0, 3).map((session) => {
       const id = session.session_id;
       const isCollapsed = collapsed.has(id);
       const status = session.status || "idle";
       const view = viewOf(session);
       return `
         <article class="task-card ${escapeAttr(status)} ${isCollapsed ? "collapsed" : ""}" data-id="${escapeAttr(id)}">
-          <button class="task-close" type="button" data-action="dismiss" title="从列表移除" aria-label="从列表移除">×</button>
           <div class="task-main">
             <div class="task-headline">
+              <span class="task-source ${escapeAttr(agentSourceClass(session.source))}" title="${escapeAttr(agentSourceLabel(session.source))}" aria-label="${escapeAttr(agentSourceLabel(session.source))}">${escapeHtml(agentSourceShort(session.source))}</span>
               <span class="task-kind">${escapeHtml(view.kind)}</span>
               <h2 class="task-title">${escapeHtml(view.target)}</h2>
             </div>
@@ -390,9 +419,7 @@
     const id = card?.dataset.id;
     if (!id) return;
     const action = button.dataset.action;
-    if (action === "dismiss") {
-      dismiss(id);
-    } else if (action === "open") {
+    if (action === "open") {
       openWorkspace(id);
     } else if (action === "toggle") {
       if (collapsed.has(id)) collapsed.delete(id);
@@ -408,6 +435,30 @@
 
   function unfold() {
     if (folded) setFolded(false);
+  }
+
+  function expandAllTasks() {
+    collapsed.clear();
+    saveCollapsed();
+    render(latest);
+  }
+
+  function collapseAllTasks() {
+    const sessions = latest?.sessions || [];
+    for (const session of sessions) {
+      if (session.session_id) collapsed.add(session.session_id);
+    }
+    saveCollapsed();
+    render(latest);
+  }
+
+  if (watchActions) {
+    watchActions.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const action = event.target.closest("[data-watch-action]")?.dataset.watchAction;
+      if (action === "expand-all") expandAllTasks();
+      if (action === "collapse-all") collapseAllTasks();
+    });
   }
 
   watchHeader.addEventListener("click", toggleFolded);

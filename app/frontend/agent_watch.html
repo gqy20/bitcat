@@ -10,8 +10,12 @@
   <main id="agent-watch" class="watch-shell">
     <header class="watch-header" id="watch-header" role="button" tabindex="0" title="折叠 / 展开任务栈">
       <span class="watch-dot" aria-hidden="true"></span>
-      <span id="watch-title" class="watch-title">Claude Code</span>
-      <span id="watch-count" class="watch-count">0</span>
+      <span id="watch-title" class="watch-title">Agent Watch</span>
+      <div class="watch-actions" aria-label="Agent Watch actions">
+        <button class="watch-action" type="button" data-watch-action="expand-all" title="展开全部">展开</button>
+        <button class="watch-action" type="button" data-watch-action="collapse-all" title="折叠全部">折叠</button>
+        <span id="watch-count" class="watch-count">0</span>
+      </div>
     </header>
     <section id="stack" class="task-stack" aria-live="polite"></section>
   </main>

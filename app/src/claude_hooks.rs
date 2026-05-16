@@ -157,10 +157,6 @@ fn hook_specs() -> Vec<HookSpec> {
             matcher: None,
         },
         HookSpec {
-            event_name: "SubagentStopFailure",
-            matcher: None,
-        },
-        HookSpec {
             event_name: "SessionEnd",
             matcher: None,
         },
@@ -337,7 +333,7 @@ mod tests {
         assert!(settings["hooks"]["UserPromptSubmit"].is_array());
         assert!(settings["hooks"]["SessionStart"].is_array());
         assert!(settings["hooks"]["SubagentStop"].is_array());
-        assert!(settings["hooks"]["SubagentStopFailure"].is_array());
+        assert!(settings["hooks"].get("SubagentStopFailure").is_none());
         assert!(settings["hooks"]["StopFailure"].is_array());
         assert!(settings["hooks"]["PermissionDenied"].is_array());
         assert!(settings["hooks"]["PostToolUseFailure"].is_array());

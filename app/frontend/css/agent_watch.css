@@ -47,7 +47,7 @@ body {
 
 .watch-header {
   display: grid;
-  grid-template-columns: 10px minmax(0, 1fr) auto;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   height: 42px;
@@ -64,8 +64,8 @@ body {
 }
 
 .watch-dot {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 12px var(--accent);
@@ -81,12 +81,6 @@ body {
   letter-spacing: 0;
 }
 
-.watch-title::after {
-  content: " Watch";
-  color: var(--muted);
-  font-weight: 620;
-}
-
 .watch-count {
   min-width: 22px;
   padding: 2px 7px;
@@ -98,7 +92,7 @@ body {
   text-align: center;
 }
 
-.task-close,
+.watch-action,
 .task-open,
 .task-toggle {
   display: grid;
@@ -109,6 +103,31 @@ body {
   background: rgba(255, 255, 255, 0.04);
   cursor: pointer;
   font: inherit;
+}
+
+.watch-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.watch-action {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 720;
+  line-height: 1;
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.watch-action:hover,
+.watch-action:focus-visible {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text);
+  outline: none;
 }
 
 .task-stack {
@@ -134,7 +153,7 @@ body {
 
 .watch-shell.folded .watch-dot,
 .watch-shell.folded .watch-title,
-.watch-shell.folded .watch-count,
+.watch-shell.folded .watch-actions,
 .watch-shell.folded .task-stack {
   display: none;
 }
@@ -151,10 +170,11 @@ body {
 
 .task-card {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) 46px;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
   min-height: 82px;
-  padding: 10px;
+  padding: 10px 12px;
 }
 
 .task-card.waiting,
@@ -167,28 +187,8 @@ body {
 }
 
 .task-card.collapsed {
-  min-height: 48px;
+  min-height: 54px;
   align-items: center;
-}
-
-.task-close {
-  width: 20px;
-  height: 20px;
-  border-color: transparent;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.045);
-  color: rgba(255, 255, 255, 0.62);
-  font-size: 14px;
-  line-height: 1;
-  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
-}
-
-.task-close:hover,
-.task-close:focus-visible {
-  border-color: rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.92);
-  outline: none;
 }
 
 .task-main {
@@ -202,12 +202,38 @@ body {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
+}
+
+.task-source {
+  flex: 0 0 auto;
+  min-width: 25px;
+  padding: 2px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 13px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.task-source.codex {
+  border-color: rgba(142, 230, 168, 0.22);
+  background: rgba(142, 230, 168, 0.08);
+  color: #bff5d0;
+}
+
+.task-source.claude {
+  border-color: rgba(122, 167, 255, 0.22);
+  background: rgba(122, 167, 255, 0.075);
+  color: #c8d7ff;
 }
 
 .task-kind {
   flex: 0 0 auto;
-  min-width: 44px;
+  min-width: 42px;
   padding: 2px 6px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 6px;
@@ -284,25 +310,29 @@ body {
 }
 
 .task-actions {
-  align-self: center;
+  align-self: start;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 5px;
 }
 
 .task-open,
 .task-toggle {
-  width: 46px;
-  height: 24px;
+  height: 28px;
   padding: 0 6px;
   font-size: 11px;
   font-weight: 700;
 }
 
+.task-open {
+  min-width: 44px;
+}
+
 .task-toggle {
-  height: 22px;
+  width: 28px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 16px;
+  font-weight: 760;
 }
 
 .empty {
