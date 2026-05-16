@@ -306,10 +306,16 @@
   }
 
   function metaOf(session) {
-    const parts = [session.status_label || session.status];
+    const parts = [agentSourceLabel(session.source), session.status_label || session.status];
     if (session.tool_name) parts.push(toolLabel(session.tool_name));
     if (typeof session.age_sec === "number") parts.push(`${session.age_sec}s 前`);
     return parts.join(" / ");
+  }
+
+  function agentSourceLabel(source) {
+    if (source === "codex") return "Codex";
+    if (source === "claude_code") return "Claude Code";
+    return source || "Agent";
   }
 
   function render(snapshot) {

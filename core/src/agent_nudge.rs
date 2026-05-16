@@ -4,7 +4,7 @@
 //! 不访问窗口、Tauri 或系统 API。app 层负责把 `AgentNudge` 转成宠物事件、
 //! 气泡、TTS 和审计日志。
 
-use crate::agent_session::{AgentSession, AgentStatus};
+use crate::agent_session::{AgentSession, AgentSource, AgentStatus};
 use crate::app_settings::AgentWatchSettings;
 use crate::pet_event::PetMood;
 use serde::{Deserialize, Serialize};
@@ -177,7 +177,7 @@ impl AgentNudgePolicy {
         AgentNudgeDecision::Send(AgentNudge {
             session_id: session.session_id.clone(),
             kind: AgentNudgeKind::WaitingForUser,
-            message: "Claude Code 需要你处理一下。".to_string(),
+            message: format!("{} 需要你处理一下。", source_name(session.source)),
             mood: PetMood::Confused,
             ttl_ms: DEFAULT_NUDGE_TTL_MS,
             use_tts: settings.use_tts,
@@ -219,8 +219,8 @@ impl AgentNudgePolicy {
         }
         state.error_notified_for_entered_at_ms = Some(state.status_entered_at_ms);
         let message = match session.status {
-            AgentStatus::Interrupted => "Claude Code 这轮被中断了。".to_string(),
-            _ => "Claude Code 这轮遇到异常了。".to_string(),
+            AgentStatus::Interrupted => format!("{} 这轮被中断了。", source_name(session.source)),
+            _ => format!("{} 这轮遇到异常了。", source_name(session.source)),
         };
         AgentNudgeDecision::Send(AgentNudge {
             session_id: session.session_id.clone(),
@@ -273,6 +273,10 @@ impl AgentNudgePolicy {
 
 fn skip(reason: AgentNudgeSkipReason, status: AgentStatus) -> AgentNudgeDecision {
     AgentNudgeDecision::Skip { reason, status }
+}
+
+fn source_name(source: AgentSource) -> &'static str {
+    source.display_name()
 }
 
 #[cfg(test)]

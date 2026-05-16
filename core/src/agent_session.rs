@@ -13,12 +13,21 @@ use std::path::Path;
 #[serde(rename_all = "snake_case")]
 pub enum AgentSource {
     ClaudeCode,
+    Codex,
 }
 
 impl AgentSource {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::ClaudeCode => "claude_code",
+            Self::Codex => "codex",
+        }
+    }
+
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::ClaudeCode => "Claude Code",
+            Self::Codex => "Codex",
         }
     }
 }

@@ -21,6 +21,7 @@ pub mod agent_watch_window;
 pub mod audio_reactive;
 pub mod bubble;
 pub mod claude_hooks;
+pub mod codex_hooks;
 pub mod commands;
 pub mod game;
 pub mod game_input;
@@ -121,6 +122,8 @@ pub fn run() {
             agent_watch_window::cmd_agent_watch_port,
             claude_hooks::cmd_install_claude_code_hooks,
             claude_hooks::cmd_open_claude_settings,
+            codex_hooks::cmd_install_codex_hooks,
+            codex_hooks::cmd_open_codex_config,
             pet_event_bus::cmd_get_pet_event_log,
             settings::cmd_settings_load,
             settings::cmd_get_token_stats,

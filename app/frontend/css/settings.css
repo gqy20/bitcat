@@ -1045,6 +1045,104 @@ input[type="checkbox"]:checked::after {
   gap: 8px;
 }
 
+.agent-watch-pane {
+  max-width: 1040px;
+}
+
+.agent-watch-hero {
+  align-items: stretch;
+  padding: 24px 26px;
+  border: 1px solid rgba(124, 255, 178, 0.16);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(135deg, rgba(124, 255, 178, 0.105), rgba(122, 167, 255, 0.045) 42%, rgba(23, 28, 36, 0.62)),
+    rgba(18, 23, 31, 0.8);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+}
+
+.agent-watch-hero-copy {
+  min-width: 0;
+}
+
+.agent-watch-hero h1 {
+  margin-bottom: 8px;
+  font-size: clamp(34px, 4.2vw, 48px);
+}
+
+.agent-watch-hero .hint {
+  max-width: 690px;
+}
+
+.agent-watch-chips,
+.head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.agent-watch-chips {
+  margin-top: 18px;
+}
+
+.agent-watch-chips span {
+  border: 1px solid rgba(124, 255, 178, 0.18);
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: #cfe8dc;
+  background: rgba(124, 255, 178, 0.07);
+  font-size: var(--text-xs);
+  font-weight: 680;
+}
+
+.head-actions {
+  align-content: flex-start;
+  justify-content: flex-end;
+  min-width: 210px;
+}
+
+.head-actions .btn {
+  min-width: 164px;
+  justify-content: center;
+}
+
+.agent-watch-card {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  border-color: rgba(255, 255, 255, 0.085);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.agent-watch-card .setting-row {
+  min-height: 108px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  padding: 20px 22px;
+  border-bottom: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.008)),
+    rgba(23, 28, 36, 0.82);
+}
+
+.agent-watch-card .setting-row:nth-child(1),
+.agent-watch-card .setting-row:nth-child(2) {
+  min-height: 118px;
+}
+
+.agent-watch-card .setting-copy span {
+  max-width: 34em;
+}
+
+.agent-watch-card input[type="number"] {
+  width: min(190px, 100%);
+}
+
+.agent-watch-sessions-panel {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.01)),
+    rgba(18, 23, 31, 0.68);
+}
+
 .agent-watch-diag {
   display: flex;
   flex-wrap: wrap;
@@ -1740,6 +1838,7 @@ input[type="checkbox"]:checked::after {
 
   .two-col,
   .setting-row,
+  .agent-watch-card,
   .switch-row,
   .action-item .ai-head,
   .usage-session,
@@ -1751,6 +1850,25 @@ input[type="checkbox"]:checked::after {
   .agent-session-sub {
     align-items: flex-start;
     text-align: left;
+  }
+
+  .agent-watch-hero,
+  .head-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .head-actions {
+    justify-content: flex-start;
+  }
+
+  .head-actions .btn {
+    width: 100%;
+  }
+
+  .agent-watch-card .setting-row {
+    min-height: 0;
+    grid-template-columns: 1fr;
   }
 
   .effective {

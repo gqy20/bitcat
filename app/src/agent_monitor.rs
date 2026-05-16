@@ -6,12 +6,14 @@
 
 use ai_pad_core::agent_nudge::{AgentNudge, AgentNudgeDecision, AgentNudgePolicy};
 use ai_pad_core::agent_session::{
-    apply_session_event, sort_sessions, AgentSession, AgentSessionView,
+    apply_session_event, sort_sessions, AgentSession, AgentSessionEvent, AgentSessionView,
+    AgentSource,
 };
 use ai_pad_core::app_settings::AppSettings;
 use ai_pad_core::claude_code::ClaudeHookEvent;
 use ai_pad_core::pet_event::PetEvent;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::io::Read;
 use std::net::{TcpListener, TcpStream};
@@ -162,7 +164,7 @@ fn handle_hook_stream(app: &AppHandle, stream: TcpStream) {
 
 pub fn handle_hook_payload(app: &AppHandle, raw: &str) -> Result<(), String> {
     let now_ms = now_ms();
-    let event = ClaudeHookEvent::from_json(raw)?.into_session_event(now_ms)?;
+    let event = parse_agent_hook_payload(raw, now_ms)?;
     let monitor: tauri::State<SharedAgentMonitor> = app.state();
     let seq = monitor.next_event_seq(now_ms)?;
     if let Err(e) = append_jsonl(
@@ -197,6 +199,27 @@ pub fn handle_hook_payload(app: &AppHandle, raw: &str) -> Result<(), String> {
         evaluate_nudge(app, &monitor, &session, now_ms)?;
     }
     Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+struct AgentHookEnvelope {
+    source: String,
+    payload: Value,
+}
+
+fn parse_agent_hook_payload(raw: &str, now_ms: u64) -> Result<AgentSessionEvent, String> {
+    if let Ok(envelope) = serde_json::from_str::<AgentHookEnvelope>(raw) {
+        let source = match envelope.source.trim().to_ascii_lowercase().as_str() {
+            "codex" => AgentSource::Codex,
+            "claude" | "claude-code" | "claude_code" => AgentSource::ClaudeCode,
+            other => return Err(format!("unknown agent hook source: {other}")),
+        };
+        let payload = serde_json::to_string(&envelope.payload)
+            .map_err(|e| format!("agent hook envelope payload serialize failed: {e}"))?;
+        return ClaudeHookEvent::from_json(&payload)?.into_session_event_from(source, now_ms);
+    }
+
+    ClaudeHookEvent::from_json(raw)?.into_session_event(now_ms)
 }
 
 fn evaluate_nudge(
@@ -472,5 +495,25 @@ mod tests {
         assert_eq!(snapshot.sessions[0].status, "waiting");
         assert_eq!(snapshot.monitor_port, DEFAULT_AGENT_MONITOR_PORT);
         assert_eq!(snapshot.event_count, 2);
+    }
+
+    #[test]
+    fn parses_codex_hook_envelope() {
+        let raw = r#"{
+            "source": "codex",
+            "payload": {
+                "session_id": "codex-session",
+                "hook_event_name": "PreToolUse",
+                "cwd": "D:\\repo",
+                "tool_name": "Bash",
+                "tool_input": {"command": "cargo test"}
+            }
+        }"#;
+        let event = parse_agent_hook_payload(raw, 42).unwrap();
+        assert_eq!(event.session_id, "codex-session");
+        assert_eq!(event.source, AgentSource::Codex);
+        assert_eq!(event.status, AgentStatus::ToolRunning);
+        assert_eq!(event.tool_name.as_deref(), Some("Bash"));
+        assert!(event.tool_input_preview.unwrap().contains("cargo test"));
     }
 }

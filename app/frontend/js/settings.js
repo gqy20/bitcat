@@ -603,7 +603,7 @@ function renderAgentSessions(snapshot) {
   }
   const sessions = snapshot?.sessions || [];
   if (!sessions.length) {
-    box.innerHTML = `<div class="empty-note">还没有 Claude Code 会话。安装 hook 并启用看管后，状态会出现在这里。</div>`;
+    box.innerHTML = `<div class="empty-note">还没有 Agent 会话。安装 Claude Code 或 Codex hook 并启用看管后，状态会出现在这里。</div>`;
     return;
   }
   box.innerHTML = sessions.map(session => `
@@ -613,12 +613,19 @@ function renderAgentSessions(snapshot) {
         <span>${escapeHtml(session.status_label || session.status)}</span>
       </div>
       <div class="agent-session-sub">
+        <span>${escapeHtml(agentSourceLabel(session.source))}</span>
         <code>${escapeHtml(session.workspace || session.session_id)}</code>
         ${session.tool_name ? `<small>${escapeHtml(session.tool_name)}</small>` : ""}
       </div>
       ${session.user_prompt_preview ? `<p>${escapeHtml(session.user_prompt_preview)}</p>` : ""}
     </div>
   `).join("");
+}
+
+function agentSourceLabel(source) {
+  if (source === "codex") return "Codex";
+  if (source === "claude_code") return "Claude Code";
+  return source || "Agent";
 }
 
 async function deleteMemoryEntry(id) {
@@ -1096,6 +1103,14 @@ function bindGlobal() {
       toast(msg || "Hook 已安装", "ok");
     } catch (e) {
       toast("安装失败：" + String(e), "err");
+    }
+  });
+  $("aw-install-codex").addEventListener("click", async () => {
+    try {
+      const msg = await invoke("cmd_install_codex_hooks");
+      toast(msg || "Codex Hook 已安装", "ok");
+    } catch (e) {
+      toast("Codex 安装失败：" + String(e), "err");
     }
   });
   const eventApi = window.__TAURI__?.event;

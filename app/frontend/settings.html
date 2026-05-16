@@ -304,27 +304,34 @@
           </div>
         </section>
 
-        <section class="tab hidden" data-pane="agent-watch">
-          <div class="pane-head">
-            <div>
+        <section class="tab hidden agent-watch-pane" data-pane="agent-watch">
+          <div class="pane-head agent-watch-hero">
+            <div class="agent-watch-hero-copy">
               <p class="eyebrow">Agent Watch</p>
-              <h1>Claude Code 看管</h1>
-              <p class="hint">猫猫只读观察 Claude Code 状态：工作时帮你盯着，等待或完成时叫你回来。</p>
+              <h1>Agent 看管</h1>
+              <p class="hint">只读观察 Claude Code 和 Codex 状态；工作时安静盯着，等待、异常或完成时再提醒你回来。</p>
+              <div class="agent-watch-chips" aria-label="支持的 agent">
+                <span>Claude Code</span>
+                <span>Codex</span>
+              </div>
             </div>
-            <button id="aw-install" class="btn small" type="button">安装 Hook</button>
+            <div class="head-actions">
+              <button id="aw-install" class="btn small" type="button">安装 Claude Hook</button>
+              <button id="aw-install-codex" class="btn small ghost" type="button">安装 Codex Hook</button>
+            </div>
           </div>
 
-          <div class="settings-card">
+          <div class="settings-card agent-watch-card">
             <div class="setting-row switch-row">
               <div class="setting-copy">
                 <label for="aw-enabled">启用看管</label>
-                <span>需要先安装 Claude Code hook；不会自动批准权限。</span>
+                <span>需要先安装对应 hook；不会自动批准权限。</span>
               </div>
               <input id="aw-enabled" type="checkbox" />
             </div>
             <div class="setting-row switch-row">
               <div class="setting-copy">
-                <label for="aw-away">工作中提醒我离开屏幕</label>
+                <label for="aw-away">离屏提醒</label>
                 <span>Agent 持续工作一段时间后，低频提醒你不用一直盯着。</span>
               </div>
               <input id="aw-away" type="checkbox" />
@@ -359,14 +366,14 @@
             </div>
             <div class="setting-row switch-row">
               <div class="setting-copy">
-                <label for="aw-tts">等待/完成时语音</label>
-                <span>工作中离屏提醒默认不朗读。</span>
+                <label for="aw-tts">语音提醒</label>
+                <span>等待或完成时播报；离屏提醒保持静音。</span>
               </div>
               <input id="aw-tts" type="checkbox" />
             </div>
           </div>
 
-          <div class="section-panel">
+          <div class="section-panel agent-watch-sessions-panel">
             <div class="section-head">
               <h3>当前会话</h3>
               <span id="aw-status">等待状态</span>
