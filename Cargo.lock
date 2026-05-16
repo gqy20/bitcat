@@ -19,7 +19,7 @@ dependencies = [
 
 [[package]]
 name = "ai-pad-app"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "ai-pad-core",
  "base64 0.22.1",
@@ -44,7 +44,7 @@ dependencies = [
 
 [[package]]
 name = "ai-pad-core"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "base64 0.22.1",
  "cargo-husky",
@@ -6610,7 +6610,7 @@ checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
 
 [[package]]
 name = "xtask"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "zip",
 ]

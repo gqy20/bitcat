@@ -6,6 +6,58 @@
 
 ---
 
+## [0.1.4] - 2026-05-16
+
+Agent Watch 接入、小游戏模式扩展、宠物外部资产加载和发布前工具链修复，准备作为 0.1.3 后的桌宠协作与可玩性增强版本发布。
+
+### 新增
+
+- **Agent Watch 会话模型**：新增 `AgentSession`、`AgentNudge`、Claude Code 事件解析和 app settings 监控配置，为桌宠看管长任务提供核心状态层。
+- **Claude Code hook 监控**：新增 Claude Code 只读 hook 安装、事件转发和设置页入口，hook payload 会进入本地 Agent Watch TCP monitor。
+- **Agent Watch 浮动任务栈**：新增独立 `agent-watch` 窗口、前端 HUD、capabilities 权限和窗口生命周期管理，能够展示当前任务状态、hook 事件、运行中命令和离开提醒。
+- **Codex hook 监控**：新增 Codex hook 安装与事件转发，和 Claude Code hook 共用 Agent Watch TCP monitor 与浮动任务栈。
+- **Hook doctor 修复**：新增 hook 配置诊断与修复逻辑，可清理旧的 ai-pad hook、重建脚本并恢复缺失事件。
+- **Agent Watch 设置页集成**：设置窗口新增 Claude / Codex hook 状态、安装/修复控制和 Agent Watch 打开入口。
+- **宠物外部资产 fixture loader**：新增 spritesheet fixture loader、默认猫 fixture、导出脚本和前端测试，支持通过 manifest + sprites.png 载入宠物资源并覆盖默认帧。
+- **小游戏 Memory 模式**：新增翻牌配对模式，复用 `GameDef`、`game` 窗口、ActionBus 和手柄/键盘输入通道。
+- **小游戏 Catch 模式**：新增接食物模式，复用同一套小游戏生命周期，并在 HUD 中显示接取进度和失误次数。
+- **面板小游戏入口扩展**：弹出面板扩展到 3×4，新增“翻牌”和“接食物”入口，默认面板可直接启动 Snake / Memory / Catch / Battle。
+
+### 修复
+
+- 修复 Agent Watch HUD 控件和 hook 事件展示细节，使会话状态与只读 hook payload 更稳定。
+- 修复 Claude hook schema 兼容问题，避免监控事件解析失败。
+- 修复 Agent Watch hook 事件中 source、session 和命令字段的兼容展示问题。
+- 修复小游戏默认 Snake 太快结束的问题，默认胜利长度从 20 提高到 80。
+- 修复新版 clippy 在发布前检查中暴露的 workspace warning，包括 `Path` 参数、冷却判断和整数倍数判断。
+
+### 变更
+
+- Agent Watch 会话看管从规划文档进入可运行路径，设置页、浮窗和 hook 安装器共享后端状态。
+- Claude / Codex hook 脚本均采用 ai-pad marker 管理，便于重复安装、修复和人工排查。
+- Snake `rules.win_length` 校验上限从 200 提高到 500，允许更长的小游戏局。
+- `MinigameType` 扩展为 `snake` / `memory` / `catch` / `battle`，前端 `createEngine` 改为注册式分发，后续新增模式更容易复用同一窗口生命周期。
+- 面板配置默认尺寸从 480×420 调整为 480×520，以容纳更多内置入口。
+- pre-commit hook 改为检查整个 workspace 的 Rust 格式，减少发布前才发现格式漂移的概率。
+- Release workflow 不再保存测试 cache，避免发布构建上传不必要缓存。
+
+### 工具链
+
+- 更新 core / app / xtask / Tauri 版本号到 0.1.4。
+- 新增 Agent Watch、Claude hook、Codex hook 和 pet asset loader 相关前端/后端测试覆盖。
+- 更新面板动作测试，覆盖新增 `memory` / `catch` 入口和 3×4 布局。
+- pre-push 验证通过 `cargo fmt --all -- --check`、`cargo clippy --workspace -- -D warnings` 和 `cargo nextest run`。
+
+### 文档
+
+- 新增 Agent Watch hook 用户指南，说明 Claude Code / Codex hook 安装、修复和排障。
+- 新增 Codex monitoring plan、Bongo Cat 竞品分析、Steam 评论采集脚本和评论 JSONL 研究材料。
+- 更新 Claude Code Agent Watch 计划、pet spritesheet manifest 计划、roadmap 和配置指南，反映 0.1.4 的实际落地范围。
+- 更新 README 的面板、小游戏、通信架构、线程模型、技术栈和发布说明，反映 0.1.4 的 Agent Watch 与小游戏扩展。
+- 更新 CHANGELOG 供 GitHub Release workflow 按 `v0.1.4` 自动抽取发布说明。
+
+---
+
 ## [0.1.3] - 2026-05-15
 
 AI 语义事件、长期记忆、音乐响应舞动、守护战斗模式和宠物动画表现更新，准备作为 0.1.2 后的桌宠智能表现版本发布。

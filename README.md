@@ -1,8 +1,8 @@
 # ai-pad / 8Bit Cat
 
-蓝牙手柄驱动的桌面工具：8 位像素桌宠 + AI 对话（流式）+ 配置化弹出面板 + 语音输入 + 可选 TTS 朗读 + 截图视觉分析 + 贴边吸附 + 迷你游戏。
+蓝牙手柄驱动的桌面工具：8 位像素桌宠 + AI 对话（流式）+ Agent Watch 任务看管 + 配置化弹出面板 + 语音输入 + 可选 TTS 朗读 + 截图视觉分析 + 贴边吸附 + 迷你游戏。
 
-基于 Tauri 2.0 + SDL2，单 exe，无 Node.js 依赖。共 **300+ 个测试**（Rust workspace + Vitest 前端），接入 cargo-husky（pre-commit fmt / pre-push clippy+test）。
+基于 Tauri 2.0 + SDL2，单 exe，无 Node.js 依赖。共 **350+ 个测试**（Rust workspace + Vitest 前端），接入 cargo-husky（pre-commit fmt / pre-push clippy+test）。
 
 ## 快速开始
 
@@ -15,6 +15,10 @@ make release
 
 # 打包为版本化 ZIP
 make dist
+
+# 发布 0.1.4 时使用 tag 驱动产物命名
+git tag v0.1.4
+git push origin v0.1.4
 ```
 
 启动后看到屏幕角落的像素猫即为成功。
@@ -43,16 +47,16 @@ make dist
 
 ## 弹出面板
 
-弹出面板由 `config/panel_action.yml` 驱动，默认 480×420、3×3 玻璃风格网格。窗口尺寸、网格行列、按钮数量、图标、排序、启用状态和动作类型都可以通过 YAML 修改。
+弹出面板由 `config/panel_action.yml` 驱动，默认 480×520、3×4 玻璃风格网格。窗口尺寸、网格行列、按钮数量、图标、排序、启用状态和动作类型都可以通过 YAML 修改。
 
-默认按钮：VSCode / 浏览器 / 资源管理器 / PowerShell / 记事本 / 跳舞 / 游戏 / 设置 / 聊天。
+默认按钮：VSCode / 浏览器 / 资源管理器 / PowerShell / 记事本 / 跳舞 / 游戏 / 翻牌 / 接食物 / 守护战 / 设置 / 聊天。
 
 - 弹出后窗口居中、置顶、跳过任务栏、失焦自动隐藏
 - 选中项用蓝色光晕高亮，鼠标悬停或方向键移动都会同步选中
 - 按下 A / Enter 执行动作后面板自动关闭
 - 后端的 `panel-nav` / `panel-confirm` / `panel-close` 事件由 Rust 主循环根据手柄状态发送
 - 前端通过 `cmd_get_panel_actions` 获取 ViewModel，不再硬编码按钮列表
-- `type: launch` 启动程序，`type: script` 执行 PowerShell 命令，`type: builtin` 调用内置入口（dance/game/settings/chat）
+- `type: launch` 启动程序，`type: script` 执行 PowerShell 命令，`type: builtin` 调用内置入口（dance/game/memory/catch/battle/settings/chat）
 
 ## AI 流式回复 & 气泡
 
@@ -133,14 +137,28 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
 
 ## 迷你游戏
 
-面板可启动内置 Snake 玩法「毛线球大作战」：
+面板可启动 4 个内置玩法：
+
+- **毛线球大作战**：Snake 玩法，默认胜利长度为 80，支持更长一局。
+- **翻牌**：Memory 配对玩法，方向键移动光标，A / Enter 翻牌。
+- **接食物**：Catch 玩法，左右移动接住掉落食物，累计失误 5 次失败。
+- **守护战**：Battle 玩法，保留真实桌宠窗口，通过点击、A、X/Y、L1 等输入攻击、技能和防御。
 
 1. 后端创建透明置顶 `game` 窗口并读取 `GameDef`
-2. 前端 `game_engine.js` 运行网格逻辑、键盘/手柄方向输入和胜负判定
+2. 前端 `game_engine.js` 按 `game_type` 创建 Snake / Memory / Catch / Battle 引擎，运行网格逻辑、键盘/手柄方向输入和胜负判定
 3. 游戏期间宠物进入 `GamePlay` 状态，结束后按 win / lose / cancel 切换表现
-4. `GameDef` 会校验网格尺寸、速度、胜利长度和主题枚举，防止异常配置导致越界或卡死
+4. `GameDef` 会校验网格尺寸、速度、胜利长度、主题枚举和各模式专用边界，防止异常配置导致越界或卡死
 
-当前面板入口会通过 `ActionBus::PlayGameDefault` 启动默认 Snake；底层 `start_game(GameDef)` / `cmd_start_game_with_def` 已能启动指定配置。AI 层 `perform_game` / `play_game` 工具还未注册，下一步会复用这条通道。
+当前面板入口会通过 `ActionBus::PlayGameDefault` / `PlayMemoryDefault` / `PlayCatchDefault` / `PlayBattleDefault` 启动内置模式；底层 `start_game(GameDef)` / `cmd_start_game_with_def` 已能启动指定配置。AI 层 `perform_game` / `play_game` 工具还未注册，下一步会复用这条通道。
+
+## Agent Watch
+
+Agent Watch 是桌宠侧的只读任务看管面板，用于观察 Claude Code / Codex 的长任务状态，不直接执行危险操作：
+
+- Claude Code 与 Codex hook 会把会话事件包装成统一 envelope，转发给本地 Agent Watch TCP monitor。
+- 浮动任务栈展示最近会话、当前状态、运行中命令、hook 事件和离开提醒。
+- Hook doctor 可以清理旧 ai-pad hook、重写 PowerShell 转发脚本，并补齐缺失事件。
+- 监控窗口与普通桌宠窗口解耦，游戏运行或桌宠表演不会阻塞会话事件记录。
 
 ## 记忆系统（两层存储 + AI 画像）
 
@@ -218,7 +236,7 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
 │       ├── vision.rs       # Vision API 请求构建/响应解析
 │       ├── screenshot.rs   # 截图类型定义、dHash、resize/JPEG、存储 + 7天清理
 │       ├── screen_summary.rs # 屏幕活动摘要存储 + 最近 N 条截图注入 prompt
-│       ├── minigame.rs     # 迷你游戏 GameDef schema 与校验
+│       ├── minigame.rs     # 迷你游戏 GameDef schema、内置模式与校验
 │       ├── tool_events.rs  # 工具运行时事件审计日志
 │       ├── token_tracker.rs # Token 用量 JSONL + session 聚合
 │       └── tools.rs        # AI Tool 实现（launch/shell/read_file/get_time/recent_screenshots/hotkey/clipboard/foreground/perform_dance/play_dance/search_memory/remember）
@@ -230,6 +248,7 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
     │   ├── lib.rs          # Tauri Builder + gamepad_loop + chat_loop(独立线程) + bubble_follower(独立线程)
     │   ├── gamepad.rs      # PetEvent 序列化, PetCommand→前端事件转换, chat_loop 解耦
     │   ├── game.rs         # 迷你游戏窗口与生命周期管理
+    │   ├── agent_monitor.rs # Agent Watch 会话状态与 hook 事件监控
     │   ├── commands.rs     # 共享状态 + Tauri command（snap_preview/crossfade/play_dance 等）
     │   ├── bubble.rs       # 独立气泡窗口, 流式 start/chunk/end 协议, bubble_follower 线程
     │   ├── voice.rs        # 语音输入窗口, 强制前台化, generation 防残留
@@ -242,14 +261,15 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
     └── frontend/           # 静态 HTML/JS/CSS + Vitest 前端测试
         ├── pet.html        # 宠物窗口（128×128 透明, Canvas 像素精灵 + 粒子 + 舞蹈播放器）
         ├── bubble.html     # 气泡窗口（流式文本 + Markdown + 毛玻璃）
-        ├── game.html       # 迷你游戏窗口（Snake Phase 1）
+        ├── game.html       # 迷你游戏窗口（Snake / Memory / Catch / Battle）
+        ├── agent_watch.html # Agent Watch 浮动任务栈窗口
         ├── panel.html      # 面板窗口（尺寸/网格/按钮来自 panel_action.yml）
         ├── voice.html      # 语音输入条（280×40, textarea 接收输入法注入）
         ├── glow.html       # 吸附竖条（发光动画）
         ├── settings.html   # 设置窗口（720×520, 分类 Tab, 实时预览）
         ├── css/            # pet.css / bubble.css / game.css / panel.css / glow.css / settings.css
         ├── js/             # app.js / bubble.js / game_engine.js / panel.js / voice.js / glow.js / settings.js / particles.js / sprite.js / pet.js
-        ├── __tests__/      # Vitest 单元测试（7 个测试文件）
+        ├── __tests__/      # Vitest 单元测试（10+ 个测试文件）
         └── vitest.config.ts
 ```
 
@@ -320,9 +340,9 @@ actions:
 defaults:
   terminal: powershell
   width: 480
-  height: 420
+  height: 520
   columns: 3
-  rows: 3
+  rows: 4
 
 actions:
   vscode:
@@ -345,7 +365,7 @@ actions:
 - `width` / `height` / `columns` / `rows` 控制窗口大小和网格布局
 - `order` 控制排序；超出 `columns * rows` 的按钮不会显示
 - `enabled: false` 可临时隐藏可执行状态（按钮保留但禁用）
-- `type: builtin` 支持 `dance` / `game` / `settings` / `chat`
+- `type: builtin` 支持 `dance` / `game` / `memory` / `catch` / `battle` / `settings` / `chat`
 - `type: launch` 和 `type: script` 用于外部程序和脚本快捷入口
 
 ### config/prompts.yml — AI 提示词
@@ -395,7 +415,7 @@ language: "zh-CN"         # 首选语言（空则自动判断）
 
 - max_tokens 统一 **256K**，可用 `ANTHROPIC_MAX_TOKENS` 环境变量覆盖
 - Agent 人设："8Bit" — 一只住在屏幕上的像素风小猫助手，活泼好奇，用中文交流
-- 内置 **8+ 个 Tool**：
+- 内置 **10+ 个 Tool**：
 
 | Tool | 功能 |
 |------|------|
@@ -432,12 +452,13 @@ emit "panel-nav"          ──────►  panel.js 方向键导航
 emit "panel-confirm"      ──────►  panel.js 确认
 emit "panel-close"        ──────►  panel.js 关闭
 emit "play-dance"          ──────►  app.js 舞蹈播放器（窗口移动+精灵动画）
+emit "game-input"         ──────►  game_engine.js 小游戏输入
 emit "voice-clear"        ──────►  voice.js 清空 textarea（voice.rs）
 emit "voice-flush"        ──────►  voice.js 同步 textarea（voice.rs）
                               ◄───  invoke cmd_consume_bubble_text
                               ◄───  invoke cmd_voice_update_text
                               ◄───  invoke cmd_play_dance / cmd_settings_*
-                              ◄───  invoke cmd_start_game / cmd_screenshot_now
+                              ◄───  invoke cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle / cmd_screenshot_now
                               ◄───  emit "voice-ready" (mpsc 握手完成)
 ```
 
@@ -450,6 +471,7 @@ emit "voice-flush"        ──────►  voice.js 同步 textarea（voic
   ├── screenshot_loop (OS thread) — 定时截图 + Vision API（聊天/舞蹈时暂停）
   ├── bubble_follower (OS thread) — 气泡跟随宠物窗口定位
   ├── dance_bridge (async task)   — mpsc channel 消费 play_dance 指令
+  ├── agent_monitor (async task)  — Claude Code / Codex hook 事件看管
   └── game window                 — 独立 WebView 运行迷你游戏前端逻辑
 ```
 
@@ -466,7 +488,7 @@ AI_PAD_DEBUG=1 cargo run -p ai-pad-app -- --debug
 
 ## 技术栈
 
-- **Tauri 2.0** — WebView 多窗口（pet/bubble/panel/voice/glow/settings/game），全局热键，托盘
+- **Tauri 2.0** — WebView 多窗口（pet/bubble/panel/voice/glow/settings/game/agent-watch），全局热键，托盘
 - **SDL2 (bundled)** — 手柄输入读取（DirectInput），热插拔检测
 - **rig-core** — AI Agent 抽象层（Anthropic SDK 兼容，streaming prompt + Tool 定义）
 - **tokio + futures** — 异步运行时 + 流式处理 + 多线程解耦
@@ -474,7 +496,7 @@ AI_PAD_DEBUG=1 cargo run -p ai-pad-app -- --debug
 - **windows-sys** — SendInput 键鼠模拟 + BitBlt 截图 + SAPI TTS + AttachThreadInput
 - **serde + serde_yaml** — 配置加载（嵌入 + 外部覆盖）
 - **cargo-husky** — Git hooks：pre-commit fmt / pre-push clippy+test
-- **Vitest + jsdom** — 前端单元测试（7 个测试文件）
+- **Vitest + jsdom** — 前端单元测试（10+ 个测试文件）
 - **Canvas + 粒子效果** — 像素精灵绘制 + 舞蹈窗口级动画，无打包工具
 
 ## License
