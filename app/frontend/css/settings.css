@@ -1039,6 +1039,83 @@ input[type="checkbox"]:checked::after {
   white-space: nowrap;
 }
 
+.agent-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-session {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius);
+  background: rgba(23, 28, 36, 0.56);
+}
+
+.agent-session.waiting,
+.agent-session.error {
+  border-color: rgba(255, 138, 122, 0.32);
+  background: rgba(255, 138, 122, 0.06);
+}
+
+.agent-session.done {
+  border-color: rgba(124, 255, 178, 0.2);
+  background: rgba(124, 255, 178, 0.05);
+}
+
+.agent-session-main,
+.agent-session-sub {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agent-session-main strong {
+  color: #dbe8ff;
+  font-size: var(--text-md);
+  font-weight: 720;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-session-main span,
+.agent-session-sub span,
+.empty-note {
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+}
+
+.agent-session-sub {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.agent-session-sub code,
+.agent-session-sub small {
+  max-width: min(360px, 46vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-session-sub code {
+  color: #aeb8ca;
+  font-size: var(--text-xs);
+}
+
+.agent-session p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #c7d0df;
+  font-size: var(--text-sm);
+}
+
 .music-title,
 .memory-title {
   display: flex;
@@ -1646,8 +1723,14 @@ input[type="checkbox"]:checked::after {
   .switch-row,
   .action-item .ai-head,
   .usage-session,
+  .agent-session,
   .pet-event {
     grid-template-columns: 1fr;
+  }
+
+  .agent-session-sub {
+    align-items: flex-start;
+    text-align: left;
   }
 
   .effective {

@@ -36,6 +36,7 @@
         <button class="nav-item" data-tab="memory" type="button"><span class="icon icon-memory"></span><span>记忆与画像</span></button>
         <button class="nav-item" data-tab="actions" type="button"><span class="icon icon-actions"></span><span>按键与操作</span></button>
         <button class="nav-item" data-tab="appearance" type="button"><span class="icon icon-appearance"></span><span>外观与行为</span></button>
+        <button class="nav-item" data-tab="agent-watch" type="button"><span class="icon icon-usage"></span><span>Agent 看管</span></button>
         <button class="nav-item" data-tab="prompts" type="button"><span class="icon icon-prompts"></span><span>提示词</span></button>
         <button class="nav-item" data-tab="usage" type="button"><span class="icon icon-usage"></span><span>用量与诊断</span></button>
         <button class="nav-item" data-tab="about" type="button"><span class="icon icon-about"></span><span>关于</span></button>
@@ -300,6 +301,77 @@
               </div>
             </div>
             <div id="music-diagnostics" class="music-diagnostics"></div>
+          </div>
+        </section>
+
+        <section class="tab hidden" data-pane="agent-watch">
+          <div class="pane-head">
+            <div>
+              <p class="eyebrow">Agent Watch</p>
+              <h1>Claude Code 看管</h1>
+              <p class="hint">猫猫只读观察 Claude Code 状态：工作时帮你盯着，等待或完成时叫你回来。</p>
+            </div>
+            <button id="aw-install" class="btn small" type="button">安装 Hook</button>
+          </div>
+
+          <div class="settings-card">
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="aw-enabled">启用看管</label>
+                <span>需要先安装 Claude Code hook；不会自动批准权限。</span>
+              </div>
+              <input id="aw-enabled" type="checkbox" />
+            </div>
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="aw-away">工作中提醒我离开屏幕</label>
+                <span>Agent 持续工作一段时间后，低频提醒你不用一直盯着。</span>
+              </div>
+              <input id="aw-away" type="checkbox" />
+            </div>
+            <div class="setting-row">
+              <div class="setting-copy">
+                <label for="aw-first">首次提醒</label>
+                <span>10-3600 秒；建议 90 秒。</span>
+              </div>
+              <input id="aw-first" type="number" min="10" max="3600" step="5" />
+            </div>
+            <div class="setting-row">
+              <div class="setting-copy">
+                <label for="aw-repeat">重复冷却</label>
+                <span>1-240 分钟；冷却内不重复提示。</span>
+              </div>
+              <input id="aw-repeat" type="number" min="1" max="240" step="1" />
+            </div>
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="aw-waiting">等待时提醒</label>
+                <span>权限请求或需要用户输入时立刻提示。</span>
+              </div>
+              <input id="aw-waiting" type="checkbox" />
+            </div>
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="aw-done">完成时提醒</label>
+                <span>同一会话完成后只提示一次。</span>
+              </div>
+              <input id="aw-done" type="checkbox" />
+            </div>
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="aw-tts">等待/完成时语音</label>
+                <span>工作中离屏提醒默认不朗读。</span>
+              </div>
+              <input id="aw-tts" type="checkbox" />
+            </div>
+          </div>
+
+          <div class="section-panel">
+            <div class="section-head">
+              <h3>当前会话</h3>
+              <span id="aw-status">等待状态</span>
+            </div>
+            <div id="aw-sessions" class="agent-sessions"></div>
           </div>
         </section>
 

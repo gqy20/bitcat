@@ -13,7 +13,7 @@
 
 use crate::commands::SharedWindowState;
 use ai_pad_core::action::{ActionConfig, ActionDef, Defaults};
-use ai_pad_core::app_settings::{AiOverride, AppSettings, AppearanceSettings};
+use ai_pad_core::app_settings::{AgentWatchSettings, AiOverride, AppSettings, AppearanceSettings};
 use ai_pad_core::memory::{LongTermMemory, LongTermReviewEntry};
 use ai_pad_core::prompts::PromptsConfig;
 use ai_pad_core::token_tracker::{
@@ -87,6 +87,7 @@ pub struct SettingsSnapshot {
     pub actions: ActionsView,
     pub prompts: PromptsConfig,
     pub appearance: AppearanceSettings,
+    pub agent_watch: AgentWatchSettings,
     pub about: AboutInfo,
     /// 按 config/buttons.yml 列出的所有可配置按键（有序，index 升序）
     pub button_catalog: Vec<ButtonCatalogItem>,
@@ -203,8 +204,27 @@ pub struct AppearanceInput {
     pub screenshot_interval_sec: u64,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct AgentWatchInput {
+    pub enabled: bool,
+    pub away_nudge_enabled: bool,
+    #[serde(default = "default_first_nudge_after_sec")]
+    pub first_nudge_after_sec: u64,
+    #[serde(default = "default_repeat_nudge_after_min")]
+    pub repeat_nudge_after_min: u64,
+    pub waiting_alert: bool,
+    pub done_alert: bool,
+    pub use_tts: bool,
+}
+
 fn default_screenshot_interval_sec() -> u64 {
     30
+}
+fn default_first_nudge_after_sec() -> u64 {
+    90
+}
+fn default_repeat_nudge_after_min() -> u64 {
+    8
 }
 
 fn token_session_view(session: &TokenSession) -> TokenSessionView {
@@ -343,6 +363,7 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
         },
         prompts: prompts_cfg,
         appearance: overlay.appearance,
+        agent_watch: overlay.agent_watch,
         about: AboutInfo {
             version: env!("CARGO_PKG_VERSION").to_string(),
             app_settings_path,
@@ -755,6 +776,24 @@ pub async fn cmd_settings_save_appearance(
     Ok(())
 }
 
+/// 保存 Claude Code Agent 看管设置。
+#[tauri::command]
+pub async fn cmd_settings_save_agent_watch(payload: AgentWatchInput) -> Result<(), String> {
+    let mut s = AppSettings::load();
+    s.agent_watch = AgentWatchSettings {
+        enabled: payload.enabled,
+        away_nudge_enabled: payload.away_nudge_enabled,
+        first_nudge_after_sec: payload.first_nudge_after_sec.clamp(10, 3600),
+        repeat_nudge_after_min: payload.repeat_nudge_after_min.clamp(1, 240),
+        waiting_alert: payload.waiting_alert,
+        done_alert: payload.done_alert,
+        use_tts: payload.use_tts,
+    };
+    s.save()?;
+    info!(agent_watch = ?s.agent_watch, "[settings] Agent 看管设置已保存");
+    Ok(())
+}
+
 /// 重置某一分类为内置默认（actions / prompts / appearance / ai / user）
 #[tauri::command]
 pub async fn cmd_settings_reset(category: String) -> Result<(), String> {
@@ -768,6 +807,11 @@ pub async fn cmd_settings_reset(category: String) -> Result<(), String> {
         "appearance" => {
             let mut s = AppSettings::load();
             s.appearance = AppearanceSettings::default();
+            s.save()?;
+        }
+        "agent_watch" => {
+            let mut s = AppSettings::load();
+            s.agent_watch = AgentWatchSettings::default();
             s.save()?;
         }
         "ai" => {
@@ -818,6 +862,7 @@ mod tests {
             },
             prompts: PromptsConfig::default(),
             appearance: AppearanceSettings::default(),
+            agent_watch: AgentWatchSettings::default(),
             about: AboutInfo {
                 version: "0.0.0".into(),
                 app_settings_path: "".into(),
@@ -834,6 +879,7 @@ mod tests {
         let json = serde_json::to_string(&snap).expect("snapshot serialize");
         assert!(json.contains("effective"));
         assert!(json.contains("appearance"));
+        assert!(json.contains("agent_watch"));
         assert!(json.contains("button_catalog"));
     }
 
@@ -857,6 +903,21 @@ mod tests {
         let input: AppearanceInput = serde_json::from_str(json).unwrap();
         assert!(!input.always_on_top);
         assert_eq!(input.global_shortcut, "F12");
+    }
+
+    #[test]
+    fn test_agent_watch_input_deserialize() {
+        let json = r#"{
+            "enabled": true,
+            "away_nudge_enabled": true,
+            "waiting_alert": true,
+            "done_alert": true,
+            "use_tts": false
+        }"#;
+        let input: AgentWatchInput = serde_json::from_str(json).unwrap();
+        assert!(input.enabled);
+        assert_eq!(input.first_nudge_after_sec, 90);
+        assert_eq!(input.repeat_nudge_after_min, 8);
     }
 
     #[test]

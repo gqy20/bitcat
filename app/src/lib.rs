@@ -16,8 +16,10 @@
 //! 使用了 Win32 API。这些 unsafe 的安全前提在各子模块的 `//!` 中单独说明。
 
 pub mod action_bus;
+pub mod agent_monitor;
 pub mod audio_reactive;
 pub mod bubble;
+pub mod claude_hooks;
 pub mod commands;
 pub mod game;
 pub mod game_input;
@@ -55,6 +57,7 @@ pub fn run() {
         .manage(screenshot::SharedScreenshotState::default())
         .manage(game::SharedGame::default())
         .manage(pet_event_bus::SharedPetEventBus::new())
+        .manage(agent_monitor::SharedAgentMonitor::default())
         .manage(SharedPendingChat::new())
         .manage(SharedChatCore::new())
         .manage(SharedAgent::new())
@@ -108,6 +111,9 @@ pub fn run() {
             settings::cmd_settings_hide,
             settings::cmd_settings_close,
             settings::cmd_settings_log,
+            agent_monitor::cmd_get_agent_sessions,
+            claude_hooks::cmd_install_claude_code_hooks,
+            claude_hooks::cmd_open_claude_settings,
             pet_event_bus::cmd_get_pet_event_log,
             settings::cmd_settings_load,
             settings::cmd_get_token_stats,
@@ -119,6 +125,7 @@ pub fn run() {
             settings::cmd_settings_save_prompts,
             settings::cmd_settings_save_user,
             settings::cmd_settings_save_appearance,
+            settings::cmd_settings_save_agent_watch,
             settings::cmd_settings_reset,
             settings::cmd_settings_apply,
         ])
@@ -402,6 +409,7 @@ pub fn run() {
             }
 
             // ── 后台线程 ──
+            agent_monitor::spawn_agent_monitor(app.handle().clone());
 
             // 手柄轮询线程：SDL2 80ms tick，处理按键→命令→AI 对话。
             let handle = app.handle().clone();

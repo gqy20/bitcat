@@ -16,7 +16,7 @@ const ACTION_TYPE_LABELS = {
 };
 
 let SNAPSHOT = null;
-const dirty = { ai: false, user: false, actions: false, prompts: false, appearance: false };
+const dirty = { ai: false, user: false, actions: false, prompts: false, appearance: false, agent_watch: false };
 let currentTab = "overview";
 let selectedUsageModel = "__all";
 let musicDiagnosticsBound = false;
@@ -69,6 +69,15 @@ async function mockInvoke(command) {
         tts_enabled: true,
         global_shortcut: "CommandOrControl+Alt+Space",
         screenshot_interval_sec: 30,
+      },
+      agent_watch: {
+        enabled: false,
+        away_nudge_enabled: true,
+        first_nudge_after_sec: 90,
+        repeat_nudge_after_min: 8,
+        waiting_alert: true,
+        done_alert: true,
+        use_tts: false,
       },
       about: {
         version: "preview",
@@ -151,13 +160,13 @@ function $(id) { return document.getElementById(id); }
 
 function markDirty(tab) {
   dirty[tab] = true;
-  const nav = document.querySelector(`.nav-item[data-tab="${tab === "user" ? "memory" : tab}"]`);
+  const nav = document.querySelector(`.nav-item[data-tab="${tab === "user" ? "memory" : tab === "agent_watch" ? "agent-watch" : tab}"]`);
   if (nav) nav.classList.add("dirty");
 }
 
 function clearDirty(tab) {
   dirty[tab] = false;
-  const nav = document.querySelector(`.nav-item[data-tab="${tab === "user" ? "memory" : tab}"]`);
+  const nav = document.querySelector(`.nav-item[data-tab="${tab === "user" ? "memory" : tab === "agent_watch" ? "agent-watch" : tab}"]`);
   if (nav) nav.classList.remove("dirty");
 }
 
@@ -173,6 +182,7 @@ function switchTab(name) {
   });
   if (name === "usage") loadUsageDiagnostics();
   if (name === "memory") loadMemoryReview();
+  if (name === "agent-watch") loadAgentSessions();
 }
 
 function renderAi(ai) {
@@ -465,6 +475,33 @@ function collectAppearance() {
   };
 }
 
+function renderAgentWatch(a) {
+  const cfg = a || {};
+  $("aw-enabled").checked = !!cfg.enabled;
+  $("aw-away").checked = cfg.away_nudge_enabled !== false;
+  $("aw-first").value = cfg.first_nudge_after_sec ?? 90;
+  $("aw-repeat").value = cfg.repeat_nudge_after_min ?? 8;
+  $("aw-waiting").checked = cfg.waiting_alert !== false;
+  $("aw-done").checked = cfg.done_alert !== false;
+  $("aw-tts").checked = !!cfg.use_tts;
+  ["aw-enabled","aw-away","aw-waiting","aw-done","aw-tts"].forEach(id => { $(id).onchange = () => markDirty("agent_watch"); });
+  ["aw-first","aw-repeat"].forEach(id => { $(id).oninput = () => markDirty("agent_watch"); });
+}
+
+function collectAgentWatch() {
+  const first = parseInt($("aw-first").value, 10);
+  const repeat = parseInt($("aw-repeat").value, 10);
+  return {
+    enabled: $("aw-enabled").checked,
+    away_nudge_enabled: $("aw-away").checked,
+    first_nudge_after_sec: Number.isFinite(first) ? Math.min(3600, Math.max(10, first)) : 90,
+    repeat_nudge_after_min: Number.isFinite(repeat) ? Math.min(240, Math.max(1, repeat)) : 8,
+    waiting_alert: $("aw-waiting").checked,
+    done_alert: $("aw-done").checked,
+    use_tts: $("aw-tts").checked,
+  };
+}
+
 function renderAbout(a) {
   $("about-version").textContent = a.version;
   $("about-settings-path").textContent = a.app_settings_path;
@@ -520,6 +557,43 @@ async function loadMemoryReview() {
     log("加载长期记忆失败: " + e);
     renderMemoryReview(null);
   }
+}
+
+async function loadAgentSessions() {
+  const status = $("aw-status");
+  if (status) status.textContent = "读取中...";
+  try {
+    const snapshot = await invoke("cmd_get_agent_sessions");
+    renderAgentSessions(snapshot);
+    if (status) status.textContent = snapshot?.generated_at_ms ? "已更新" : "等待状态";
+  } catch (e) {
+    log("加载 Agent 会话失败: " + e);
+    renderAgentSessions(null);
+    if (status) status.textContent = "读取失败";
+  }
+}
+
+function renderAgentSessions(snapshot) {
+  const box = $("aw-sessions");
+  if (!box) return;
+  const sessions = snapshot?.sessions || [];
+  if (!sessions.length) {
+    box.innerHTML = `<div class="empty-note">还没有 Claude Code 会话。安装 hook 并启用看管后，状态会出现在这里。</div>`;
+    return;
+  }
+  box.innerHTML = sessions.map(session => `
+    <div class="agent-session ${escapeAttr(session.status)}">
+      <div class="agent-session-main">
+        <strong>${escapeHtml(session.workspace_name || "未知项目")}</strong>
+        <span>${escapeHtml(session.status_label || session.status)}</span>
+      </div>
+      <div class="agent-session-sub">
+        <code>${escapeHtml(session.workspace || session.session_id)}</code>
+        ${session.tool_name ? `<small>${escapeHtml(session.tool_name)}</small>` : ""}
+      </div>
+      ${session.user_prompt_preview ? `<p>${escapeHtml(session.user_prompt_preview)}</p>` : ""}
+    </div>
+  `).join("");
 }
 
 async function deleteMemoryEntry(id) {
@@ -911,6 +985,10 @@ async function saveAll() {
       await invoke("cmd_settings_save_appearance", { payload: collectAppearance() });
       clearDirty("appearance");
     }
+    if (dirty.agent_watch) {
+      await invoke("cmd_settings_save_agent_watch", { payload: collectAgentWatch() });
+      clearDirty("agent_watch");
+    }
     await invoke("cmd_settings_apply");
     toast("已保存", "ok");
     await loadSnapshot();
@@ -934,7 +1012,7 @@ async function resetCurrent() {
 }
 
 function tabLabel(t) {
-  return ({ ai: "AI 与对话", user: "记忆与画像", actions: "按键与操作", prompts: "提示词", appearance: "外观与行为" })[t] || t;
+  return ({ ai: "AI 与对话", user: "记忆与画像", actions: "按键与操作", prompts: "提示词", appearance: "外观与行为", "agent-watch": "Agent 看管", agent_watch: "Agent 看管" })[t] || t;
 }
 
 async function loadSnapshot() {
@@ -945,10 +1023,11 @@ async function loadSnapshot() {
     renderActions(SNAPSHOT.actions);
     renderPrompts(SNAPSHOT.prompts);
     renderAppearance(SNAPSHOT.appearance);
+    renderAgentWatch(SNAPSHOT.agent_watch);
     renderAbout(SNAPSHOT.about);
     loadUsageDiagnostics();
     loadMemoryReview();
-    ["ai", "user", "actions", "prompts", "appearance"].forEach(clearDirty);
+    ["ai", "user", "actions", "prompts", "appearance", "agent_watch"].forEach(clearDirty);
   } catch (e) {
     log("加载失败: " + e);
     toast("加载配置失败：" + String(e), "err");
@@ -986,6 +1065,14 @@ function bindGlobal() {
     loadMemoryReview();
   });
   $("memory-refresh").addEventListener("click", loadMemoryReview);
+  $("aw-install").addEventListener("click", async () => {
+    try {
+      const msg = await invoke("cmd_install_claude_code_hooks");
+      toast(msg || "Hook 已安装", "ok");
+    } catch (e) {
+      toast("安装失败：" + String(e), "err");
+    }
+  });
   $("music-fake").addEventListener("click", () => startMusicDance("fake"));
   $("music-wasapi").addEventListener("click", () => startMusicDance("wasapi"));
   $("music-stop").addEventListener("click", stopMusicDance);
