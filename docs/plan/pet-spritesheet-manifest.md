@@ -82,6 +82,7 @@ App bundle 仍然通过 `sprite.js` 携带内置小猫。以后可以把内置�
   },
   "states": {
     "idle": {
+      "spriteFrames": [0, 1, 2, 3, 4, 5, 6],
       "frames": [
         { "sprite": 0, "duration": 1500 },
         { "sprite": 1, "duration": 120 },
@@ -104,6 +105,7 @@ App bundle 仍然通过 `sprite.js` 携带内置小猫。以后可以把内置�
       ]
     },
     "focused": {
+      "spriteFrames": [7, 8, 9, 10],
       "frames": [
         { "sprite": 7, "duration": 700 },
         { "sprite": 8, "duration": 140 },
@@ -113,6 +115,7 @@ App bundle 仍然通过 `sprite.js` 携带内置小猫。以后可以把内置�
       "loop": true
     },
     "happy": {
+      "spriteFrames": [10, 11],
       "frames": [
         { "sprite": 10, "duration": 250 },
         { "sprite": 11, "duration": 120 },
@@ -180,6 +183,8 @@ App bundle 仍然通过 `sprite.js` 携带内置小猫。以后可以把内置�
 
 v1 loader 应该采用 all-or-nothing 策略。局部加载外部资产很容易造成难排查的混合状态。
 
+`spriteFrames` 是每个 state 的完整帧表，用于还原 `SPRITES[state]` 的局部帧索引；`frames[].sprite` 和 variant `frames[].sprite` 仍引用 spritesheet 的全局帧索引。没有 `spriteFrames` 时，loader 可退化为只用 timeline 中出现过的帧，但 idle variants 这类“被状态机按局部 index 触发”的帧会丢失，所以 fixture pack 应始终写出 `spriteFrames`。
+
 ## 校验规则
 
 以下情况应拒绝 manifest：
@@ -188,6 +193,7 @@ v1 loader 应该采用 all-or-nothing 策略。局部加载外部资产很容易
 - v1 中 `sprite.frameWidth` 或 `sprite.frameHeight` 不是 `16`；
 - `frameCount` 超过 `columns * rows`；
 - 任意 state 的 `frames` 数组为空；
+- `spriteFrames` 存在但为空；
 - 任意 frame 引用的 sprite index 不在 `[0, frameCount)` 范围内；
 - 任意 duration `<= 0`；
 - `repeat` 存在但不是正整数；
