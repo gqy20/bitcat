@@ -219,7 +219,7 @@ panel → cmd_start_game → app/src/game.rs 动态创建 game 窗口
 | 桌面壳 | Tauri 2，单个 `mini` 透明窗口，前端走 Vite 构建 | 我们保留多 WebView 静态窗口，不引入 React/Vite |
 | Agent 状态模型 | `ClaudeSession` 统一承载 `cc/codex/cursor`，字段含 `status/tool/toolInput/lastResponse/source` | 可以借鉴统一 `AgentSession`，但应拆进 core 类型和 app 监听层 |
 | Claude Code | 安装 hook 到 `~/.claude/hooks/`，事件进本地 socket，再由 Rust `process_claude_event()` 归一化 | E1 第一优先级可参考这条路径 |
-| Windows hook | Claude Code 在 Windows 通过 Git Bash 调 hook，源码改用 PowerShell 脚本 + TCP `127.0.0.1:19283`，并设置 UTF-8 stdin | 这是高价值坑位，Windows 必须按 UTF-8 和显式 TCP shutdown 处理 |
+| Windows hook | Claude Code 在 Windows 通过 Git Bash 调 hook，源码改用 PowerShell 脚本 + TCP `127.0.0.1:5342`，并设置 UTF-8 stdin | 这是高价值坑位，Windows 必须按 UTF-8 和显式 TCP shutdown 处理；端口避开 oc-claw/ooclaw 常用的 `19283` |
 | Codex | 非 Windows 使用 `~/.Codex/hooks.json`；但源码 Windows 分支会清理并禁用 oc-claw 的 Codex hook，TCP 也 drop `source=codex` | 不能照搬 oc-claw 做 Windows Codex；需要单独验证 Codex 当前 hook/会话格式 |
 | Cursor | 通过 `~/.cursor/hooks.json` + 自带 VS Code/Cursor extension，Windows 用 TCP `127.0.0.1:19284` | 可放到 E3/E4，复杂度高于 Claude Code |
 | OpenClaw | 读取 `~/.openclaw/agents/*/sessions/*.jsonl` 和 `sessions.json`，用 JSONL 最后消息判断 active | 可借鉴 JSONL 活跃判定，但不要绑定 OpenClaw 格式到通用模型 |

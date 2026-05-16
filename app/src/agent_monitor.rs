@@ -21,7 +21,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 use tracing::{debug, info, warn};
 
-pub const DEFAULT_AGENT_MONITOR_PORT: u16 = 19283;
+pub const DEFAULT_AGENT_MONITOR_PORT: u16 = 5342;
 const MAX_HOOK_PAYLOAD_BYTES: u64 = 512 * 1024;
 
 /// Claude Code 看管共享状态。

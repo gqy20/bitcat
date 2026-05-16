@@ -156,11 +156,13 @@ impl ClaudeHookEvent {
 pub fn map_hook_status(name: &str) -> AgentStatus {
     match normalize_hook_name(name).as_str() {
         "userpromptsubmit" => AgentStatus::Working,
+        "sessionstart" => AgentStatus::Idle,
         "pretooluse" => AgentStatus::ToolRunning,
         "posttooluse" => AgentStatus::Working,
         "permissionrequest" => AgentStatus::Waiting,
         "precompact" => AgentStatus::Compacting,
         "stop" => AgentStatus::Done,
+        "subagentstop" => AgentStatus::Done,
         "sessionend" => AgentStatus::Idle,
         "notification" => AgentStatus::Waiting,
         "error" => AgentStatus::Error,
@@ -227,11 +229,13 @@ mod tests {
     #[test]
     fn maps_known_hook_names() {
         assert_eq!(map_hook_status("UserPromptSubmit"), AgentStatus::Working);
+        assert_eq!(map_hook_status("SessionStart"), AgentStatus::Idle);
         assert_eq!(map_hook_status("PreToolUse"), AgentStatus::ToolRunning);
         assert_eq!(map_hook_status("PostToolUse"), AgentStatus::Working);
         assert_eq!(map_hook_status("PermissionRequest"), AgentStatus::Waiting);
         assert_eq!(map_hook_status("PreCompact"), AgentStatus::Compacting);
         assert_eq!(map_hook_status("Stop"), AgentStatus::Done);
+        assert_eq!(map_hook_status("SubagentStop"), AgentStatus::Done);
         assert_eq!(map_hook_status("SessionEnd"), AgentStatus::Idle);
     }
 

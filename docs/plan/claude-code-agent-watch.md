@@ -341,7 +341,7 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
    - `Working` / `ToolRunning` 的离屏提醒默认低频触发，不刷屏。
 
 4. 新增 `app/src/agent_monitor.rs`
-   - 启动本地 TCP server，例如 `127.0.0.1:19283` 或配置化端口。
+   - 启动本地 TCP server，例如 `127.0.0.1:5342` 或配置化端口，避免与 oc-claw/ooclaw 等工具常用的 `19283` 冲突。
    - 接收 PowerShell hook 原始 JSON。
    - 调用 core parser，更新 `Arc<Mutex<HashMap<String, AgentSession>>>`。
    - 调用 `AgentNudgePolicy` 生成提醒，并通过 `SharedPetEventBus` 发出。
@@ -351,6 +351,7 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
 
 5. 新增 `app/src/claude_hooks.rs`
    - 写入 `~/.claude/hooks/ai-pad-hook.ps1`。
+   - 合并 `~/.claude/settings.json` 时遵循 Claude Code 的嵌套 hooks schema：`event -> [{ matcher?, hooks: [...] }]`，只追加带 `ai_pad_marker` 的桌宠 hook，不覆盖现有 hook。
    - 合并更新 `~/.claude/settings.json` 的 hook 配置。
    - PowerShell 脚本必须：
      - 设置 `[Console]::InputEncoding = [System.Text.Encoding]::UTF8`

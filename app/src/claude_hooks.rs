@@ -11,6 +11,12 @@ use tauri_plugin_opener::OpenerExt;
 
 const AI_PAD_HOOK_MARKER: &str = "ai-pad-claude-code-watch";
 
+#[derive(Debug, Clone, Copy)]
+struct HookSpec {
+    event_name: &'static str,
+    matcher: Option<&'static str>,
+}
+
 pub fn claude_dir() -> Result<PathBuf, String> {
     home_dir()
         .map(|dir| dir.join(".claude"))
@@ -71,33 +77,135 @@ fn ensure_ai_pad_hooks(settings: &mut Value, script_path: &PathBuf) -> Result<()
     }
     let hooks_obj = hooks.as_object_mut().unwrap();
 
-    for event_name in [
-        "UserPromptSubmit",
-        "PreToolUse",
-        "PostToolUse",
-        "PermissionRequest",
-        "PreCompact",
-        "Stop",
-        "SessionEnd",
-        "Notification",
-    ] {
-        let entry = hooks_obj.entry(event_name).or_insert_with(|| json!([]));
+    let hook = ai_pad_hook(script_path);
+    for spec in hook_specs() {
+        let entry = hooks_obj
+            .entry(spec.event_name)
+            .or_insert_with(|| json!([]));
         if !entry.is_array() {
             return Err(format!(
-                "settings.json hooks.{event_name} 不是 array，已停止写入"
+                "settings.json hooks.{} 不是 array，已停止写入",
+                spec.event_name
             ));
         }
         let arr = entry.as_array_mut().unwrap();
-        arr.retain(|item| {
-            item.get("ai_pad_marker").and_then(Value::as_str) != Some(AI_PAD_HOOK_MARKER)
-        });
-        arr.push(json!({
-            "type": "command",
-            "command": format!("powershell -NoProfile -ExecutionPolicy Bypass -File \"{}\"", script_path.display()),
-            "ai_pad_marker": AI_PAD_HOOK_MARKER
-        }));
+        remove_ai_pad_hooks(arr);
+        let group = ensure_hook_group(arr, spec.matcher);
+        let hooks = group
+            .entry("hooks")
+            .or_insert_with(|| json!([]))
+            .as_array_mut()
+            .ok_or_else(|| {
+                format!(
+                    "settings.json hooks.{} 分组 hooks 不是 array，已停止写入",
+                    spec.event_name
+                )
+            })?;
+        hooks.push(hook.clone());
     }
     Ok(())
+}
+
+fn hook_specs() -> Vec<HookSpec> {
+    vec![
+        HookSpec {
+            event_name: "UserPromptSubmit",
+            matcher: None,
+        },
+        HookSpec {
+            event_name: "SessionStart",
+            matcher: None,
+        },
+        HookSpec {
+            event_name: "PreToolUse",
+            matcher: Some("*"),
+        },
+        HookSpec {
+            event_name: "PostToolUse",
+            matcher: Some("*"),
+        },
+        HookSpec {
+            event_name: "PermissionRequest",
+            matcher: Some("*"),
+        },
+        HookSpec {
+            event_name: "PreCompact",
+            matcher: Some("auto"),
+        },
+        HookSpec {
+            event_name: "PreCompact",
+            matcher: Some("manual"),
+        },
+        HookSpec {
+            event_name: "Stop",
+            matcher: None,
+        },
+        HookSpec {
+            event_name: "SubagentStop",
+            matcher: None,
+        },
+        HookSpec {
+            event_name: "SessionEnd",
+            matcher: None,
+        },
+        HookSpec {
+            event_name: "Notification",
+            matcher: None,
+        },
+    ]
+}
+
+fn ai_pad_hook(script_path: &PathBuf) -> Value {
+    let script = script_path.to_string_lossy().replace('\\', "/");
+    json!({
+        "type": "command",
+        "command": format!("powershell.exe -NoProfile -ExecutionPolicy Bypass -File '{script}'"),
+        "ai_pad_marker": AI_PAD_HOOK_MARKER
+    })
+}
+
+fn remove_ai_pad_hooks(groups: &mut Vec<Value>) {
+    groups.retain(|item| {
+        item.get("ai_pad_marker").and_then(Value::as_str) != Some(AI_PAD_HOOK_MARKER)
+    });
+    for group in groups.iter_mut() {
+        if let Some(hooks) = group.get_mut("hooks").and_then(Value::as_array_mut) {
+            hooks.retain(|item| {
+                item.get("ai_pad_marker").and_then(Value::as_str) != Some(AI_PAD_HOOK_MARKER)
+            });
+        }
+    }
+}
+
+fn ensure_hook_group<'a>(
+    groups: &'a mut Vec<Value>,
+    matcher: Option<&str>,
+) -> &'a mut serde_json::Map<String, Value> {
+    if let Some(index) = groups.iter().position(|item| {
+        item.as_object()
+            .map(|object| {
+                matcher_matches(object.get("matcher"), matcher) && object.get("hooks").is_some()
+            })
+            .unwrap_or(false)
+    }) {
+        return groups[index].as_object_mut().unwrap();
+    }
+
+    let mut group = serde_json::Map::new();
+    if let Some(matcher) = matcher {
+        group.insert("matcher".into(), Value::String(matcher.into()));
+    }
+    group.insert("hooks".into(), Value::Array(Vec::new()));
+    groups.push(Value::Object(group));
+    groups.last_mut().unwrap().as_object_mut().unwrap()
+}
+
+fn matcher_matches(value: Option<&Value>, expected: Option<&str>) -> bool {
+    match (value.and_then(Value::as_str), expected) {
+        (None, None) => true,
+        (Some(actual), Some(expected)) => actual == expected,
+        _ => false,
+    }
 }
 
 fn hook_script(port: u16) -> String {
@@ -170,9 +278,9 @@ mod tests {
 
     #[test]
     fn hook_script_contains_port_and_utf8() {
-        let script = hook_script(19283);
+        let script = hook_script(5342);
         assert!(script.contains("127.0.0.1"));
-        assert!(script.contains("19283"));
+        assert!(script.contains("5342"));
         assert!(script.contains("InputEncoding"));
     }
 
@@ -181,16 +289,38 @@ mod tests {
         let mut settings = json!({
             "hooks": {
                 "Stop": [
-                    {"type": "command", "command": "echo keep"},
-                    {"type": "command", "command": "old", "ai_pad_marker": AI_PAD_HOOK_MARKER}
+                    {
+                        "hooks": [
+                            {"type": "command", "command": "echo keep"},
+                            {"type": "command", "command": "old", "ai_pad_marker": AI_PAD_HOOK_MARKER}
+                        ]
+                    },
+                    {"type": "command", "command": "old-flat", "ai_pad_marker": AI_PAD_HOOK_MARKER}
+                ],
+                "PreToolUse": [
+                    {
+                        "matcher": "*",
+                        "hooks": [
+                            {"type": "command", "command": "echo tool"}
+                        ]
+                    }
                 ]
             }
         });
         ensure_ai_pad_hooks(&mut settings, &PathBuf::from("C:\\x\\ai-pad-hook.ps1")).unwrap();
         let stop = settings["hooks"]["Stop"].as_array().unwrap();
-        assert_eq!(stop.len(), 2);
-        assert_eq!(stop[0]["command"], "echo keep");
-        assert_eq!(stop[1]["ai_pad_marker"], AI_PAD_HOOK_MARKER);
+        assert_eq!(stop.len(), 1);
+        let stop_hooks = stop[0]["hooks"].as_array().unwrap();
+        assert_eq!(stop_hooks.len(), 2);
+        assert_eq!(stop_hooks[0]["command"], "echo keep");
+        assert_eq!(stop_hooks[1]["ai_pad_marker"], AI_PAD_HOOK_MARKER);
+        let pre_tool = settings["hooks"]["PreToolUse"].as_array().unwrap();
+        assert_eq!(pre_tool.len(), 1);
+        assert_eq!(pre_tool[0]["matcher"], "*");
+        assert_eq!(pre_tool[0]["hooks"].as_array().unwrap().len(), 2);
         assert!(settings["hooks"]["UserPromptSubmit"].is_array());
+        assert!(settings["hooks"]["SessionStart"].is_array());
+        assert!(settings["hooks"]["SubagentStop"].is_array());
+        assert_eq!(settings["hooks"]["PreCompact"].as_array().unwrap().len(), 2);
     }
 }
