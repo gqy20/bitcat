@@ -195,6 +195,7 @@ mod tests {
             "notepad",
             "dance",
             "game",
+            "battle",
             "settings",
             "chat",
         ] {
@@ -230,7 +231,20 @@ mod tests {
         let vm = config.to_view_model();
         assert_eq!((vm.width, vm.height, vm.columns, vm.rows), (480, 420, 3, 3));
         assert_eq!(vm.actions.len(), 9);
-        assert_eq!(vm.actions.first().unwrap().id, "vscode");
-        assert_eq!(vm.actions.last().unwrap().id, "chat");
+        let ids: Vec<&str> = vm.actions.iter().map(|action| action.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "vscode",
+                "browser",
+                "explorer",
+                "powershell",
+                "notepad",
+                "dance",
+                "game",
+                "battle",
+                "settings"
+            ]
+        );
     }
 }
