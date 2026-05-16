@@ -28,6 +28,8 @@ const MAX_HOOK_PAYLOAD_BYTES: u64 = 512 * 1024;
 pub struct SharedAgentMonitor {
     sessions: Mutex<HashMap<String, AgentSession>>,
     nudge_policy: Mutex<AgentNudgePolicy>,
+    event_count: Mutex<u64>,
+    last_event_at_ms: Mutex<Option<u64>>,
 }
 
 impl Default for SharedAgentMonitor {
@@ -35,6 +37,8 @@ impl Default for SharedAgentMonitor {
         Self {
             sessions: Mutex::new(HashMap::new()),
             nudge_policy: Mutex::new(AgentNudgePolicy::new()),
+            event_count: Mutex::new(0),
+            last_event_at_ms: Mutex::new(None),
         }
     }
 }
@@ -45,10 +49,15 @@ pub struct AgentSessionsSnapshot {
     pub sessions: Vec<AgentSessionView>,
     pub primary: Option<AgentSessionView>,
     pub generated_at_ms: u64,
+    pub monitor_port: u16,
+    pub event_count: u64,
+    pub last_event_at_ms: Option<u64>,
+    pub log_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 struct AgentNudgeLogRecord {
+    seq: u64,
     at_ms: u64,
     session_id: String,
     kind: String,
@@ -64,10 +73,41 @@ impl SharedAgentMonitor {
             .sessions
             .lock()
             .map_err(|e| format!("agent sessions lock poisoned: {e}"))?;
+        let event_count = *self
+            .event_count
+            .lock()
+            .map_err(|e| format!("agent event count lock poisoned: {e}"))?;
+        let last_event_at_ms = *self
+            .last_event_at_ms
+            .lock()
+            .map_err(|e| format!("agent last event lock poisoned: {e}"))?;
         Ok(snapshot_from_sessions(
             sessions.values().cloned().collect(),
             now_ms,
+            event_count,
+            last_event_at_ms,
         ))
+    }
+
+    fn next_event_seq(&self, now_ms: u64) -> Result<u64, String> {
+        let mut count = self
+            .event_count
+            .lock()
+            .map_err(|e| format!("agent event count lock poisoned: {e}"))?;
+        *count = count.saturating_add(1);
+        *self
+            .last_event_at_ms
+            .lock()
+            .map_err(|e| format!("agent last event lock poisoned: {e}"))? = Some(now_ms);
+        Ok(*count)
+    }
+
+    fn remove_session(&self, session_id: &str) -> Result<(), String> {
+        self.sessions
+            .lock()
+            .map_err(|e| format!("agent sessions lock poisoned: {e}"))?
+            .remove(session_id);
+        Ok(())
     }
 }
 
@@ -123,10 +163,14 @@ fn handle_hook_stream(app: &AppHandle, stream: TcpStream) {
 pub fn handle_hook_payload(app: &AppHandle, raw: &str) -> Result<(), String> {
     let now_ms = now_ms();
     let event = ClaudeHookEvent::from_json(raw)?.into_session_event(now_ms)?;
-    if let Err(e) = append_jsonl("agent_sessions.jsonl", &event) {
-        warn!(error = %e, "write agent session event log failed");
-    }
     let monitor: tauri::State<SharedAgentMonitor> = app.state();
+    let seq = monitor.next_event_seq(now_ms)?;
+    if let Err(e) = append_jsonl(
+        "agent_watch_events.jsonl",
+        &AgentWatchEventLogRecord::from_event(seq, &event),
+    ) {
+        warn!(error = %e, "write agent watch event log failed");
+    }
 
     let (snapshot, primary_session) = {
         let mut sessions = monitor
@@ -136,10 +180,17 @@ pub fn handle_hook_payload(app: &AppHandle, raw: &str) -> Result<(), String> {
         apply_session_event(&mut sessions, event);
         let sorted = sort_sessions(sessions.values().cloned().collect());
         let primary = sorted.first().cloned();
-        (snapshot_from_sessions(sorted, now_ms), primary)
+        (
+            snapshot_from_sessions(sorted, now_ms, seq, Some(now_ms)),
+            primary,
+        )
     };
 
     let _ = app.emit("agent-session-update", &snapshot);
+    crate::agent_watch_window::show_snapshot(app, &snapshot);
+    if let Err(e) = append_jsonl("agent_watch_sessions.jsonl", &snapshot) {
+        warn!(error = %e, "write agent watch session snapshot failed");
+    }
 
     if let Some(session) = primary_session {
         evaluate_nudge(app, &monitor, &session, now_ms)?;
@@ -166,6 +217,7 @@ fn evaluate_nudge(
         AgentNudgeDecision::Send(nudge) => {
             if low_priority_nudge_is_gated(app, &nudge) {
                 write_nudge_log(AgentNudgeLogRecord {
+                    seq: now_ms,
                     at_ms: now_ms,
                     session_id: session.session_id.clone(),
                     kind: nudge.kind.as_str().to_string(),
@@ -178,6 +230,7 @@ fn evaluate_nudge(
             }
             emit_nudge(app, &nudge);
             write_nudge_log(AgentNudgeLogRecord {
+                seq: now_ms,
                 at_ms: now_ms,
                 session_id: session.session_id.clone(),
                 kind: nudge.kind.as_str().to_string(),
@@ -189,6 +242,7 @@ fn evaluate_nudge(
         }
         AgentNudgeDecision::Skip { reason, status } => {
             write_nudge_log(AgentNudgeLogRecord {
+                seq: now_ms,
                 at_ms: now_ms,
                 session_id: session.session_id.clone(),
                 kind: "none".to_string(),
@@ -239,7 +293,43 @@ fn emit_nudge(app: &AppHandle, nudge: &AgentNudge) {
     }
 }
 
-fn snapshot_from_sessions(sessions: Vec<AgentSession>, now_ms: u64) -> AgentSessionsSnapshot {
+#[derive(Debug, Clone, Serialize)]
+struct AgentWatchEventLogRecord {
+    seq: u64,
+    at_ms: u64,
+    session_id: String,
+    source: String,
+    workspace: String,
+    status: String,
+    tool_name: Option<String>,
+    needs_user: bool,
+    user_prompt_preview: Option<String>,
+    tool_input_preview: Option<String>,
+}
+
+impl AgentWatchEventLogRecord {
+    fn from_event(seq: u64, event: &ai_pad_core::agent_session::AgentSessionEvent) -> Self {
+        Self {
+            seq,
+            at_ms: event.at_ms,
+            session_id: event.session_id.clone(),
+            source: event.source.as_str().to_string(),
+            workspace: event.workspace.clone(),
+            status: event.status.as_str().to_string(),
+            tool_name: event.tool_name.clone(),
+            needs_user: event.needs_user,
+            user_prompt_preview: event.user_prompt_preview.clone(),
+            tool_input_preview: event.tool_input_preview.clone(),
+        }
+    }
+}
+
+fn snapshot_from_sessions(
+    sessions: Vec<AgentSession>,
+    now_ms: u64,
+    event_count: u64,
+    last_event_at_ms: Option<u64>,
+) -> AgentSessionsSnapshot {
     let views: Vec<AgentSessionView> = sessions
         .iter()
         .map(|session| AgentSessionView::from_session(session, now_ms))
@@ -248,19 +338,21 @@ fn snapshot_from_sessions(sessions: Vec<AgentSession>, now_ms: u64) -> AgentSess
         primary: views.first().cloned(),
         sessions: views,
         generated_at_ms: now_ms,
+        monitor_port: DEFAULT_AGENT_MONITOR_PORT,
+        event_count,
+        last_event_at_ms,
+        log_dir: log_dir().map(|path| path.to_string_lossy().to_string()),
     }
 }
 
 fn write_nudge_log(record: AgentNudgeLogRecord) {
-    if let Err(e) = append_jsonl("agent_nudges.jsonl", &record) {
+    if let Err(e) = append_jsonl("agent_watch_nudges.jsonl", &record) {
         warn!(error = %e, "write agent nudge log failed");
     }
 }
 
 pub fn append_jsonl<T: Serialize>(file_name: &str, value: &T) -> Result<(), String> {
-    let mut dir = home_dir().ok_or_else(|| "无法解析 home 目录".to_string())?;
-    dir.push(".ai-pad");
-    dir.push("logs");
+    let dir = log_dir().ok_or_else(|| "无法解析 home 目录".to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("创建日志目录失败: {e}"))?;
     let path = dir.join(file_name);
     let line = serde_json::to_string(value).map_err(|e| e.to_string())?;
@@ -271,6 +363,10 @@ pub fn append_jsonl<T: Serialize>(file_name: &str, value: &T) -> Result<(), Stri
         .open(&path)
         .map_err(|e| format!("打开日志失败: {e}"))?;
     writeln!(file, "{line}").map_err(|e| format!("写入日志失败: {e}"))
+}
+
+pub fn log_dir() -> Option<PathBuf> {
+    home_dir().map(|dir| dir.join(".ai-pad").join("logs"))
 }
 
 fn home_dir() -> Option<PathBuf> {
@@ -291,6 +387,41 @@ pub async fn cmd_get_agent_sessions(
     monitor: tauri::State<'_, SharedAgentMonitor>,
 ) -> Result<AgentSessionsSnapshot, String> {
     monitor.snapshot(now_ms())
+}
+
+#[tauri::command]
+pub async fn cmd_dismiss_agent_session(
+    app: AppHandle,
+    monitor: tauri::State<'_, SharedAgentMonitor>,
+    session_id: String,
+) -> Result<AgentSessionsSnapshot, String> {
+    monitor.remove_session(&session_id)?;
+    let snapshot = monitor.snapshot(now_ms())?;
+    let _ = app.emit("agent-session-update", &snapshot);
+    crate::agent_watch_window::show_snapshot(&app, &snapshot);
+    Ok(snapshot)
+}
+
+#[tauri::command]
+pub async fn cmd_open_agent_workspace(
+    app: AppHandle,
+    monitor: tauri::State<'_, SharedAgentMonitor>,
+    session_id: String,
+) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let sessions = monitor
+        .sessions
+        .lock()
+        .map_err(|e| format!("agent sessions lock poisoned: {e}"))?;
+    let Some(session) = sessions.get(&session_id) else {
+        return Err("会话不存在".into());
+    };
+    if session.workspace.trim().is_empty() {
+        return Err("会话没有工作目录".into());
+    }
+    app.opener()
+        .open_path(session.workspace.clone(), None::<String>)
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -330,8 +461,10 @@ mod tests {
                 needs_user: true,
             },
         ];
-        let snapshot = snapshot_from_sessions(sort_sessions(sessions), 1000);
+        let snapshot = snapshot_from_sessions(sort_sessions(sessions), 1000, 2, Some(10));
         assert_eq!(snapshot.primary.unwrap().session_id, "wait");
         assert_eq!(snapshot.sessions[0].status, "waiting");
+        assert_eq!(snapshot.monitor_port, DEFAULT_AGENT_MONITOR_PORT);
+        assert_eq!(snapshot.event_count, 2);
     }
 }

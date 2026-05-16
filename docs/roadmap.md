@@ -248,7 +248,7 @@ agent_monitor_loop()
   ├── 扫描进程 / 会话文件 / hook JSONL
   ├── 归一化为 AgentSession
   ├── 推送 agent-session-update 到 panel / bubble
-  └── 写入 ~/.ai-pad/logs/agent_sessions.jsonl
+  └── 写入 ~/.ai-pad/logs/agent_watch_events.jsonl / agent_watch_sessions.jsonl
 ```
 
 `AgentSession` 建议字段：
@@ -456,7 +456,7 @@ A1+A2+E1/E2+C1 ──→ D1(Steam) MVP 差异化更完整
 │   ├── token_usage.jsonl    # Token 追踪行日志 (B2)
 │   ├── token_sessions.json  # 会话级汇总 (B2)
 │   ├── tool_events.jsonl    # 工具生命周期审计 (B4)
-│   ├── agent_sessions.jsonl # Claude Code / Codex 等会话状态 (E1/E2)
+│   ├── agent_watch_sessions.jsonl # Claude Code / Codex 等会话状态 (E1/E2)
 │   └── agent_actions.jsonl  # 桌宠触发的 Agent 控制动作 (E3)
 ├── agents/
 │   ├── sessions.json        # 当前活跃 Agent 会话缓存 (E1/E2)

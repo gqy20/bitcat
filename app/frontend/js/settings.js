@@ -21,6 +21,7 @@ let currentTab = "overview";
 let selectedUsageModel = "__all";
 let musicDiagnosticsBound = false;
 let musicDiagnosticsRenderTimer = null;
+let agentWatchTimer = null;
 const MUSIC_STATE = {
   status: "idle",
   source: "-",
@@ -73,7 +74,7 @@ async function mockInvoke(command) {
       agent_watch: {
         enabled: false,
         away_nudge_enabled: true,
-        first_nudge_after_sec: 90,
+        first_nudge_after_sec: 30,
         repeat_nudge_after_min: 8,
         waiting_alert: true,
         done_alert: true,
@@ -182,7 +183,8 @@ function switchTab(name) {
   });
   if (name === "usage") loadUsageDiagnostics();
   if (name === "memory") loadMemoryReview();
-  if (name === "agent-watch") loadAgentSessions();
+  if (name === "agent-watch") startAgentWatchRefresh();
+  else stopAgentWatchRefresh();
 }
 
 function renderAi(ai) {
@@ -479,7 +481,7 @@ function renderAgentWatch(a) {
   const cfg = a || {};
   $("aw-enabled").checked = !!cfg.enabled;
   $("aw-away").checked = cfg.away_nudge_enabled !== false;
-  $("aw-first").value = cfg.first_nudge_after_sec ?? 90;
+  $("aw-first").value = cfg.first_nudge_after_sec ?? 30;
   $("aw-repeat").value = cfg.repeat_nudge_after_min ?? 8;
   $("aw-waiting").checked = cfg.waiting_alert !== false;
   $("aw-done").checked = cfg.done_alert !== false;
@@ -494,7 +496,7 @@ function collectAgentWatch() {
   return {
     enabled: $("aw-enabled").checked,
     away_nudge_enabled: $("aw-away").checked,
-    first_nudge_after_sec: Number.isFinite(first) ? Math.min(3600, Math.max(10, first)) : 90,
+    first_nudge_after_sec: Number.isFinite(first) ? Math.min(3600, Math.max(10, first)) : 30,
     repeat_nudge_after_min: Number.isFinite(repeat) ? Math.min(240, Math.max(1, repeat)) : 8,
     waiting_alert: $("aw-waiting").checked,
     done_alert: $("aw-done").checked,
@@ -573,9 +575,32 @@ async function loadAgentSessions() {
   }
 }
 
+function startAgentWatchRefresh() {
+  loadAgentSessions();
+  if (agentWatchTimer) return;
+  agentWatchTimer = setInterval(() => {
+    if (currentTab === "agent-watch") loadAgentSessions();
+  }, 2000);
+}
+
+function stopAgentWatchRefresh() {
+  if (!agentWatchTimer) return;
+  clearInterval(agentWatchTimer);
+  agentWatchTimer = null;
+}
+
 function renderAgentSessions(snapshot) {
   const box = $("aw-sessions");
   if (!box) return;
+  const diag = $("aw-diag");
+  if (diag) {
+    const parts = [];
+    if (snapshot?.monitor_port) parts.push(`端口 ${snapshot.monitor_port}`);
+    if (typeof snapshot?.event_count === "number") parts.push(`事件 ${snapshot.event_count}`);
+    if (snapshot?.last_event_at_ms) parts.push(`最近 ${new Date(snapshot.last_event_at_ms).toLocaleTimeString()}`);
+    if (snapshot?.log_dir) parts.push(`日志 ${snapshot.log_dir}`);
+    diag.innerHTML = parts.map(part => `<span>${escapeHtml(part)}</span>`).join("");
+  }
   const sessions = snapshot?.sessions || [];
   if (!sessions.length) {
     box.innerHTML = `<div class="empty-note">还没有 Claude Code 会话。安装 hook 并启用看管后，状态会出现在这里。</div>`;
@@ -1073,6 +1098,12 @@ function bindGlobal() {
       toast("安装失败：" + String(e), "err");
     }
   });
+  const eventApi = window.__TAURI__?.event;
+  if (eventApi?.listen) {
+    eventApi.listen("agent-session-update", (event) => {
+      if (currentTab === "agent-watch") renderAgentSessions(event.payload);
+    });
+  }
   $("music-fake").addEventListener("click", () => startMusicDance("fake"));
   $("music-wasapi").addEventListener("click", () => startMusicDance("wasapi"));
   $("music-stop").addEventListener("click", stopMusicDance);

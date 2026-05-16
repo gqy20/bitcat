@@ -94,7 +94,7 @@ fn default_screenshot_interval_sec() -> u64 {
     30
 }
 fn default_first_nudge_after_sec() -> u64 {
-    90
+    30
 }
 fn default_repeat_nudge_after_min() -> u64 {
     8
@@ -211,7 +211,7 @@ mod tests {
         let s = AgentWatchSettings::default();
         assert!(!s.enabled);
         assert!(s.away_nudge_enabled);
-        assert_eq!(s.first_nudge_after_sec, 90);
+        assert_eq!(s.first_nudge_after_sec, 30);
         assert_eq!(s.repeat_nudge_after_min, 8);
         assert!(s.waiting_alert);
         assert!(s.done_alert);

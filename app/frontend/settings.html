@@ -332,7 +332,7 @@
             <div class="setting-row">
               <div class="setting-copy">
                 <label for="aw-first">首次提醒</label>
-                <span>10-3600 秒；建议 90 秒。</span>
+                <span>10-3600 秒；调试阶段默认 30 秒。</span>
               </div>
               <input id="aw-first" type="number" min="10" max="3600" step="5" />
             </div>
@@ -371,6 +371,7 @@
               <h3>当前会话</h3>
               <span id="aw-status">等待状态</span>
             </div>
+            <div id="aw-diag" class="agent-watch-diag"></div>
             <div id="aw-sessions" class="agent-sessions"></div>
           </div>
         </section>

@@ -58,7 +58,7 @@ Claude Code Hook
           └── app/src/agent_monitor.rs
               ├── parse raw hook JSON
               ├── update AgentSessionMap
-              ├── append agent_sessions.jsonl
+              ├── append agent_watch_events.jsonl / agent_watch_sessions.jsonl
               └── emit agent-session-update
 
 core/src/agent_session.rs
@@ -176,7 +176,7 @@ pub struct AgentWatchSettings {
 ```text
 enabled = false                  # 需要用户安装 hook 后显式启用
 away_nudge_enabled = true
-first_nudge_after_sec = 90
+first_nudge_after_sec = 30
 repeat_nudge_after_min = 8
 waiting_alert = true
 done_alert = true
@@ -268,12 +268,13 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
 
 ```text
 ~/.ai-pad/logs/
-  agent_sessions.jsonl   # 归一后的 session event，不保存大 payload
-  agent_nudges.jsonl     # 提醒决策：sent / skipped / cooled_down / gated
+  agent_watch_events.jsonl    # 归一后的 hook event，不保存大 payload
+  agent_watch_sessions.jsonl  # 每次事件后的 session 快照，用于调试当前任务栈
+  agent_watch_nudges.jsonl    # 提醒决策：sent / skipped / cooled_down / gated
   agent_hooks.jsonl      # hook 安装/卸载/备份记录
 ```
 
-`agent_nudges.jsonl` 建议字段：
+`agent_watch_nudges.jsonl` 建议字段：
 
 ```json
 {
@@ -282,7 +283,7 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
   "kind": "away_while_working",
   "decision": "sent",
   "status": "working",
-  "reason": "working_for_90s",
+  "reason": "working_for_30s",
   "cooldown_sec": 480
 }
 ```
@@ -346,8 +347,9 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
    - 调用 core parser，更新 `Arc<Mutex<HashMap<String, AgentSession>>>`。
    - 调用 `AgentNudgePolicy` 生成提醒，并通过 `SharedPetEventBus` 发出。
    - emit `agent-session-update` 到前端。
-   - 追加 `~/.ai-pad/logs/agent_sessions.jsonl`。
-   - 可选追加 `~/.ai-pad/logs/agent_nudges.jsonl`，用于调试提醒去重和冷却。
+   - 追加 `~/.ai-pad/logs/agent_watch_events.jsonl`。
+   - 追加 `~/.ai-pad/logs/agent_watch_sessions.jsonl`，用于调试浮窗任务栈。
+   - 可选追加 `~/.ai-pad/logs/agent_watch_nudges.jsonl`，用于调试提醒去重和冷却。
 
 5. 新增 `app/src/claude_hooks.rs`
    - 写入 `~/.claude/hooks/ai-pad-hook.ps1`。
@@ -408,7 +410,7 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
 - 用手写 JSON 发送到本地 TCP 端口时，`cmd_get_agent_sessions` 能返回归一后的 session。
 - 真实 Claude Code 提交 prompt 后，面板能看到对应 workspace 和 `Working` 状态。
 - 进入 `PermissionRequest` 后，桌宠在 1 秒内提示需要用户处理。
-- `Working` 持续超过 90 秒后，只提示一次“可以先去做点别的”；8 分钟冷却内不重复提示。
+- `Working` 持续超过 30 秒后，只提示一次“可以先去做点别的”；8 分钟冷却内不重复提示。
 - `Stop` 后，同一 session 只提示一次完成。
 - chat 输入中、舞蹈/游戏中、显示器关闭/会话锁定时，不弹低优先级离屏提醒。
 - `make test-core` 通过；前端新增逻辑有 Vitest 覆盖。
@@ -499,7 +501,7 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
 - [ ] 在 Tauri builder 中 manage session map / nudge policy。
 - [ ] 注册 `cmd_get_agent_sessions`、`cmd_install_claude_code_hooks` 等命令。
 - [ ] nudge 统一通过 `SharedPetEventBus` 发 `PetEvent`。
-- [ ] 日志写入 `agent_sessions.jsonl` / `agent_nudges.jsonl`。
+- [ ] 日志写入 `agent_watch_events.jsonl` / `agent_watch_sessions.jsonl` / `agent_watch_nudges.jsonl`。
 
 ### C. 设置与配置
 
@@ -520,7 +522,7 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
 - [ ] 手写 TCP payload 验证所有 hook event 映射。
 - [ ] 真实 Claude Code 跑一轮：working → tool_running → done。
 - [ ] 真实权限请求：waiting 提醒能及时出现。
-- [ ] 长任务：90 秒离屏提醒出现且不刷屏。
+- [ ] 长任务：30 秒离屏提醒出现且不刷屏。
 - [ ] 锁屏/熄屏/聊天/游戏/舞蹈门控有效。
 
 ---

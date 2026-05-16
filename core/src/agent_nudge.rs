@@ -288,7 +288,7 @@ mod tests {
             enabled: true,
             ..AgentWatchSettings::default()
         };
-        let decision = policy.evaluate(&session(AgentStatus::Working, 0), &settings, 89_000);
+        let decision = policy.evaluate(&session(AgentStatus::Working, 0), &settings, 29_000);
         assert!(matches!(
             decision,
             AgentNudgeDecision::Skip {
@@ -305,7 +305,7 @@ mod tests {
             enabled: true,
             ..AgentWatchSettings::default()
         };
-        let decision = policy.evaluate(&session(AgentStatus::Working, 0), &settings, 90_000);
+        let decision = policy.evaluate(&session(AgentStatus::Working, 0), &settings, 30_000);
         match decision {
             AgentNudgeDecision::Send(nudge) => {
                 assert_eq!(nudge.kind, AgentNudgeKind::AwayWhileWorking);
@@ -324,7 +324,7 @@ mod tests {
         };
         let s = session(AgentStatus::Working, 0);
         assert!(matches!(
-            policy.evaluate(&s, &settings, 90_000),
+            policy.evaluate(&s, &settings, 30_000),
             AgentNudgeDecision::Send(_)
         ));
         let second = policy.evaluate(&s, &settings, 120_000);

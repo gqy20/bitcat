@@ -17,6 +17,7 @@
 
 pub mod action_bus;
 pub mod agent_monitor;
+pub mod agent_watch_window;
 pub mod audio_reactive;
 pub mod bubble;
 pub mod claude_hooks;
@@ -112,6 +113,11 @@ pub fn run() {
             settings::cmd_settings_close,
             settings::cmd_settings_log,
             agent_monitor::cmd_get_agent_sessions,
+            agent_monitor::cmd_dismiss_agent_session,
+            agent_monitor::cmd_open_agent_workspace,
+            agent_watch_window::cmd_agent_watch_hide,
+            agent_watch_window::cmd_agent_watch_refresh,
+            agent_watch_window::cmd_agent_watch_port,
             claude_hooks::cmd_install_claude_code_hooks,
             claude_hooks::cmd_open_claude_settings,
             pet_event_bus::cmd_get_pet_event_log,
@@ -425,6 +431,7 @@ pub fn run() {
 
             // 气泡跟随线程：脱离手柄循环，确保无手柄时也能实时跟随。
             bubble::spawn_bubble_follower(app.handle().clone());
+            agent_watch_window::spawn_agent_watch_follower(app.handle().clone());
 
             // 截图观察线程：定时 BitBlt 截屏 + Vision API 分析。
             let ss_handle = app.handle().clone();
