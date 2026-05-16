@@ -44,6 +44,8 @@ jobs:
         with:
           # 与 build 共享同一 key，减少重复编译
           key: ${{ runner.os }}-cargo-release-x86_64-pc-windows-msvc
+          cache-targets: false
+          save-if: false
 
       - name: Copy config files
         run: |
