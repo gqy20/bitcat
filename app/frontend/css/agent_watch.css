@@ -3,11 +3,10 @@
   font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
   --panel: rgba(18, 19, 21, 0.9);
   --panel-strong: rgba(21, 22, 25, 0.96);
-  --line: rgba(255, 255, 255, 0.16);
-  --line-strong: rgba(255, 255, 255, 0.3);
+  --line: rgba(255, 255, 255, 0.14);
   --text: rgba(255, 255, 255, 0.94);
   --muted: rgba(255, 255, 255, 0.68);
-  --faint: rgba(255, 255, 255, 0.45);
+  --faint: rgba(255, 255, 255, 0.48);
   --accent: #f4b84a;
   --ok: #8ee6a8;
   --warn: #ffcf67;
@@ -30,100 +29,218 @@ body {
 }
 
 .watch-shell {
-  position: relative;
   width: 100%;
   height: 100%;
-  padding: 8px 8px 56px;
-}
-
-.task-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-height: 100%;
-  overflow: hidden;
-}
-
-.watch-shell.folded .task-stack {
-  display: none;
-}
-
-.task-card {
-  position: relative;
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
-  gap: 10px;
-  min-height: 84px;
-  padding: 14px 16px 14px 12px;
-  border: 1px solid var(--line);
-  border-radius: 28px;
-  background: var(--panel);
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  padding: 8px;
   color: var(--text);
+}
+
+.watch-header,
+.task-card,
+.empty {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   backdrop-filter: blur(16px);
 }
 
-.task-card.waiting,
-.task-card.error {
-  border-color: rgba(255, 138, 122, 0.5);
+.watch-header {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 12px;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
 }
 
-.task-card.done {
-  border-color: rgba(142, 230, 168, 0.38);
+.watch-header:hover,
+.watch-header:focus-visible {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(23, 24, 27, 0.94);
+  outline: none;
 }
 
-.task-card.collapsed {
-  min-height: 58px;
+.watch-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+}
+
+.watch-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 780;
+  letter-spacing: 0;
+}
+
+.watch-title::after {
+  content: " Watch";
+  color: var(--muted);
+  font-weight: 620;
+}
+
+.watch-count {
+  min-width: 22px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
 }
 
 .task-close,
 .task-open,
-.task-toggle,
-.fold-all {
+.task-toggle {
   display: grid;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 7px;
   color: var(--text);
   background: rgba(255, 255, 255, 0.04);
   cursor: pointer;
   font: inherit;
 }
 
+.task-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: calc(100% - 50px);
+  margin-top: 8px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.watch-shell.folded {
+  padding: 8px;
+}
+
+.watch-shell.folded .watch-header {
+  grid-template-columns: 1fr;
+  width: 48px;
+  height: 48px;
+  padding: 8px;
+}
+
+.watch-shell.folded .watch-dot,
+.watch-shell.folded .watch-title,
+.watch-shell.folded .watch-count,
+.watch-shell.folded .task-stack {
+  display: none;
+}
+
+.watch-shell.folded .watch-header::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  justify-self: center;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 14px var(--accent);
+}
+
+.task-card {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 46px;
+  gap: 8px;
+  min-height: 82px;
+  padding: 10px;
+}
+
+.task-card.waiting,
+.task-card.error {
+  border-color: rgba(255, 138, 122, 0.48);
+}
+
+.task-card.done {
+  border-color: rgba(142, 230, 168, 0.36);
+}
+
+.task-card.collapsed {
+  min-height: 48px;
+  align-items: center;
+}
+
 .task-close {
-  width: 30px;
-  height: 30px;
-  font-size: 22px;
+  width: 20px;
+  height: 20px;
+  border-color: transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 14px;
   line-height: 1;
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.task-close:hover,
+.task-close:focus-visible {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.92);
+  outline: none;
 }
 
 .task-main {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
+}
+
+.task-headline {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.task-kind {
+  flex: 0 0 auto;
+  min-width: 44px;
+  padding: 2px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(244, 184, 74, 0.12);
+  color: var(--warn);
+  font-size: 10px;
+  line-height: 14px;
+  font-weight: 800;
+  text-align: center;
 }
 
 .task-title {
   margin: 0;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 24px;
-  line-height: 1.13;
-  font-weight: 820;
+  font-size: 14px;
+  line-height: 1.2;
+  font-weight: 760;
   letter-spacing: 0;
 }
 
 .task-summary {
   margin: 0;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  color: var(--text);
-  font-size: 20px;
-  line-height: 1.28;
+  overflow-wrap: anywhere;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 12px;
+  line-height: 1.38;
   font-weight: 520;
 }
 
@@ -135,24 +252,31 @@ body {
 .task-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
-  margin-top: 2px;
   color: var(--faint);
-  font-size: 12px;
+  font-size: 11px;
+}
+
+.task-meta span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 14px var(--accent);
+  box-shadow: 0 0 12px var(--accent);
 }
 
-.task-card.waiting .task-dot { background: var(--warn); box-shadow: 0 0 14px var(--warn); }
-.task-card.done .task-dot { background: var(--ok); box-shadow: 0 0 14px var(--ok); }
-.task-card.error .task-dot { background: var(--bad); box-shadow: 0 0 14px var(--bad); }
+.task-card.waiting .task-dot { background: var(--warn); box-shadow: 0 0 12px var(--warn); }
+.task-card.done .task-dot { background: var(--ok); box-shadow: 0 0 12px var(--ok); }
+.task-card.error .task-dot { background: var(--bad); box-shadow: 0 0 12px var(--bad); }
 .task-card.working .task-dot,
 .task-card.tool_running .task-dot,
 .task-card.compacting .task-dot {
@@ -162,49 +286,29 @@ body {
 .task-actions {
   align-self: center;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.task-open {
-  min-width: 58px;
-  height: 34px;
-  padding: 0 14px;
-  font-size: 16px;
+.task-open,
+.task-toggle {
+  width: 46px;
+  height: 24px;
+  padding: 0 6px;
+  font-size: 11px;
   font-weight: 700;
 }
 
 .task-toggle {
-  width: 34px;
-  height: 34px;
-  font-size: 26px;
-  line-height: 1;
-}
-
-.fold-all {
-  position: absolute;
-  right: 14px;
-  bottom: 8px;
-  width: 52px;
-  height: 52px;
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(23, 24, 27, 0.9);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
-  font-size: 28px;
-}
-
-.watch-shell.folded .fold-all span {
-  transform: rotate(180deg);
+  height: 22px;
+  color: var(--muted);
+  font-size: 14px;
 }
 
 .empty {
-  margin: 10px;
-  padding: 18px 20px;
-  border: 1px solid var(--line);
-  border-radius: 24px;
-  background: var(--panel-strong);
+  padding: 14px 16px;
   color: var(--muted);
-  font-size: 15px;
+  font-size: 13px;
 }
 
 @keyframes pulse {

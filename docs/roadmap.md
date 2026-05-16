@@ -233,6 +233,8 @@ panel → cmd_start_game → app/src/game.rs 动态创建 game 窗口
 
 第一阶段不直接控制 Agent，只做可靠观察。目标是本地识别当前有哪些 AI 编码工具在运行、它们在哪个项目目录、最近是否有 token/文件/命令活动、是否进入等待用户输入状态。
 
+当前 Claude Code 只读 hook MVP 已落地（2026-05-16）：`core` 侧已有 `AgentSession` / `ClaudeHookEvent` / `AgentNudgePolicy`，`app` 侧已有本地 TCP monitor、Claude hook installer、settings 集成、审计 JSONL 和独立 `agent-watch` 浮动任务栈。它可以作为 E1/E2 的第一版基础。失败生命周期要分级处理：`StopFailure` / `SubagentStopFailure` 这类会话级失败才异常提醒，`PostToolUseFailure` 是 Claude Code 自我修复中的常见中间态，只记录并继续 working；`PermissionDenied` 进入 waiting，而不是按异常打扰。
+
 建议监听源：
 
 | 工具 | 第一版信号 | 后续增强 |
@@ -245,10 +247,11 @@ panel → cmd_start_game → app/src/game.rs 动态创建 game 窗口
 
 ```text
 agent_monitor_loop()
-  ├── 扫描进程 / 会话文件 / hook JSONL
+  ├── Claude hook TCP / 后续扫描进程 / 会话文件
   ├── 归一化为 AgentSession
-  ├── 推送 agent-session-update 到 panel / bubble
-  └── 写入 ~/.ai-pad/logs/agent_watch_events.jsonl / agent_watch_sessions.jsonl
+  ├── 推送 agent-session-update 到 settings / agent-watch 浮动窗
+  ├── 通过 PetEventBus 发低频提醒
+  └── 写入 ~/.ai-pad/logs/agent_watch_events.jsonl / agent_watch_sessions.jsonl / agent_watch_nudges.jsonl
 ```
 
 `AgentSession` 建议字段：
@@ -280,6 +283,8 @@ oc-claw 的状态宠物可以作为参考，但 8Bit Cat 应把状态直接接�
 - 快捷操作：打开终端、打开目录、复制下一步提示、暂停/恢复监控。
 - 等待队列：优先显示需要用户确认、测试失败、merge conflict、权限询问的任务。
 - 历史记录：按项目和日期查看最近 Agent 做过什么。
+
+当前 UI 先落在独立 `agent-watch` 浮动任务栈和设置页“Agent 看管”区域，暂未把完整 Agent 管理页塞进主 panel。后续如果要进入手柄工作流，再把浮动窗能力收敛到 panel 页签，并补“已查看”标记，避免 done/waiting 提醒重复打扰。
 
 手柄映射建议：
 

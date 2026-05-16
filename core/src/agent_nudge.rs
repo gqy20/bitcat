@@ -136,7 +136,9 @@ impl AgentNudgePolicy {
         match session.status {
             AgentStatus::Waiting => self.waiting_nudge(session, settings, now_ms),
             AgentStatus::Done => self.done_nudge(session, settings),
-            AgentStatus::Error | AgentStatus::Interrupted => self.error_nudge(session, now_ms),
+            AgentStatus::Error | AgentStatus::Interrupted => {
+                self.error_nudge(session, settings, now_ms)
+            }
             AgentStatus::Working | AgentStatus::ToolRunning => {
                 self.away_nudge(session, settings, now_ms)
             }
@@ -146,6 +148,16 @@ impl AgentNudgePolicy {
 
     pub fn remove_session(&mut self, session_id: &str) {
         self.sessions.remove(session_id);
+    }
+
+    /// 记录提醒已经实际展示，用于只在成功发送后推进冷却。
+    pub fn mark_sent(&mut self, nudge: &AgentNudge, now_ms: u64) {
+        if nudge.kind != AgentNudgeKind::AwayWhileWorking {
+            return;
+        }
+        if let Some(state) = self.sessions.get_mut(&nudge.session_id) {
+            state.last_away_nudge_at_ms = Some(now_ms);
+        }
     }
 
     fn waiting_nudge(
@@ -195,7 +207,12 @@ impl AgentNudgePolicy {
         })
     }
 
-    fn error_nudge(&mut self, session: &AgentSession, _now_ms: u64) -> AgentNudgeDecision {
+    fn error_nudge(
+        &mut self,
+        session: &AgentSession,
+        settings: &AgentWatchSettings,
+        _now_ms: u64,
+    ) -> AgentNudgeDecision {
         let state = self.sessions.get_mut(&session.session_id).unwrap();
         if state.error_notified_for_entered_at_ms == Some(state.status_entered_at_ms) {
             return skip(AgentNudgeSkipReason::AlreadyNotified, session.status);
@@ -211,7 +228,7 @@ impl AgentNudgePolicy {
             message,
             mood: PetMood::Confused,
             ttl_ms: DEFAULT_NUDGE_TTL_MS,
-            use_tts: true,
+            use_tts: settings.use_tts,
         })
     }
 
@@ -239,7 +256,6 @@ impl AgentNudgePolicy {
                 return skip(AgentNudgeSkipReason::Cooldown, session.status);
             }
         }
-        state.last_away_nudge_at_ms = Some(now_ms);
         let message = match session.status {
             AgentStatus::ToolRunning => "命令还在跑，我帮你盯着。".to_string(),
             _ => "我帮你盯着，你可以先去做点别的。".to_string(),
@@ -323,10 +339,10 @@ mod tests {
             ..AgentWatchSettings::default()
         };
         let s = session(AgentStatus::Working, 0);
-        assert!(matches!(
-            policy.evaluate(&s, &settings, 30_000),
-            AgentNudgeDecision::Send(_)
-        ));
+        let AgentNudgeDecision::Send(nudge) = policy.evaluate(&s, &settings, 30_000) else {
+            panic!("expected first nudge");
+        };
+        policy.mark_sent(&nudge, 30_000);
         let second = policy.evaluate(&s, &settings, 120_000);
         assert!(matches!(
             second,
@@ -334,6 +350,24 @@ mod tests {
                 reason: AgentNudgeSkipReason::Cooldown,
                 ..
             }
+        ));
+    }
+
+    #[test]
+    fn gated_away_nudge_does_not_consume_cooldown_until_marked_sent() {
+        let mut policy = AgentNudgePolicy::new();
+        let settings = AgentWatchSettings {
+            enabled: true,
+            ..AgentWatchSettings::default()
+        };
+        let s = session(AgentStatus::Working, 0);
+        assert!(matches!(
+            policy.evaluate(&s, &settings, 30_000),
+            AgentNudgeDecision::Send(_)
+        ));
+        assert!(matches!(
+            policy.evaluate(&s, &settings, 40_000),
+            AgentNudgeDecision::Send(_)
         ));
     }
 
@@ -383,6 +417,24 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn error_nudge_respects_tts_setting() {
+        let mut policy = AgentNudgePolicy::new();
+        let settings = AgentWatchSettings {
+            enabled: true,
+            use_tts: false,
+            ..AgentWatchSettings::default()
+        };
+        let decision = policy.evaluate(&session(AgentStatus::Error, 10), &settings, 20);
+        match decision {
+            AgentNudgeDecision::Send(nudge) => {
+                assert_eq!(nudge.kind, AgentNudgeKind::TaskError);
+                assert!(!nudge.use_tts);
+            }
+            other => panic!("expected error nudge, got {other:?}"),
+        }
     }
 
     #[test]

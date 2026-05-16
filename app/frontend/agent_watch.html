@@ -8,10 +8,12 @@
 </head>
 <body>
   <main id="agent-watch" class="watch-shell">
+    <header class="watch-header" id="watch-header" role="button" tabindex="0" title="折叠 / 展开任务栈">
+      <span class="watch-dot" aria-hidden="true"></span>
+      <span id="watch-title" class="watch-title">Claude Code</span>
+      <span id="watch-count" class="watch-count">0</span>
+    </header>
     <section id="stack" class="task-stack" aria-live="polite"></section>
-    <button id="fold-all" class="fold-all" type="button" title="折叠任务栈" aria-label="折叠任务栈">
-      <span>⌄</span>
-    </button>
   </main>
   <script src="/js/agent_watch.js"></script>
 </body>

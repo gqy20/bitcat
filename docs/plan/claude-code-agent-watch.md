@@ -1,6 +1,6 @@
 # Claude Code 桌宠看管计划
 
-> 日期：2026-05-14 | 更新：2026-05-15 | 状态：设计草案 | 范围：只做 Claude Code，不含 Codex / Cursor / OpenClaw
+> 日期：2026-05-14 | 更新：2026-05-16 | 状态：Phase 1 已落地，待加固 | 范围：只做 Claude Code，不含 Codex / Cursor / OpenClaw
 
 ## 背景
 
@@ -31,6 +31,38 @@
 
 ---
 
+## 当前实现审查（2026-05-16）
+
+Phase 1 的主体已经落地：`core/src/agent_session.rs`、`core/src/claude_code.rs`、`core/src/agent_nudge.rs` 提供了归一会话模型、Claude hook 解析和提醒策略；`app/src/agent_monitor.rs` 监听本地 TCP、写入 `agent_watch_events.jsonl` / `agent_watch_sessions.jsonl` / `agent_watch_nudges.jsonl` 并推送 `agent-session-update`；`app/src/claude_hooks.rs` 能合并 `~/.claude/settings.json` 并安装只读 PowerShell hook；设置页和独立 `agent-watch` 浮动任务栈也已接入。
+
+与 Claude Code 官方 hook 文档对齐的部分：
+
+- hook 配置采用 `hooks.EventName[] -> { matcher?, hooks: [...] }` 的嵌套结构，保留用户已有 hook，并用 `ai_pad_marker` 去重。
+- hook stdin JSON 使用 `session_id` / `hook_event_name` / `cwd` 等字段进入内部 `AgentSessionEvent`，不会把完整工具输入或完整对话落盘。
+- PowerShell 脚本显式设置 UTF-8 stdin/stdout，发送 TCP 后执行 socket shutdown，避免 Rust 端 `read_to_string` 卡住。
+- 第一版保持只读观察，不回写权限批准结果。
+
+待加固点按优先级排序：
+
+1. **提醒评估应绑定当前事件 session，而不是 UI primary session**。当前 `agent_monitor` 更新事件后按 UI 优先级排序，只对 `primary` 调 `evaluate_nudge()`。如果列表里已有置顶的 `Waiting` / `Done` 会话，新进入 `Working` / `ToolRunning` 的 session 可能永远拿不到离屏提醒。修复方向：`apply_session_event` 后取本次事件对应 session 评估提醒，UI 的 `primary` 只用于展示。
+2. **低优先级门控不应提前消耗冷却**。当前 `AgentNudgePolicy` 在生成 `AwayWhileWorking` 时已经写入 `last_away_nudge_at_ms`，但 app 层随后可能因聊天、游戏、表演或 observation gate 把提醒记为 `gated`。这会导致用户没看到气泡，却进入 8 分钟冷却。修复方向：让策略返回候选提醒，由 app 在实际发送后再 commit 冷却；或为 gated 决策回滚/不更新冷却。
+3. **失败/中断 hook 需要分级**。会话级 `StopFailure` / `SubagentStopFailure` 才进入异常提醒；`PostToolUseFailure` 属于 Claude Code 自我修复过程中的常见中间态，应记录并回到 working；`PermissionDenied` 表示用户介入/拒绝权限，应进入 waiting 而不是异常。
+4. **Windows hook command 可更稳**。当前 settings 写入 shell-form `command` 字符串，路径用单引号包裹。官方文档也支持 exec-form `command` + `args`，更适合 Windows 路径、空格和特殊字符。修复方向：评估 Claude Code 当前版本对 `args` 的支持，若可用则改成 exec-form。
+5. **计划文档的 Phase 2 项仍未完成**。JSONL watcher、PID 存活检测、结构化 Write/Edit/Bash 预览、前台窗口/空闲输入检测、panel 已查看去重，仍应保留在 Phase 2。
+
+已验证：
+
+- `cargo test -p ai-pad-core agent_`
+- `cargo test -p ai-pad-core claude_code`
+
+尚未验证：
+
+- 真实 Claude Code 端到端 hook 触发链路。
+- 真实权限请求、API 错误、用户中断和长任务场景。
+- 新增浮动任务栈的前端视觉/交互回归。
+
+---
+
 ## 源码参考结论
 
 从 `oc-claw` 源码确认的可借鉴点：
@@ -40,6 +72,8 @@
 | Claude Code hook → 本地 socket → Rust 事件处理 | 采用 | 最可靠的实时信号来源 |
 | JSONL session watcher 兜底 | 第二阶段采用 | 用于 ESC 中断、hook 丢失、session 文件变更 |
 | `PermissionRequest` 映射为 waiting | 采用 | 这是桌宠提醒最有用的场景 |
+| `Notification` 映射为 waiting | 采用 | Claude Code 会用它提示“需要权限/输入”等用户注意事项 |
+| `StopFailure` / `PermissionDenied` 等失败事件 | 采用但分级 | 会话失败才异常提醒，工具失败只记录/继续 working，权限拒绝进入 waiting |
 | Write/Edit/Bash 结构化预览 | 第二阶段采用 | 先提醒，后做预览 |
 | Working 状态下的离屏提醒 | 采用 | 用户不需要盯着 Agent 时，桌宠做低频提醒 |
 | 权限按钮直接回写 hook | 第三阶段可选 | 风险更高，需要审计和确认 |
@@ -127,6 +161,10 @@ pub struct AgentSession {
 | `PermissionRequest` | `Waiting` | 需要用户处理 |
 | `PreCompact` | `Compacting` | 上下文压缩中 |
 | `Stop` | `Done` | 任务完成 |
+| `StopFailure` | `Error` | 主响应失败或 API 错误，需异常提醒 |
+| `PermissionDenied` | `Waiting` | 权限被拒绝或需要用户回看，不按异常处理 |
+| `PostToolUseFailure` | `Working` | 单个工具失败是常见中间态，Claude Code 可能继续修复 |
+| `Notification` | `Waiting` | Claude Code 明确请求用户注意 |
 | `SessionEnd` | `Idle` | 会话结束 |
 
 ---
@@ -410,8 +448,11 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
 - 用手写 JSON 发送到本地 TCP 端口时，`cmd_get_agent_sessions` 能返回归一后的 session。
 - 真实 Claude Code 提交 prompt 后，面板能看到对应 workspace 和 `Working` 状态。
 - 进入 `PermissionRequest` 后，桌宠在 1 秒内提示需要用户处理。
+- 进入 `Notification` 中的“需要权限/输入”提示时，桌宠应进入 waiting 提醒。
 - `Working` 持续超过 30 秒后，只提示一次“可以先去做点别的”；8 分钟冷却内不重复提示。
+- 如果低优先级提醒被聊天/游戏/表演/锁屏门控挡住，不应消耗离屏提醒冷却。
 - `Stop` 后，同一 session 只提示一次完成。
+- `StopFailure` / `SubagentStopFailure` 应进入异常提醒；`PostToolUseFailure` 不应打断用户，只记录并继续 working；`PermissionDenied` 进入 waiting。
 - chat 输入中、舞蹈/游戏中、显示器关闭/会话锁定时，不弹低优先级离屏提醒。
 - `make test-core` 通过；前端新增逻辑有 Vitest 覆盖。
 
@@ -488,40 +529,49 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
 
 ### A. Core 模型
 
-- [ ] 新增 `core/src/agent_session.rs`，带 3 句模块文档。
-- [ ] 新增 `core/src/claude_code.rs`，反序列化 hook payload。
-- [ ] 新增 `core/src/agent_nudge.rs`，纯策略、无 Tauri 依赖。
-- [ ] 在 `core/src/lib.rs` 暴露新模块。
-- [ ] 为 session 状态转换、排序、preview 截断和 nudge policy 写单测。
+- [x] 新增 `core/src/agent_session.rs`，带模块文档。
+- [x] 新增 `core/src/claude_code.rs`，反序列化 hook payload。
+- [x] 新增 `core/src/agent_nudge.rs`，纯策略、无 Tauri 依赖。
+- [x] 在 `core/src/lib.rs` 暴露新模块。
+- [x] 为 session 状态转换、排序、preview 截断和 nudge policy 写单测。
+- [ ] 补齐 `StopFailure` / `PermissionDenied` / 工具失败 hook 的分级映射和单测。
+- [ ] 调整 `AgentNudgePolicy`，避免 gated 离屏提醒提前消耗 cooldown。
 
 ### B. App 后端
 
-- [ ] 新增 `app/src/agent_monitor.rs`，启动本地 TCP server。
-- [ ] 新增 `app/src/claude_hooks.rs`，安装/卸载 hook。
-- [ ] 在 Tauri builder 中 manage session map / nudge policy。
-- [ ] 注册 `cmd_get_agent_sessions`、`cmd_install_claude_code_hooks` 等命令。
-- [ ] nudge 统一通过 `SharedPetEventBus` 发 `PetEvent`。
-- [ ] 日志写入 `agent_watch_events.jsonl` / `agent_watch_sessions.jsonl` / `agent_watch_nudges.jsonl`。
+- [x] 新增 `app/src/agent_monitor.rs`，启动本地 TCP server。
+- [x] 新增 `app/src/claude_hooks.rs`，安装 hook。
+- [x] 在 Tauri builder 中 manage session map / nudge policy。
+- [x] 注册 `cmd_get_agent_sessions`、`cmd_install_claude_code_hooks`、`cmd_dismiss_agent_session`、`cmd_open_agent_workspace` 等命令。
+- [x] nudge 统一通过 `SharedPetEventBus` 发 `PetEvent`。
+- [x] 日志写入 `agent_watch_events.jsonl` / `agent_watch_sessions.jsonl` / `agent_watch_nudges.jsonl`。
+- [ ] 让提醒评估使用本次更新的 session，而不是排序后的 UI primary session。
+- [ ] 评估并改用 Claude hook exec-form `command` + `args`，提升 Windows 路径稳健性。
+- [ ] 增加 hook 卸载/恢复入口，记录 `agent_hooks.jsonl`。
 
 ### C. 设置与配置
 
-- [ ] `AppSettings` 增加 `agent_watch` 段，默认 disabled。
-- [ ] 设置页增加 Agent 看管区域。
-- [ ] 保存/重置/回显覆盖新增字段。
-- [ ] hook 安装按钮明确显示只读观察，不自动批准权限。
+- [x] `AppSettings` 增加 `agent_watch` 段，默认 disabled。
+- [x] 设置页增加 Agent 看管区域。
+- [x] 保存/回显覆盖新增字段。
+- [x] hook 安装按钮明确显示只读观察，不自动批准权限。
+- [ ] 重置设置需覆盖新增字段的 UI 回归验证。
 
 ### D. 前端体验
 
-- [ ] panel 增加 Agent 会话列表或入口。
-- [ ] bubble 支持 working-away / waiting / done 文案。
-- [ ] pet 映射 Agent 状态到 focused/confused/happy。
+- [x] 新增独立 `agent-watch` 浮动任务栈，展示会话和快捷操作。
+- [x] bubble 支持 working-away / waiting / done 文案。
+- [x] pet 通过 `PetEvent::React` 映射 Agent 提醒到 focused/confused/happy。
 - [ ] panel 打开时标记 Agent 状态已被查看，避免重复 done/waiting 提醒。
+- [ ] 补齐浮动任务栈的前端测试和视觉回归。
 
 ### E. 验证
 
+- [x] core 单测验证基础 session / nudge / Claude hook 映射。
 - [ ] 手写 TCP payload 验证所有 hook event 映射。
 - [ ] 真实 Claude Code 跑一轮：working → tool_running → done。
 - [ ] 真实权限请求：waiting 提醒能及时出现。
+- [ ] 真实失败/中断：会话级失败进入异常提醒，工具级失败不主动打扰。
 - [ ] 长任务：30 秒离屏提醒出现且不刷屏。
 - [ ] 锁屏/熄屏/聊天/游戏/舞蹈门控有效。
 

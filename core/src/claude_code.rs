@@ -72,12 +72,15 @@ impl ClaudeHookEvent {
             .tool_name
             .or_else(|| string_field(&self.extra, "toolName"))
             .or_else(|| nested_string(&self.extra, &["tool", "name"]));
-        let tool_input_preview = self
+        let tool_input = self
             .tool_input
             .as_ref()
-            .and_then(preview_json)
-            .or_else(|| value_field(&self.extra, "tool_input").and_then(|v| preview_json(&v)))
-            .or_else(|| value_field(&self.extra, "toolInput").and_then(|v| preview_json(&v)));
+            .cloned()
+            .or_else(|| value_field(&self.extra, "tool_input"))
+            .or_else(|| value_field(&self.extra, "toolInput"));
+        let tool_input_preview = tool_input
+            .as_ref()
+            .and_then(|value| preview_tool_input(tool_name.as_deref(), value));
 
         let workspace = first_non_empty([
             self.cwd.as_deref(),
@@ -162,9 +165,13 @@ pub fn map_hook_status(name: &str) -> AgentStatus {
         "permissionrequest" => AgentStatus::Waiting,
         "precompact" => AgentStatus::Compacting,
         "stop" => AgentStatus::Done,
-        "subagentstop" => AgentStatus::Done,
+        "stopfailure" => AgentStatus::Error,
+        "subagentstop" => AgentStatus::Working,
+        "subagentstopfailure" => AgentStatus::Working,
         "sessionend" => AgentStatus::Idle,
         "notification" => AgentStatus::Waiting,
+        "permissiondenied" => AgentStatus::Waiting,
+        "posttoolusefailure" => AgentStatus::Working,
         "error" => AgentStatus::Error,
         "interrupted" => AgentStatus::Interrupted,
         _ => AgentStatus::Working,
@@ -222,6 +229,77 @@ fn preview_json(value: &Value) -> Option<String> {
     }
 }
 
+fn preview_tool_input(tool_name: Option<&str>, value: &Value) -> Option<String> {
+    let Value::Object(input) = value else {
+        return preview_json(value);
+    };
+    let tool = tool_name
+        .unwrap_or_default()
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+    let keys: &[&str] = match tool.as_str() {
+        "bash" | "powershell" => &["description", "command", "timeout"],
+        "read" => &["file_path", "offset", "limit"],
+        "write" => &["file_path"],
+        "edit" | "multiedit" => &["file_path", "replace_all"],
+        "grep" => &[
+            "pattern",
+            "path",
+            "glob",
+            "output_mode",
+            "-n",
+            "-i",
+            "head_limit",
+        ],
+        "glob" => &["pattern", "path"],
+        "agent" | "task" => &["description", "subagent_type"],
+        "taskoutput" | "taskstop" => &["task_id", "block", "timeout"],
+        "skill" => &["skill", "args"],
+        _ => &[
+            "description",
+            "file_path",
+            "path",
+            "pattern",
+            "command",
+            "url",
+            "task_id",
+        ],
+    };
+
+    let mut output = serde_json::Map::new();
+    for key in keys {
+        if let Some(value) = input.get(*key).and_then(preview_value) {
+            output.insert((*key).to_string(), value);
+        }
+    }
+    if output.is_empty() {
+        return None;
+    }
+    preview_json(&Value::Object(output))
+}
+
+fn preview_value(value: &Value) -> Option<Value> {
+    match value {
+        Value::Null => None,
+        Value::String(text) => preview_text(text, PREVIEW_CHARS).map(Value::String),
+        Value::Bool(_) | Value::Number(_) => Some(value.clone()),
+        Value::Array(items) => {
+            let values = items
+                .iter()
+                .filter_map(preview_value)
+                .take(4)
+                .collect::<Vec<_>>();
+            (!values.is_empty()).then_some(Value::Array(values))
+        }
+        Value::Object(_) => serde_json::to_string(value)
+            .ok()
+            .and_then(|text| preview_text(text, PREVIEW_CHARS))
+            .map(Value::String),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,7 +313,12 @@ mod tests {
         assert_eq!(map_hook_status("PermissionRequest"), AgentStatus::Waiting);
         assert_eq!(map_hook_status("PreCompact"), AgentStatus::Compacting);
         assert_eq!(map_hook_status("Stop"), AgentStatus::Done);
-        assert_eq!(map_hook_status("SubagentStop"), AgentStatus::Done);
+        assert_eq!(map_hook_status("StopFailure"), AgentStatus::Error);
+        assert_eq!(map_hook_status("SubagentStop"), AgentStatus::Working);
+        assert_eq!(map_hook_status("SubagentStopFailure"), AgentStatus::Working);
+        assert_eq!(map_hook_status("PermissionDenied"), AgentStatus::Waiting);
+        assert_eq!(map_hook_status("PostToolUseFailure"), AgentStatus::Working);
+        assert_eq!(map_hook_status("Notification"), AgentStatus::Waiting);
         assert_eq!(map_hook_status("SessionEnd"), AgentStatus::Idle);
     }
 
@@ -277,6 +360,51 @@ mod tests {
         assert_eq!(event.status, AgentStatus::Waiting);
         assert!(event.needs_user);
         assert_eq!(event.tool_name.as_deref(), Some("Edit"));
+    }
+
+    #[test]
+    fn write_preview_keeps_target_path_not_content() {
+        let raw = r#"{
+            "session_id": "s3",
+            "hook_event_name": "PreToolUse",
+            "cwd": "D:\\repo",
+            "tool_name": "Write",
+            "tool_input": {
+                "file_path": "D:\\repo\\reviews.py",
+                "content": "Steam 评测爬取 + 分析一体化脚本，包含很多很多正文内容"
+            }
+        }"#;
+        let event = ClaudeHookEvent::from_json(raw)
+            .unwrap()
+            .into_session_event(100)
+            .unwrap();
+        let preview = event.tool_input_preview.unwrap();
+        assert!(preview.contains("reviews.py"));
+        assert!(!preview.contains("content"));
+        assert!(!preview.contains("Steam 评测"));
+    }
+
+    #[test]
+    fn agent_preview_omits_large_prompt() {
+        let raw = r#"{
+            "session_id": "s4",
+            "hook_event_name": "PreToolUse",
+            "cwd": "D:\\repo",
+            "tool_name": "Agent",
+            "tool_input": {
+                "description": "Review UI overlap",
+                "subagent_type": "explorer",
+                "prompt": "A very long delegated prompt that should not be shown in the tray"
+            }
+        }"#;
+        let event = ClaudeHookEvent::from_json(raw)
+            .unwrap()
+            .into_session_event(100)
+            .unwrap();
+        let preview = event.tool_input_preview.unwrap();
+        assert!(preview.contains("Review UI overlap"));
+        assert!(preview.contains("explorer"));
+        assert!(!preview.contains("delegated prompt"));
     }
 
     #[test]

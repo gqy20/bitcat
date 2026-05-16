@@ -172,17 +172,18 @@ pub fn handle_hook_payload(app: &AppHandle, raw: &str) -> Result<(), String> {
         warn!(error = %e, "write agent watch event log failed");
     }
 
-    let (snapshot, primary_session) = {
+    let (snapshot, updated_session) = {
+        let updated_session_id = event.session_id.clone();
         let mut sessions = monitor
             .sessions
             .lock()
             .map_err(|e| format!("agent sessions lock poisoned: {e}"))?;
         apply_session_event(&mut sessions, event);
+        let updated = sessions.get(&updated_session_id).cloned();
         let sorted = sort_sessions(sessions.values().cloned().collect());
-        let primary = sorted.first().cloned();
         (
             snapshot_from_sessions(sorted, now_ms, seq, Some(now_ms)),
-            primary,
+            updated,
         )
     };
 
@@ -192,7 +193,7 @@ pub fn handle_hook_payload(app: &AppHandle, raw: &str) -> Result<(), String> {
         warn!(error = %e, "write agent watch session snapshot failed");
     }
 
-    if let Some(session) = primary_session {
+    if let Some(session) = updated_session {
         evaluate_nudge(app, &monitor, &session, now_ms)?;
     }
     Ok(())
@@ -229,6 +230,11 @@ fn evaluate_nudge(
                 return Ok(());
             }
             emit_nudge(app, &nudge);
+            monitor
+                .nudge_policy
+                .lock()
+                .map_err(|e| format!("agent nudge lock poisoned: {e}"))?
+                .mark_sent(&nudge, now_ms);
             write_nudge_log(AgentNudgeLogRecord {
                 seq: now_ms,
                 at_ms: now_ms,

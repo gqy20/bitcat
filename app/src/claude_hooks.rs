@@ -125,7 +125,15 @@ fn hook_specs() -> Vec<HookSpec> {
             matcher: Some("*"),
         },
         HookSpec {
+            event_name: "PostToolUseFailure",
+            matcher: Some("*"),
+        },
+        HookSpec {
             event_name: "PermissionRequest",
+            matcher: Some("*"),
+        },
+        HookSpec {
+            event_name: "PermissionDenied",
             matcher: Some("*"),
         },
         HookSpec {
@@ -141,7 +149,15 @@ fn hook_specs() -> Vec<HookSpec> {
             matcher: None,
         },
         HookSpec {
+            event_name: "StopFailure",
+            matcher: None,
+        },
+        HookSpec {
             event_name: "SubagentStop",
+            matcher: None,
+        },
+        HookSpec {
+            event_name: "SubagentStopFailure",
             matcher: None,
         },
         HookSpec {
@@ -321,6 +337,10 @@ mod tests {
         assert!(settings["hooks"]["UserPromptSubmit"].is_array());
         assert!(settings["hooks"]["SessionStart"].is_array());
         assert!(settings["hooks"]["SubagentStop"].is_array());
+        assert!(settings["hooks"]["SubagentStopFailure"].is_array());
+        assert!(settings["hooks"]["StopFailure"].is_array());
+        assert!(settings["hooks"]["PermissionDenied"].is_array());
+        assert!(settings["hooks"]["PostToolUseFailure"].is_array());
         assert_eq!(settings["hooks"]["PreCompact"].as_array().unwrap().len(), 2);
     }
 }

@@ -10,9 +10,10 @@ use tauri::{
 };
 
 const WINDOW_LABEL: &str = "agent-watch";
-const WINDOW_W: f64 = 560.0;
-const WINDOW_H: f64 = 370.0;
-const PET_GAP: i32 = 12;
+const WINDOW_W: f64 = 360.0;
+const WINDOW_H: f64 = 260.0;
+const FOLDED_WINDOW_W: f64 = 64.0;
+const FOLDED_WINDOW_H: f64 = 64.0;
 const EDGE_MARGIN: i32 = 12;
 
 /// 启动 Agent Watch 浮窗跟随线程。
@@ -72,8 +73,8 @@ fn ensure_agent_watch_window(app: &AppHandle) -> Result<WebviewWindow, tauri::Er
     )
     .title("8Bit Agent Watch")
     .inner_size(WINDOW_W, WINDOW_H)
-    .min_inner_size(300.0, 64.0)
-    .max_inner_size(620.0, 460.0)
+    .min_inner_size(FOLDED_WINDOW_W, FOLDED_WINDOW_H)
+    .max_inner_size(WINDOW_W, WINDOW_H)
     .decorations(false)
     .transparent(true)
     .background_color(tauri::webview::Color(0, 0, 0, 0))
@@ -90,7 +91,7 @@ fn position_near_pet(app: &AppHandle, watch: &WebviewWindow) {
     let Some(pet) = app.get_webview_window("pet") else {
         return;
     };
-    let (Ok(pet_pos), Ok(pet_size)) = (pet.outer_position(), pet.outer_size()) else {
+    let Ok(pet_pos) = pet.outer_position() else {
         return;
     };
     let Some(monitor) = pet.current_monitor().ok().flatten() else {
@@ -99,35 +100,41 @@ fn position_near_pet(app: &AppHandle, watch: &WebviewWindow) {
     let mon_pos = monitor.position();
     let mon_size = monitor.size();
     let scale = watch.scale_factor().unwrap_or(1.0).max(0.5);
-    let watch_w = (WINDOW_W * scale).round() as i32;
-    let watch_h = (WINDOW_H * scale).round() as i32;
-    let pet_w = pet_size.width as i32;
-    let pet_h = pet_size.height as i32;
+    let watch_size = watch.inner_size().unwrap_or(PhysicalSize::new(
+        (WINDOW_W * scale).round() as u32,
+        (WINDOW_H * scale).round() as u32,
+    ));
+    let watch_w = watch_size.width as i32;
+    let watch_h = watch_size.height as i32;
 
     let min_x = mon_pos.x + EDGE_MARGIN;
     let max_x = mon_pos.x + mon_size.width as i32 - watch_w - EDGE_MARGIN;
     let min_y = mon_pos.y + EDGE_MARGIN;
     let max_y = mon_pos.y + mon_size.height as i32 - watch_h - EDGE_MARGIN;
 
-    let left_x = pet_pos.x + pet_w - watch_w;
-    let right_x = pet_pos.x;
-    let x = if left_x >= min_x {
-        left_x
+    let right_x = mon_pos.x + mon_size.width as i32 - watch_w - EDGE_MARGIN;
+    let left_of_pet_x = pet_pos.x - watch_w - EDGE_MARGIN;
+    let bubble_visible = app
+        .get_webview_window("bubble")
+        .is_some_and(|bubble| bubble.is_visible().unwrap_or(false));
+    let x = if bubble_visible {
+        right_x
+    } else if left_of_pet_x >= min_x {
+        left_of_pet_x
     } else {
         right_x.min(max_x)
     }
     .clamp(min_x, max_x.max(min_x));
 
-    let above_y = pet_pos.y - watch_h - PET_GAP;
-    let below_y = pet_pos.y + pet_h + PET_GAP;
-    let y = if above_y >= min_y {
-        above_y
+    let preferred_y = mon_pos.y + EDGE_MARGIN;
+    let pet_y = pet_pos.y - watch_h - EDGE_MARGIN;
+    let y = if pet_y >= min_y && pet_pos.y < min_y + watch_h + EDGE_MARGIN {
+        pet_y
     } else {
-        below_y.min(max_y)
+        preferred_y
     }
     .clamp(min_y, max_y.max(min_y));
 
-    let _ = watch.set_size(PhysicalSize::new(watch_w as u32, watch_h as u32));
     let _ = watch.set_position(PhysicalPosition::new(x, y));
 }
 
@@ -136,6 +143,27 @@ fn position_near_pet(app: &AppHandle, watch: &WebviewWindow) {
 pub async fn cmd_agent_watch_hide(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
         window.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// 前端折叠/展开时调整窗口本体尺寸，避免透明区域遮挡其他浮窗。
+#[tauri::command]
+pub async fn cmd_agent_watch_set_folded(app: AppHandle, folded: bool) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+        let scale = window.scale_factor().unwrap_or(1.0).max(0.5);
+        let (w, h) = if folded {
+            (FOLDED_WINDOW_W, FOLDED_WINDOW_H)
+        } else {
+            (WINDOW_W, WINDOW_H)
+        };
+        window
+            .set_size(PhysicalSize::new(
+                (w * scale).round() as u32,
+                (h * scale).round() as u32,
+            ))
+            .map_err(|e| e.to_string())?;
+        position_near_pet(&app, &window);
     }
     Ok(())
 }

@@ -77,8 +77,8 @@ impl AgentStatus {
 
     fn sort_rank(self) -> u8 {
         match self {
-            Self::Waiting | Self::Error => 0,
-            Self::Done => 1,
+            Self::Done => 0,
+            Self::Waiting | Self::Error => 1,
             Self::ToolRunning | Self::Working | Self::Compacting => 2,
             Self::Interrupted => 3,
             Self::Idle => 4,
@@ -297,7 +297,7 @@ mod tests {
     }
 
     #[test]
-    fn sort_prioritizes_waiting_done_active_idle() {
+    fn sort_prioritizes_done_waiting_active_idle() {
         let sessions = vec![
             event("idle", AgentStatus::Idle, 400).into_session(),
             event("work", AgentStatus::Working, 500).into_session(),
@@ -306,7 +306,7 @@ mod tests {
         ];
         let sorted = sort_sessions(sessions);
         let ids: Vec<_> = sorted.iter().map(|s| s.session_id.as_str()).collect();
-        assert_eq!(ids, vec!["wait", "done", "work", "idle"]);
+        assert_eq!(ids, vec!["done", "wait", "work", "idle"]);
     }
 
     #[test]
