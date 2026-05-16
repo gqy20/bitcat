@@ -112,12 +112,13 @@ body {
 }
 
 .watch-action {
+  width: 24px;
   height: 24px;
-  padding: 0 8px;
+  padding: 0;
   border-radius: 999px;
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 720;
+  font-size: 15px;
+  font-weight: 760;
   line-height: 1;
   transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
 }

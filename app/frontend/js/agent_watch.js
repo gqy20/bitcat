@@ -6,6 +6,7 @@
   const stack = document.getElementById("stack");
   const watchCount = document.getElementById("watch-count");
   const watchActions = document.querySelector(".watch-actions");
+  const watchExpandToggle = document.getElementById("watch-expand-toggle");
   const collapsed = new Set(JSON.parse(localStorage.getItem("agentWatchCollapsed") || "[]"));
   let folded = localStorage.getItem("agentWatchFolded") === "true";
   let latest = null;
@@ -351,6 +352,7 @@
     latest = snapshot || latest;
     const sessions = latest?.sessions || [];
     watchCount.textContent = String(sessions.length);
+    updateExpandToggle(sessions);
     if (!sessions.length) {
       stack.innerHTML = `<div class="empty">暂无 Claude Code 任务</div>`;
       setFolded(false);
@@ -452,12 +454,26 @@
     render(latest);
   }
 
+  function hasCollapsedTask(sessions = latest?.sessions || []) {
+    return sessions.some((session) => session.session_id && collapsed.has(session.session_id));
+  }
+
+  function updateExpandToggle(sessions = latest?.sessions || []) {
+    if (!watchExpandToggle) return;
+    const shouldExpand = hasCollapsedTask(sessions);
+    watchExpandToggle.textContent = shouldExpand ? "+" : "-";
+    watchExpandToggle.title = shouldExpand ? "Expand all" : "Collapse all";
+    watchExpandToggle.setAttribute("aria-label", watchExpandToggle.title);
+  }
+
   if (watchActions) {
     watchActions.addEventListener("click", (event) => {
       event.stopPropagation();
       const action = event.target.closest("[data-watch-action]")?.dataset.watchAction;
-      if (action === "expand-all") expandAllTasks();
-      if (action === "collapse-all") collapseAllTasks();
+      if (action === "toggle-all") {
+        if (hasCollapsedTask()) expandAllTasks();
+        else collapseAllTasks();
+      }
     });
   }
 

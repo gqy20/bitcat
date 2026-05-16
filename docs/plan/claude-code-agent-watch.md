@@ -1,6 +1,6 @@
 # Claude Code 桌宠看管计划
 
-> 日期：2026-05-14 | 更新：2026-05-16 | 状态：Phase 1 已落地，待加固 | 范围：只做 Claude Code，不含 Codex / Cursor / OpenClaw
+> 日期：2026-05-14 | 更新：2026-05-16 | 状态：Phase 1 已落地，Hook Doctor 已接入 | 范围：Claude Code + Codex 只读 hook，看管优先，不含 Cursor / OpenClaw
 
 ## 背景
 
@@ -26,7 +26,7 @@
 2. **强类型中枢**：core 定义统一 `AgentSession`，app 只负责 hook/socket/文件系统。
 3. **UI 消费语义状态**：pet/bubble/panel 不知道 Claude hook 细节，只消费 `working / waiting / done / idle`。
 4. **Windows-first**：优先解决 PowerShell UTF-8、TCP shutdown、路径编码和进程检测问题。
-5. **不做 Codex**：Codex 在 `oc-claw` Windows 源码中被主动禁用，本计划不把它混进第一版。
+5. **Codex 只做只读 hook**：Codex 不照搬 `oc-claw` 的 Windows 路线；当前采用 `$CODEX_HOME/config.toml` / `~/.codex/config.toml` 的 hook 配置，走 envelope 转发到同一条 Agent Watch TCP monitor。更深的 app-server / 审批控制仍放到后续阶段。
 6. **不监督用户**：第一版不做摄像头、不做眼动、不用截图推断注意力。只基于 Agent 状态和轻量本地活动信号做提醒。
 
 ---
@@ -46,7 +46,7 @@ Phase 1 的主体已经落地：`core/src/agent_session.rs`、`core/src/claude_c
 
 1. **提醒评估应绑定当前事件 session，而不是 UI primary session**。当前 `agent_monitor` 更新事件后按 UI 优先级排序，只对 `primary` 调 `evaluate_nudge()`。如果列表里已有置顶的 `Waiting` / `Done` 会话，新进入 `Working` / `ToolRunning` 的 session 可能永远拿不到离屏提醒。修复方向：`apply_session_event` 后取本次事件对应 session 评估提醒，UI 的 `primary` 只用于展示。
 2. **低优先级门控不应提前消耗冷却**。当前 `AgentNudgePolicy` 在生成 `AwayWhileWorking` 时已经写入 `last_away_nudge_at_ms`，但 app 层随后可能因聊天、游戏、表演或 observation gate 把提醒记为 `gated`。这会导致用户没看到气泡，却进入 8 分钟冷却。修复方向：让策略返回候选提醒，由 app 在实际发送后再 commit 冷却；或为 gated 决策回滚/不更新冷却。
-3. **失败/中断 hook 需要分级**。会话级 `StopFailure` / `SubagentStopFailure` 才进入异常提醒；`PostToolUseFailure` 属于 Claude Code 自我修复过程中的常见中间态，应记录并回到 working；`PermissionDenied` 表示用户介入/拒绝权限，应进入 waiting 而不是异常。
+3. **失败/中断 hook 需要分级**。会话级 `StopFailure` 才进入异常提醒；`PostToolUseFailure` 属于 Claude Code 自我修复过程中的常见中间态，应记录并回到 working；`PermissionDenied` 表示用户介入/拒绝权限，应进入 waiting 而不是异常。`SubagentStopFailure` 不是当前 Claude Code 支持的 hook event，只作为旧版错误配置的清理对象。
 4. **Windows hook command 可更稳**。当前 settings 写入 shell-form `command` 字符串，路径用单引号包裹。官方文档也支持 exec-form `command` + `args`，更适合 Windows 路径、空格和特殊字符。修复方向：评估 Claude Code 当前版本对 `args` 的支持，若可用则改成 exec-form。
 5. **计划文档的 Phase 2 项仍未完成**。JSONL watcher、PID 存活检测、结构化 Write/Edit/Bash 预览、前台窗口/空闲输入检测、panel 已查看去重，仍应保留在 Phase 2。
 
@@ -79,7 +79,7 @@ Phase 1 的主体已经落地：`core/src/agent_session.rs`、`core/src/claude_c
 | 权限按钮直接回写 hook | 第三阶段可选 | 风险更高，需要审计和确认 |
 | 单个巨型后端文件 | 不采用 | 拆 core/app 模块 |
 | React/Vite Mini 面板 | 不采用 | 复用现有 `panel.html` / `bubble.html` / `pet.html` |
-| Windows Codex hook | 不采用 | `oc-claw` 当前 Windows 分支禁用 Codex |
+| Windows Codex hook | 采用独立实现 | 不照搬 `oc-claw`；使用 Codex `config.toml` + `commandWindows` + source envelope |
 
 ---
 
@@ -391,7 +391,9 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
 
 5. 新增 `app/src/claude_hooks.rs`
    - 写入 `~/.claude/hooks/ai-pad-hook.ps1`。
-   - 合并 `~/.claude/settings.json` 时遵循 Claude Code 的嵌套 hooks schema：`event -> [{ matcher?, hooks: [...] }]`，只追加带 `ai_pad_marker` 的桌宠 hook，不覆盖现有 hook。
+   - 合并 `~/.claude/settings.json` 时遵循 Claude Code 的嵌套 hooks schema：`event -> [{ matcher?, hooks: [...] }]`。
+   - 安装入口已升级为 Hook Doctor：重复点击会检查并修复 8Bit Cat 自己写入的 hook，清理旧版/重复/无效事件里的 `ai_pad_marker = "ai-pad-claude-code-watch"`，再写入当前标准配置。
+   - 只增删带 `ai_pad_marker` 的桌宠 hook，不覆盖用户或其他工具的 hook；如果配置结构异常到无法安全合并，则返回错误而不是强改。
    - 合并更新 `~/.claude/settings.json` 的 hook 配置。
    - PowerShell 脚本必须：
      - 设置 `[Console]::InputEncoding = [System.Text.Encoding]::UTF8`
@@ -435,7 +437,7 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
 ### Phase 1 不做
 
 - 不做权限批准按钮。
-- 不做 Codex/Cursor。
+- 不做 Cursor；Codex 仅做只读 hook 看管，不做 app-server 控制。
 - 不做远程机器。
 - 不解析完整 Claude 对话历史。
 - 不做 token 统计。
@@ -444,7 +446,7 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
 
 ### Phase 1 验收标准
 
-- 设置页能安装 Claude Code hook，安装前会备份原 `~/.claude/settings.json`。
+- 设置页能检查并修复 Claude Code hook，写入前会备份原 `~/.claude/settings.json`。
 - 用手写 JSON 发送到本地 TCP 端口时，`cmd_get_agent_sessions` 能返回归一后的 session。
 - 真实 Claude Code 提交 prompt 后，面板能看到对应 workspace 和 `Working` 状态。
 - 进入 `PermissionRequest` 后，桌宠在 1 秒内提示需要用户处理。
@@ -452,7 +454,7 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
 - `Working` 持续超过 30 秒后，只提示一次“可以先去做点别的”；8 分钟冷却内不重复提示。
 - 如果低优先级提醒被聊天/游戏/表演/锁屏门控挡住，不应消耗离屏提醒冷却。
 - `Stop` 后，同一 session 只提示一次完成。
-- `StopFailure` / `SubagentStopFailure` 应进入异常提醒；`PostToolUseFailure` 不应打断用户，只记录并继续 working；`PermissionDenied` 进入 waiting。
+- `StopFailure` 应进入异常提醒；`PostToolUseFailure` 不应打断用户，只记录并继续 working；`PermissionDenied` 进入 waiting。`SubagentStopFailure` 不是有效 Claude Code event，安装器只负责清理旧版 ai-pad 配置中误写的该事件。
 - chat 输入中、舞蹈/游戏中、显示器关闭/会话锁定时，不弹低优先级离屏提醒。
 - `make test-core` 通过；前端新增逻辑有 Vitest 覆盖。
 

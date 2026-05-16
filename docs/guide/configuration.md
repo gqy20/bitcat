@@ -86,6 +86,15 @@ language: ""
 - 最近 50 条宠物事件决策：`sent` / `deduplicated` / `throttled` / `emit_failed`
 - 音乐舞动诊断：模拟 / WASAPI / 停止，显示能量、低频、onset、silence 等状态
 
+## Agent Watch hooks
+
+Agent 看管页可以修复 Claude Code / Codex hook。修复操作会写入 8Bit Cat 自己的 PowerShell hook 脚本，并合并到对应的用户配置：
+
+- Claude Code：`~/.claude/settings.json`
+- Codex：`$CODEX_HOME/config.toml` 或 `~/.codex/config.toml`
+
+修复是可重复执行的，只清理带 8Bit Cat `ai_pad_marker` 的 hook，不会改动用户或其他工具写入的 hook。详细规则见 [Agent Watch Hooks](agent-watch-hooks.md)。
+
 ## config/actions.yml
 
 默认示例：

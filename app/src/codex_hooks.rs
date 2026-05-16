@@ -5,6 +5,7 @@
 //! 因此脚本只负责加一层 source envelope 后转发给现有 Agent Watch TCP monitor。
 
 use crate::agent_monitor::DEFAULT_AGENT_MONITOR_PORT;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use tauri_plugin_opener::OpenerExt;
 use toml_edit::{value, ArrayOfTables, DocumentMut, Item, Table};
@@ -15,6 +16,29 @@ const AI_PAD_HOOK_MARKER: &str = "ai-pad-codex-watch";
 struct HookSpec {
     event_name: &'static str,
     matcher: Option<&'static str>,
+}
+
+#[derive(Debug, Default)]
+struct HookRepairReport {
+    removed: usize,
+    installed: usize,
+    script_updated: bool,
+}
+
+impl HookRepairReport {
+    fn message(&self, target: &str, script_path: &PathBuf) -> String {
+        format!(
+            "{target} hook ready: {} installed, {} repaired, script {} ({})",
+            self.installed,
+            self.removed,
+            if self.script_updated {
+                "updated"
+            } else {
+                "unchanged"
+            },
+            script_path.display()
+        )
+    }
 }
 
 pub fn codex_dir() -> Result<PathBuf, String> {
@@ -38,21 +62,23 @@ pub fn config_path() -> Result<PathBuf, String> {
 }
 
 pub fn install_codex_hooks() -> Result<String, String> {
+    let mut report = HookRepairReport::default();
     let script_path = hook_script_path()?;
     if let Some(parent) = script_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建 Codex hook 目录失败: {e}"))?;
     }
-    atomic_write(&script_path, &hook_script(DEFAULT_AGENT_MONITOR_PORT))?;
+    let script = hook_script(DEFAULT_AGENT_MONITOR_PORT);
+    report.script_updated = !file_content_matches(&script_path, &script);
+    atomic_write(&script_path, &script)?;
 
     let config_path = config_path()?;
     let mut doc = read_config_toml(&config_path)?;
-    ensure_ai_pad_hooks(&mut doc, &script_path)?;
+    ensure_ai_pad_hooks(&mut doc, &script_path, &mut report)?;
     backup_if_exists(&config_path)?;
     atomic_write(&config_path, &doc.to_string())?;
 
-    Ok(format!("已安装 Codex 看管 hook: {}", script_path.display()))
+    Ok(report.message("Codex", &script_path))
 }
-
 fn read_config_toml(path: &PathBuf) -> Result<DocumentMut, String> {
     if !path.exists() {
         return Ok(DocumentMut::new());
@@ -63,16 +89,25 @@ fn read_config_toml(path: &PathBuf) -> Result<DocumentMut, String> {
         .map_err(|e| format!("解析 Codex config.toml 失败，已停止写入: {e}"))
 }
 
-fn ensure_ai_pad_hooks(doc: &mut DocumentMut, script_path: &PathBuf) -> Result<(), String> {
+fn ensure_ai_pad_hooks(
+    doc: &mut DocumentMut,
+    script_path: &PathBuf,
+    report: &mut HookRepairReport,
+) -> Result<(), String> {
     let hooks = ensure_table(&mut doc["hooks"])?;
+    remove_invalid_ai_pad_events(hooks, report);
     let hook = ai_pad_hook(script_path);
+    let mut cleaned_events = HashSet::new();
 
     for spec in hook_specs() {
         let groups = ensure_array_of_tables(&mut hooks[spec.event_name])?;
-        remove_ai_pad_hooks(groups);
+        if cleaned_events.insert(spec.event_name) {
+            report.removed += remove_ai_pad_hooks(groups);
+        }
         let group = ensure_hook_group(groups, spec.matcher);
         let hooks = ensure_array_of_tables(&mut group["hooks"])?;
         hooks.push(hook.clone());
+        report.installed += 1;
     }
 
     Ok(())
@@ -115,6 +150,35 @@ fn hook_specs() -> Vec<HookSpec> {
     ]
 }
 
+fn valid_hook_event(event_name: &str) -> bool {
+    hook_specs()
+        .iter()
+        .any(|spec| spec.event_name == event_name)
+}
+
+fn remove_invalid_ai_pad_events(hooks: &mut Table, report: &mut HookRepairReport) {
+    let invalid_events = hooks
+        .iter()
+        .filter_map(|(event_name, _)| {
+            if valid_hook_event(event_name) {
+                None
+            } else {
+                Some(event_name.to_string())
+            }
+        })
+        .collect::<Vec<_>>();
+    for event_name in invalid_events {
+        let Some(groups) = hooks[&event_name].as_array_of_tables_mut() else {
+            continue;
+        };
+        let removed = remove_ai_pad_hooks(groups);
+        report.removed += removed;
+        if removed > 0 && groups.is_empty() {
+            hooks.remove(&event_name);
+        }
+    }
+}
+
 fn ai_pad_hook(script_path: &PathBuf) -> Table {
     let script = script_path.to_string_lossy().replace('\\', "\\\\");
     let mut hook = Table::new();
@@ -146,7 +210,8 @@ fn ensure_array_of_tables(item: &mut Item) -> Result<&mut ArrayOfTables, String>
         .ok_or_else(|| "Codex hook 配置节点不是 array of tables，已停止写入".to_string())
 }
 
-fn remove_ai_pad_hooks(groups: &mut ArrayOfTables) {
+fn remove_ai_pad_hooks(groups: &mut ArrayOfTables) -> usize {
+    let mut removed = 0;
     for group in groups.iter_mut() {
         if let Some(hooks) = group["hooks"].as_array_of_tables_mut() {
             let mut kept = ArrayOfTables::new();
@@ -158,11 +223,14 @@ fn remove_ai_pad_hooks(groups: &mut ArrayOfTables) {
                     != Some(AI_PAD_HOOK_MARKER)
                 {
                     kept.push(hook.clone());
+                } else {
+                    removed += 1;
                 }
             }
             group["hooks"] = Item::ArrayOfTables(kept);
         }
     }
+    removed
 }
 
 fn ensure_hook_group<'a>(groups: &'a mut ArrayOfTables, matcher: Option<&str>) -> &'a mut Table {
@@ -243,6 +311,12 @@ fn backup_if_exists(path: &PathBuf) -> Result<(), String> {
     Ok(())
 }
 
+fn file_content_matches(path: &PathBuf, expected: &str) -> bool {
+    std::fs::read_to_string(path)
+        .map(|actual| actual == expected)
+        .unwrap_or(false)
+}
+
 fn atomic_write(path: &PathBuf, content: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
@@ -300,7 +374,13 @@ ai_pad_marker = "ai-pad-codex-watch"
         .parse::<DocumentMut>()
         .unwrap();
 
-        ensure_ai_pad_hooks(&mut doc, &PathBuf::from("C:\\x\\ai-pad-codex-hook.ps1")).unwrap();
+        let mut report = HookRepairReport::default();
+        ensure_ai_pad_hooks(
+            &mut doc,
+            &PathBuf::from("C:\\x\\ai-pad-codex-hook.ps1"),
+            &mut report,
+        )
+        .unwrap();
         let rendered = doc.to_string();
         assert_eq!(rendered.matches("echo keep").count(), 1);
         assert_eq!(
@@ -310,5 +390,38 @@ ai_pad_marker = "ai-pad-codex-watch"
         assert!(rendered.contains("[[hooks.UserPromptSubmit]]"));
         assert!(rendered.contains("[[hooks.PermissionRequest]]"));
         assert!(rendered.contains("commandWindows"));
+        assert_eq!(report.installed, hook_specs().len());
+        assert_eq!(report.removed, 1);
+    }
+
+    #[test]
+    fn removes_only_ai_pad_hooks_from_invalid_events() {
+        let mut doc = r#"
+[hooks]
+
+[[hooks.OldEvent]]
+
+[[hooks.OldEvent.hooks]]
+type = "command"
+command = "echo keep"
+
+[[hooks.OldEvent.hooks]]
+type = "command"
+command = "old"
+ai_pad_marker = "ai-pad-codex-watch"
+"#
+        .parse::<DocumentMut>()
+        .unwrap();
+        let mut report = HookRepairReport::default();
+        ensure_ai_pad_hooks(
+            &mut doc,
+            &PathBuf::from("C:\\x\\ai-pad-codex-hook.ps1"),
+            &mut report,
+        )
+        .unwrap();
+        let rendered = doc.to_string();
+        assert!(rendered.contains("echo keep"));
+        assert!(!rendered.contains("command = \"old\""));
+        assert_eq!(report.removed, 1);
     }
 }

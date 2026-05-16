@@ -1100,17 +1100,17 @@ function bindGlobal() {
   $("aw-install").addEventListener("click", async () => {
     try {
       const msg = await invoke("cmd_install_claude_code_hooks");
-      toast(msg || "Hook 已安装", "ok");
+      toast(msg || "Hook 已检查并修复", "ok");
     } catch (e) {
-      toast("安装失败：" + String(e), "err");
+      toast("修复失败：" + String(e), "err");
     }
   });
   $("aw-install-codex").addEventListener("click", async () => {
     try {
       const msg = await invoke("cmd_install_codex_hooks");
-      toast(msg || "Codex Hook 已安装", "ok");
+      toast(msg || "Codex Hook 已检查并修复", "ok");
     } catch (e) {
-      toast("Codex 安装失败：" + String(e), "err");
+      toast("Codex 修复失败：" + String(e), "err");
     }
   });
   const eventApi = window.__TAURI__?.event;

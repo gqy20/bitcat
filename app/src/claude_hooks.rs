@@ -6,6 +6,7 @@
 
 use crate::agent_monitor::DEFAULT_AGENT_MONITOR_PORT;
 use serde_json::{json, Value};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use tauri_plugin_opener::OpenerExt;
 
@@ -15,6 +16,29 @@ const AI_PAD_HOOK_MARKER: &str = "ai-pad-claude-code-watch";
 struct HookSpec {
     event_name: &'static str,
     matcher: Option<&'static str>,
+}
+
+#[derive(Debug, Default)]
+struct HookRepairReport {
+    removed: usize,
+    installed: usize,
+    script_updated: bool,
+}
+
+impl HookRepairReport {
+    fn message(&self, target: &str, script_path: &PathBuf) -> String {
+        format!(
+            "{target} hook ready: {} installed, {} repaired, script {} ({})",
+            self.installed,
+            self.removed,
+            if self.script_updated {
+                "updated"
+            } else {
+                "unchanged"
+            },
+            script_path.display()
+        )
+    }
 }
 
 pub fn claude_dir() -> Result<PathBuf, String> {
@@ -38,26 +62,25 @@ pub fn settings_path() -> Result<PathBuf, String> {
 }
 
 pub fn install_claude_code_hooks() -> Result<String, String> {
+    let mut report = HookRepairReport::default();
     let script_path = hook_script_path()?;
     if let Some(parent) = script_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建 hook 目录失败: {e}"))?;
     }
-    atomic_write(&script_path, &hook_script(DEFAULT_AGENT_MONITOR_PORT))?;
+    let script = hook_script(DEFAULT_AGENT_MONITOR_PORT);
+    report.script_updated = !file_content_matches(&script_path, &script);
+    atomic_write(&script_path, &script)?;
 
     let settings_path = settings_path()?;
     let mut settings = read_settings_json(&settings_path)?;
-    ensure_ai_pad_hooks(&mut settings, &script_path)?;
+    ensure_ai_pad_hooks(&mut settings, &script_path, &mut report)?;
     backup_if_exists(&settings_path)?;
     atomic_write(
         &settings_path,
         &serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?,
     )?;
-    Ok(format!(
-        "已安装 Claude Code 看管 hook: {}",
-        script_path.display()
-    ))
+    Ok(report.message("Claude Code", &script_path))
 }
-
 fn read_settings_json(path: &PathBuf) -> Result<Value, String> {
     if !path.exists() {
         return Ok(json!({}));
@@ -66,7 +89,11 @@ fn read_settings_json(path: &PathBuf) -> Result<Value, String> {
     serde_json::from_str(&raw).map_err(|e| format!("解析 settings.json 失败，已停止写入: {e}"))
 }
 
-fn ensure_ai_pad_hooks(settings: &mut Value, script_path: &PathBuf) -> Result<(), String> {
+fn ensure_ai_pad_hooks(
+    settings: &mut Value,
+    script_path: &PathBuf,
+    report: &mut HookRepairReport,
+) -> Result<(), String> {
     if !settings.is_object() {
         return Err("settings.json 根节点不是 object，已停止写入".into());
     }
@@ -77,7 +104,9 @@ fn ensure_ai_pad_hooks(settings: &mut Value, script_path: &PathBuf) -> Result<()
     }
     let hooks_obj = hooks.as_object_mut().unwrap();
 
+    remove_invalid_ai_pad_events(hooks_obj, report);
     let hook = ai_pad_hook(script_path);
+    let mut cleaned_events = HashSet::new();
     for spec in hook_specs() {
         let entry = hooks_obj
             .entry(spec.event_name)
@@ -89,7 +118,9 @@ fn ensure_ai_pad_hooks(settings: &mut Value, script_path: &PathBuf) -> Result<()
             ));
         }
         let arr = entry.as_array_mut().unwrap();
-        remove_ai_pad_hooks(arr);
+        if cleaned_events.insert(spec.event_name) {
+            report.removed += remove_ai_pad_hooks(arr);
+        }
         let group = ensure_hook_group(arr, spec.matcher);
         let hooks = group
             .entry("hooks")
@@ -102,6 +133,7 @@ fn ensure_ai_pad_hooks(settings: &mut Value, script_path: &PathBuf) -> Result<()
                 )
             })?;
         hooks.push(hook.clone());
+        report.installed += 1;
     }
     Ok(())
 }
@@ -167,6 +199,33 @@ fn hook_specs() -> Vec<HookSpec> {
     ]
 }
 
+fn valid_hook_event(event_name: &str) -> bool {
+    hook_specs()
+        .iter()
+        .any(|spec| spec.event_name == event_name)
+}
+
+fn remove_invalid_ai_pad_events(
+    hooks_obj: &mut serde_json::Map<String, Value>,
+    report: &mut HookRepairReport,
+) {
+    let invalid_events = hooks_obj
+        .keys()
+        .filter(|event_name| !valid_hook_event(event_name))
+        .cloned()
+        .collect::<Vec<_>>();
+    for event_name in invalid_events {
+        let Some(groups) = hooks_obj.get_mut(&event_name).and_then(Value::as_array_mut) else {
+            continue;
+        };
+        let removed = remove_ai_pad_hooks(groups);
+        report.removed += removed;
+        if removed > 0 && groups.is_empty() {
+            hooks_obj.remove(&event_name);
+        }
+    }
+}
+
 fn ai_pad_hook(script_path: &PathBuf) -> Value {
     let script = script_path.to_string_lossy().replace('\\', "/");
     json!({
@@ -176,17 +235,33 @@ fn ai_pad_hook(script_path: &PathBuf) -> Value {
     })
 }
 
-fn remove_ai_pad_hooks(groups: &mut Vec<Value>) {
+fn remove_ai_pad_hooks(groups: &mut Vec<Value>) -> usize {
+    let before_groups = groups.len();
     groups.retain(|item| {
         item.get("ai_pad_marker").and_then(Value::as_str) != Some(AI_PAD_HOOK_MARKER)
     });
+    let mut removed = before_groups.saturating_sub(groups.len());
     for group in groups.iter_mut() {
         if let Some(hooks) = group.get_mut("hooks").and_then(Value::as_array_mut) {
+            let before_hooks = hooks.len();
             hooks.retain(|item| {
                 item.get("ai_pad_marker").and_then(Value::as_str) != Some(AI_PAD_HOOK_MARKER)
             });
+            removed += before_hooks.saturating_sub(hooks.len());
         }
     }
+    groups.retain(|item| {
+        let Some(object) = item.as_object() else {
+            return true;
+        };
+        object
+            .get("hooks")
+            .and_then(Value::as_array)
+            .map(|hooks| !hooks.is_empty())
+            .unwrap_or(true)
+            || object.keys().any(|key| key != "hooks" && key != "matcher")
+    });
+    removed
 }
 
 fn ensure_hook_group<'a>(
@@ -259,6 +334,12 @@ fn backup_if_exists(path: &PathBuf) -> Result<(), String> {
     Ok(())
 }
 
+fn file_content_matches(path: &PathBuf, expected: &str) -> bool {
+    std::fs::read_to_string(path)
+        .map(|actual| actual == expected)
+        .unwrap_or(false)
+}
+
 fn atomic_write(path: &PathBuf, content: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
@@ -319,7 +400,13 @@ mod tests {
                 ]
             }
         });
-        ensure_ai_pad_hooks(&mut settings, &PathBuf::from("C:\\x\\ai-pad-hook.ps1")).unwrap();
+        let mut report = HookRepairReport::default();
+        ensure_ai_pad_hooks(
+            &mut settings,
+            &PathBuf::from("C:\\x\\ai-pad-hook.ps1"),
+            &mut report,
+        )
+        .unwrap();
         let stop = settings["hooks"]["Stop"].as_array().unwrap();
         assert_eq!(stop.len(), 1);
         let stop_hooks = stop[0]["hooks"].as_array().unwrap();
@@ -338,5 +425,39 @@ mod tests {
         assert!(settings["hooks"]["PermissionDenied"].is_array());
         assert!(settings["hooks"]["PostToolUseFailure"].is_array());
         assert_eq!(settings["hooks"]["PreCompact"].as_array().unwrap().len(), 2);
+        assert_eq!(report.installed, hook_specs().len());
+        assert_eq!(report.removed, 2);
+    }
+
+    #[test]
+    fn removes_only_ai_pad_hooks_from_invalid_events() {
+        let mut settings = json!({
+            "hooks": {
+                "SubagentStopFailure": [
+                    {
+                        "hooks": [
+                            {"type": "command", "command": "echo keep"},
+                            {"type": "command", "command": "old", "ai_pad_marker": AI_PAD_HOOK_MARKER}
+                        ]
+                    }
+                ],
+                "TotallyUnknown": [
+                    {"type": "command", "command": "old-flat", "ai_pad_marker": AI_PAD_HOOK_MARKER}
+                ]
+            }
+        });
+        let mut report = HookRepairReport::default();
+        ensure_ai_pad_hooks(
+            &mut settings,
+            &PathBuf::from("C:\\x\\ai-pad-hook.ps1"),
+            &mut report,
+        )
+        .unwrap();
+        assert_eq!(
+            settings["hooks"]["SubagentStopFailure"][0]["hooks"][0]["command"],
+            "echo keep"
+        );
+        assert!(settings["hooks"].get("TotallyUnknown").is_none());
+        assert_eq!(report.removed, 2);
     }
 }

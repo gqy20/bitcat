@@ -232,23 +232,23 @@ Codex TUI 的 pet 非常克制——只表达 4 个高层语义状态，不承�
 - [ ] `core/src/agent_session.rs`：`AgentSource` 加 `Codex` 变体
 - [ ] `core/src/claude_code.rs`：`ClaudeHookEvent` 加 `turn_id`/`model` 可选字段，`into_session_event` 接受 `source: AgentSource`，把 `map_hook_status` 提为 `pub`
 - [ ] ~~新增 `core/src/codex_hook.rs`~~（源码验证后：不需要，复用 `claude_code.rs`）
-- [ ] `core/src/agent_nudge.rs`：nudge 文案按 `AgentSource` 区分
+- [x] `core/src/agent_nudge.rs`：nudge 文案按 `AgentSource` 区分
 
 ### Step 2: app 层扩展
-- [ ] `app/src/agent_monitor.rs`：`handle_hook_payload` 支持 envelope 区分来源
-- [ ] 新增 `app/src/codex_hooks.rs`：Codex hook 脚本生成 + config.toml 写入
-- [ ] 注册 Tauri 命令：`cmd_install_codex_hooks`
-- [ ] 更新 `app/src/lib.rs`：注册新模块和命令
+- [x] `app/src/agent_monitor.rs`：`handle_hook_payload` 支持 envelope 区分来源
+- [x] 新增 `app/src/codex_hooks.rs`：Codex hook 脚本生成 + config.toml 写入
+- [x] 注册 Tauri 命令：`cmd_install_codex_hooks`
+- [x] 更新 `app/src/lib.rs`：注册新模块和命令
 
 ### Step 3: 测试
 - [ ] `core/src/claude_code.rs`：新增 Codex 风格 fixture 测试（含 `turn_id`、`model` 等超集字段）
 - [ ] `core/src/agent_session.rs`：更新测试覆盖 `Codex` 来源的 session view
-- [ ] `core/src/agent_nudge.rs`：更新测试验证 Codex nudge 文案
-- [ ] `app/src/agent_monitor.rs`：集成测试验证 envelope 路由 + Codex source
+- [x] `core/src/agent_nudge.rs`：更新测试验证 Codex nudge 文案
+- [x] `app/src/agent_monitor.rs`：集成测试验证 envelope 路由 + Codex source
 
 ### Step 4: 前端
-- [ ] Agent Watch 面板：来源标签显示（"Claude Code" / "Codex" 不同颜色）
-- [ ] 设置页：Codex hook 安装按钮（复用现有 Claude Code hook 安装 UI 模式）
+- [x] Agent Watch 面板：来源标签显示（`CC` / `CX` 徽标），done/waiting 优先置顶
+- [x] 设置页：Codex hook 修复按钮，复用 Hook Doctor 语义
 
 ### Step 5: 文档
 - [ ] 更新 `CLAUDE.md` 架构部分：标注 Codex 监控链路
@@ -371,6 +371,19 @@ let should_run = matches!(trust, HookTrust::Managed | HookTrust::Trusted);
 3. 用户确认信任后 hook 才生效
 
 或者研究是否有编程方式设置 trust（需要进一步确认 `[hooks.state]` 的写入方式）。
+
+### 发现 4.1：安装入口已升级为 Hook Doctor
+
+当前设置页的 Codex 按钮不再只是追加配置，而是执行可重复的检查与修复：
+
+- 只清理带 `ai_pad_marker = "ai-pad-codex-watch"` 的 8Bit Cat hook；
+- 保留用户或其他工具写入的 hook，即使它们在同一个 event/matcher 下；
+- 旧版本生成的重复 ai-pad hook 会先移除，再写入当前标准 hook；
+- 旧的无效事件名下如果只剩 ai-pad hook，会被移除；
+- PowerShell 脚本内容变化时会重写脚本；
+- 写入 `config.toml` 前仍保留备份。
+
+Hook Doctor 只解决配置一致性，不绕过 Codex 的 hook trust 流程。VS Code/Codex 插件已启动时，通常还需要 reload/restart 后重新读取配置。
 
 **可行度：中**。功能上完全可行，但需要设计好安装引导流程，让用户知道需要手动信任。
 

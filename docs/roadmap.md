@@ -233,7 +233,7 @@ panel → cmd_start_game → app/src/game.rs 动态创建 game 窗口
 
 第一阶段不直接控制 Agent，只做可靠观察。目标是本地识别当前有哪些 AI 编码工具在运行、它们在哪个项目目录、最近是否有 token/文件/命令活动、是否进入等待用户输入状态。
 
-当前 Claude Code 只读 hook MVP 已落地（2026-05-16）：`core` 侧已有 `AgentSession` / `ClaudeHookEvent` / `AgentNudgePolicy`，`app` 侧已有本地 TCP monitor、Claude hook installer、settings 集成、审计 JSONL 和独立 `agent-watch` 浮动任务栈。它可以作为 E1/E2 的第一版基础。失败生命周期要分级处理：`StopFailure` / `SubagentStopFailure` 这类会话级失败才异常提醒，`PostToolUseFailure` 是 Claude Code 自我修复中的常见中间态，只记录并继续 working；`PermissionDenied` 进入 waiting，而不是按异常打扰。
+当前 Claude Code 只读 hook MVP 已落地（2026-05-16）：`core` 侧已有 `AgentSession` / `ClaudeHookEvent` / `AgentNudgePolicy`，`app` 侧已有本地 TCP monitor、Claude hook installer、settings 集成、审计 JSONL 和独立 `agent-watch` 浮动任务栈。它可以作为 E1/E2 的第一版基础。失败生命周期要分级处理：`StopFailure` 这类会话级失败才异常提醒，`PostToolUseFailure` 是 Claude Code 自我修复中的常见中间态，只记录并继续 working；`PermissionDenied` 进入 waiting，而不是按异常打扰。`SubagentStopFailure` 不是当前 Claude Code 支持的 hook event，只作为旧版 ai-pad 配置的 Hook Doctor 清理对象。
 
 建议监听源：
 
