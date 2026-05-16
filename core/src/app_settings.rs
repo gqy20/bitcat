@@ -22,6 +22,8 @@ pub struct AppSettings {
     pub ai: AiOverride,
     #[serde(default)]
     pub appearance: AppearanceSettings,
+    #[serde(default)]
+    pub agent_watch: AgentWatchSettings,
 }
 
 /// AI 服务配置覆盖字段（api_key / base_url / model / max_tokens），均为可选
@@ -35,6 +37,25 @@ pub struct AiOverride {
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u64>,
+}
+
+/// Claude Code 看管设置：是否启用 hook 观察、离屏提醒和完成/等待提示。
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct AgentWatchSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_true")]
+    pub away_nudge_enabled: bool,
+    #[serde(default = "default_first_nudge_after_sec")]
+    pub first_nudge_after_sec: u64,
+    #[serde(default = "default_repeat_nudge_after_min")]
+    pub repeat_nudge_after_min: u64,
+    #[serde(default = "default_true")]
+    pub waiting_alert: bool,
+    #[serde(default = "default_true")]
+    pub done_alert: bool,
+    #[serde(default)]
+    pub use_tts: bool,
 }
 
 /// 外观与行为设置：置顶、折叠、TTS、全局快捷键、截图间隔等
@@ -71,6 +92,26 @@ fn default_shortcut() -> String {
 }
 fn default_screenshot_interval_sec() -> u64 {
     30
+}
+fn default_first_nudge_after_sec() -> u64 {
+    90
+}
+fn default_repeat_nudge_after_min() -> u64 {
+    8
+}
+
+impl Default for AgentWatchSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            away_nudge_enabled: true,
+            first_nudge_after_sec: default_first_nudge_after_sec(),
+            repeat_nudge_after_min: default_repeat_nudge_after_min(),
+            waiting_alert: true,
+            done_alert: true,
+            use_tts: false,
+        }
+    }
 }
 
 impl Default for AppearanceSettings {
@@ -166,6 +207,18 @@ mod tests {
     }
 
     #[test]
+    fn test_default_agent_watch_values() {
+        let s = AgentWatchSettings::default();
+        assert!(!s.enabled);
+        assert!(s.away_nudge_enabled);
+        assert_eq!(s.first_nudge_after_sec, 90);
+        assert_eq!(s.repeat_nudge_after_min, 8);
+        assert!(s.waiting_alert);
+        assert!(s.done_alert);
+        assert!(!s.use_tts);
+    }
+
+    #[test]
     fn test_serde_roundtrip_full() {
         let s = AppSettings {
             ai: AiOverride {
@@ -182,6 +235,15 @@ mod tests {
                 screenshot_interval_sec: 45,
                 pet_position: Some(WindowPosition { x: 123, y: 456 }),
             },
+            agent_watch: AgentWatchSettings {
+                enabled: true,
+                away_nudge_enabled: false,
+                first_nudge_after_sec: 120,
+                repeat_nudge_after_min: 15,
+                waiting_alert: true,
+                done_alert: false,
+                use_tts: true,
+            },
         };
         let json = serde_json::to_string_pretty(&s).unwrap();
         let restored: AppSettings = serde_json::from_str(&json).unwrap();
@@ -192,6 +254,8 @@ mod tests {
             restored.appearance.pet_position,
             Some(WindowPosition { x: 123, y: 456 })
         );
+        assert_eq!(restored.agent_watch.first_nudge_after_sec, 120);
+        assert!(restored.agent_watch.use_tts);
     }
 
     #[test]
@@ -201,6 +265,7 @@ mod tests {
         assert!(s.ai.base_url.is_none());
         assert!(s.ai.model.is_none());
         assert_eq!(s.appearance, AppearanceSettings::default());
+        assert_eq!(s.agent_watch, AgentWatchSettings::default());
     }
 
     #[test]

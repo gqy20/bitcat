@@ -11,6 +11,7 @@
 //!
 //! 核心子模块概览：
 //! - `agent` — 基于 rig-core 的 AI 流式对话与工具注册
+//! - `agent_session` / `claude_code` / `agent_nudge` — 外部 Claude Code 看管与提醒策略
 //! - `bridge` — 手柄按键 → Agent 命令 → 宠物动画的桥接映射
 //! - `pet` — 宠物状态机（6 状态、帧动画）
 //! - `memory` — 滚动窗口对话记忆
@@ -35,10 +36,13 @@
 
 pub mod action;
 pub mod agent;
+pub mod agent_nudge;
 pub mod agent_reaction;
+pub mod agent_session;
 pub mod ai_config;
 pub mod app_settings;
 pub mod bridge;
+pub mod claude_code;
 pub mod config;
 pub mod dance;
 pub mod device;
