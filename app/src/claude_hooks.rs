@@ -7,7 +7,7 @@
 use crate::agent_monitor::DEFAULT_AGENT_MONITOR_PORT;
 use serde_json::{json, Value};
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri_plugin_opener::OpenerExt;
 
 const AI_PAD_HOOK_MARKER: &str = "ai-pad-claude-code-watch";
@@ -26,7 +26,7 @@ struct HookRepairReport {
 }
 
 impl HookRepairReport {
-    fn message(&self, target: &str, script_path: &PathBuf) -> String {
+    fn message(&self, target: &str, script_path: &Path) -> String {
         format!(
             "{target} hook ready: {} installed, {} repaired, script {} ({})",
             self.installed,
@@ -91,7 +91,7 @@ fn read_settings_json(path: &PathBuf) -> Result<Value, String> {
 
 fn ensure_ai_pad_hooks(
     settings: &mut Value,
-    script_path: &PathBuf,
+    script_path: &Path,
     report: &mut HookRepairReport,
 ) -> Result<(), String> {
     if !settings.is_object() {
@@ -226,7 +226,7 @@ fn remove_invalid_ai_pad_events(
     }
 }
 
-fn ai_pad_hook(script_path: &PathBuf) -> Value {
+fn ai_pad_hook(script_path: &Path) -> Value {
     let script = script_path.to_string_lossy().replace('\\', "/");
     json!({
         "type": "command",

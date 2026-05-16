@@ -349,7 +349,7 @@ fn validate_memory(def: &GameDef) -> Result<(), String> {
     ensure_range("grid.cell_size", def.grid.cell_size, 24, 160)?;
     ensure_range("rules.win_length", def.rules.win_length, 4, 64)?;
     let cells = def.grid.width.saturating_mul(def.grid.height);
-    if cells % 2 != 0 {
+    if !cells.is_multiple_of(2) {
         return Err("memory grid must contain an even number of cells".into());
     }
     if def.rules.win_length != cells {

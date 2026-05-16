@@ -6,7 +6,7 @@
 
 use crate::agent_monitor::DEFAULT_AGENT_MONITOR_PORT;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri_plugin_opener::OpenerExt;
 use toml_edit::{value, ArrayOfTables, DocumentMut, Item, Table};
 
@@ -26,7 +26,7 @@ struct HookRepairReport {
 }
 
 impl HookRepairReport {
-    fn message(&self, target: &str, script_path: &PathBuf) -> String {
+    fn message(&self, target: &str, script_path: &Path) -> String {
         format!(
             "{target} hook ready: {} installed, {} repaired, script {} ({})",
             self.installed,
@@ -91,7 +91,7 @@ fn read_config_toml(path: &PathBuf) -> Result<DocumentMut, String> {
 
 fn ensure_ai_pad_hooks(
     doc: &mut DocumentMut,
-    script_path: &PathBuf,
+    script_path: &Path,
     report: &mut HookRepairReport,
 ) -> Result<(), String> {
     let hooks = ensure_table(&mut doc["hooks"])?;
@@ -179,7 +179,7 @@ fn remove_invalid_ai_pad_events(hooks: &mut Table, report: &mut HookRepairReport
     }
 }
 
-fn ai_pad_hook(script_path: &PathBuf) -> Table {
+fn ai_pad_hook(script_path: &Path) -> Table {
     let script = script_path.to_string_lossy().replace('\\', "\\\\");
     let mut hook = Table::new();
     hook["type"] = value("command");

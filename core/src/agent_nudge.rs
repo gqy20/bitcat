@@ -251,10 +251,10 @@ impl AgentNudgePolicy {
         if status_age_ms < first_after_ms {
             return skip(AgentNudgeSkipReason::NotDue, session.status);
         }
-        if let Some(last) = state.last_away_nudge_at_ms {
-            if now_ms.saturating_sub(last) < repeat_after_ms {
-                return skip(AgentNudgeSkipReason::Cooldown, session.status);
-            }
+        if let Some(last) = state.last_away_nudge_at_ms
+            && now_ms.saturating_sub(last) < repeat_after_ms
+        {
+            return skip(AgentNudgeSkipReason::Cooldown, session.status);
         }
         let message = match session.status {
             AgentStatus::ToolRunning => "命令还在跑，我帮你盯着。".to_string(),
