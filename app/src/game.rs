@@ -95,6 +95,16 @@ pub fn start_default_battle(app: &AppHandle) -> Result<(), String> {
     start_game(app, GameDef::default_battle())
 }
 
+/// Start the built-in memory matching mode.
+pub fn start_default_memory(app: &AppHandle) -> Result<(), String> {
+    start_game(app, GameDef::default_memory())
+}
+
+/// Start the built-in falling-catch mode.
+pub fn start_default_catch(app: &AppHandle) -> Result<(), String> {
+    start_game(app, GameDef::default_catch())
+}
+
 /// 返回当前游戏类型，供输入层决定手柄按钮语义。
 pub fn current_game_type(app: &AppHandle) -> Option<MinigameType> {
     let state: tauri::State<'_, SharedGame> = app.state();
@@ -331,6 +341,20 @@ pub fn cmd_start_game(app: AppHandle) -> Result<(), String> {
 pub fn cmd_start_battle(app: AppHandle) -> Result<(), String> {
     info!("[game] cmd_start_battle invoked");
     start_default_battle(&app)
+}
+
+/// Frontend request to start the built-in memory matching mode.
+#[tauri::command]
+pub fn cmd_start_memory(app: AppHandle) -> Result<(), String> {
+    info!("[game] cmd_start_memory invoked");
+    start_default_memory(&app)
+}
+
+/// Frontend request to start the built-in falling-catch mode.
+#[tauri::command]
+pub fn cmd_start_catch(app: AppHandle) -> Result<(), String> {
+    info!("[game] cmd_start_catch invoked");
+    start_default_catch(&app)
 }
 
 /// 前端或后续 AI 工具请求按配置启动游戏。

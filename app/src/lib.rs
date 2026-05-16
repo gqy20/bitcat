@@ -79,6 +79,8 @@ pub fn run() {
             audio_reactive::cmd_stop_music_dance,
             game::cmd_start_game,
             game::cmd_start_battle,
+            game::cmd_start_memory,
+            game::cmd_start_catch,
             game::cmd_start_game_with_def,
             game::cmd_get_current_game,
             game::cmd_game_end,

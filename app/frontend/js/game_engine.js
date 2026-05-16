@@ -231,6 +231,236 @@
     }
   }
 
+  class MemoryEngine {
+    constructor(config, rng) {
+      this.config = config;
+      this.rng = rng || Math.random;
+      this.state = 'ready';
+      this.score = 0;
+      this.ended = false;
+      this.cursor = 0;
+      this.selected = [];
+      this.matched = new Set();
+      this.lockMs = 0;
+      this.cards = [];
+      this.reset();
+    }
+
+    reset() {
+      const count = this.config.grid.width * this.config.grid.height;
+      const values = [];
+      for (let i = 0; i < count / 2; i++) values.push(i, i);
+      for (let i = values.length - 1; i > 0; i--) {
+        const j = Math.floor(this.rng() * (i + 1));
+        [values[i], values[j]] = [values[j], values[i]];
+      }
+      this.cards = values;
+    }
+
+    getState() {
+      return this.state;
+    }
+
+    handleInput(input) {
+      if (!input) return;
+      if (this.ended) {
+        if (input.type === 'confirm') restartGame();
+        else if (input.type === 'cancel') closeEndedGame(this.state);
+        return;
+      }
+      if (input.type === 'confirm') {
+        if (this.state === 'ready') this.state = 'playing';
+        this.flipCursor();
+        return;
+      }
+      if (input.type === 'pause' && (this.state === 'playing' || this.state === 'paused')) {
+        this.state = this.state === 'playing' ? 'paused' : 'playing';
+        return;
+      }
+      if (input.type === 'cancel') {
+        this.finish('cancel');
+        return;
+      }
+      if (input.type === 'direction') {
+        if (this.state === 'ready') this.state = 'playing';
+        const w = this.config.grid.width;
+        const h = this.config.grid.height;
+        const x = this.cursor % w;
+        const y = Math.floor(this.cursor / w);
+        const nx = clamp(x + Math.sign(input.dx || 0), 0, w - 1);
+        const ny = clamp(y + Math.sign(input.dy || 0), 0, h - 1);
+        this.cursor = ny * w + nx;
+      }
+    }
+
+    update(dtMs) {
+      if (this.state !== 'playing' || this.ended) return;
+      if (this.lockMs > 0) {
+        this.lockMs -= dtMs;
+        if (this.lockMs <= 0) this.selected = [];
+      }
+    }
+
+    flipCursor() {
+      if (this.state !== 'playing' || this.lockMs > 0 || this.matched.has(this.cursor)) return;
+      if (this.selected.includes(this.cursor)) return;
+      this.selected.push(this.cursor);
+      if (this.selected.length < 2) return;
+      const [a, b] = this.selected;
+      if (this.cards[a] === this.cards[b]) {
+        this.matched.add(a);
+        this.matched.add(b);
+        this.score += 10;
+        this.selected = [];
+        if (this.matched.size >= this.cards.length) this.finish('win');
+      } else {
+        this.score = Math.max(0, this.score - 2);
+        this.lockMs = 650;
+      }
+    }
+
+    finish(result) {
+      if (this.ended) return;
+      this.ended = true;
+      this.state = result;
+    }
+
+    render(ctx, metrics) {
+      ctx.clearRect(0, 0, metrics.width, metrics.height);
+      const grid = this.config.grid;
+      const cell = metrics.cell;
+      ctx.save();
+      ctx.translate(metrics.x, metrics.y);
+      ctx.fillStyle = 'rgba(12, 18, 24, 0.18)';
+      ctx.fillRect(0, 0, grid.width * cell, grid.height * cell);
+      for (let i = 0; i < this.cards.length; i++) {
+        const x = (i % grid.width) * cell;
+        const y = Math.floor(i / grid.width) * cell;
+        const open = this.matched.has(i) || this.selected.includes(i);
+        ctx.fillStyle = open ? '#ffd166' : '#b8f2e6';
+        ctx.fillRect(x + 6, y + 6, cell - 12, cell - 12);
+        if (i === this.cursor) {
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 3;
+          ctx.strokeRect(x + 4, y + 4, cell - 8, cell - 8);
+        }
+        if (open) {
+          ctx.fillStyle = '#20242a';
+          ctx.font = `800 ${Math.max(18, Math.floor(cell * 0.35))}px "Segoe UI", sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(String(this.cards[i] + 1), x + cell / 2, y + cell / 2);
+        }
+      }
+      ctx.restore();
+      ctx.textAlign = 'start';
+      ctx.textBaseline = 'alphabetic';
+    }
+  }
+
+  class CatchEngine {
+    constructor(config, rng) {
+      this.config = config;
+      this.rng = rng || Math.random;
+      this.state = 'ready';
+      this.score = 0;
+      this.ended = false;
+      this.playerX = Math.floor(config.grid.width / 2);
+      this.spawnMs = 0;
+      this.fallMs = 0;
+      this.misses = 0;
+      this.items = [];
+    }
+
+    getState() {
+      return this.state;
+    }
+
+    handleInput(input) {
+      if (!input) return;
+      if (this.ended) {
+        if (input.type === 'confirm') restartGame();
+        else if (input.type === 'cancel') closeEndedGame(this.state);
+        return;
+      }
+      if (input.type === 'confirm' && this.state === 'ready') {
+        this.state = 'playing';
+        return;
+      }
+      if (input.type === 'pause' && (this.state === 'playing' || this.state === 'paused')) {
+        this.state = this.state === 'playing' ? 'paused' : 'playing';
+        return;
+      }
+      if (input.type === 'cancel') {
+        this.finish('cancel');
+        return;
+      }
+      if (input.type === 'direction') {
+        if (this.state === 'ready') this.state = 'playing';
+        this.playerX = clamp(this.playerX + Math.sign(input.dx || 0), 0, this.config.grid.width - 1);
+      }
+    }
+
+    update(dtMs) {
+      if (this.state !== 'playing' || this.ended) return;
+      this.spawnMs -= dtMs;
+      this.fallMs += dtMs;
+      if (this.spawnMs <= 0) {
+        this.spawnMs = Math.max(180, this.config.player.speed_ms * 5 * this.config.rules.speed_ramp);
+        for (let i = 0; i < this.config.rules.food_count; i++) {
+          this.items.push({ x: Math.floor(this.rng() * this.config.grid.width), y: 0 });
+        }
+      }
+      const stepMs = Math.max(70, this.config.player.speed_ms);
+      while (this.fallMs >= stepMs) {
+        this.fallMs -= stepMs;
+        this.step();
+      }
+    }
+
+    step() {
+      const bottom = this.config.grid.height - 1;
+      const remaining = [];
+      for (const item of this.items) {
+        const next = { x: item.x, y: item.y + 1 };
+        if (next.y >= bottom && Math.abs(next.x - this.playerX) <= 1) {
+          this.score += 1;
+          if (this.score >= this.config.rules.win_length) this.finish('win');
+        } else if (next.y > bottom) {
+          this.misses += 1;
+          if (this.misses >= 5) this.finish('lose');
+        } else {
+          remaining.push(next);
+        }
+      }
+      this.items = remaining;
+    }
+
+    finish(result) {
+      if (this.ended) return;
+      this.ended = true;
+      this.state = result;
+    }
+
+    render(ctx, metrics) {
+      ctx.clearRect(0, 0, metrics.width, metrics.height);
+      const grid = this.config.grid;
+      const cell = metrics.cell;
+      ctx.save();
+      ctx.translate(metrics.x, metrics.y);
+      ctx.fillStyle = 'rgba(12, 18, 24, 0.18)';
+      ctx.fillRect(0, 0, grid.width * cell, grid.height * cell);
+      for (const item of this.items) drawFood(ctx, item, cell, this.config.theme.food);
+      const y = grid.height - 1;
+      ctx.fillStyle = '#ffd166';
+      ctx.fillRect((this.playerX - 1) * cell + 4, y * cell + 6, cell * 3 - 8, cell - 12);
+      ctx.fillStyle = '#20242a';
+      ctx.fillRect(this.playerX * cell + cell * 0.35, y * cell + cell * 0.36, cell * 0.12, cell * 0.12);
+      ctx.fillRect(this.playerX * cell + cell * 0.58, y * cell + cell * 0.36, cell * 0.12, cell * 0.12);
+      ctx.restore();
+    }
+  }
+
   class BattleEngine {
     constructor(config) {
       this.config = config;
@@ -717,7 +947,15 @@
     if (kind === 'ready') {
       overlay.classList.remove('hidden');
       overlayTitle.textContent = engine.config.dialogue.start;
-      overlayText.textContent = engine instanceof BattleEngine ? 'Space / A 点击攻击，1/2 或 X/Y 释放技能' : '方向键 / WASD 开始';
+      if (engine instanceof BattleEngine) {
+        overlayText.textContent = 'Space / A attack · 1/2 or X/Y skills';
+      } else if (engine instanceof MemoryEngine) {
+        overlayText.textContent = 'Move cursor · Enter / A flip';
+      } else if (engine instanceof CatchEngine) {
+        overlayText.textContent = 'Left / Right to catch · miss 5 and lose';
+      } else {
+        overlayText.textContent = 'Arrow keys / WASD to start';
+      }
     } else if (kind === 'paused') {
       overlay.classList.remove('hidden');
       overlayTitle.textContent = '暂停';
@@ -742,9 +980,17 @@
   }
 
   function createEngine(config) {
-    return config && config.game_type === 'battle'
-      ? new BattleEngine(config)
-      : new SnakeEngine(config);
+    switch (config && config.game_type) {
+      case 'battle':
+        return new BattleEngine(config);
+      case 'memory':
+        return new MemoryEngine(config);
+      case 'catch':
+        return new CatchEngine(config);
+      case 'snake':
+      default:
+        return new SnakeEngine(config);
+    }
   }
 
   function restartGame() {
@@ -786,7 +1032,11 @@
     scoreEl.textContent = String(engine.score);
     lengthEl.textContent = engine instanceof BattleEngine
       ? `${engine.monster.hp}/${engine.monster.maxHp}`
-      : String(engine.snake.length);
+      : engine instanceof MemoryEngine
+        ? `${engine.matched.size}/${engine.cards.length}`
+        : engine instanceof CatchEngine
+          ? `${engine.misses}/5`
+          : String(engine.snake.length);
   }
 
   function loop(now) {
@@ -856,10 +1106,12 @@
       case 'ArrowUp':
       case 'w':
       case 'W':
+        if (engine instanceof CatchEngine) return null;
         return { type: 'direction', dx: 0, dy: -1 };
       case 'ArrowDown':
       case 's':
       case 'S':
+        if (engine instanceof CatchEngine) return null;
         return { type: 'direction', dx: 0, dy: 1 };
       case 'ArrowLeft':
       case 'a':
@@ -928,7 +1180,7 @@
       title: '毛线球大作战',
       grid: { width: 30, height: 20, cell_size: 24 },
       player: { speed_ms: 140, initial_length: 3 },
-      rules: { walls_kill: true, self_kill: true, food_count: 1, speed_ramp: 0.95, win_length: 20 },
+      rules: { walls_kill: true, self_kill: true, food_count: 1, speed_ramp: 0.95, win_length: 80 },
       theme: { head: 'cat', body: 'yarn', food: 'mouse', trail_alpha: 0.55 },
       dialogue: { start: '喵！看我的！', win: '太厉害了喵~', lose: '呜...再来一次！' },
     };
@@ -939,6 +1191,6 @@
     requestAnimationFrame(loop);
   }
 
-  window.GameEngineTest = { SnakeEngine, BattleEngine, createRng };
+  window.GameEngineTest = { SnakeEngine, MemoryEngine, CatchEngine, BattleEngine, createRng };
   init();
 })();

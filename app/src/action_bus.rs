@@ -43,6 +43,10 @@ pub enum Action {
     PlayDance(String),
     /// 启动默认迷你游戏
     PlayGameDefault,
+    /// Start the built-in memory matching mode.
+    PlayMemoryDefault,
+    /// Start the built-in falling-catch mode.
+    PlayCatchDefault,
     /// 启动默认守护召唤战
     PlayBattleDefault,
     /// 立即截图 + Vision 分析
@@ -170,6 +174,18 @@ impl ActionBus {
                 info!(?source, action = "PlayGameDefault", "action dispatch");
                 if let Err(e) = crate::game::start_default_game(app) {
                     warn!(error = %e, "play game action failed");
+                }
+            }
+            Action::PlayMemoryDefault => {
+                info!(?source, action = "PlayMemoryDefault", "action dispatch");
+                if let Err(e) = crate::game::start_default_memory(app) {
+                    warn!(error = %e, "play memory action failed");
+                }
+            }
+            Action::PlayCatchDefault => {
+                info!(?source, action = "PlayCatchDefault", "action dispatch");
+                if let Err(e) = crate::game::start_default_catch(app) {
+                    warn!(error = %e, "play catch action failed");
                 }
             }
             Action::PlayBattleDefault => {
@@ -349,6 +365,8 @@ mod tests {
             Action::SubmitChat("你好".into()),
             Action::PlayDance("happy".into()),
             Action::PlayGameDefault,
+            Action::PlayMemoryDefault,
+            Action::PlayCatchDefault,
             Action::PlayBattleDefault,
             Action::ScreenshotNow,
             Action::Launch {

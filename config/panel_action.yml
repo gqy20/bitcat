@@ -4,9 +4,9 @@
 defaults:
   terminal: powershell
   width: 480
-  height: 420
+  height: 520
   columns: 3
-  rows: 3
+  rows: 4
 
 actions:
   vscode:
@@ -66,6 +66,20 @@ actions:
     order: 70
     type: builtin
     command: game
+
+  memory:
+    label: 翻牌
+    icon: "M"
+    order: 72
+    type: builtin
+    command: memory
+
+  catch:
+    label: 接食物
+    icon: "C"
+    order: 73
+    type: builtin
+    command: catch
 
   battle:
     label: 守护战

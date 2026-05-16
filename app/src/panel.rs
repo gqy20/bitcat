@@ -60,6 +60,28 @@ pub async fn cmd_execute_panel_action(id: String, app: AppHandle) -> Result<(), 
                 );
                 Ok(())
             }
+            "memory" => {
+                hide_panel(&app)?;
+                crate::action_bus::ActionBus::dispatch(
+                    &app,
+                    crate::action_bus::Action::PlayMemoryDefault,
+                    crate::action_bus::ActionSource::Frontend {
+                        cmd: "cmd_execute_panel_action:memory".into(),
+                    },
+                );
+                Ok(())
+            }
+            "catch" => {
+                hide_panel(&app)?;
+                crate::action_bus::ActionBus::dispatch(
+                    &app,
+                    crate::action_bus::Action::PlayCatchDefault,
+                    crate::action_bus::ActionSource::Frontend {
+                        cmd: "cmd_execute_panel_action:catch".into(),
+                    },
+                );
+                Ok(())
+            }
             "battle" => {
                 hide_panel(&app)?;
                 crate::action_bus::ActionBus::dispatch(

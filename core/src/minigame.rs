@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum MinigameType {
     Snake,
+    Memory,
+    Catch,
     Battle,
 }
 
@@ -129,7 +131,7 @@ impl GameDef {
                 self_kill: true,
                 food_count: 1,
                 speed_ramp: 0.95,
-                win_length: 20,
+                win_length: 80,
             },
             theme: GameTheme {
                 head: "cat".into(),
@@ -141,6 +143,79 @@ impl GameDef {
                 start: "喵！看我的！".into(),
                 win: "太厉害了喵~".into(),
                 lose: "呜...再来一次！".into(),
+            },
+            battle: None,
+        }
+    }
+
+    /// Built-in card-memory preset. It reuses the generic grid/rules fields so
+    /// the app can launch it through the same `GameDef` path as Snake.
+    pub fn default_memory() -> Self {
+        Self {
+            game_type: MinigameType::Memory,
+            title: "Memory Match".into(),
+            grid: GameGrid {
+                width: 4,
+                height: 4,
+                cell_size: 96,
+            },
+            player: PlayerConfig {
+                speed_ms: 140,
+                initial_length: 3,
+            },
+            rules: GameRules {
+                walls_kill: false,
+                self_kill: false,
+                food_count: 1,
+                speed_ramp: 0.95,
+                win_length: 16,
+            },
+            theme: GameTheme {
+                head: "cat".into(),
+                body: "yarn".into(),
+                food: "fish".into(),
+                trail_alpha: 0.55,
+            },
+            dialogue: GameDialogue {
+                start: "Find every pair".into(),
+                win: "All matched".into(),
+                lose: "Try again".into(),
+            },
+            battle: None,
+        }
+    }
+
+    /// Built-in falling-catch preset. `win_length` is the score target.
+    pub fn default_catch() -> Self {
+        Self {
+            game_type: MinigameType::Catch,
+            title: "Catch Treats".into(),
+            grid: GameGrid {
+                width: 24,
+                height: 16,
+                cell_size: 32,
+            },
+            player: PlayerConfig {
+                speed_ms: 120,
+                initial_length: 3,
+            },
+            rules: GameRules {
+                walls_kill: false,
+                self_kill: false,
+                food_count: 1,
+                speed_ramp: 0.97,
+                win_length: 30,
+            },
+            theme: GameTheme {
+                head: "cat".into(),
+                body: "dot".into(),
+                food: "fish".into(),
+                trail_alpha: 0.55,
+            },
+            dialogue: GameDialogue {
+                start: "Catch the treats".into(),
+                win: "Nice catch".into(),
+                lose: "Missed too many".into(),
             },
             battle: None,
         }
@@ -217,6 +292,8 @@ impl GameDef {
 pub fn validate_game_def(def: &GameDef) -> Result<(), String> {
     match def.game_type {
         MinigameType::Snake => validate_snake(def),
+        MinigameType::Memory => validate_memory(def),
+        MinigameType::Catch => validate_catch(def),
         MinigameType::Battle => validate_battle(def),
     }
 }
@@ -234,7 +311,7 @@ fn validate_snake(def: &GameDef) -> Result<(), String> {
     ensure_range("grid.cell_size", def.grid.cell_size, 8, 48)?;
     ensure_range("player.speed_ms", def.player.speed_ms, 60, 1000)?;
     ensure_range("player.initial_length", def.player.initial_length, 1, 10)?;
-    ensure_range("rules.win_length", def.rules.win_length, 5, 200)?;
+    ensure_range("rules.win_length", def.rules.win_length, 5, 500)?;
 
     if def.rules.food_count != 1 {
         return Err("Phase 1 仅支持 food_count = 1".into());
@@ -262,6 +339,56 @@ fn validate_snake(def: &GameDef) -> Result<(), String> {
         return Err("theme.trail_alpha 必须在 0.0..=1.0 之间".into());
     }
 
+    Ok(())
+}
+
+fn validate_memory(def: &GameDef) -> Result<(), String> {
+    validate_common_game_fields(def)?;
+    ensure_range("grid.width", def.grid.width, 2, 8)?;
+    ensure_range("grid.height", def.grid.height, 2, 8)?;
+    ensure_range("grid.cell_size", def.grid.cell_size, 24, 160)?;
+    ensure_range("rules.win_length", def.rules.win_length, 4, 64)?;
+    let cells = def.grid.width.saturating_mul(def.grid.height);
+    if cells % 2 != 0 {
+        return Err("memory grid must contain an even number of cells".into());
+    }
+    if def.rules.win_length != cells {
+        return Err("memory win_length must match total grid cells".into());
+    }
+    Ok(())
+}
+
+fn validate_catch(def: &GameDef) -> Result<(), String> {
+    validate_common_game_fields(def)?;
+    ensure_range("grid.width", def.grid.width, 10, 80)?;
+    ensure_range("grid.height", def.grid.height, 8, 60)?;
+    ensure_range("grid.cell_size", def.grid.cell_size, 8, 48)?;
+    ensure_range("player.speed_ms", def.player.speed_ms, 60, 1000)?;
+    ensure_range("rules.win_length", def.rules.win_length, 5, 500)?;
+    ensure_range("rules.food_count", def.rules.food_count, 1, 5)?;
+    if !(0.70..=1.00).contains(&def.rules.speed_ramp) {
+        return Err("rules.speed_ramp must be within 0.70..=1.00".into());
+    }
+    Ok(())
+}
+
+fn validate_common_game_fields(def: &GameDef) -> Result<(), String> {
+    if def.title.trim().is_empty() {
+        return Err("game title must not be empty".into());
+    }
+    if def.title.chars().count() > 40 {
+        return Err("game title must be at most 40 chars".into());
+    }
+    ensure_choice("theme.head", &def.theme.head, &["cat", "yarn", "light"])?;
+    ensure_choice("theme.body", &def.theme.body, &["yarn", "dot", "trail"])?;
+    ensure_choice(
+        "theme.food",
+        &def.theme.food,
+        &["mouse", "fish", "butterfly"],
+    )?;
+    if !(0.0..=1.0).contains(&def.theme.trail_alpha) {
+        return Err("theme.trail_alpha must be within 0.0..=1.0".into());
+    }
     Ok(())
 }
 
@@ -360,6 +487,16 @@ mod tests {
     }
 
     #[test]
+    fn default_memory_is_valid() {
+        assert!(validate_game_def(&GameDef::default_memory()).is_ok());
+    }
+
+    #[test]
+    fn default_catch_is_valid() {
+        assert!(validate_game_def(&GameDef::default_catch()).is_ok());
+    }
+
+    #[test]
     fn battle_requires_config() {
         let mut def = GameDef::default_snake();
         def.game_type = MinigameType::Battle;
@@ -384,7 +521,7 @@ mod tests {
     #[test]
     fn rejects_rule_bounds() {
         assert!(invalid(|d| d.rules.win_length = 4).is_err());
-        assert!(invalid(|d| d.rules.win_length = 201).is_err());
+        assert!(invalid(|d| d.rules.win_length = 501).is_err());
         assert!(invalid(|d| d.rules.speed_ramp = 0.69).is_err());
         assert!(invalid(|d| d.rules.speed_ramp = 1.01).is_err());
         assert!(invalid(|d| d.rules.food_count = 2).is_err());
