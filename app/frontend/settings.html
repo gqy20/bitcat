@@ -286,6 +286,22 @@
               </div>
               <input id="a-ss-interval" type="number" min="5" max="3600" step="5" placeholder="30" />
             </div>
+            <div class="setting-row tall">
+              <div class="setting-copy">
+                <label for="a-pet-asset-preset">宠物资产</label>
+                <span>选择内置资源包；需要调试时可切到自定义地址。</span>
+              </div>
+              <div class="pet-asset-field">
+                <select id="a-pet-asset-preset">
+                  <option value="">内置小猫</option>
+                  <option value="/__fixtures__/pets/default-cat">Default Cat</option>
+                  <option value="/__fixtures__/pets/status">Status</option>
+                  <option value="__custom">自定义地址</option>
+                </select>
+                <input id="a-pet-asset" class="hidden" type="text" placeholder="/__fixtures__/pets/default-cat" spellcheck="false" />
+                <small>保存后宠物窗口会重新加载资产。</small>
+              </div>
+            </div>
           </div>
 
           <div class="section-panel">

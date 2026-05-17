@@ -9,20 +9,55 @@ import { PerformerHost } from './performance/performer-host.js';
   const PetState = window.PetState;
   const Particles = window.Particles;
 
-  // ---- 嘴巴热区判定（纯函数，可独立测试）----
-  // 热区覆盖精灵嘴巴/腮红区域：正常态 x[32,96] y[56,96] (canvas 坐标)
-  // 折叠态按 canvasSize 比例缩放
-  function isMouthHotzone(x, y, canvasSize) {
-    var ratio = canvasSize / 128;
-    return x >= 32 * ratio && x <= 96 * ratio && y >= 56 * ratio && y <= 96 * ratio;
+  const DEFAULT_PET_HOTSPOTS = {
+    observe: { x: 0.18, y: 0.10, w: 0.64, h: 0.40 },
+    input: { x: 0.22, y: 0.38, w: 0.56, h: 0.34 },
+  };
+
+  function normalizeHotspotRect(spec, width, height) {
+    if (!spec || typeof spec !== 'object') return null;
+    var x = Number(spec.x);
+    var y = Number(spec.y);
+    var w = Number(spec.w);
+    var h = Number(spec.h);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) {
+      return null;
+    }
+    var useRatio = Math.max(Math.abs(x), Math.abs(y), Math.abs(w), Math.abs(h)) <= 1.5;
+    return useRatio
+      ? {
+          left: x * width,
+          top: y * height,
+          right: (x + w) * width,
+          bottom: (y + h) * height,
+        }
+      : {
+          left: x,
+          top: y,
+          right: x + w,
+          bottom: y + h,
+        };
   }
 
-  // 左眼热区：对应 16x16 精灵的左眼像素附近（col 3-4, row 6），
-  // 适度放大一点，降低双击像素精灵时的手感门槛。
-  function isLeftEyeHotzone(x, y, canvasSize) {
-    var ratio = canvasSize / 128;
-    if (ratio <= 0) return false;
-    return x >= 22 * ratio && x <= 44 * ratio && y >= 44 * ratio && y <= 62 * ratio;
+  function getPetHotspots() {
+    return (SpriteRenderer && SpriteRenderer.hotspots) || DEFAULT_PET_HOTSPOTS;
+  }
+
+  function hitPetHotspot(name, x, y, width, height) {
+    var rect = normalizeHotspotRect(getPetHotspots()[name], width, height);
+    return !!rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  }
+
+  function flashPetHotspot(kind) {
+    if (!document || !document.body) return;
+    var body = document.body;
+    body.classList.remove('pet-hotspot-observe', 'pet-hotspot-input');
+    if (!kind) return;
+    body.classList.add('pet-hotspot-' + kind);
+    clearTimeout(flashPetHotspot._timer);
+    flashPetHotspot._timer = setTimeout(function() {
+      body.classList.remove('pet-hotspot-observe', 'pet-hotspot-input');
+    }, 160);
   }
 
   let pet = null;
@@ -46,6 +81,8 @@ import { PerformerHost } from './performance/performer-host.js';
   let performerHost = null;
   let performerMoveState = { at: 0, x: null, y: null };
   let screenshotFeedbackTimer = null;
+  let normalPetWidth = 128;
+  let normalPetHeight = 128;
 
   // Tauri 2 正确的 API 路径：getCurrentWindow() 不是 getCurrent()
   function getCurrentWin() {
@@ -97,6 +134,9 @@ import { PerformerHost } from './performance/performer-host.js';
     canvas = document.getElementById('sprite');
     ctx = canvas.getContext('2d');
     bodyEl = document.body;
+    var normalSize = resolveNormalPetSize();
+    normalPetWidth = normalSize.w;
+    normalPetHeight = normalSize.h;
     performerHost = new PerformerHost({
       getMetrics: async function() {
         var win = getCurrentWin();
@@ -105,7 +145,7 @@ import { PerformerHost } from './performance/performer-host.js';
       applyOffset: applyPerformerOffset,
       resetPosition: resetPerformerPosition,
       renderSprite: function(action, opts, scale) {
-        SpriteRenderer.renderSprite(ctx, action, 0, pet.facingRight, scale || 8, opts);
+        SpriteRenderer.renderSprite(ctx, action, 0, pet.facingRight, scale || SpriteRenderer.renderScale, opts);
       },
       setFacingRight: function(facingRight) {
         pet.facingRight = facingRight;
@@ -116,7 +156,7 @@ import { PerformerHost } from './performance/performer-host.js';
       restoreSemanticState: function() {
         pet.applySemanticState();
         syncStateClass(pet.state);
-        SpriteRenderer.renderSprite(ctx, pet.state, pet.frame, pet.facingRight, 8);
+        SpriteRenderer.renderSprite(ctx, pet.state, pet.frame, pet.facingRight);
         prevState = pet.state;
       },
       log: function(msg) {
@@ -158,6 +198,40 @@ import { PerformerHost } from './performance/performer-host.js';
     setupTauriEvents();
     setupContextMenu();
     setupDrag();
+  }
+
+  function resolveNormalPetSize() {
+    return {
+      w: Math.max(1, Math.round((SpriteRenderer && SpriteRenderer.displayWidth) || 128)),
+      h: Math.max(1, Math.round((SpriteRenderer && SpriteRenderer.displayHeight) || 128)),
+    };
+  }
+
+  async function applyViewportSize(width, height, resizeWindow) {
+    if (!canvas) return;
+    width = Math.max(1, Math.round(width));
+    height = Math.max(1, Math.round(height));
+    canvas.width = width;
+    canvas.height = height;
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+    canvas.style.imageRendering = SpriteRenderer && SpriteRenderer.pixelated === false ? 'auto' : 'pixelated';
+    document.documentElement.style.width = width + 'px';
+    document.documentElement.style.height = height + 'px';
+    document.body.style.width = width + 'px';
+    document.body.style.height = height + 'px';
+    document.body.style.setProperty('--pet-width', width + 'px');
+    document.body.style.setProperty('--pet-height', height + 'px');
+
+    if (!resizeWindow) return;
+    var win = getCurrentWin();
+    var api = window.__TAURI__ && window.__TAURI__.window;
+    if (!win || !api || !api.LogicalSize) return;
+    try {
+      await win.setSize(new api.LogicalSize(width, height));
+    } catch (err) {
+      console.warn('[pet] resize window failed:', err);
+    }
   }
 
   /// 吸附竖条模式：DOM + CSS 驱动（Task 3）
@@ -242,10 +316,9 @@ import { PerformerHost } from './performance/performer-host.js';
 
       // 只调整 canvas 尺寸和 CSS，不调用 cmd_recreate_pet_window（避免无限循环）
       // 窗口重建只由托盘事件驱动（pet-toggle-collapse）
-      const w = collapsed ? 48 : 128;
-      const h = collapsed ? 48 : 128;
-      canvas.width = w;
-      canvas.height = h;
+      const w = collapsed ? 48 : normalPetWidth;
+      const h = collapsed ? 48 : normalPetHeight;
+      await applyViewportSize(w, h, true);
       syncStateClass(pet.state);
     } catch (err) {
       console.warn('[pet] pull 状态失败，使用默认值:', err);
@@ -286,6 +359,7 @@ import { PerformerHost } from './performance/performer-host.js';
         cssW: cssW,
         cssH: cssH,
         logicW: logicW,
+        logicH: canvas.height || logicW,
         scale: scale,
       };
     }
@@ -293,10 +367,11 @@ import { PerformerHost } from './performance/performer-host.js';
     root.addEventListener('dblclick', async function(e) {
       if (e.button !== 0) return;
       var coord = eventToCanvasCoord(e);
-      if (!isLeftEyeHotzone(coord.cx, coord.cy, coord.logicW)) return;
+      if (!hitPetHotspot('observe', coord.cx, coord.cy, coord.logicW, coord.logicH)) return;
 
       e.preventDefault();
       e.stopPropagation();
+      flashPetHotspot('observe');
 
       if (window.__TAURI__ && window.__TAURI__.core) {
         window.__TAURI__.core.invoke('cmd_pet_log', { msg: '✓ 左眼双击命中 → cmd_screenshot_now' }).catch(function() {});
@@ -320,25 +395,30 @@ import { PerformerHost } from './performance/performer-host.js';
       var cx = coord.cx;
       var cy = coord.cy;
       var logicW = coord.logicW;
+      var logicH = coord.logicH;
+      var observeHit = hitPetHotspot('observe', cx, cy, logicW, logicH);
+      var inputHit = hitPetHotspot('input', cx, cy, logicW, logicH);
 
       var diag = JSON.stringify({
         raw: { x: Math.round(coord.rawX), y: Math.round(coord.rawY), target: e.target.id || e.target.className },
         cssSize: { w: Math.round(coord.cssW), h: Math.round(coord.cssH) },
-        logicSize: logicW,
+        logicSize: { w: logicW, h: logicH },
         scale: coord.scale.toFixed(2),
         logicCoord: { x: Math.round(cx), y: Math.round(cy) },
-        hotzone: isMouthHotzone(cx, cy, logicW) ? 'MOUTH' : (isLeftEyeHotzone(cx, cy, logicW) ? 'LEFT_EYE' : 'DRAG'),
+        hotzone: observeHit ? 'OBSERVE' : (inputHit ? 'INPUT' : 'DRAG'),
       });
       if (window.__TAURI__ && window.__TAURI__.core) {
         window.__TAURI__.core.invoke('cmd_pet_log', { msg: 'mousedown 坐标诊断 ' + diag }).catch(function() {});
       }
 
-      if (isLeftEyeHotzone(cx, cy, logicW)) {
+      if (observeHit) {
         e.preventDefault();
+        flashPetHotspot('observe');
         if (window.__TAURI__ && window.__TAURI__.core) {
           window.__TAURI__.core.invoke('cmd_pet_log', { msg: '左眼热区按下，等待 dblclick' }).catch(function() {});
         }
-      } else if (isMouthHotzone(cx, cy, logicW)) {
+      } else if (inputHit) {
+        flashPetHotspot('input');
         if (window.__TAURI__ && window.__TAURI__.core) {
           window.__TAURI__.core.invoke('cmd_pet_log', { msg: '✓ 嘴巴热区命中 → cmd_open_chat' }).catch(function() {});
         }
@@ -549,7 +629,7 @@ import { PerformerHost } from './performance/performer-host.js';
           prevState = pet.state;
         }
 
-        SpriteRenderer.renderSprite(ctx, pet.state, pet.frame, pet.facingRight, 8);
+        SpriteRenderer.renderSprite(ctx, pet.state, pet.frame, pet.facingRight);
         Particles.tick(pet.state, dt);
       }
     } else {
@@ -723,10 +803,9 @@ import { PerformerHost } from './performance/performer-host.js';
   async function applyCollapse() {
     console.log('[pet] applyCollapse:', { collapsed, state: pet.state });
 
-    const w = collapsed ? 48 : 128;
-    const h = collapsed ? 48 : 128;
-    canvas.width = w;
-    canvas.height = h;
+    const w = collapsed ? 48 : normalPetWidth;
+    const h = collapsed ? 48 : normalPetHeight;
+    await applyViewportSize(w, h, false);
     console.log('[pet] canvas resize:', w, 'x', h);
 
     const win = getCurrentWin();
@@ -792,6 +871,15 @@ import { PerformerHost } from './performance/performer-host.js';
       applyAlwaysOnTop();
     });
 
+    window.__TAURI__.event.listen('pet-asset-config-changed', (event) => {
+      const url = event.payload || '';
+      try {
+        if (url) window.sessionStorage.setItem('ai-pad.petAssetUrl', url);
+        else window.sessionStorage.removeItem('ai-pad.petAssetUrl');
+      } catch (_) {}
+      window.location.reload();
+    });
+
     window.__TAURI__.event.listen('performance-start', async (event) => {
       if (!performerHost) return;
       await performerHost.start(event.payload || {});
@@ -821,7 +909,8 @@ import { PerformerHost } from './performance/performer-host.js';
 
   // 暴露纯函数供测试访问
   window.PetApp = {
-    isMouthHotzone: isMouthHotzone,
-    isLeftEyeHotzone: isLeftEyeHotzone,
-  };
-})();
+    hitPetHotspot: hitPetHotspot,
+    getPetHotspots: getPetHotspots,
+    normalizeHotspotRect: normalizeHotspotRect,
+    flashPetHotspot: flashPetHotspot,
+  };})();

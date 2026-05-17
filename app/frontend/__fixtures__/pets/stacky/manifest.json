@@ -1,0 +1,265 @@
+{
+  "schemaVersion": 2,
+  "render": {
+    "mode": "sheet",
+    "displayWidth": 69,
+    "displayHeight": 75,
+    "scale": 0.3605769230769231,
+    "pixelated": false
+  },
+  "hotspots": {
+    "observe": {
+      "x": 0.18,
+      "y": 0.1,
+      "w": 0.64,
+      "h": 0.4
+    },
+    "input": {
+      "x": 0.22,
+      "y": 0.38,
+      "w": 0.56,
+      "h": 0.34
+    }
+  },
+  "sprite": {
+    "frameWidth": 192,
+    "frameHeight": 208,
+    "columns": 8,
+    "rows": 9,
+    "frameCount": 72,
+    "image": "spritesheet.webp"
+  },
+  "states": {
+    "idle": {
+      "spriteFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "frames": [
+        {
+          "sprite": 0,
+          "duration": 1680
+        },
+        {
+          "sprite": 1,
+          "duration": 660
+        },
+        {
+          "sprite": 2,
+          "duration": 660
+        },
+        {
+          "sprite": 3,
+          "duration": 840
+        },
+        {
+          "sprite": 4,
+          "duration": 840
+        },
+        {
+          "sprite": 5,
+          "duration": 1920
+        }
+      ],
+      "loop": true
+    },
+    "working": {
+      "spriteFrames": [
+        56,
+        57,
+        58,
+        59,
+        60,
+        61
+      ],
+      "frames": [
+        {
+          "sprite": 56,
+          "duration": 120
+        },
+        {
+          "sprite": 57,
+          "duration": 120
+        },
+        {
+          "sprite": 58,
+          "duration": 120
+        },
+        {
+          "sprite": 59,
+          "duration": 120
+        },
+        {
+          "sprite": 60,
+          "duration": 120
+        },
+        {
+          "sprite": 61,
+          "duration": 220
+        }
+      ],
+      "loop": true
+    },
+    "waiting": {
+      "spriteFrames": [
+        48,
+        49,
+        50,
+        51,
+        52,
+        53
+      ],
+      "frames": [
+        {
+          "sprite": 48,
+          "duration": 150
+        },
+        {
+          "sprite": 49,
+          "duration": 150
+        },
+        {
+          "sprite": 50,
+          "duration": 150
+        },
+        {
+          "sprite": 51,
+          "duration": 150
+        },
+        {
+          "sprite": 52,
+          "duration": 150
+        },
+        {
+          "sprite": 53,
+          "duration": 260
+        }
+      ],
+      "loop": true
+    },
+    "review": {
+      "spriteFrames": [
+        64,
+        65,
+        66,
+        67,
+        68,
+        69
+      ],
+      "frames": [
+        {
+          "sprite": 64,
+          "duration": 150
+        },
+        {
+          "sprite": 65,
+          "duration": 150
+        },
+        {
+          "sprite": 66,
+          "duration": 150
+        },
+        {
+          "sprite": 67,
+          "duration": 150
+        },
+        {
+          "sprite": 68,
+          "duration": 150
+        },
+        {
+          "sprite": 69,
+          "duration": 280
+        }
+      ],
+      "repeat": 3,
+      "fallback": "idle"
+    },
+    "failed": {
+      "spriteFrames": [
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47
+      ],
+      "frames": [
+        {
+          "sprite": 40,
+          "duration": 140
+        },
+        {
+          "sprite": 41,
+          "duration": 140
+        },
+        {
+          "sprite": 42,
+          "duration": 140
+        },
+        {
+          "sprite": 43,
+          "duration": 140
+        },
+        {
+          "sprite": 44,
+          "duration": 140
+        },
+        {
+          "sprite": 45,
+          "duration": 140
+        },
+        {
+          "sprite": 46,
+          "duration": 140
+        },
+        {
+          "sprite": 47,
+          "duration": 240
+        }
+      ],
+      "repeat": 2,
+      "fallback": "idle"
+    }
+  },
+  "aliases": {
+    "walk": "working",
+    "sleep": "waiting",
+    "talk": "working",
+    "happy": "review",
+    "confused": "failed",
+    "focused": "working",
+    "preparing": "working",
+    "gameplay": "working",
+    "gamewin": "review",
+    "gamelose": "failed"
+  },
+  "actions": {
+    "jump": {
+      "sprite": 32
+    },
+    "spin": {
+      "sprite": 58
+    },
+    "wave": {
+      "sprite": 24
+    },
+    "shake": {
+      "sprite": 40
+    }
+  },
+  "mini": {
+    "state": "idle",
+    "frame": 0,
+    "headRows": 208
+  },
+  "id": "stacky",
+  "displayName": "Stacky",
+  "description": "A balanced stack for deep work."
+}

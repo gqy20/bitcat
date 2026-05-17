@@ -262,57 +262,44 @@ describe('PetStateMachine', () => {
   });
 });
 
-function isMouthHotzone(x, y, canvasSize) {
-  if (typeof window !== 'undefined' && window.PetApp && window.PetApp.isMouthHotzone) {
-    return window.PetApp.isMouthHotzone(x, y, canvasSize);
+function hitPetHotspot(name, x, y, width, height) {
+  if (typeof window !== 'undefined' && window.PetApp && window.PetApp.hitPetHotspot) {
+    return window.PetApp.hitPetHotspot(name, x, y, width, height);
   }
-  const ratio = canvasSize / 128;
-  return ratio > 0 && x >= 32 * ratio && x <= 96 * ratio && y >= 56 * ratio && y <= 96 * ratio;
+  const hotspots = {
+    observe: { x: 0.18, y: 0.10, w: 0.64, h: 0.40 },
+    input: { x: 0.22, y: 0.38, w: 0.56, h: 0.34 },
+  };
+  const spec = hotspots[name];
+  if (!spec || width <= 0 || height <= 0) return false;
+  const left = spec.x * width;
+  const top = spec.y * height;
+  const right = (spec.x + spec.w) * width;
+  const bottom = (spec.y + spec.h) * height;
+  return x >= left && x <= right && y >= top && y <= bottom;
 }
 
-function isLeftEyeHotzone(x, y, canvasSize) {
-  if (typeof window !== 'undefined' && window.PetApp && window.PetApp.isLeftEyeHotzone) {
-    return window.PetApp.isLeftEyeHotzone(x, y, canvasSize);
-  }
-  const ratio = canvasSize / 128;
-  return ratio > 0 && x >= 22 * ratio && x <= 44 * ratio && y >= 44 * ratio && y <= 62 * ratio;
-}
-
-describe('嘴巴热区判定 isMouthHotzone', () => {
-  it('正常态嘴巴和腮红区域在热区内', () => {
-    expect(isMouthHotzone(64, 76, 128)).toBe(true);
-    expect(isMouthHotzone(40, 64, 128)).toBe(true);
-    expect(isMouthHotzone(88, 64, 128)).toBe(true);
+describe('语义热区判定 hitPetHotspot', () => {
+  it('observe 热区在范围内', () => {
+    expect(hitPetHotspot('observe', 32, 32, 128, 128)).toBe(true);
+    expect(hitPetHotspot('observe', 88, 52, 128, 128)).toBe(true);
+    expect(hitPetHotspot('observe', 64, 76, 128, 128)).toBe(false);
   });
 
-  it('眼睛和边缘区域不在嘴巴热区', () => {
-    expect(isMouthHotzone(40, 48, 128)).toBe(false);
-    expect(isMouthHotzone(20, 76, 128)).toBe(false);
+  it('input 热区在范围内', () => {
+    expect(hitPetHotspot('input', 64, 76, 128, 128)).toBe(true);
+    expect(hitPetHotspot('input', 40, 48, 128, 128)).toBe(false);
+    expect(hitPetHotspot('input', 20, 76, 128, 128)).toBe(false);
   });
 
   it('折叠态按比例缩放', () => {
-    expect(isMouthHotzone(24, 29, 48)).toBe(true);
-    expect(isMouthHotzone(15, 18, 48)).toBe(false);
+    expect(hitPetHotspot('observe', 12, 12, 48, 48)).toBe(true);
+    expect(hitPetHotspot('input', 18, 28, 48, 48)).toBe(true);
+    expect(hitPetHotspot('input', 10, 18, 48, 48)).toBe(false);
   });
 
   it('canvasSize 为 0 时全部不在热区', () => {
-    expect(isMouthHotzone(50, 50, 0)).toBe(false);
-  });
-});
-
-describe('左眼热区判定 isLeftEyeHotzone', () => {
-  it('正常态左眼在热区内，右眼和嘴巴不在热区', () => {
-    expect(isLeftEyeHotzone(32, 52, 128)).toBe(true);
-    expect(isLeftEyeHotzone(88, 52, 128)).toBe(false);
-    expect(isLeftEyeHotzone(64, 76, 128)).toBe(false);
-  });
-
-  it('折叠态按比例缩放', () => {
-    expect(isLeftEyeHotzone(12, 20, 48)).toBe(true);
-    expect(isLeftEyeHotzone(34, 20, 48)).toBe(false);
-  });
-
-  it('canvasSize 为 0 时全部不在热区', () => {
-    expect(isLeftEyeHotzone(32, 52, 0)).toBe(false);
+    expect(hitPetHotspot('observe', 32, 52, 0, 0)).toBe(false);
+    expect(hitPetHotspot('input', 50, 50, 0, 0)).toBe(false);
   });
 });

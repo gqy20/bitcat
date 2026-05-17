@@ -33,8 +33,28 @@ function configuredPetAssetUrl() {
   const fromQuery = params.get('petAsset');
   if (fromQuery) return normalizeBaseUrl(fromQuery);
   try {
+    const fromSession = window.sessionStorage && window.sessionStorage.getItem('ai-pad.petAssetUrl');
+    if (fromSession) return normalizeBaseUrl(fromSession);
     return normalizeBaseUrl(window.localStorage && window.localStorage.getItem('ai-pad.petAssetUrl'));
   } catch (_) {
+    return null;
+  }
+}
+
+async function configuredPetAssetUrlAsync() {
+  const configured = configuredPetAssetUrl();
+  if (configured) return configured;
+  if (typeof window === 'undefined' || !window.__TAURI__ || !window.__TAURI__.core) return null;
+  try {
+    const snapshot = await window.__TAURI__.core.invoke('cmd_settings_load');
+    const url = snapshot && snapshot.appearance && snapshot.appearance.pet_asset_url;
+    if (!url) return null;
+    const normalized = normalizeBaseUrl(url);
+    window.__PET_ASSET_URL__ = normalized;
+    try { window.sessionStorage.setItem('ai-pad.petAssetUrl', normalized); } catch (_) {}
+    return normalized;
+  } catch (error) {
+    console.warn('[sprite-loader] pet asset setting unavailable:', error);
     return null;
   }
 }
@@ -51,9 +71,24 @@ function cloneSprites(sprites) {
   );
 }
 
+function cloneHotspots(hotspots) {
+  if (!hotspots) return null;
+  return Object.fromEntries(
+    Object.entries(hotspots).map(([name, spec]) => [name, spec ? { ...spec } : spec])
+  );
+}
+
 function rendererFromRuntime(runtime, source) {
   const sprites = runtime.sprites;
   const palette = runtime.palette;
+  const frameWidth = runtime.frameWidth || SPRITE_W;
+  const frameHeight = runtime.frameHeight || SPRITE_H;
+  const renderScale = runtime.renderScale || 8;
+  const pixelated = runtime.pixelated !== false;
+  const displayWidth = runtime.displayWidth || Math.round(frameWidth * renderScale);
+  const displayHeight = runtime.displayHeight || Math.round(frameHeight * renderScale);
+  const sheetImage = runtime.sheetImage || null;
+  const sheetColumns = runtime.sheetColumns || 1;
 
   function getSprite(state, frame) {
     const frames = sprites[state] || sprites.idle;
@@ -62,20 +97,21 @@ function rendererFromRuntime(runtime, source) {
   }
 
   function renderSprite(ctx, state, frame, facingRight, scale, opts) {
-    scale = scale || 8;
+    scale = scale || renderScale;
     opts = opts || {};
     const ox = opts.offsetX || 0;
     const oy = opts.offsetY || 0;
     const bx = opts.baseX || 0;
     const by = opts.baseY || 0;
     const data = getSprite(state, frame);
-    const totalW = SPRITE_W * scale;
-    const totalH = SPRITE_H * scale;
+    const totalW = opts.width || Math.round(frameWidth * scale);
+    const totalH = opts.height || Math.round(frameHeight * scale);
     const canvasW = ctx.canvas ? ctx.canvas.width : totalW;
     const canvasH = ctx.canvas ? ctx.canvas.height : totalH;
 
     ctx.clearRect(0, 0, canvasW, canvasH);
     ctx.save();
+    ctx.imageSmoothingEnabled = !pixelated;
     if (facingRight === false) {
       ctx.translate(bx + totalW, by);
       ctx.scale(-1, 1);
@@ -83,9 +119,19 @@ function rendererFromRuntime(runtime, source) {
       ctx.translate(bx, by);
     }
 
-    for (let row = 0; row < SPRITE_H; row += 1) {
-      for (let col = 0; col < SPRITE_W; col += 1) {
-        const idx = row * SPRITE_W + col;
+    if (sheetImage) {
+      const sx = (data % sheetColumns) * frameWidth;
+      const sy = Math.floor(data / sheetColumns) * frameHeight;
+      const dx = ox + Math.floor((canvasW - totalW) / 2);
+      const dy = oy + Math.floor((canvasH - totalH) / 2);
+      ctx.drawImage(sheetImage, sx, sy, frameWidth, frameHeight, dx, dy, totalW, totalH);
+      ctx.restore();
+      return;
+    }
+
+    for (let row = 0; row < frameHeight; row += 1) {
+      for (let col = 0; col < frameWidth; col += 1) {
+        const idx = row * frameWidth + col;
         const color = palette[data[idx]];
         if (color) {
           ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},${color[3] / 255})`;
@@ -98,18 +144,30 @@ function rendererFromRuntime(runtime, source) {
 
   function renderMini(ctx, state) {
     const data = getSprite(state, 0);
-    const miniScale = 3;
-    const headRows = runtime.mini && runtime.mini.headRows ? runtime.mini.headRows : 10;
+    const miniScale = Math.max(1, Math.floor(48 / Math.max(frameWidth, frameHeight)));
+    const headRows = runtime.mini && runtime.mini.headRows ? runtime.mini.headRows : Math.min(frameHeight, 20);
+    const offsetX = Math.floor((48 - frameWidth * miniScale) / 2);
 
     ctx.clearRect(0, 0, 48, 48);
+    if (sheetImage) {
+      const sx = (data % sheetColumns) * frameWidth;
+      const sy = Math.floor(data / sheetColumns) * frameHeight;
+      const scale = Math.min(48 / frameWidth, 48 / frameHeight);
+      const dw = Math.floor(frameWidth * scale);
+      const dh = Math.floor(frameHeight * scale);
+      ctx.imageSmoothingEnabled = !pixelated;
+      ctx.drawImage(sheetImage, sx, sy, frameWidth, frameHeight, Math.floor((48 - dw) / 2), Math.floor((48 - dh) / 2), dw, dh);
+      return;
+    }
+
     const offsetY = Math.floor((48 - headRows * miniScale) / 2);
     for (let row = 0; row < headRows; row += 1) {
-      for (let col = 0; col < SPRITE_W; col += 1) {
-        const idx = row * SPRITE_W + col;
+      for (let col = 0; col < frameWidth; col += 1) {
+        const idx = row * frameWidth + col;
         const color = palette[data[idx]];
         if (color) {
           ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},${color[3] / 255})`;
-          ctx.fillRect(col * miniScale, offsetY + row * miniScale, miniScale, miniScale);
+          ctx.fillRect(offsetX + col * miniScale, offsetY + row * miniScale, miniScale, miniScale);
         }
       }
     }
@@ -118,14 +176,21 @@ function rendererFromRuntime(runtime, source) {
   return {
     SPRITES: sprites,
     PALETTE: palette,
-    SPRITE_W,
-    SPRITE_H,
+    SPRITE_W: frameWidth,
+    SPRITE_H: frameHeight,
+    frameWidth,
+    frameHeight,
+    renderScale,
+    displayWidth,
+    displayHeight,
+    pixelated,
     getSprite,
     renderSprite,
     renderMini,
     runSpriteTests,
     cloneSprite,
     stateConfig: runtime.stateConfig,
+    hotspots: cloneHotspots(runtime.hotspots),
     assetSource: source,
   };
 }
@@ -134,6 +199,12 @@ function builtinRuntime() {
   return {
     sprites: cloneSprites(BUILTIN_SPRITES),
     palette: clonePalette(BUILTIN_PALETTE),
+    frameWidth: SPRITE_W,
+    frameHeight: SPRITE_H,
+    renderScale: 8,
+    pixelated: true,
+    displayWidth: 128,
+    displayHeight: 128,
     stateConfig: null,
     mini: { headRows: 10 },
   };
@@ -150,15 +221,18 @@ function validateManifest(manifest) {
   if (!manifest || typeof manifest !== 'object') {
     throw new Error('manifest must be an object');
   }
-  if (manifest.schemaVersion !== 1) {
+  if (manifest.schemaVersion !== 2) {
     throw new Error('unsupported manifest schemaVersion');
   }
   const sprite = manifest.sprite;
   if (!sprite || typeof sprite !== 'object') {
     throw new Error('manifest.sprite is required');
   }
-  if (sprite.frameWidth !== SPRITE_W || sprite.frameHeight !== SPRITE_H) {
-    throw new Error(`sprite frames must be ${SPRITE_W}x${SPRITE_H}`);
+  if (!Number.isInteger(sprite.frameWidth) || sprite.frameWidth <= 0) {
+    throw new Error('sprite.frameWidth must be positive');
+  }
+  if (!Number.isInteger(sprite.frameHeight) || sprite.frameHeight <= 0) {
+    throw new Error('sprite.frameHeight must be positive');
   }
   if (!Number.isInteger(sprite.columns) || sprite.columns <= 0) {
     throw new Error('sprite.columns must be positive');
@@ -173,8 +247,25 @@ function validateManifest(manifest) {
     throw new Error('sprite.frameCount exceeds sheet capacity');
   }
   for (const state of REQUIRED_STATES) {
-    if (!manifest.states || !manifest.states[state]) {
+    const hasState = manifest.states && manifest.states[state];
+    const aliasTarget = manifest.aliases && manifest.aliases[state];
+    if (!hasState && !aliasTarget) {
       throw new Error(`missing required state: ${state}`);
+    }
+  }
+  if (manifest.hotspots != null) {
+    if (!manifest.hotspots || typeof manifest.hotspots !== 'object' || Array.isArray(manifest.hotspots)) {
+      throw new Error('manifest.hotspots must be an object');
+    }
+    for (const [name, spec] of Object.entries(manifest.hotspots)) {
+      if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
+        throw new Error(`hotspots.${name} must be an object`);
+      }
+      for (const key of ['x', 'y', 'w', 'h']) {
+        if (!Number.isFinite(spec[key])) {
+          throw new Error(`hotspots.${name}.${key} must be numeric`);
+        }
+      }
     }
   }
   return manifest;
@@ -313,19 +404,22 @@ function remapTimeline(timeline, localFrames, frameCount, stateName, allStates) 
 
 function buildRuntimeFromManifest(manifest, imageData) {
   validateManifest(manifest);
+  const { frameWidth, frameHeight } = manifest.sprite;
+  const render = manifest.render || {};
+  const sheetMode = render.mode === 'sheet';
   if (
     !imageData ||
-    imageData.width < manifest.sprite.columns * SPRITE_W ||
-    imageData.height < manifest.sprite.rows * SPRITE_H
+    imageData.width < manifest.sprite.columns * frameWidth ||
+    imageData.height < manifest.sprite.rows * frameHeight
   ) {
     throw new Error('sprite image dimensions do not match manifest');
   }
 
   const palette = normalizePalette(manifest.palette);
-  const lookup = buildPaletteLookup(palette);
+  const lookup = sheetMode ? null : buildPaletteLookup(palette);
   const sheetFrames = [];
   for (let i = 0; i < manifest.sprite.frameCount; i += 1) {
-    sheetFrames.push(frameFromImageData(imageData, manifest, i, lookup));
+    sheetFrames.push(sheetMode ? i : frameFromImageData(imageData, manifest, i, lookup));
   }
 
   const sprites = {};
@@ -351,17 +445,48 @@ function buildRuntimeFromManifest(manifest, imageData) {
       manifest.states
     );
   }
+  for (const [alias, target] of Object.entries(manifest.aliases || {})) {
+    if (!sprites[target] || !stateConfig[target]) {
+      throw new Error(`alias ${alias} references missing state ${target}`);
+    }
+    sprites[alias] = sprites[target];
+    stateConfig[alias] = { ...stateConfig[target] };
+  }
+  for (const state of REQUIRED_STATES) {
+    if (!sprites[state] || !stateConfig[state]) {
+      throw new Error(`missing required state: ${state}`);
+    }
+  }
+  const renderScale = Number.isFinite(render.scale)
+    ? render.scale
+    : Number.isFinite(render.logicalSize)
+      ? render.logicalSize / Math.max(frameWidth, frameHeight)
+      : 8;
+  const displayWidth = Number.isFinite(render.displayWidth)
+    ? render.displayWidth
+    : Math.round(frameWidth * renderScale);
+  const displayHeight = Number.isFinite(render.displayHeight)
+    ? render.displayHeight
+    : Math.round(frameHeight * renderScale);
 
   return {
     sprites,
     palette,
+    frameWidth,
+    frameHeight,
+    renderScale,
+    pixelated: render.pixelated !== false,
+    displayWidth,
+    displayHeight,
+    sheetColumns: manifest.sprite.columns,
     stateConfig,
     mini: manifest.mini || { headRows: 10 },
+    hotspots: cloneHotspots(manifest.hotspots),
     manifest,
   };
 }
 
-async function imageDataFromUrl(url) {
+async function imageAssetFromUrl(url) {
   const image = new Image();
   image.decoding = 'sync';
   image.src = url;
@@ -371,7 +496,10 @@ async function imageDataFromUrl(url) {
   canvas.height = image.naturalHeight || image.height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(image, 0, 0);
-  return ctx.getImageData(0, 0, canvas.width, canvas.height);
+  return {
+    image,
+    imageData: ctx.getImageData(0, 0, canvas.width, canvas.height),
+  };
 }
 
 async function loadPetAssetPack(baseUrl, options) {
@@ -388,10 +516,13 @@ async function loadPetAssetPack(baseUrl, options) {
     }
     const manifest = await response.json();
     const imageUrl = `${root}/${manifest.sprite && manifest.sprite.image ? manifest.sprite.image : 'sprites.png'}`;
-    const imageData = opts.imageData
-      ? await opts.imageData(imageUrl, manifest)
-      : await imageDataFromUrl(imageUrl);
-    const runtime = buildRuntimeFromManifest(manifest, imageData);
+    const imageAsset = opts.imageData
+      ? { imageData: await opts.imageData(imageUrl, manifest), image: opts.image || null }
+      : await imageAssetFromUrl(imageUrl);
+    const runtime = buildRuntimeFromManifest(manifest, imageAsset.imageData);
+    if (manifest.render && manifest.render.mode === 'sheet') {
+      runtime.sheetImage = imageAsset.image;
+    }
     return rendererFromRuntime(runtime, {
       kind: 'manifest',
       id: manifest.id || null,
@@ -416,8 +547,9 @@ function installSpriteRenderer(renderer) {
 
 function initSpriteRenderer() {
   installSpriteRenderer(builtinRenderer('external pet not loaded yet'));
-  const baseUrl = configuredPetAssetUrl();
-  const promise = loadPetAssetPack(baseUrl).then(installSpriteRenderer);
+  const promise = configuredPetAssetUrlAsync()
+    .then((baseUrl) => loadPetAssetPack(baseUrl))
+    .then(installSpriteRenderer);
   if (typeof window !== 'undefined') {
     window.SpriteRendererReady = promise;
   }
@@ -433,6 +565,7 @@ export {
   buildRuntimeFromManifest,
   builtinRenderer,
   configuredPetAssetUrl,
+  configuredPetAssetUrlAsync,
   initSpriteRenderer,
   installSpriteRenderer,
   loadPetAssetPack,

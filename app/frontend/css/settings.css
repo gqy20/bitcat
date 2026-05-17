@@ -616,6 +616,21 @@ input[type="checkbox"]:checked::after {
   gap: 8px;
 }
 
+.pet-asset-field {
+  display: grid;
+  gap: 7px;
+}
+
+.pet-asset-field .hidden {
+  display: none;
+}
+
+.pet-asset-field small {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
 .icon-btn,
 .mini,
 .btn {

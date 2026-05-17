@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tracing::{info, warn};
 
 const WINDOW_LABEL: &str = "settings";
@@ -202,6 +202,8 @@ pub struct AppearanceInput {
     pub global_shortcut: String,
     #[serde(default = "default_screenshot_interval_sec")]
     pub screenshot_interval_sec: u64,
+    #[serde(default)]
+    pub pet_asset_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -759,6 +761,14 @@ pub async fn cmd_settings_save_appearance(
         tts_enabled: payload.tts_enabled,
         global_shortcut: payload.global_shortcut,
         screenshot_interval_sec: interval,
+        pet_asset_url: payload.pet_asset_url.and_then(|value| {
+            let trimmed = value.trim().trim_end_matches('/').to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        }),
         pet_position: s.appearance.pet_position,
     };
     s.save()?;
@@ -771,6 +781,12 @@ pub async fn cmd_settings_save_appearance(
         if let Some(w) = app.get_webview_window(label) {
             let _ = w.set_always_on_top(s.appearance.always_on_top);
         }
+    }
+    if let Some(w) = app.get_webview_window("pet") {
+        let _ = w.emit(
+            "pet-asset-config-changed",
+            s.appearance.pet_asset_url.clone(),
+        );
     }
     info!(appearance = ?s.appearance, "[settings] 外观设置已保存");
     Ok(())

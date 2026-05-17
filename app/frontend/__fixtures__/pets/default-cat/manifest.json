@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "default-cat",
   "displayName": "Default Cat",
   "description": "The built-in 8-bit cat exported as a manifest-compatible fixture pack.",
@@ -405,5 +405,12 @@
       "wave:0",
       "shake:0"
     ]
+  },
+  "render": {
+    "mode": "sheet",
+    "displayWidth": 128,
+    "displayHeight": 128,
+    "scale": 8,
+    "pixelated": true
   }
 }

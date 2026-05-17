@@ -44,8 +44,8 @@ function readPngDimensions(bytes) {
 }
 
 describe('default-cat pet fixture pack', () => {
-  it('declares the manifest v1 sprite sheet shape', () => {
-    expect(manifest.schemaVersion).toBe(1);
+  it('declares the manifest v2 sprite sheet shape', () => {
+    expect(manifest.schemaVersion).toBe(2);
     expect(manifest.id).toBe('default-cat');
     expect(manifest.sprite).toEqual({
       image: 'sprites.png',
@@ -54,6 +54,13 @@ describe('default-cat pet fixture pack', () => {
       columns: 8,
       rows: 5,
       frameCount: 40,
+    });
+    expect(manifest.render).toMatchObject({
+      mode: 'sheet',
+      displayWidth: 128,
+      displayHeight: 128,
+      scale: 8,
+      pixelated: true,
     });
   });
 

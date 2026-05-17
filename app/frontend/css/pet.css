@@ -5,8 +5,8 @@
 }
 
 html, body {
-  width: 128px;
-  height: 128px;
+  width: var(--pet-width, 128px);
+  height: var(--pet-height, 128px);
   background-color: rgba(0, 0, 0, 0);
   overflow: hidden;
   font-family: monospace;
@@ -26,8 +26,8 @@ html, body {
   position: absolute;
   top: 0;
   left: 0;
-  width: 128px;
-  height: 128px;
+  width: var(--pet-width, 128px);
+  height: var(--pet-height, 128px);
   image-rendering: pixelated;
   transform-origin: 50% 60%;
   z-index: 2;
@@ -50,6 +50,14 @@ body.screenshot-capturing #pet-root::after {
 /* idle 状态下的呼吸节奏（轻微缩放） */
 body.state-idle #sprite {
   animation: breath 2.4s ease-in-out infinite;
+}
+
+body.pet-hotspot-observe #sprite {
+  filter: brightness(1.05) saturate(1.08) drop-shadow(0 0 4px rgba(112, 214, 255, 0.22));
+}
+
+body.pet-hotspot-input #sprite {
+  filter: brightness(1.04) saturate(1.06) drop-shadow(0 0 4px rgba(183, 130, 255, 0.18));
 }
 
 /* 跳舞时禁用呼吸动画，避免与窗口动画冲突 */

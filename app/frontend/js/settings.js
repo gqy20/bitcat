@@ -6,6 +6,21 @@
 const invoke = window.__TAURI__?.core?.invoke || mockInvoke;
 
 const ACTION_TYPES = ["unbound", "launch", "hotkey", "script", "voice", "screenshot"];
+const PET_ASSET_PRESETS = [
+  { value: "", label: "内置小猫" },
+  { value: "/__fixtures__/pets/default-cat", label: "Default Cat" },
+  { value: "/__fixtures__/pets/status", label: "Status" },
+  { value: "/__fixtures__/pets/core", label: "Core" },
+  { value: "/__fixtures__/pets/dewey", label: "Dewey" },
+  { value: "/__fixtures__/pets/fireball", label: "Fireball" },
+  { value: "/__fixtures__/pets/rocky", label: "Rocky" },
+  { value: "/__fixtures__/pets/seedy", label: "Seedy" },
+  { value: "/__fixtures__/pets/stacky", label: "Stacky" },
+  { value: "/__fixtures__/pets/bsod", label: "BSOD" },
+  { value: "/__fixtures__/pets/null-signal", label: "Null Signal" },
+];
+const PET_ASSET_DEFAULT_CAT = "/__fixtures__/pets/default-cat";
+const PET_ASSET_PRESET_VALUES = new Set(PET_ASSET_PRESETS.map(item => item.value).filter(Boolean));
 const ACTION_TYPE_LABELS = {
   unbound: "未绑定",
   launch: "启动程序",
@@ -70,6 +85,7 @@ async function mockInvoke(command) {
         tts_enabled: true,
         global_shortcut: "CommandOrControl+Alt+Space",
         screenshot_interval_sec: 30,
+        pet_asset_url: "",
       },
       agent_watch: {
         enabled: false,
@@ -459,10 +475,16 @@ function renderAppearance(a) {
   $("a-tts").checked = a.tts_enabled;
   $("a-shortcut").value = a.global_shortcut;
   $("a-ss-interval").value = a.screenshot_interval_sec ?? 30;
+  renderPetAssetPresetOptions();
+  renderPetAssetChoice(a.pet_asset_url || "");
   updateOverviewAppearance(a);
 
   ["a-top","a-collapsed","a-tts"].forEach(id => { $(id).onchange = () => markDirty("appearance"); });
-  ["a-shortcut","a-ss-interval"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
+  ["a-shortcut","a-ss-interval","a-pet-asset"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
+  $("a-pet-asset-preset").onchange = () => {
+    applyPetAssetPreset($("a-pet-asset-preset").value);
+    markDirty("appearance");
+  };
 }
 
 function collectAppearance() {
@@ -474,7 +496,62 @@ function collectAppearance() {
     tts_enabled: $("a-tts").checked,
     global_shortcut: $("a-shortcut").value.trim() || "CommandOrControl+Alt+Space",
     screenshot_interval_sec: interval,
+    pet_asset_url: collectPetAssetUrl(),
   };
+}
+
+function renderPetAssetChoice(value) {
+  const normalized = normalizePetAssetUrl(value);
+  if (!normalized) {
+    $("a-pet-asset-preset").value = "";
+    $("a-pet-asset").value = "";
+  } else if (PET_ASSET_PRESET_VALUES.has(normalized)) {
+    $("a-pet-asset-preset").value = normalized;
+    $("a-pet-asset").value = normalized;
+  } else {
+    $("a-pet-asset-preset").value = "__custom";
+    $("a-pet-asset").value = normalized;
+  }
+  updatePetAssetCustomVisibility();
+}
+
+function applyPetAssetPreset(value) {
+  if (value === "__custom") {
+    if (!$("a-pet-asset").value.trim()) $("a-pet-asset").value = PET_ASSET_DEFAULT_CAT;
+  } else {
+    $("a-pet-asset").value = value;
+  }
+  updatePetAssetCustomVisibility();
+}
+
+function updatePetAssetCustomVisibility() {
+  $("a-pet-asset").classList.toggle("hidden", $("a-pet-asset-preset").value !== "__custom");
+}
+
+function collectPetAssetUrl() {
+  const preset = $("a-pet-asset-preset").value;
+  if (!preset) return null;
+  if (preset !== "__custom") return normalizePetAssetUrl(preset) || null;
+  return normalizePetAssetUrl($("a-pet-asset").value) || null;
+}
+
+function normalizePetAssetUrl(value) {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function renderPetAssetPresetOptions() {
+  const select = $("a-pet-asset-preset");
+  if (!select) return;
+  const current = select.value;
+  const options = PET_ASSET_PRESETS.map(({ value, label }) =>
+    `<option value="${escapeAttr(value)}">${escapeHtml(label)}</option>`
+  ).join("") + `<option value="__custom">自定义地址</option>`;
+  if (select.innerHTML !== options) {
+    select.innerHTML = options;
+  }
+  if (current && [...select.options].some(option => option.value === current)) {
+    select.value = current;
+  }
 }
 
 function renderAgentWatch(a) {
