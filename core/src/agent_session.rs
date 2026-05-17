@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
+const DONE_QUIET_AFTER_SEC: u64 = 60;
+
 /// 外部编码 Agent 来源。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -86,9 +88,9 @@ impl AgentStatus {
 
     fn sort_rank(self) -> u8 {
         match self {
-            Self::Done => 0,
-            Self::Waiting | Self::Error => 1,
-            Self::ToolRunning | Self::Working | Self::Compacting => 2,
+            Self::Waiting | Self::Error => 0,
+            Self::ToolRunning | Self::Working | Self::Compacting => 1,
+            Self::Done => 2,
             Self::Interrupted => 3,
             Self::Idle => 4,
         }
@@ -200,10 +202,12 @@ pub struct AgentSessionView {
     pub needs_user: bool,
     pub updated_at_ms: u64,
     pub age_sec: u64,
+    pub display: AgentSessionDisplay,
 }
 
 impl AgentSessionView {
     pub fn from_session(session: &AgentSession, now_ms: u64) -> Self {
+        let age_sec = now_ms.saturating_sub(session.updated_at_ms) / 1000;
         Self {
             session_id: session.session_id.clone(),
             source: session.source.as_str().to_string(),
@@ -217,8 +221,293 @@ impl AgentSessionView {
             last_response_preview: session.last_response_preview.clone(),
             needs_user: session.needs_user,
             updated_at_ms: session.updated_at_ms,
-            age_sec: now_ms.saturating_sub(session.updated_at_ms) / 1000,
+            age_sec,
+            display: AgentSessionDisplay::from_session(session, age_sec),
         }
+    }
+}
+
+/// 前端浮窗可直接展示的任务摘要，避免 UI 解析 hook JSON。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentSessionDisplay {
+    pub tone: String,
+    pub headline: String,
+    pub detail: String,
+    pub project: String,
+    pub source_label: String,
+    pub action_label: String,
+    pub age_label: String,
+    pub quiet: bool,
+}
+
+impl AgentSessionDisplay {
+    pub fn from_session(session: &AgentSession, age_sec: u64) -> Self {
+        let action = action_summary(session);
+        let project = session.workspace_name();
+        let source_label = session.source.display_name().to_string();
+        let action_label = action.label.clone();
+        let tone = tone_for(session.status).to_string();
+        let quiet = session.status == AgentStatus::Done && age_sec >= DONE_QUIET_AFTER_SEC;
+        let headline = match session.status {
+            AgentStatus::Waiting => "需要你处理".to_string(),
+            AgentStatus::Error => "任务遇到异常".to_string(),
+            AgentStatus::Compacting => "正在压缩上下文".to_string(),
+            AgentStatus::ToolRunning => action
+                .headline
+                .unwrap_or_else(|| "正在运行工具".to_string()),
+            AgentStatus::Working => action
+                .headline
+                .unwrap_or_else(|| "正在思考下一步".to_string()),
+            AgentStatus::Done => "已完成".to_string(),
+            AgentStatus::Interrupted => "已中断".to_string(),
+            AgentStatus::Idle => "空闲".to_string(),
+        };
+        let detail = match session.status {
+            AgentStatus::Waiting => action
+                .detail
+                .or_else(|| session.user_prompt_preview.clone())
+                .unwrap_or_else(|| format!("{project} 等待确认")),
+            AgentStatus::Error => session
+                .last_response_preview
+                .clone()
+                .or(action.detail)
+                .unwrap_or_else(|| format!("{project} 返回了错误")),
+            AgentStatus::Done => session
+                .last_response_preview
+                .as_deref()
+                .and_then(|text| compact_preview(text, 72))
+                .or_else(|| action.detail.clone())
+                .unwrap_or_else(|| format!("{project} 的任务已结束")),
+            _ => action
+                .detail
+                .or_else(|| session.user_prompt_preview.clone())
+                .unwrap_or_else(|| project.clone()),
+        };
+
+        Self {
+            tone,
+            headline,
+            detail,
+            project,
+            source_label,
+            action_label,
+            age_label: age_label(age_sec),
+            quiet,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ActionSummary {
+    label: String,
+    headline: Option<String>,
+    detail: Option<String>,
+}
+
+fn tone_for(status: AgentStatus) -> &'static str {
+    match status {
+        AgentStatus::Waiting => "needs_user",
+        AgentStatus::Error => "error",
+        AgentStatus::Done => "done",
+        AgentStatus::Interrupted => "muted",
+        AgentStatus::ToolRunning | AgentStatus::Working | AgentStatus::Compacting => "active",
+        AgentStatus::Idle => "muted",
+    }
+}
+
+fn action_summary(session: &AgentSession) -> ActionSummary {
+    let tool = session.tool_name.as_deref().unwrap_or_default();
+    let lower = tool.to_ascii_lowercase();
+    let parsed = session
+        .tool_input_preview
+        .as_deref()
+        .and_then(parse_preview_object);
+
+    if lower.contains("bash") || lower.contains("powershell") {
+        let command = parsed
+            .as_ref()
+            .and_then(|input| input.get("command"))
+            .map(|value| command_summary(value))
+            .or_else(|| session.tool_input_preview.as_deref().map(command_summary));
+        let description = parsed
+            .as_ref()
+            .and_then(|input| input.get("description"))
+            .and_then(|value| compact_preview(value, 56));
+        return ActionSummary {
+            label: "Shell".to_string(),
+            headline: Some(
+                command
+                    .as_deref()
+                    .map(|value| format!("正在运行 {value}"))
+                    .unwrap_or_else(|| "正在运行命令".to_string()),
+            ),
+            detail: description.or(command),
+        };
+    }
+
+    if lower.contains("read") {
+        let target = parsed
+            .as_ref()
+            .and_then(|input| input.get("file_path"))
+            .map(|value| basename(value));
+        return ActionSummary {
+            label: "Read".to_string(),
+            headline: target
+                .as_deref()
+                .map(|value| format!("正在读取 {value}"))
+                .or_else(|| Some("正在读取文件".to_string())),
+            detail: target,
+        };
+    }
+
+    if lower.contains("edit") || lower.contains("write") {
+        let target = parsed
+            .as_ref()
+            .and_then(|input| input.get("file_path"))
+            .map(|value| basename(value));
+        return ActionSummary {
+            label: if lower.contains("write") {
+                "Write"
+            } else {
+                "Edit"
+            }
+            .to_string(),
+            headline: target
+                .as_deref()
+                .map(|value| format!("正在修改 {value}"))
+                .or_else(|| Some("正在修改文件".to_string())),
+            detail: target,
+        };
+    }
+
+    if lower.contains("grep") || lower.contains("glob") {
+        let pattern = parsed
+            .as_ref()
+            .and_then(|input| input.get("pattern"))
+            .and_then(|value| compact_preview(value, 40));
+        return ActionSummary {
+            label: "Search".to_string(),
+            headline: pattern
+                .as_deref()
+                .map(|value| format!("正在搜索 {value}"))
+                .or_else(|| Some("正在搜索代码".to_string())),
+            detail: pattern,
+        };
+    }
+
+    if lower.contains("agent") || lower.contains("task") {
+        let description = parsed
+            .as_ref()
+            .and_then(|input| input.get("description"))
+            .and_then(|value| compact_preview(value, 64));
+        return ActionSummary {
+            label: "Agent".to_string(),
+            headline: Some("正在分派子任务".to_string()),
+            detail: description,
+        };
+    }
+
+    ActionSummary {
+        label: tool_label(tool),
+        headline: session
+            .tool_input_preview
+            .as_deref()
+            .and_then(|value| compact_preview(value, 56))
+            .map(|value| format!("正在处理 {value}")),
+        detail: session
+            .tool_input_preview
+            .as_deref()
+            .and_then(|value| compact_preview(value, 72)),
+    }
+}
+
+fn parse_preview_object(value: &str) -> Option<HashMap<String, String>> {
+    let parsed = serde_json::from_str::<serde_json::Value>(value).ok()?;
+    let object = parsed.as_object()?;
+    Some(
+        object
+            .iter()
+            .filter_map(|(key, value)| preview_value_to_string(value).map(|v| (key.clone(), v)))
+            .collect(),
+    )
+}
+
+fn preview_value_to_string(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::Null => None,
+        serde_json::Value::String(text) => Some(text.clone()),
+        serde_json::Value::Bool(v) => Some(v.to_string()),
+        serde_json::Value::Number(v) => Some(v.to_string()),
+        other => serde_json::to_string(other).ok(),
+    }
+}
+
+fn tool_label(tool: &str) -> String {
+    let trimmed = tool.trim();
+    if trimmed.is_empty() {
+        "Task".to_string()
+    } else {
+        trimmed
+            .strip_prefix("mcp__")
+            .unwrap_or(trimmed)
+            .replace("__", " / ")
+    }
+}
+
+fn command_summary(value: &str) -> String {
+    let text = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    let lower = text.to_ascii_lowercase();
+    for prefix in ["cargo ", "npm ", "pnpm ", "yarn ", "python ", "pip "] {
+        if let Some(pos) = lower.find(prefix) {
+            return compact_middle(&text[pos..], 42);
+        }
+    }
+    compact_middle(&text, 42)
+}
+
+fn compact_preview(value: &str, max_chars: usize) -> Option<String> {
+    let text = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.is_empty() {
+        return None;
+    }
+    Some(compact_middle(&text, max_chars))
+}
+
+fn compact_middle(value: &str, max_chars: usize) -> String {
+    let count = value.chars().count();
+    if count <= max_chars {
+        return value.to_string();
+    }
+    let head = (max_chars.saturating_mul(2) / 3).max(8);
+    let tail = max_chars.saturating_sub(head).saturating_sub(1).max(4);
+    let start: String = value.chars().take(head).collect();
+    let end: String = value
+        .chars()
+        .rev()
+        .take(tail)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    format!("{start}…{end}")
+}
+
+fn basename(path: &str) -> String {
+    Path::new(path)
+        .file_name()
+        .and_then(|v| v.to_str())
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or(path)
+        .to_string()
+}
+
+fn age_label(age_sec: u64) -> String {
+    if age_sec < 60 {
+        format!("{age_sec}s")
+    } else if age_sec < 3600 {
+        format!("{}m", age_sec / 60)
+    } else {
+        format!("{}h", age_sec / 3600)
     }
 }
 
@@ -306,7 +595,7 @@ mod tests {
     }
 
     #[test]
-    fn sort_prioritizes_done_waiting_active_idle() {
+    fn sort_prioritizes_waiting_active_done_idle() {
         let sessions = vec![
             event("idle", AgentStatus::Idle, 400).into_session(),
             event("work", AgentStatus::Working, 500).into_session(),
@@ -315,7 +604,7 @@ mod tests {
         ];
         let sorted = sort_sessions(sessions);
         let ids: Vec<_> = sorted.iter().map(|s| s.session_id.as_str()).collect();
-        assert_eq!(ids, vec!["done", "wait", "work", "idle"]);
+        assert_eq!(ids, vec!["wait", "work", "done", "idle"]);
     }
 
     #[test]
@@ -345,5 +634,25 @@ mod tests {
         assert_eq!(view.workspace_name, "abc");
         assert_eq!(view.status, "done");
         assert_eq!(view.age_sec, 5);
+        assert_eq!(view.display.headline, "已完成");
+    }
+
+    #[test]
+    fn display_summarizes_shell_command() {
+        let mut session = event("abc", AgentStatus::ToolRunning, 1000).into_session();
+        session.tool_name = Some("Bash".into());
+        session.tool_input_preview =
+            Some(r#"{"command":"cargo nextest run -p ai-pad-core"}"#.into());
+        let view = AgentSessionView::from_session(&session, 6100);
+        assert_eq!(view.display.tone, "active");
+        assert_eq!(view.display.action_label, "Shell");
+        assert!(view.display.headline.contains("cargo nextest"));
+    }
+
+    #[test]
+    fn display_marks_old_done_as_quiet() {
+        let session = event("abc", AgentStatus::Done, 1000).into_session();
+        let view = AgentSessionView::from_session(&session, 62_000);
+        assert!(view.display.quiet);
     }
 }

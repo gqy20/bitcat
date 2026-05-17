@@ -3,6 +3,7 @@
   const listen = window.__TAURI__?.event?.listen;
   const shell = document.getElementById("agent-watch");
   const watchHeader = document.getElementById("watch-header");
+  const watchTitle = document.getElementById("watch-title");
   const stack = document.getElementById("stack");
   const watchCount = document.getElementById("watch-count");
   const watchActions = document.querySelector(".watch-actions");
@@ -248,8 +249,8 @@
   function attentionRank(session) {
     const status = String(session.status || "").toLowerCase();
     if (status === "waiting" || status === "error") return 0;
-    if (status === "done") return 1;
-    if (status === "working" || status === "tool_running" || status === "compacting") return 2;
+    if (status === "working" || status === "tool_running" || status === "compacting") return 1;
+    if (status === "done") return 2;
     return 3;
   }
 
@@ -302,6 +303,18 @@
   }
 
   function viewOf(session) {
+    if (session.display) {
+      return {
+        kind: session.display.action_label || classifySession(session),
+        target: session.display.headline || session.workspace_name || targetOf(session, null),
+        detail: session.display.detail || session.display.project || summaryOf(session),
+        project: session.display.project || session.workspace_name || "",
+        source: session.display.source_label || agentSourceLabel(session.source),
+        age: session.display.age_label || ageLabel(session.age_sec),
+        tone: session.display.tone || session.status || "idle",
+        quiet: Boolean(session.display.quiet),
+      };
+    }
     const done = isDone(session);
     const raw = done || isError(session)
       ? session.last_response_preview
@@ -321,7 +334,19 @@
       kind,
       target,
       detail: compactText(detail, 96),
+      project: session.workspace_name || "",
+      source: agentSourceLabel(session.source),
+      age: ageLabel(session.age_sec),
+      tone: session.status || "idle",
+      quiet: false,
     };
+  }
+
+  function ageLabel(ageSec) {
+    if (typeof ageSec !== "number") return "";
+    if (ageSec < 60) return `${ageSec}s`;
+    if (ageSec < 3600) return `${Math.floor(ageSec / 60)}m`;
+    return `${Math.floor(ageSec / 3600)}h`;
   }
 
   function metaOf(session) {
@@ -352,38 +377,52 @@
   function render(snapshot) {
     latest = snapshot || latest;
     const sessions = latest?.sessions || [];
+    const visibleCount = sessions.filter((session) => !session.display?.quiet).length;
     watchCount.textContent = String(sessions.length);
+    if (watchTitle) {
+      const waiting = sessions.filter((session) => session.needs_user || session.display?.tone === "needs_user").length;
+      const active = sessions.filter((session) => ["active", "error"].includes(session.display?.tone)).length;
+      watchTitle.textContent = waiting ? `${waiting} 个需要处理` : active ? `${active} 个进行中` : "Agent Watch";
+    }
     updateExpandToggle(sessions);
     if (!sessions.length) {
       stack.innerHTML = `<div class="empty">暂无 Claude Code 任务</div>`;
       setFolded(false);
       return;
     }
-    stack.innerHTML = sortedSessions(sessions).slice(0, 3).map((session) => {
+    const visibleSessions = sortedSessions(sessions)
+      .filter((session) => !session.display?.quiet)
+      .slice(0, 3);
+    stack.innerHTML = visibleSessions.map((session) => {
       const id = session.session_id;
       const isCollapsed = collapsed.has(id);
       const status = session.status || "idle";
       const view = viewOf(session);
       return `
-        <article class="task-card ${escapeAttr(status)} ${isCollapsed ? "collapsed" : ""}" data-id="${escapeAttr(id)}">
+        <article class="task-card ${escapeAttr(status)} tone-${escapeAttr(view.tone)} ${view.quiet ? "quiet" : ""} ${isCollapsed ? "collapsed" : ""}" data-id="${escapeAttr(id)}">
+          <span class="task-rail" aria-hidden="true"></span>
           <div class="task-main">
             <div class="task-headline">
-              <span class="task-source ${escapeAttr(agentSourceClass(session.source))}" title="${escapeAttr(agentSourceLabel(session.source))}" aria-label="${escapeAttr(agentSourceLabel(session.source))}">${escapeHtml(agentSourceShort(session.source))}</span>
-              <span class="task-kind">${escapeHtml(view.kind)}</span>
               <h2 class="task-title">${escapeHtml(view.target)}</h2>
+              <span class="task-age">${escapeHtml(view.age)}</span>
             </div>
             <p class="task-summary">${escapeHtml(view.detail)}</p>
             <div class="task-meta">
               <span class="task-dot"></span>
-              <span>${escapeHtml(metaOf(session))}</span>
+              <span>${escapeHtml(view.project)}</span>
+              <span>${escapeHtml(view.source)}</span>
+              <span>${escapeHtml(view.kind)}</span>
             </div>
           </div>
           <div class="task-actions">
-            <button class="task-open" type="button" data-action="open" title="打开工作目录">目录</button>
+            <button class="task-open" type="button" data-action="open" title="打开工作目录">打开</button>
             <button class="task-toggle" type="button" data-action="toggle" title="${isCollapsed ? "展开" : "折叠"}" aria-label="${isCollapsed ? "展开" : "折叠"}">${isCollapsed ? "+" : "-"}</button>
           </div>
         </article>`;
     }).join("");
+    if (visibleCount < sessions.length) {
+      stack.innerHTML += `<div class="quiet-note">已收起 ${sessions.length - visibleCount} 个完成任务</div>`;
+    }
   }
 
   async function refresh() {

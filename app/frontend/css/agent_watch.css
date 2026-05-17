@@ -171,25 +171,57 @@ body {
 
 .task-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 4px minmax(0, 1fr) auto;
   align-items: start;
-  gap: 10px;
-  min-height: 82px;
-  padding: 10px 12px;
+  gap: 9px;
+  min-height: 74px;
+  padding: 10px 11px 10px 8px;
+  position: relative;
 }
 
-.task-card.waiting,
-.task-card.error {
-  border-color: rgba(255, 138, 122, 0.48);
+.task-card.tone-needs_user,
+.task-card.tone-error {
+  border-color: rgba(255, 138, 122, 0.5);
+  background: rgba(25, 20, 20, 0.95);
 }
 
-.task-card.done {
+.task-card.tone-done {
   border-color: rgba(142, 230, 168, 0.36);
 }
 
+.task-card.quiet {
+  min-height: 52px;
+  opacity: 0.7;
+}
+
 .task-card.collapsed {
-  min-height: 54px;
+  min-height: 48px;
   align-items: center;
+}
+
+.task-rail {
+  align-self: stretch;
+  width: 4px;
+  min-height: 32px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 12px rgba(244, 184, 74, 0.4);
+}
+
+.tone-needs_user .task-rail,
+.tone-error .task-rail {
+  background: var(--bad);
+  box-shadow: 0 0 12px rgba(255, 138, 122, 0.5);
+}
+
+.tone-done .task-rail {
+  background: var(--ok);
+  box-shadow: 0 0 12px rgba(142, 230, 168, 0.32);
+}
+
+.tone-muted .task-rail {
+  background: var(--faint);
+  box-shadow: none;
 }
 
 .task-main {
@@ -201,49 +233,10 @@ body {
 
 .task-headline {
   min-width: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
-}
-
-.task-source {
-  flex: 0 0 auto;
-  min-width: 25px;
-  padding: 2px 5px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.045);
-  color: var(--muted);
-  font-size: 9px;
-  line-height: 13px;
-  font-weight: 800;
-  text-align: center;
-}
-
-.task-source.codex {
-  border-color: rgba(142, 230, 168, 0.22);
-  background: rgba(142, 230, 168, 0.08);
-  color: #bff5d0;
-}
-
-.task-source.claude {
-  border-color: rgba(122, 167, 255, 0.22);
-  background: rgba(122, 167, 255, 0.075);
-  color: #c8d7ff;
-}
-
-.task-kind {
-  flex: 0 0 auto;
-  min-width: 42px;
-  padding: 2px 6px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  background: rgba(244, 184, 74, 0.12);
-  color: var(--warn);
-  font-size: 10px;
-  line-height: 14px;
-  font-weight: 800;
-  text-align: center;
+  gap: 8px;
 }
 
 .task-title {
@@ -253,15 +246,21 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 14px;
-  line-height: 1.2;
+  line-height: 1.25;
   font-weight: 760;
   letter-spacing: 0;
+}
+
+.task-age {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 720;
 }
 
 .task-summary {
   margin: 0;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   overflow-wrap: anywhere;
@@ -290,6 +289,16 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.task-meta span:not(.task-dot)::before {
+  content: "";
+}
+
+.task-meta span:not(.task-dot):not(:nth-child(2))::before {
+  content: "/";
+  margin-right: 6px;
+  color: rgba(255, 255, 255, 0.24);
 }
 
 .task-dot {
@@ -326,7 +335,7 @@ body {
 }
 
 .task-open {
-  min-width: 44px;
+  min-width: 40px;
 }
 
 .task-toggle {
@@ -340,6 +349,13 @@ body {
   padding: 14px 16px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.quiet-note {
+  padding: 2px 8px;
+  color: var(--faint);
+  font-size: 11px;
+  text-align: center;
 }
 
 @keyframes pulse {
