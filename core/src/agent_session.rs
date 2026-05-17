@@ -323,6 +323,24 @@ fn action_summary(session: &AgentSession) -> ActionSummary {
         .as_deref()
         .and_then(parse_preview_object);
 
+    if lower.contains("applypatch") || lower.contains("apply_patch") || lower == "patch" {
+        let patch = parsed
+            .as_ref()
+            .and_then(|input| input.get("command"))
+            .map(String::as_str)
+            .or(session.tool_input_preview.as_deref())
+            .unwrap_or_default();
+        let target = patch_target(patch);
+        return ActionSummary {
+            label: "Patch".to_string(),
+            headline: target
+                .as_deref()
+                .map(|value| format!("正在修改 {value}"))
+                .or_else(|| Some("正在应用补丁".to_string())),
+            detail: target.or_else(|| patch_summary(patch)),
+        };
+    }
+
     if lower.contains("bash") || lower.contains("powershell") {
         let command = parsed
             .as_ref()
@@ -409,16 +427,36 @@ fn action_summary(session: &AgentSession) -> ActionSummary {
 
     ActionSummary {
         label: tool_label(tool),
-        headline: session
-            .tool_input_preview
-            .as_deref()
-            .and_then(|value| compact_preview(value, 56))
-            .map(|value| format!("正在处理 {value}")),
+        headline: Some("正在处理任务".to_string()),
         detail: session
             .tool_input_preview
             .as_deref()
-            .and_then(|value| compact_preview(value, 72)),
+            .and_then(generic_detail),
     }
+}
+
+fn patch_target(value: &str) -> Option<String> {
+    for marker in [
+        "*** Update File:",
+        "*** Add File:",
+        "*** Delete File:",
+        "*** Move to:",
+    ] {
+        if let Some((_, rest)) = value.split_once(marker) {
+            let target = rest.lines().next().unwrap_or_default().trim();
+            if !target.is_empty() {
+                return Some(basename(target));
+            }
+        }
+    }
+    None
+}
+
+fn patch_summary(value: &str) -> Option<String> {
+    if value.contains("*** Begin Patch") {
+        return Some("补丁正在应用".to_string());
+    }
+    compact_preview(value, 48)
 }
 
 fn parse_preview_object(value: &str) -> Option<HashMap<String, String>> {
@@ -455,14 +493,30 @@ fn tool_label(tool: &str) -> String {
 }
 
 fn command_summary(value: &str) -> String {
-    let text = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    let text = value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim_matches('"')
+        .to_string();
     let lower = text.to_ascii_lowercase();
+    if lower.starts_with('{') || lower.starts_with('[') {
+        return "命令".to_string();
+    }
     for prefix in ["cargo ", "npm ", "pnpm ", "yarn ", "python ", "pip "] {
         if let Some(pos) = lower.find(prefix) {
             return compact_middle(&text[pos..], 42);
         }
     }
     compact_middle(&text, 42)
+}
+
+fn generic_detail(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.starts_with('{') || trimmed.starts_with('[') {
+        return Some("查看任务详情".to_string());
+    }
+    compact_preview(trimmed, 72)
 }
 
 fn compact_preview(value: &str, max_chars: usize) -> Option<String> {
@@ -647,6 +701,30 @@ mod tests {
         assert_eq!(view.display.tone, "active");
         assert_eq!(view.display.action_label, "Shell");
         assert!(view.display.headline.contains("cargo nextest"));
+    }
+
+    #[test]
+    fn display_summarizes_apply_patch_without_json_headline() {
+        let mut session = event("abc", AgentStatus::ToolRunning, 1000).into_session();
+        session.tool_name = Some("apply_patch".into());
+        session.tool_input_preview = Some(
+            r#"{"command":"*** Begin Patch\n*** Update File: app/frontend/js/agent_watch.js\n@@\n-old\n+new\n*** End Patch"}"#.into(),
+        );
+        let view = AgentSessionView::from_session(&session, 6100);
+        assert_eq!(view.display.action_label, "Patch");
+        assert_eq!(view.display.headline, "正在修改 agent_watch.js");
+        assert!(!view.display.headline.contains("{"));
+        assert!(!view.display.detail.contains("Begin Patch"));
+    }
+
+    #[test]
+    fn display_unknown_json_uses_generic_headline() {
+        let mut session = event("abc", AgentStatus::ToolRunning, 1000).into_session();
+        session.tool_name = Some("custom_tool".into());
+        session.tool_input_preview = Some(r#"{"command":"large raw payload"}"#.into());
+        let view = AgentSessionView::from_session(&session, 6100);
+        assert_eq!(view.display.headline, "正在处理任务");
+        assert!(!view.display.headline.contains("{"));
     }
 
     #[test]

@@ -79,6 +79,11 @@
     };
   }
 
+  function shouldHideSession(session) {
+    if (session.display?.quiet) return true;
+    return String(session.status || "").toLowerCase() === "idle";
+  }
+
   function ageLabel(ageSec) {
     if (typeof ageSec !== "number") return "";
     if (ageSec < 60) return `${ageSec}s`;
@@ -95,7 +100,7 @@
   function render(snapshot) {
     latest = snapshot || latest;
     const sessions = latest?.sessions || [];
-    const visibleCount = sessions.filter((session) => !session.display?.quiet).length;
+    const visibleCount = sessions.filter((session) => !shouldHideSession(session)).length;
     watchCount.textContent = String(sessions.length);
     if (watchTitle) {
       const waiting = sessions.filter((session) => session.needs_user || session.display?.tone === "needs_user").length;
@@ -109,7 +114,7 @@
       return;
     }
     const visibleSessions = sortedSessions(sessions)
-      .filter((session) => !session.display?.quiet)
+      .filter((session) => !shouldHideSession(session))
       .slice(0, 3);
     stack.innerHTML = visibleSessions.map((session) => {
       const id = session.session_id;
@@ -139,7 +144,7 @@
         </article>`;
     }).join("");
     if (visibleCount < sessions.length) {
-      stack.innerHTML += `<div class="quiet-note">已收起 ${sessions.length - visibleCount} 个完成任务</div>`;
+      stack.innerHTML += `<div class="quiet-note">已收起 ${sessions.length - visibleCount} 个低优先级任务</div>`;
     }
   }
 

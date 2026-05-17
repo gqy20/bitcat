@@ -324,11 +324,19 @@ body {
   display: flex;
   align-items: center;
   gap: 5px;
+  opacity: 0.72;
+  transition: opacity 120ms ease;
+}
+
+.task-card:hover .task-actions,
+.task-card.tone-needs_user .task-actions,
+.task-card.tone-error .task-actions {
+  opacity: 1;
 }
 
 .task-open,
 .task-toggle {
-  height: 28px;
+  height: 26px;
   padding: 0 6px;
   font-size: 11px;
   font-weight: 700;
@@ -339,7 +347,7 @@ body {
 }
 
 .task-toggle {
-  width: 28px;
+  width: 26px;
   color: var(--muted);
   font-size: 16px;
   font-weight: 760;
