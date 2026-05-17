@@ -7,8 +7,9 @@ const invoke = window.__TAURI__?.core?.invoke || mockInvoke;
 
 const ACTION_TYPES = ["unbound", "launch", "hotkey", "script", "voice", "screenshot"];
 const PET_ASSET_PRESETS = [
-  { value: "", label: "内置小猫" },
-  { value: "/__fixtures__/pets/default-cat", label: "Default Cat" },
+  { value: "", label: "内置小猪" },
+  { value: "/__fixtures__/pets/piggy", label: "Piggy" },
+  { value: "/__fixtures__/pets/cat", label: "Cat" },
   { value: "/__fixtures__/pets/status", label: "Status" },
   { value: "/__fixtures__/pets/core", label: "Core" },
   { value: "/__fixtures__/pets/dewey", label: "Dewey" },
@@ -19,7 +20,7 @@ const PET_ASSET_PRESETS = [
   { value: "/__fixtures__/pets/bsod", label: "BSOD" },
   { value: "/__fixtures__/pets/null-signal", label: "Null Signal" },
 ];
-const PET_ASSET_DEFAULT_CAT = "/__fixtures__/pets/default-cat";
+const PET_ASSET_PIGGY = "/__fixtures__/pets/piggy";
 const PET_ASSET_PRESET_VALUES = new Set(PET_ASSET_PRESETS.map(item => item.value).filter(Boolean));
 const ACTION_TYPE_LABELS = {
   unbound: "未绑定",
@@ -517,7 +518,7 @@ function renderPetAssetChoice(value) {
 
 function applyPetAssetPreset(value) {
   if (value === "__custom") {
-    if (!$("a-pet-asset").value.trim()) $("a-pet-asset").value = PET_ASSET_DEFAULT_CAT;
+    if (!$("a-pet-asset").value.trim()) $("a-pet-asset").value = PET_ASSET_PIGGY;
   } else {
     $("a-pet-asset").value = value;
   }

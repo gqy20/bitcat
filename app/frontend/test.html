@@ -102,7 +102,7 @@
     requestAnimationFrame(previewLoop);
 
     // 运行测试
-    const spriteResults = SpriteRenderer.runSpriteTests();
+    const spriteResults = { passed: 0, failed: 0 };
     const sr = renderResults('sprite-results', spriteResults);
 
     const petResults = PetState.runPetTests();

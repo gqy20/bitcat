@@ -1,11 +1,4 @@
-import {
-  PALETTE as BUILTIN_PALETTE,
-  SPRITES as BUILTIN_SPRITES,
-  SPRITE_H,
-  SPRITE_W,
-  cloneSprite,
-  runSpriteTests,
-} from './sprite.js';
+const DEFAULT_PET_ASSET_URL = '/__fixtures__/pets/piggy';
 
 const REQUIRED_STATES = [
   'idle',
@@ -26,8 +19,12 @@ function normalizeBaseUrl(baseUrl) {
   return String(baseUrl).replace(/\/+$/, '');
 }
 
+function isVitestRuntime() {
+  return typeof process !== 'undefined' && process.env && process.env.VITEST;
+}
+
 function configuredPetAssetUrl() {
-  if (typeof window === 'undefined') return null;
+  if (typeof window === 'undefined') return DEFAULT_PET_ASSET_URL;
   if (window.__PET_ASSET_URL__) return normalizeBaseUrl(window.__PET_ASSET_URL__);
   const params = new URLSearchParams(window.location ? window.location.search : '');
   const fromQuery = params.get('petAsset');
@@ -35,9 +32,10 @@ function configuredPetAssetUrl() {
   try {
     const fromSession = window.sessionStorage && window.sessionStorage.getItem('ai-pad.petAssetUrl');
     if (fromSession) return normalizeBaseUrl(fromSession);
-    return normalizeBaseUrl(window.localStorage && window.localStorage.getItem('ai-pad.petAssetUrl'));
+    const fromLocal = window.localStorage && window.localStorage.getItem('ai-pad.petAssetUrl');
+    return normalizeBaseUrl(fromLocal) || DEFAULT_PET_ASSET_URL;
   } catch (_) {
-    return null;
+    return DEFAULT_PET_ASSET_URL;
   }
 }
 
@@ -48,26 +46,20 @@ async function configuredPetAssetUrlAsync() {
   try {
     const snapshot = await window.__TAURI__.core.invoke('cmd_settings_load');
     const url = snapshot && snapshot.appearance && snapshot.appearance.pet_asset_url;
-    if (!url) return null;
+    if (!url) return DEFAULT_PET_ASSET_URL;
     const normalized = normalizeBaseUrl(url);
     window.__PET_ASSET_URL__ = normalized;
     try { window.sessionStorage.setItem('ai-pad.petAssetUrl', normalized); } catch (_) {}
     return normalized;
   } catch (error) {
     console.warn('[sprite-loader] pet asset setting unavailable:', error);
-    return null;
+    return DEFAULT_PET_ASSET_URL;
   }
 }
 
 function clonePalette(palette) {
   return Object.fromEntries(
     Object.entries(palette).map(([key, value]) => [key, value == null ? null : value.slice()])
-  );
-}
-
-function cloneSprites(sprites) {
-  return Object.fromEntries(
-    Object.entries(sprites).map(([state, frames]) => [state, frames.map((frame) => frame.slice())])
   );
 }
 
@@ -81,8 +73,8 @@ function cloneHotspots(hotspots) {
 function rendererFromRuntime(runtime, source) {
   const sprites = runtime.sprites;
   const palette = runtime.palette;
-  const frameWidth = runtime.frameWidth || SPRITE_W;
-  const frameHeight = runtime.frameHeight || SPRITE_H;
+  const frameWidth = runtime.frameWidth;
+  const frameHeight = runtime.frameHeight;
   const renderScale = runtime.renderScale || 8;
   const pixelated = runtime.pixelated !== false;
   const displayWidth = runtime.displayWidth || Math.round(frameWidth * renderScale);
@@ -187,34 +179,10 @@ function rendererFromRuntime(runtime, source) {
     getSprite,
     renderSprite,
     renderMini,
-    runSpriteTests,
-    cloneSprite,
     stateConfig: runtime.stateConfig,
     hotspots: cloneHotspots(runtime.hotspots),
     assetSource: source,
   };
-}
-
-function builtinRuntime() {
-  return {
-    sprites: cloneSprites(BUILTIN_SPRITES),
-    palette: clonePalette(BUILTIN_PALETTE),
-    frameWidth: SPRITE_W,
-    frameHeight: SPRITE_H,
-    renderScale: 8,
-    pixelated: true,
-    displayWidth: 128,
-    displayHeight: 128,
-    stateConfig: null,
-    mini: { headRows: 10 },
-  };
-}
-
-function builtinRenderer(reason) {
-  return rendererFromRuntime(builtinRuntime(), {
-    kind: 'builtin',
-    reason: reason || null,
-  });
 }
 
 function validateManifest(manifest) {
@@ -326,7 +294,10 @@ function validateTimeline(timeline, frameCount, label) {
 }
 
 function normalizePalette(palette) {
-  const source = palette || BUILTIN_PALETTE;
+  const source = palette;
+  if (!source || typeof source !== 'object') {
+    throw new Error('manifest.palette is required');
+  }
   const normalized = {};
   for (const [key, value] of Object.entries(source)) {
     if (value == null) {
@@ -415,7 +386,7 @@ function buildRuntimeFromManifest(manifest, imageData) {
     throw new Error('sprite image dimensions do not match manifest');
   }
 
-  const palette = normalizePalette(manifest.palette);
+  const palette = sheetMode ? clonePalette(manifest.palette || {}) : normalizePalette(manifest.palette);
   const lookup = sheetMode ? null : buildPaletteLookup(palette);
   const sheetFrames = [];
   for (let i = 0; i < manifest.sprite.frameCount; i += 1) {
@@ -503,35 +474,27 @@ async function imageAssetFromUrl(url) {
 }
 
 async function loadPetAssetPack(baseUrl, options) {
-  const root = normalizeBaseUrl(baseUrl);
-  if (!root) {
-    return builtinRenderer('no external pet configured');
-  }
+  const root = normalizeBaseUrl(baseUrl) || DEFAULT_PET_ASSET_URL;
   const opts = options || {};
-  try {
-    const manifestUrl = `${root}/manifest.json`;
-    const response = await (opts.fetch || fetch)(manifestUrl);
-    if (!response.ok) {
-      throw new Error(`manifest request failed: ${response.status}`);
-    }
-    const manifest = await response.json();
-    const imageUrl = `${root}/${manifest.sprite && manifest.sprite.image ? manifest.sprite.image : 'sprites.png'}`;
-    const imageAsset = opts.imageData
-      ? { imageData: await opts.imageData(imageUrl, manifest), image: opts.image || null }
-      : await imageAssetFromUrl(imageUrl);
-    const runtime = buildRuntimeFromManifest(manifest, imageAsset.imageData);
-    if (manifest.render && manifest.render.mode === 'sheet') {
-      runtime.sheetImage = imageAsset.image;
-    }
-    return rendererFromRuntime(runtime, {
-      kind: 'manifest',
-      id: manifest.id || null,
-      baseUrl: root,
-    });
-  } catch (error) {
-    console.warn('[sprite-loader] external pet failed, using builtin sprite:', error);
-    return builtinRenderer(error && error.message ? error.message : String(error));
+  const manifestUrl = `${root}/manifest.json`;
+  const response = await (opts.fetch || fetch)(manifestUrl);
+  if (!response.ok) {
+    throw new Error(`manifest request failed: ${response.status}`);
   }
+  const manifest = await response.json();
+  const imageUrl = `${root}/${manifest.sprite && manifest.sprite.image ? manifest.sprite.image : 'spritesheet.webp'}`;
+  const imageAsset = opts.imageData
+    ? { imageData: await opts.imageData(imageUrl, manifest), image: opts.image || null }
+    : await imageAssetFromUrl(imageUrl);
+  const runtime = buildRuntimeFromManifest(manifest, imageAsset.imageData);
+  if (manifest.render && manifest.render.mode === 'sheet') {
+    runtime.sheetImage = imageAsset.image;
+  }
+  return rendererFromRuntime(runtime, {
+    kind: 'manifest',
+    id: manifest.id || null,
+    baseUrl: root,
+  });
 }
 
 function installSpriteRenderer(renderer) {
@@ -546,7 +509,6 @@ function installSpriteRenderer(renderer) {
 }
 
 function initSpriteRenderer() {
-  installSpriteRenderer(builtinRenderer('external pet not loaded yet'));
   const promise = configuredPetAssetUrlAsync()
     .then((baseUrl) => loadPetAssetPack(baseUrl))
     .then(installSpriteRenderer);
@@ -556,14 +518,14 @@ function initSpriteRenderer() {
   return promise;
 }
 
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && !isVitestRuntime()) {
   initSpriteRenderer();
 }
 
 export {
+  DEFAULT_PET_ASSET_URL,
   REQUIRED_STATES,
   buildRuntimeFromManifest,
-  builtinRenderer,
   configuredPetAssetUrl,
   configuredPetAssetUrlAsync,
   initSpriteRenderer,

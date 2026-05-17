@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "id": "default-cat",
-  "displayName": "Default Cat",
-  "description": "The built-in 8-bit cat exported as a manifest-compatible fixture pack.",
+  "id": "cat",
+  "displayName": "Cat",
+  "description": "A v2 pixel cat companion.",
   "sprite": {
     "image": "sprites.png",
     "frameWidth": 16,

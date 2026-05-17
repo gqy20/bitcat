@@ -3,13 +3,16 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_PET_ASSET_URL,
   buildRuntimeFromManifest,
   loadPetAssetPack,
   validateManifest,
 } from '../js/sprite-loader.js';
 
-const fixtureDir = path.join(process.cwd(), '__fixtures__', 'pets', 'default-cat');
+const fixtureDir = path.join(process.cwd(), '__fixtures__', 'pets', 'cat');
 const manifest = JSON.parse(readFileSync(path.join(fixtureDir, 'manifest.json'), 'utf8'));
+const pigFixtureDir = path.join(process.cwd(), '__fixtures__', 'pets', 'piggy');
+const pigManifest = JSON.parse(readFileSync(path.join(pigFixtureDir, 'manifest.json'), 'utf8'));
 const statusFixtureDir = path.join(process.cwd(), '__fixtures__', 'pets', 'status');
 const statusManifest = JSON.parse(readFileSync(path.join(statusFixtureDir, 'manifest.json'), 'utf8'));
 
@@ -60,7 +63,7 @@ describe('sprite-loader', () => {
     })).toThrow(/missing required state/);
   });
 
-  it('builds a runtime renderer model from the default-cat fixture', () => {
+  it('builds a runtime renderer model from the cat fixture', () => {
     const imageData = decodeFixturePng(path.join(fixtureDir, 'sprites.png'));
     const runtime = buildRuntimeFromManifest(manifest, imageData);
 
@@ -121,7 +124,7 @@ describe('sprite-loader', () => {
 
   it('loads a configured pack through injected fetch and imageData hooks', async () => {
     const imageData = decodeFixturePng(path.join(fixtureDir, 'sprites.png'));
-    const renderer = await loadPetAssetPack('/fixtures/default-cat', {
+    const renderer = await loadPetAssetPack('/fixtures/cat', {
       fetch: async (url) => ({
         ok: url.endsWith('/manifest.json'),
         status: 200,
@@ -131,9 +134,28 @@ describe('sprite-loader', () => {
     });
 
     expect(renderer.assetSource.kind).toBe('manifest');
-    expect(renderer.assetSource.id).toBe('default-cat');
+    expect(renderer.assetSource.id).toBe('cat');
     expect(renderer.getSprite('focused', 0)).toBe(renderer.SPRITES.focused[0]);
     expect(renderer.getSprite('unknown', 0)).toBe(renderer.SPRITES.idle[0]);
+  });
+
+  it('loads the piggy v2 pack when no asset url is configured', async () => {
+    const imageData = decodeFixturePng(path.join(pigFixtureDir, 'sprites.png'));
+    const renderer = await loadPetAssetPack(null, {
+      fetch: async (url) => ({
+        ok: url === `${DEFAULT_PET_ASSET_URL}/manifest.json`,
+        status: 200,
+        json: async () => pigManifest,
+      }),
+      imageData: async (url) => {
+        expect(url).toBe(`${DEFAULT_PET_ASSET_URL}/sprites.png`);
+        return imageData;
+      },
+    });
+
+    expect(renderer.assetSource.kind).toBe('manifest');
+    expect(renderer.assetSource.id).toBe('piggy');
+    expect(renderer.assetSource.baseUrl).toBe(DEFAULT_PET_ASSET_URL);
   });
 
   it('loads the status v2 pack through injected fetch and imageData hooks', async () => {
@@ -163,12 +185,9 @@ describe('sprite-loader', () => {
     expect(renderer.getSprite('preparing', 0)).toBe(renderer.SPRITES.working[0]);
   });
 
-  it('falls back to builtin sprites when external loading fails', async () => {
-    const renderer = await loadPetAssetPack('/broken', {
+  it('rejects configured packs when external loading fails', async () => {
+    await expect(loadPetAssetPack('/broken', {
       fetch: async () => ({ ok: false, status: 404 }),
-    });
-
-    expect(renderer.assetSource.kind).toBe('builtin');
-    expect(renderer.SPRITES.idle.length).toBeGreaterThan(0);
+    })).rejects.toThrow(/manifest request failed: 404/);
   });
 });

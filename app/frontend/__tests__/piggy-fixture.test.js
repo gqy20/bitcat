@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-const fixtureDir = path.join(process.cwd(), '__fixtures__', 'pets', 'cat');
+const fixtureDir = path.join(process.cwd(), '__fixtures__', 'pets', 'piggy');
 const manifest = JSON.parse(readFileSync(path.join(fixtureDir, 'manifest.json'), 'utf8'));
 
 const requiredStates = [
@@ -43,10 +43,10 @@ function readPngDimensions(bytes) {
   };
 }
 
-describe('cat pet fixture pack', () => {
+describe('piggy pet fixture pack', () => {
   it('declares the manifest v2 sprite sheet shape', () => {
     expect(manifest.schemaVersion).toBe(2);
-    expect(manifest.id).toBe('cat');
+    expect(manifest.id).toBe('piggy');
     expect(manifest.sprite).toEqual({
       image: 'sprites.png',
       frameWidth: 16,

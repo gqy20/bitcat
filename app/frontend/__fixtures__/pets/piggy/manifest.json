@@ -1,0 +1,433 @@
+{
+  "schemaVersion": 2,
+  "id": "piggy",
+  "displayName": "Piggy",
+  "description": "A v2 pixel pig companion.",
+  "sprite": {
+    "image": "sprites.png",
+    "frameWidth": 16,
+    "frameHeight": 16,
+    "columns": 8,
+    "rows": 5,
+    "frameCount": 40
+  },
+  "palette": {
+    "0": null,
+    "1": [
+      245,
+      134,
+      165,
+      255
+    ],
+    "2": [
+      255,
+      174,
+      196,
+      255
+    ],
+    "3": [
+      255,
+      211,
+      221,
+      255
+    ],
+    "4": [
+      99,
+      50,
+      82,
+      255
+    ],
+    "5": [
+      188,
+      75,
+      116,
+      255
+    ],
+    "6": [
+      255,
+      238,
+      244,
+      255
+    ],
+    "7": [
+      126,
+      74,
+      100,
+      255
+    ],
+    "8": [
+      255,
+      92,
+      132,
+      255
+    ]
+  },
+  "states": {
+    "idle": {
+      "spriteFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "frames": [
+        {
+          "sprite": 0,
+          "duration": 1500
+        },
+        {
+          "sprite": 1,
+          "duration": 120
+        },
+        {
+          "sprite": 2,
+          "duration": 200
+        },
+        {
+          "sprite": 1,
+          "duration": 120
+        },
+        {
+          "sprite": 0,
+          "duration": 1800
+        }
+      ],
+      "loop": true,
+      "variants": [
+        {
+          "name": "ear_twitch",
+          "weight": 3,
+          "cooldownMinMs": 8000,
+          "cooldownMaxMs": 16000,
+          "frames": [
+            {
+              "sprite": 4,
+              "duration": 180
+            },
+            {
+              "sprite": 0,
+              "duration": 140
+            }
+          ]
+        },
+        {
+          "name": "look_around",
+          "weight": 2,
+          "cooldownMinMs": 12000,
+          "cooldownMaxMs": 25000,
+          "frames": [
+            {
+              "sprite": 5,
+              "duration": 360
+            },
+            {
+              "sprite": 6,
+              "duration": 360
+            },
+            {
+              "sprite": 0,
+              "duration": 240
+            }
+          ]
+        }
+      ]
+    },
+    "walk": {
+      "spriteFrames": [
+        7,
+        8,
+        9,
+        10
+      ],
+      "frames": [
+        {
+          "sprite": 7,
+          "duration": 150
+        },
+        {
+          "sprite": 8,
+          "duration": 150
+        },
+        {
+          "sprite": 7,
+          "duration": 150
+        },
+        {
+          "sprite": 9,
+          "duration": 150
+        }
+      ],
+      "loop": true,
+      "autoIdleTimeout": 3000
+    },
+    "sleep": {
+      "spriteFrames": [
+        11,
+        12
+      ],
+      "frames": [
+        {
+          "sprite": 11,
+          "duration": 800
+        },
+        {
+          "sprite": 12,
+          "duration": 800
+        }
+      ],
+      "loop": true
+    },
+    "talk": {
+      "spriteFrames": [
+        13,
+        14,
+        15
+      ],
+      "frames": [
+        {
+          "sprite": 13,
+          "duration": 300
+        },
+        {
+          "sprite": 14,
+          "duration": 300
+        },
+        {
+          "sprite": 15,
+          "duration": 400
+        }
+      ],
+      "repeat": 3,
+      "fallback": "idle"
+    },
+    "happy": {
+      "spriteFrames": [
+        16,
+        17,
+        18
+      ],
+      "frames": [
+        {
+          "sprite": 16,
+          "duration": 250
+        },
+        {
+          "sprite": 17,
+          "duration": 120
+        },
+        {
+          "sprite": 16,
+          "duration": 230
+        }
+      ],
+      "repeat": 3,
+      "fallback": "idle"
+    },
+    "confused": {
+      "spriteFrames": [
+        19,
+        20
+      ],
+      "frames": [
+        {
+          "sprite": 19,
+          "duration": 400
+        },
+        {
+          "sprite": 20,
+          "duration": 400
+        }
+      ],
+      "repeat": 2,
+      "fallback": "idle"
+    },
+    "focused": {
+      "spriteFrames": [
+        21,
+        22,
+        23,
+        24
+      ],
+      "frames": [
+        {
+          "sprite": 21,
+          "duration": 700
+        },
+        {
+          "sprite": 22,
+          "duration": 140
+        },
+        {
+          "sprite": 21,
+          "duration": 520
+        },
+        {
+          "sprite": 23,
+          "duration": 120
+        }
+      ],
+      "loop": true
+    },
+    "preparing": {
+      "spriteFrames": [
+        25,
+        26,
+        27,
+        28
+      ],
+      "frames": [
+        {
+          "sprite": 26,
+          "duration": 180
+        },
+        {
+          "sprite": 27,
+          "duration": 180
+        },
+        {
+          "sprite": 26,
+          "duration": 180
+        },
+        {
+          "sprite": 25,
+          "duration": 260
+        }
+      ],
+      "loop": true
+    },
+    "gameplay": {
+      "spriteFrames": [
+        29,
+        30
+      ],
+      "frames": [
+        {
+          "sprite": 29,
+          "duration": 300
+        },
+        {
+          "sprite": 30,
+          "duration": 300
+        }
+      ],
+      "loop": true
+    },
+    "gamewin": {
+      "spriteFrames": [
+        31,
+        32,
+        33
+      ],
+      "frames": [
+        {
+          "sprite": 31,
+          "duration": 250
+        },
+        {
+          "sprite": 32,
+          "duration": 120
+        },
+        {
+          "sprite": 31,
+          "duration": 230
+        }
+      ],
+      "repeat": 5,
+      "fallback": "idle"
+    },
+    "gamelose": {
+      "spriteFrames": [
+        34,
+        35
+      ],
+      "frames": [
+        {
+          "sprite": 34,
+          "duration": 400
+        },
+        {
+          "sprite": 35,
+          "duration": 400
+        }
+      ],
+      "repeat": 4,
+      "fallback": "idle"
+    }
+  },
+  "actions": {
+    "jump": {
+      "sprite": 36
+    },
+    "spin": {
+      "sprite": 37
+    },
+    "wave": {
+      "sprite": 38
+    },
+    "shake": {
+      "sprite": 39
+    }
+  },
+  "mini": {
+    "state": "idle",
+    "frame": 0,
+    "headRows": 10
+  },
+  "metadata": {
+    "generatedFrom": [
+      "generated piggy v2 sprite pack"
+    ],
+    "frameLabels": [
+      "idle:0",
+      "idle:1",
+      "idle:2",
+      "idle:3",
+      "idle:4",
+      "idle:5",
+      "idle:6",
+      "walk:0",
+      "walk:1",
+      "walk:2",
+      "walk:3",
+      "sleep:0",
+      "sleep:1",
+      "talk:0",
+      "talk:1",
+      "talk:2",
+      "happy:0",
+      "happy:1",
+      "happy:2",
+      "confused:0",
+      "confused:1",
+      "focused:0",
+      "focused:1",
+      "focused:2",
+      "focused:3",
+      "preparing:0",
+      "preparing:1",
+      "preparing:2",
+      "preparing:3",
+      "gameplay:0",
+      "gameplay:1",
+      "gamewin:0",
+      "gamewin:1",
+      "gamewin:2",
+      "gamelose:0",
+      "gamelose:1",
+      "jump:0",
+      "spin:0",
+      "wave:0",
+      "shake:0"
+    ]
+  },
+  "render": {
+    "mode": "sheet",
+    "displayWidth": 128,
+    "displayHeight": 128,
+    "scale": 8,
+    "pixelated": true
+  }
+}

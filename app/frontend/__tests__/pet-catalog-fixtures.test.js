@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { loadPetAssetPack } from '../js/sprite-loader.js';
 
 const packs = [
+  { id: 'piggy', dir: 'piggy', image: 'sprites.png', minSize: 500, displayWidth: 128, displayHeight: 128 },
+  { id: 'cat', dir: 'cat', image: 'sprites.png', minSize: 500, displayWidth: 128, displayHeight: 128 },
   { id: 'core', dir: 'core', image: 'spritesheet.webp' },
   { id: 'status', dir: 'status', image: 'spritesheet.webp' },
   { id: 'dewey', dir: 'dewey', image: 'spritesheet.webp' },
@@ -38,7 +40,7 @@ describe('pet catalog fixtures', () => {
       const imagePath = path.join(fixturesRoot, pack.dir, pack.image);
       expect(manifest.id).toBe(pack.id);
       expect(manifest.sprite.image).toBe(pack.image);
-      expect(statSync(imagePath).size).toBeGreaterThan(100_000);
+      expect(statSync(imagePath).size).toBeGreaterThan(pack.minSize ?? 100_000);
     }
   });
 
@@ -55,8 +57,8 @@ describe('pet catalog fixtures', () => {
       });
 
       expect(renderer.assetSource.id).toBe(pack.id);
-      expect(renderer.displayWidth).toBe(69);
-      expect(renderer.displayHeight).toBe(75);
+      expect(renderer.displayWidth).toBe(pack.displayWidth ?? 69);
+      expect(renderer.displayHeight).toBe(pack.displayHeight ?? 75);
     }
   });
 });
