@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { loadPetAssetPack } from '../js/sprite-loader.js';
 
 const packs = [
-  { id: 'piggy', dir: 'piggy', image: 'sprites.png', minSize: 500, displayWidth: 128, displayHeight: 128 },
+  { id: 'piggy', dir: 'piggy', image: 'sprites.png', minSize: 50_000, displayWidth: 74, displayHeight: 80 },
   { id: 'cat', dir: 'cat', image: 'sprites.png', minSize: 500, displayWidth: 128, displayHeight: 128 },
   { id: 'core', dir: 'core', image: 'spritesheet.webp' },
   { id: 'status', dir: 'status', image: 'spritesheet.webp' },

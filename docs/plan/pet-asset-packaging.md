@@ -11,7 +11,7 @@ Bundled 资源包位于 `app/frontend/__fixtures__/pets/`：
 
 | 资源包 | 类型 | 尺寸策略 | 备注 |
 |------|------|----------|------|
-| `piggy` | 16x16 PNG v2 pack | 128x128 显示 | 当前默认内置小猪 |
+| `piggy` | 192x208 PNG v2 sheet | 74x80 显示 | 当前默认内置小猪，高分辨率终端状态风资源 |
 | `cat` | 16x16 PNG v2 pack | 128x128 显示 | 旧小猫资源包，保留为可选 |
 | `status` | 大尺寸 WebP v2 sheet | 69x75 显示 | 状态化终端风资源 |
 | `core` | 大尺寸 WebP v2 sheet | 69x75 显示 | 状态化资源 |

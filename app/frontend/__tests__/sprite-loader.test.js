@@ -140,7 +140,11 @@ describe('sprite-loader', () => {
   });
 
   it('loads the piggy v2 pack when no asset url is configured', async () => {
-    const imageData = decodeFixturePng(path.join(pigFixtureDir, 'sprites.png'));
+    const imageData = {
+      width: pigManifest.sprite.columns * pigManifest.sprite.frameWidth,
+      height: pigManifest.sprite.rows * pigManifest.sprite.frameHeight,
+      data: new Uint8ClampedArray(pigManifest.sprite.columns * pigManifest.sprite.frameWidth * pigManifest.sprite.rows * pigManifest.sprite.frameHeight * 4),
+    };
     const renderer = await loadPetAssetPack(null, {
       fetch: async (url) => ({
         ok: url === `${DEFAULT_PET_ASSET_URL}/manifest.json`,
@@ -156,6 +160,11 @@ describe('sprite-loader', () => {
     expect(renderer.assetSource.kind).toBe('manifest');
     expect(renderer.assetSource.id).toBe('piggy');
     expect(renderer.assetSource.baseUrl).toBe(DEFAULT_PET_ASSET_URL);
+    expect(renderer.SPRITE_W).toBe(192);
+    expect(renderer.SPRITE_H).toBe(208);
+    expect(renderer.displayWidth).toBe(74);
+    expect(renderer.displayHeight).toBe(80);
+    expect(renderer.pixelated).toBe(false);
   });
 
   it('loads the status v2 pack through injected fetch and imageData hooks', async () => {

@@ -49,19 +49,19 @@ describe('piggy pet fixture pack', () => {
     expect(manifest.id).toBe('piggy');
     expect(manifest.sprite).toEqual({
       image: 'sprites.png',
-      frameWidth: 16,
-      frameHeight: 16,
+      frameWidth: 192,
+      frameHeight: 208,
       columns: 8,
       rows: 5,
       frameCount: 40,
     });
     expect(manifest.render).toMatchObject({
       mode: 'sheet',
-      displayWidth: 128,
-      displayHeight: 128,
-      scale: 8,
-      pixelated: true,
+      displayWidth: 74,
+      displayHeight: 80,
+      pixelated: false,
     });
+    expect(manifest.render.scale).toBeCloseTo(80 / 208);
   });
 
   it('covers every visual state the pet window can enter', () => {
