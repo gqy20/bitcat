@@ -88,9 +88,9 @@ impl AgentStatus {
 
     fn sort_rank(self) -> u8 {
         match self {
-            Self::Waiting | Self::Error => 0,
-            Self::ToolRunning | Self::Working | Self::Compacting => 1,
-            Self::Done => 2,
+            Self::Done => 0,
+            Self::Waiting | Self::Error => 1,
+            Self::ToolRunning | Self::Working | Self::Compacting => 2,
             Self::Interrupted => 3,
             Self::Idle => 4,
         }
@@ -109,6 +109,8 @@ pub struct AgentSession {
     pub user_prompt_preview: Option<String>,
     pub last_response_preview: Option<String>,
     pub pid: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine: Option<String>,
     pub updated_at_ms: u64,
     pub status_changed_at_ms: u64,
     pub needs_user: bool,
@@ -147,6 +149,9 @@ impl AgentSession {
         }
         if event.pid.is_some() {
             self.pid = event.pid;
+        }
+        if event.machine.is_some() {
+            self.machine = event.machine;
         }
     }
 }
@@ -649,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn sort_prioritizes_waiting_active_done_idle() {
+    fn sort_prioritizes_recent_done_waiting_active_idle() {
         let sessions = vec![
             event("idle", AgentStatus::Idle, 400).into_session(),
             event("work", AgentStatus::Working, 500).into_session(),
@@ -658,7 +663,7 @@ mod tests {
         ];
         let sorted = sort_sessions(sessions);
         let ids: Vec<_> = sorted.iter().map(|s| s.session_id.as_str()).collect();
-        assert_eq!(ids, vec!["wait", "work", "done", "idle"]);
+        assert_eq!(ids, vec!["done", "wait", "work", "idle"]);
     }
 
     #[test]

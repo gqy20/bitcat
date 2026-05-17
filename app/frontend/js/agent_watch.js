@@ -51,9 +51,9 @@
 
   function attentionRank(session) {
     const status = String(session.status || "").toLowerCase();
-    if (status === "waiting" || status === "error") return 0;
-    if (status === "working" || status === "tool_running" || status === "compacting") return 1;
-    if (status === "done") return 2;
+    if (status === "done") return 0;
+    if (status === "waiting" || status === "error") return 1;
+    if (status === "working" || status === "tool_running" || status === "compacting") return 2;
     return 3;
   }
 
@@ -103,9 +103,10 @@
     const visibleCount = sessions.filter((session) => !shouldHideSession(session)).length;
     watchCount.textContent = String(sessions.length);
     if (watchTitle) {
+      const done = sessions.filter((session) => session.status === "done" && !shouldHideSession(session)).length;
       const waiting = sessions.filter((session) => session.needs_user || session.display?.tone === "needs_user").length;
       const active = sessions.filter((session) => ["active", "error"].includes(session.display?.tone)).length;
-      watchTitle.textContent = waiting ? `${waiting} 个需要处理` : active ? `${active} 个进行中` : "Agent Watch";
+      watchTitle.textContent = done ? `${done} 个已完成` : waiting ? `${waiting} 个需要处理` : active ? `${active} 个进行中` : "Agent Watch";
     }
     updateExpandToggle(sessions);
     if (!sessions.length) {
@@ -113,10 +114,9 @@
       setFolded(false);
       return;
     }
-    const visibleSessions = sortedSessions(sessions)
-      .filter((session) => !shouldHideSession(session))
-      .slice(0, 3);
-    stack.innerHTML = visibleSessions.map((session) => {
+    const renderableSessions = sortedSessions(sessions)
+      .filter((session) => !shouldHideSession(session));
+    stack.innerHTML = renderableSessions.map((session) => {
       const id = session.session_id;
       const isCollapsed = collapsed.has(id);
       const status = session.status || "idle";
@@ -143,8 +143,9 @@
           </div>
         </article>`;
     }).join("");
-    if (visibleCount < sessions.length) {
-      stack.innerHTML += `<div class="quiet-note">已收起 ${sessions.length - visibleCount} 个低优先级任务</div>`;
+    const quietCount = sessions.length - visibleCount;
+    if (quietCount > 0) {
+      stack.innerHTML += `<div class="quiet-note">已收起 ${quietCount} 个低优先级任务</div>`;
     }
   }
 

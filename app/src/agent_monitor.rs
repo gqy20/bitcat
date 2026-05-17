@@ -146,6 +146,9 @@ pub fn spawn_agent_monitor(app: AppHandle) {
 }
 
 fn handle_hook_stream(app: &AppHandle, stream: TcpStream) {
+    if let Err(e) = stream.set_nonblocking(false) {
+        debug!(error = %e, "Claude hook stream set blocking failed");
+    }
     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
     let mut raw = String::new();
     match stream.take(MAX_HOOK_PAYLOAD_BYTES).read_to_string(&mut raw) {
@@ -157,6 +160,14 @@ fn handle_hook_stream(app: &AppHandle, stream: TcpStream) {
             if let Err(e) = handle_hook_payload(app, &raw) {
                 warn!(error = %e, "Claude hook payload handling failed");
             }
+        }
+        Err(e)
+            if matches!(
+                e.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            ) =>
+        {
+            debug!(error = %e, "Claude hook stream had no payload ready");
         }
         Err(e) => warn!(error = %e, "Claude hook read failed"),
     }

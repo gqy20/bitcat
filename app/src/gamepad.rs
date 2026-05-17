@@ -385,10 +385,10 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
         let target = match choose_gamepad(&pads) {
             Some(t) => t.clone(),
             None => {
-                if last_warn.is_none_or(|t| t.elapsed() > std::time::Duration::from_secs(10)) {
+                if last_warn.is_none_or(|t| t.elapsed() > std::time::Duration::from_secs(60)) {
                     warn!(
                         enumerated = pads.len(),
-                        "未检测到真正的游戏手柄（已自动跳过键鼠接收器等），每秒重试中..."
+                        "未检测到真正的游戏手柄（已自动跳过键鼠接收器等），后台继续重试..."
                     );
                     last_warn = Some(std::time::Instant::now());
                 }
