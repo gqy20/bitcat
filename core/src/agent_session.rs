@@ -103,11 +103,23 @@ pub struct AgentSession {
     pub session_id: String,
     pub source: AgentSource,
     pub workspace: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<String>,
     pub status: AgentStatus,
     pub tool_name: Option<String>,
     pub tool_input_preview: Option<String>,
     pub user_prompt_preview: Option<String>,
     pub last_response_preview: Option<String>,
+    #[serde(default)]
+    pub background: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_file: Option<String>,
     pub pid: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub machine: Option<String>,
@@ -135,6 +147,9 @@ impl AgentSession {
         if !event.workspace.is_empty() {
             self.workspace = event.workspace;
         }
+        if event.parent_session_id.is_some() {
+            self.parent_session_id = event.parent_session_id;
+        }
         if event.tool_name.is_some() {
             self.tool_name = event.tool_name;
         }
@@ -146,6 +161,21 @@ impl AgentSession {
         }
         if event.last_response_preview.is_some() {
             self.last_response_preview = event.last_response_preview;
+        }
+        if event.background {
+            self.background = true;
+        }
+        if event.agent_id.is_some() {
+            self.agent_id = event.agent_id;
+        }
+        if event.agent_type.is_some() {
+            self.agent_type = event.agent_type;
+        }
+        if event.task_id.is_some() {
+            self.task_id = event.task_id;
+        }
+        if event.output_file.is_some() {
+            self.output_file = event.output_file;
         }
         if event.pid.is_some() {
             self.pid = event.pid;
@@ -162,12 +192,19 @@ pub struct AgentSessionEvent {
     pub session_id: String,
     pub source: AgentSource,
     pub workspace: String,
+    pub parent_session_id: Option<String>,
     pub status: AgentStatus,
     pub tool_name: Option<String>,
     pub tool_input_preview: Option<String>,
     pub user_prompt_preview: Option<String>,
     pub last_response_preview: Option<String>,
+    pub background: bool,
+    pub agent_id: Option<String>,
+    pub agent_type: Option<String>,
+    pub task_id: Option<String>,
+    pub output_file: Option<String>,
     pub pid: Option<u32>,
+    pub machine: Option<String>,
     pub at_ms: u64,
     pub needs_user: bool,
 }
@@ -178,12 +215,19 @@ impl AgentSessionEvent {
             session_id: self.session_id,
             source: self.source,
             workspace: self.workspace,
+            parent_session_id: self.parent_session_id,
             status: self.status,
             tool_name: self.tool_name,
             tool_input_preview: self.tool_input_preview,
             user_prompt_preview: self.user_prompt_preview,
             last_response_preview: self.last_response_preview,
+            background: self.background,
+            agent_id: self.agent_id,
+            agent_type: self.agent_type,
+            task_id: self.task_id,
+            output_file: self.output_file,
             pid: self.pid,
+            machine: self.machine,
             updated_at_ms: self.at_ms,
             status_changed_at_ms: self.at_ms,
             needs_user: self.status.needs_user() || self.needs_user,
@@ -198,12 +242,18 @@ pub struct AgentSessionView {
     pub source: String,
     pub workspace: String,
     pub workspace_name: String,
+    pub parent_session_id: Option<String>,
     pub status: String,
     pub status_label: String,
     pub tool_name: Option<String>,
     pub tool_input_preview: Option<String>,
     pub user_prompt_preview: Option<String>,
     pub last_response_preview: Option<String>,
+    pub background: bool,
+    pub agent_id: Option<String>,
+    pub agent_type: Option<String>,
+    pub task_id: Option<String>,
+    pub output_file: Option<String>,
     pub needs_user: bool,
     pub updated_at_ms: u64,
     pub age_sec: u64,
@@ -218,12 +268,18 @@ impl AgentSessionView {
             source: session.source.as_str().to_string(),
             workspace: session.workspace.clone(),
             workspace_name: session.workspace_name(),
+            parent_session_id: session.parent_session_id.clone(),
             status: session.status.as_str().to_string(),
             status_label: session.status.label().to_string(),
             tool_name: session.tool_name.clone(),
             tool_input_preview: session.tool_input_preview.clone(),
             user_prompt_preview: session.user_prompt_preview.clone(),
             last_response_preview: session.last_response_preview.clone(),
+            background: session.background,
+            agent_id: session.agent_id.clone(),
+            agent_type: session.agent_type.clone(),
+            task_id: session.task_id.clone(),
+            output_file: session.output_file.clone(),
             needs_user: session.needs_user,
             updated_at_ms: session.updated_at_ms,
             age_sec,
@@ -321,6 +377,32 @@ fn tone_for(status: AgentStatus) -> &'static str {
 }
 
 fn action_summary(session: &AgentSession) -> ActionSummary {
+    if session.background {
+        if session.agent_id.is_some() {
+            let detail = session
+                .user_prompt_preview
+                .clone()
+                .or_else(|| session.last_response_preview.clone())
+                .or_else(|| session.agent_type.clone());
+            return ActionSummary {
+                label: "Agent".to_string(),
+                headline: Some("Background agent running".to_string()),
+                detail,
+            };
+        }
+        if session.task_id.is_some() {
+            let detail = session
+                .user_prompt_preview
+                .clone()
+                .or_else(|| session.last_response_preview.clone());
+            return ActionSummary {
+                label: "Task".to_string(),
+                headline: Some("Background task running".to_string()),
+                detail,
+            };
+        }
+    }
+
     let tool = session.tool_name.as_deref().unwrap_or_default();
     let lower = tool.to_ascii_lowercase();
     let parsed = session
@@ -637,12 +719,19 @@ mod tests {
             session_id: id.into(),
             source: AgentSource::ClaudeCode,
             workspace: format!("D:\\work\\{id}"),
+            parent_session_id: None,
             status,
             tool_name: None,
             tool_input_preview: None,
             user_prompt_preview: None,
             last_response_preview: None,
+            background: false,
+            agent_id: None,
+            agent_type: None,
+            task_id: None,
+            output_file: None,
             pid: None,
+            machine: None,
             at_ms,
             needs_user: false,
         }

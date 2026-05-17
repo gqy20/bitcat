@@ -289,12 +289,33 @@ body {
 .task-card.collapsed .task-main {
   justify-content: center;
   gap: 0;
+  min-width: 0;
 }
 
 .task-card.collapsed .task-meta {
+  display: grid;
+  grid-template-columns: 9px minmax(0, auto) minmax(0, auto) minmax(0, 1fr);
+  justify-content: start;
+  column-gap: 8px;
+  min-width: 0;
   color: var(--muted);
   font-size: 13px;
   font-weight: 650;
+}
+
+.task-card.collapsed .task-meta span:not(.task-dot) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-card.collapsed .task-source {
+  max-width: 92px;
+}
+
+.task-card.collapsed .task-kind {
+  max-width: 128px;
 }
 
 .task-card.collapsed .task-dot {

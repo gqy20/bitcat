@@ -161,6 +161,10 @@ fn hook_specs() -> Vec<HookSpec> {
             matcher: Some("*"),
         },
         HookSpec {
+            event_name: "PostToolBatch",
+            matcher: None,
+        },
+        HookSpec {
             event_name: "PermissionRequest",
             matcher: Some("*"),
         },
@@ -186,6 +190,18 @@ fn hook_specs() -> Vec<HookSpec> {
         },
         HookSpec {
             event_name: "SubagentStop",
+            matcher: None,
+        },
+        HookSpec {
+            event_name: "SubagentStart",
+            matcher: None,
+        },
+        HookSpec {
+            event_name: "TaskCreated",
+            matcher: None,
+        },
+        HookSpec {
+            event_name: "TaskCompleted",
             matcher: None,
         },
         HookSpec {
@@ -419,7 +435,11 @@ mod tests {
         assert_eq!(pre_tool[0]["hooks"].as_array().unwrap().len(), 2);
         assert!(settings["hooks"]["UserPromptSubmit"].is_array());
         assert!(settings["hooks"]["SessionStart"].is_array());
+        assert!(settings["hooks"]["SubagentStart"].is_array());
         assert!(settings["hooks"]["SubagentStop"].is_array());
+        assert!(settings["hooks"]["TaskCreated"].is_array());
+        assert!(settings["hooks"]["TaskCompleted"].is_array());
+        assert!(settings["hooks"]["PostToolBatch"].is_array());
         assert!(settings["hooks"].get("SubagentStopFailure").is_none());
         assert!(settings["hooks"]["StopFailure"].is_array());
         assert!(settings["hooks"]["PermissionDenied"].is_array());

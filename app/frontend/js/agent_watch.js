@@ -79,6 +79,13 @@
     };
   }
 
+  function isNoisyActionLabel(label, session) {
+    const value = String(label || "").trim();
+    if (!value) return true;
+    if (value === "Task") return !(session?.background || session?.task_id);
+    return value.toLowerCase().includes("mcp");
+  }
+
   function shouldHideSession(session) {
     if (session.display?.quiet) return true;
     return String(session.status || "").toLowerCase() === "idle";
@@ -121,6 +128,9 @@
       const isCollapsed = collapsed.has(id);
       const status = session.status || "idle";
       const view = viewOf(session);
+      const metaKind = !isCollapsed || !isNoisyActionLabel(view.kind, session)
+        ? `<span class="task-kind">${escapeHtml(view.kind)}</span>`
+        : "";
       return `
         <article class="task-card ${escapeAttr(status)} tone-${escapeAttr(view.tone)} ${view.quiet ? "quiet" : ""} ${isCollapsed ? "collapsed" : ""}" data-id="${escapeAttr(id)}">
           <span class="task-rail" aria-hidden="true"></span>
@@ -132,9 +142,9 @@
             <p class="task-summary">${escapeHtml(view.detail)}</p>
             <div class="task-meta">
               <span class="task-dot"></span>
-              <span>${escapeHtml(view.project)}</span>
-              <span>${escapeHtml(view.source)}</span>
-              <span>${escapeHtml(view.kind)}</span>
+              <span class="task-project">${escapeHtml(view.project)}</span>
+              <span class="task-source">${escapeHtml(view.source)}</span>
+              ${metaKind}
             </div>
           </div>
           <div class="task-actions">

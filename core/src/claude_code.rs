@@ -35,6 +35,16 @@ pub struct ClaudeHookEvent {
     pub extra: serde_json::Map<String, Value>,
 }
 
+#[derive(Debug, Clone, Default)]
+struct BackgroundFields {
+    parent_session_id: Option<String>,
+    background: bool,
+    agent_id: Option<String>,
+    agent_type: Option<String>,
+    task_id: Option<String>,
+    output_file: Option<String>,
+}
+
 impl ClaudeHookEvent {
     /// 解析 hook JSON 并兼容少量常见别名字段。
     pub fn from_json(raw: &str) -> Result<Self, String> {
@@ -76,7 +86,7 @@ impl ClaudeHookEvent {
         ])
         .unwrap_or("unknown");
 
-        let status = map_hook_status(hook_name);
+        let mut status = map_hook_status(hook_name);
         let tool_name = self
             .tool_name
             .or_else(|| string_field(&self.extra, "toolName"))
@@ -90,6 +100,24 @@ impl ClaudeHookEvent {
         let tool_input_preview = tool_input
             .as_ref()
             .and_then(|value| preview_tool_input(tool_name.as_deref(), value));
+        let tool_response = value_field(&self.extra, "tool_response")
+            .or_else(|| value_field(&self.extra, "toolResponse"));
+        let background = background_fields(
+            session_id,
+            hook_name,
+            tool_name.as_deref(),
+            tool_input.as_ref(),
+            tool_response.as_ref(),
+            &self.extra,
+        );
+        if matches!(
+            normalize_hook_name(hook_name).as_str(),
+            "subagentstop" | "taskcompleted"
+        ) {
+            status = AgentStatus::Done;
+        } else if background.background {
+            status = AgentStatus::Working;
+        }
 
         let workspace = first_non_empty([
             self.cwd.as_deref(),
@@ -100,9 +128,10 @@ impl ClaudeHookEvent {
         .to_string();
 
         Ok(AgentSessionEvent {
-            session_id: session_id.to_string(),
+            session_id: background_session_id(session_id, &background),
             source,
             workspace,
+            parent_session_id: background.parent_session_id,
             status,
             tool_name,
             tool_input_preview,
@@ -112,6 +141,16 @@ impl ClaudeHookEvent {
                 .and_then(|value| preview_text(value, PREVIEW_CHARS))
                 .or_else(|| {
                     string_field(&self.extra, "user_prompt")
+                        .as_deref()
+                        .and_then(|value| preview_text(value, PREVIEW_CHARS))
+                })
+                .or_else(|| {
+                    string_field(&self.extra, "task_subject")
+                        .as_deref()
+                        .and_then(|value| preview_text(value, PREVIEW_CHARS))
+                })
+                .or_else(|| {
+                    string_field(&self.extra, "task_description")
                         .as_deref()
                         .and_then(|value| preview_text(value, PREVIEW_CHARS))
                 }),
@@ -125,6 +164,12 @@ impl ClaudeHookEvent {
                         .and_then(|value| preview_text(value, PREVIEW_CHARS))
                 }),
             pid: self.pid.or_else(|| u32_field(&self.extra, "pid")),
+            background: background.background,
+            agent_id: background.agent_id,
+            agent_type: background.agent_type,
+            task_id: background.task_id,
+            output_file: background.output_file,
+            machine: None,
             at_ms: now_ms,
             needs_user: status.needs_user(),
         })
@@ -175,8 +220,12 @@ pub fn map_hook_status(name: &str) -> AgentStatus {
         "precompact" => AgentStatus::Compacting,
         "stop" => AgentStatus::Done,
         "stopfailure" => AgentStatus::Error,
+        "subagentstart" => AgentStatus::Working,
         "subagentstop" => AgentStatus::Working,
         "subagentstopfailure" => AgentStatus::Working,
+        "taskcreated" => AgentStatus::Working,
+        "taskcompleted" => AgentStatus::Done,
+        "posttoolbatch" => AgentStatus::Working,
         "sessionend" => AgentStatus::Idle,
         "notification" => AgentStatus::Waiting,
         "permissiondenied" => AgentStatus::Waiting,
@@ -184,6 +233,143 @@ pub fn map_hook_status(name: &str) -> AgentStatus {
         "error" => AgentStatus::Error,
         "interrupted" => AgentStatus::Interrupted,
         _ => AgentStatus::Working,
+    }
+}
+
+fn background_fields(
+    parent_session_id: &str,
+    hook_name: &str,
+    tool_name: Option<&str>,
+    tool_input: Option<&Value>,
+    tool_response: Option<&Value>,
+    extra: &serde_json::Map<String, Value>,
+) -> BackgroundFields {
+    let hook = normalize_hook_name(hook_name);
+    let mut fields = BackgroundFields::default();
+
+    if matches!(
+        hook.as_str(),
+        "subagentstart" | "subagentstop" | "taskcreated" | "taskcompleted"
+    ) {
+        fields.parent_session_id = Some(parent_session_id.to_string());
+        fields.background = true;
+    }
+
+    fields.agent_id = first_string([
+        string_field(extra, "agent_id"),
+        string_field(extra, "agentId"),
+        nested_string(extra, &["tool_response", "agentId"]),
+        nested_string(extra, &["toolResponse", "agentId"]),
+        tool_response
+            .and_then(|value| value.get("agentId"))
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        tool_response
+            .and_then(|value| value.get("agent_id"))
+            .and_then(Value::as_str)
+            .map(str::to_string),
+    ]);
+
+    fields.agent_type = first_string([
+        string_field(extra, "agent_type"),
+        string_field(extra, "agentType"),
+        tool_input
+            .and_then(|value| value.get("subagent_type"))
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        tool_response
+            .and_then(|value| value.get("agentType"))
+            .and_then(Value::as_str)
+            .map(str::to_string),
+    ]);
+
+    fields.task_id = first_string([
+        string_field(extra, "task_id"),
+        string_field(extra, "taskId"),
+        tool_input
+            .and_then(|value| value.get("task_id"))
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        tool_response
+            .and_then(|value| value.get("task_id"))
+            .and_then(Value::as_str)
+            .map(str::to_string),
+    ]);
+
+    fields.output_file = first_string([
+        string_field(extra, "output_file"),
+        string_field(extra, "outputFile"),
+        string_field(extra, "agent_transcript_path"),
+        string_field(extra, "agentTranscriptPath"),
+        tool_response
+            .and_then(|value| value.get("outputFile"))
+            .and_then(Value::as_str)
+            .map(str::to_string),
+    ]);
+
+    let tool = tool_name
+        .unwrap_or_default()
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+    let input_background = tool_input
+        .and_then(|value| value.get("run_in_background"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let response_async = tool_response
+        .and_then(|value| value.get("status"))
+        .and_then(Value::as_str)
+        .map(|value| value == "async_launched")
+        .unwrap_or(false);
+
+    if input_background || response_async {
+        fields.parent_session_id = Some(parent_session_id.to_string());
+        fields.background = true;
+        if fields.agent_id.is_none() {
+            fields.agent_id = tool_response
+                .and_then(|value| value.get("agentId"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+        }
+    }
+
+    if fields.background && fields.agent_id.is_none() && fields.task_id.is_none() {
+        if tool == "agent" || tool == "task" {
+            fields.task_id = fields
+                .agent_type
+                .clone()
+                .or_else(|| Some("agent".to_string()));
+        } else if input_background {
+            fields.task_id = Some(tool_label_seed(tool_name));
+        }
+    }
+
+    fields
+}
+
+fn background_session_id(parent_session_id: &str, fields: &BackgroundFields) -> String {
+    if !fields.background {
+        return parent_session_id.to_string();
+    }
+    if let Some(agent_id) = fields.agent_id.as_deref() {
+        return format!("claude:{parent_session_id}:agent:{agent_id}");
+    }
+    if let Some(task_id) = fields.task_id.as_deref() {
+        return format!("claude:{parent_session_id}:task:{task_id}");
+    }
+    format!("claude:{parent_session_id}:background")
+}
+
+fn tool_label_seed(tool_name: Option<&str>) -> String {
+    let value = tool_name.unwrap_or("background").trim();
+    if value.is_empty() {
+        "background".to_string()
+    } else {
+        value
+            .chars()
+            .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_' || *ch == '-')
+            .collect::<String>()
     }
 }
 
@@ -199,6 +385,14 @@ fn first_non_empty<'a>(values: impl IntoIterator<Item = Option<&'a str>>) -> Opt
         .into_iter()
         .flatten()
         .map(str::trim)
+        .find(|value| !value.is_empty())
+}
+
+fn first_string<const N: usize>(values: [Option<String>; N]) -> Option<String> {
+    values
+        .into_iter()
+        .flatten()
+        .map(|value| value.trim().to_string())
         .find(|value| !value.is_empty())
 }
 
@@ -414,6 +608,101 @@ mod tests {
         assert!(preview.contains("Review UI overlap"));
         assert!(preview.contains("explorer"));
         assert!(!preview.contains("delegated prompt"));
+    }
+
+    #[test]
+    fn post_tool_use_async_agent_becomes_background_session() {
+        let raw = r#"{
+            "session_id": "parent",
+            "hook_event_name": "PostToolUse",
+            "cwd": "D:\\repo",
+            "tool_name": "Agent",
+            "tool_input": {
+                "description": "Review the UI",
+                "subagent_type": "explorer",
+                "run_in_background": true
+            },
+            "tool_response": {
+                "status": "async_launched",
+                "agentId": "agent-42",
+                "outputFile": "D:\\repo\\.claude\\agents\\agent-42.md"
+            }
+        }"#;
+        let event = ClaudeHookEvent::from_json(raw)
+            .unwrap()
+            .into_session_event(100)
+            .unwrap();
+        assert_eq!(event.session_id, "claude:parent:agent:agent-42");
+        assert_eq!(event.parent_session_id.as_deref(), Some("parent"));
+        assert_eq!(event.status, AgentStatus::Working);
+        assert!(event.background);
+        assert_eq!(event.agent_id.as_deref(), Some("agent-42"));
+        assert_eq!(event.agent_type.as_deref(), Some("explorer"));
+        assert_eq!(
+            event.output_file.as_deref(),
+            Some("D:\\repo\\.claude\\agents\\agent-42.md")
+        );
+    }
+
+    #[test]
+    fn subagent_stop_completes_background_session() {
+        let raw = r#"{
+            "session_id": "parent",
+            "hook_event_name": "SubagentStop",
+            "cwd": "D:\\repo",
+            "agent_id": "agent-42",
+            "agent_type": "explorer",
+            "agent_transcript_path": "D:\\repo\\agent.jsonl",
+            "last_assistant_message": "I found the issue."
+        }"#;
+        let event = ClaudeHookEvent::from_json(raw)
+            .unwrap()
+            .into_session_event(100)
+            .unwrap();
+        assert_eq!(event.session_id, "claude:parent:agent:agent-42");
+        assert_eq!(event.status, AgentStatus::Done);
+        assert!(event.background);
+        assert_eq!(event.parent_session_id.as_deref(), Some("parent"));
+        assert_eq!(
+            event.last_response_preview.as_deref(),
+            Some("I found the issue.")
+        );
+        assert_eq!(event.output_file.as_deref(), Some("D:\\repo\\agent.jsonl"));
+    }
+
+    #[test]
+    fn task_created_and_completed_use_task_session() {
+        let created = r#"{
+            "session_id": "parent",
+            "hook_event_name": "TaskCreated",
+            "cwd": "D:\\repo",
+            "task_id": "task-9",
+            "task_subject": "Fix docs",
+            "task_description": "Update documentation"
+        }"#;
+        let event = ClaudeHookEvent::from_json(created)
+            .unwrap()
+            .into_session_event(100)
+            .unwrap();
+        assert_eq!(event.session_id, "claude:parent:task:task-9");
+        assert_eq!(event.status, AgentStatus::Working);
+        assert!(event.background);
+        assert_eq!(event.user_prompt_preview.as_deref(), Some("Fix docs"));
+
+        let completed = r#"{
+            "session_id": "parent",
+            "hook_event_name": "TaskCompleted",
+            "cwd": "D:\\repo",
+            "task_id": "task-9",
+            "last_assistant_message": "Docs updated"
+        }"#;
+        let event = ClaudeHookEvent::from_json(completed)
+            .unwrap()
+            .into_session_event(120)
+            .unwrap();
+        assert_eq!(event.session_id, "claude:parent:task:task-9");
+        assert_eq!(event.status, AgentStatus::Done);
+        assert_eq!(event.parent_session_id.as_deref(), Some("parent"));
     }
 
     #[test]
