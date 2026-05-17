@@ -16,9 +16,9 @@ make release
 # 打包为版本化 ZIP
 make dist
 
-# 发布 0.1.4 时使用 tag 驱动产物命名
-git tag v0.1.4
-git push origin v0.1.4
+# 发布 0.1.5 时使用 tag 驱动产物命名
+git tag v0.1.5
+git push origin v0.1.5
 ```
 
 启动后看到屏幕角落的像素猫即为成功。
@@ -40,6 +40,7 @@ git push origin v0.1.4
 | 拖拽宠物到边缘 | 贴边吸附，变精致发光竖条（弹簧缓动动画） |
 | 点击猫咪嘴巴 | 打开聊天输入框，键盘输入文字送 AI |
 | 双击猫咪左眼 | 立即截图并显示 Vision 分析结果 |
+| 点击/拖拽宠物 | 播放语义短动作反馈（观察、确认、阻塞、拖拽），不打断当前工作状态 |
 | AI 回复后 | 如果设置中开启 TTS，则自动朗读 |
 | 系统托盘右键 | 截图/折叠/置顶/**设置窗口**/重载配置/退出 |
 | 后台（每 30s） | 截图 + Vision API 分析 + 屏幕活动摘要 |
@@ -159,6 +160,16 @@ Agent Watch 是桌宠侧的只读任务看管面板，用于观察 Claude Code /
 - 浮动任务栈展示最近会话、当前状态、运行中命令、hook 事件和离开提醒。
 - Hook doctor 可以清理旧 ai-pad hook、重写 PowerShell 转发脚本，并补齐缺失事件。
 - 监控窗口与普通桌宠窗口解耦，游戏运行或桌宠表演不会阻塞会话事件记录。
+- 设置页提供远程 Mac/Linux 安装命令和只读 `/watch` 地址；本机 IP 会优先选择 `10.x` / `192.168.x` / `172.16-31.x` 局域网地址，避免误用 `198.18/15` 虚拟网段。
+
+## 宠物资源包
+
+桌宠渲染已进入 v2 manifest 资源包模式。默认内置 `piggy` 是 192×208 原始帧的高分辨率资源包，设置页可切换 `status`、`core`、`stacky`、`bsod`、`null-signal` 等终端状态风资源，也保留 `cat` 作为经典像素包。
+
+- 资源包位于 `app/frontend/__fixtures__/pets/<id>/manifest.json`
+- `manifest.actions` 支持 timeline，可声明 `observe` / `nudge` / `acknowledge` / `blocked` / `dragging` 等语义短动作
+- 设置页按“推荐 / 终端状态 / 角色 / 经典像素”分组展示资源包
+- 配置了外部资源包时加载失败会直接暴露错误，不再静默回退到旧内置精灵
 
 ## 记忆系统（两层存储 + AI 画像）
 
