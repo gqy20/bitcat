@@ -4,6 +4,8 @@
 
 当前归档：
 
+- `pet-animation-visual-roadmap.md`：宠物动画真实测试、语义视觉补齐、表演优先级和 idle variants 已落地或并入 v2 资源包主线。
+- `pet-spritesheet-manifest.md`：宠物资源从硬编码 sprite 迁移到 manifest 的设计已完成；当前实现已进入 v2-only 资源包模式。
 - `token-tracking.md`：Token 追踪 MVP 已落地。
 - `logging-standardization.md`：日志规范第一轮已落地。
 - `rig-pet-semantic-events.md`：宠物语义事件 Phase 1-6 已落地。

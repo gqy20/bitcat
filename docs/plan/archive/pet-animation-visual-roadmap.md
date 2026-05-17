@@ -1,5 +1,7 @@
 # Pet Animation Visual Roadmap
 
+> Archive note: this plan captured the 2D animation stabilization path. The major items have landed or moved into the v2 pet asset-pack flow. Current packaging and release decisions live in [`../pet-asset-packaging.md`](../pet-asset-packaging.md).
+
 > Status: active
 > Updated: 2026-05-15
 

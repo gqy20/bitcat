@@ -1,5 +1,7 @@
 # 宠物 Spritesheet Manifest 计划
 
+> 归档说明：本文记录 v1 设计和早期迁移路径，已不代表当前实现。当前代码是 v2-only 资源包模式，默认加载 `piggy`，`cat` 是普通可选包；后续发布与体积策略见 [`../pet-asset-packaging.md`](../pet-asset-packaging.md)。
+
 > 状态：Phase A/B 已落地，Phase C 待做
 > 更新日期：2026-05-17
 

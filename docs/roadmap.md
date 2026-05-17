@@ -9,7 +9,8 @@
 
 | 能力 | 状态 |
 |------|------|
-| 6 状态像素精灵动画（非均匀帧时长 + 瞬态 repeat+fallback） | 已有（2026-05-13 增强） |
+| v2 宠物资源包系统（manifest + spritesheet + 设置页选择） | 已落地（2026-05-17）；默认 `piggy`，`cat/status/core/...` 可选 |
+| 语义宠物动画（非均匀帧时长 + 瞬态 repeat+fallback + idle variants） | 已有（2026-05-13 增强，2026-05-17 收敛到 v2 pack） |
 | AI 对话（Anthropic Claude via rig-core，流式输出） | 已有 |
 | 10 个内置工具（launch/shell/read_file/get_time/hotkey/clipboard/foreground/screenshots/perform_dance/play_dance） | 已有 |
 | SDL2 手柄输入（8BitDo Micro） | 已有 |
@@ -34,6 +35,7 @@
 | App crate | Rust 2021 + Tauri 2 | `app/Cargo.toml`, `app/tauri.conf.json` | 桌面窗口、托盘、全局快捷键、IPC |
 | UI Runtime | WebView2 via Tauri | `tauri.conf.json` `frontendDist: ./frontend` | 多窗口透明桌宠，而非浏览器页应用 |
 | Frontend | Vanilla HTML/CSS/JS + Canvas | `app/frontend/*.html`, `app/frontend/js/*.js` | 无 React/Vue/构建步骤；Node 只用于测试 |
+| Pet Assets | v2 manifest + bundled fixture packs | `app/frontend/__fixtures__/pets/*/manifest.json`, `app/frontend/js/sprite-loader.js` | 宠物视觉不再依赖硬编码默认 sprite fallback；默认加载 `piggy` |
 | Frontend Tests | Vitest 3 + jsdom | `app/frontend/package.json`, `vitest.config.ts` | 测试 `bubble/pet/game/sprite` 等纯 JS 逻辑 |
 | AI Agent | `rig-core` 0.36 + Anthropic provider | `core/src/agent.rs`, `core/src/vision.rs` | 流式对话、Tool、Extractor、Vision 结构化输出 |
 | AI 配置 | 环境变量 / `app_settings.json` / `~/.claude/settings.json` | `core/src/ai_config.rs` | 默认兼容 Claude Code 风格配置，只读读取 `.claude` |
@@ -194,6 +196,8 @@ panel → cmd_start_game → app/src/game.rs 动态创建 game 窗口
 ### C2. 动画增强
 
 - ~~呼吸微动、眨眼、走路改进~~ ✅ **已完成 (2026-05-13)** — 非均匀帧时长 + 瞬态 repeat+fallback
+- ~~硬编码小猫迁移到资源包~~ ✅ **已完成 (2026-05-17)** — v2-only manifest loader，默认 `piggy`，`cat` 作为普通可选包
+- 宠物资源包发布策略：决定大 WebP pack 是进入 bundle 还是外置下载，见 [plan/pet-asset-packaging.md](plan/pet-asset-packaging.md)
 - 粒子系统迁移到 Three.js Points
 - 舞蹈系统 3D 化（真实抛物线轨迹、翻滚感）
 - 鼠标交互：hover 时猫转头看鼠标
@@ -432,6 +436,7 @@ A1+A2+E1/E2+C1 ──→ D1(Steam) MVP 差异化更完整
 | **B2** | Token 追踪 + 设置页统计 | 已完成 MVP | 0 | Done |
 | **B3** | Extractor 改造主链路 | 已完成 | 0 | Done |
 | **B3 cleanup** | 删除旧 raw helper / parser / 惰性配置 | 已完成，净删为主 | 0 | Done |
+| **Pet v2 assets** | 宠物 manifest loader、默认 `piggy`、`cat` 资源包命名、catalog preset | 已完成；后续只剩发布包体积分层和用户目录加载 | 0 | Done/P1 packaging |
 | **E1** | AI 编码工具会话监听 | ~350-650 行 | 0 | P1，参考 oc-claw |
 | **E2** | 桌宠化 Agent 状态管理 | ~250-500 行 | 0 | P1，复用 pet/bubble/panel |
 | **A2** | 迷你游戏引擎 | Phase 1 已完成；`start_game(GameDef)` / `cmd_start_game_with_def` 已可启动任意 GameDef；Phase 2 待接 AI 工具 + Memory/Catch + 持久化 | 0 | P1 |
