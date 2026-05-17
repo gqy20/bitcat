@@ -171,6 +171,7 @@ function resolveTimelineSprite(frames, elapsedMs) {
 class PetStateMachine {
   constructor(options) {
     options = options || {};
+    this.stateConfig = options.stateConfig || STATE_CONFIG;
     this.state = 'idle';
     this.frame = 0;
     this.frameTimeMs = 0;
@@ -289,7 +290,7 @@ class PetStateMachine {
     this.stateTimeMs += dtMs;
     this.frameTimeMs += dtMs;
 
-    const config = STATE_CONFIG[this.state] || STATE_CONFIG.idle;
+    const config = this.stateConfig[this.state] || this.stateConfig.idle;
     const frames = config.frames;
     const passDuration = timelineDuration(frames);
 
@@ -368,7 +369,7 @@ class PetStateMachine {
   // Schedule the next ambient idle motion. The selected variant is not stored here;
   // selection is repeated at trigger time so test-injected randomness stays simple.
   scheduleIdleVariantAfter(baseMs) {
-    const config = STATE_CONFIG.idle;
+    const config = this.stateConfig.idle;
     const variants = config.variants || [];
     if (!variants.length) return Number.POSITIVE_INFINITY;
 

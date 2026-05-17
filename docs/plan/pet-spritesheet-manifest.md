@@ -1,9 +1,9 @@
 # 宠物 Spritesheet Manifest 计划
 
-> 状态：草案
-> 更新日期：2026-05-15
+> 状态：Phase A/B 已落地，Phase C 待做
+> 更新日期：2026-05-17
 
-本计划定义从当前 `sprite.js` 硬编码像素数组，迁移到外部、可由美术编辑的宠物资产格式的路径。它先作为设计草案存在：在 schema、fallback 规则和迁移路径稳定之前，不急于实现 loader。
+本计划定义从当前 `sprite.js` 硬编码像素数组，迁移到外部、可由美术编辑的宠物资产格式的路径。当前已经落地 `default-cat` fixture、`sprite-loader.js` 和 manifest timeline 接入；下一步重点是设置页选择、用户目录加载和预览诊断。
 
 ## 目标
 
@@ -149,24 +149,13 @@ App bundle 仍然通过 `sprite.js` 携带内置小猫。以后可以把内置�
 - `talk`
 - `happy`
 - `confused`
-
-推荐状态：
-
 - `focused`
 - `preparing`
 - `gameplay`
 - `gamewin`
 - `gamelose`
 
-推荐状态缺失时，可以 fallback 到语义相近的状态：
-
-| 缺失状态 | Fallback |
-|---|---|
-| `focused` | `idle` |
-| `preparing` | `talk` |
-| `gameplay` | `happy` |
-| `gamewin` | `happy` |
-| `gamelose` | `confused` |
+v1 不对这些状态做隐式 fallback。外部 pack 如果缺状态，应拒绝整个 manifest 并回到内置宠物，避免运行时出现局部外部、局部内置的混合视觉。
 
 ## Loader 行为
 
@@ -193,7 +182,7 @@ v1 loader 应该采用 all-or-nothing 策略。局部加载外部资产很容易
 - v1 中 `sprite.frameWidth` 或 `sprite.frameHeight` 不是 `16`；
 - `frameCount` 超过 `columns * rows`；
 - 任意 state 的 `frames` 数组为空；
-- `spriteFrames` 存在但为空；
+- 任意 state 缺少 `spriteFrames`，或 `spriteFrames` 为空；
 - 任意 frame 引用的 sprite index 不在 `[0, frameCount)` 范围内；
 - 任意 duration `<= 0`；
 - `repeat` 存在但不是正整数；
@@ -202,7 +191,6 @@ v1 loader 应该采用 all-or-nothing 策略。局部加载外部资产很容易
 
 以下情况只 warning，不拒绝：
 
-- 推荐状态缺失；
 - 存在未知顶层 metadata 字段；
 - 存在当前 app 未引用的额外 state。
 
@@ -245,45 +233,47 @@ Rust 继续发送语义事件：
 
 ### Phase A：Schema 与测试 fixture
 
-- 将 manifest schema 固化为文档。
-- 创建一个镜像当前内置小猫的 fixture manifest。
-- 增加一个小型 fixture spritesheet。
-- 增加校验成功/失败测试。
+- [x] 将 manifest schema 固化为文档。
+- [x] 创建一个镜像当前内置小猫的 fixture manifest。
+- [x] 增加一个小型 fixture spritesheet。
+- [x] 增加校验成功/失败测试。
 
 ### Phase B：带 fallback 的 loader
 
-- 新增 `sprite-loader.js`。
-- 如果配置了外部宠物，则尝试加载。
-- 任意失败时回退到当前 `sprite.js` 数据。
-- 保持公开 renderer API 稳定。
+- [x] 新增 `sprite-loader.js`。
+- [x] 如果配置了外部宠物，则尝试加载。
+- [x] 任意失败时回退到当前 `sprite.js` 数据。
+- [x] 保持公开 renderer API 稳定。
+- [x] 将 manifest `stateConfig` 接入 `PetStateMachine`，让外部 timeline、repeat/fallback 和 idle variants 真正生效。
 
 ### Phase C：设置页与预览
 
-- 增加设置页宠物 id 选择入口。
-- 用易懂文案展示校验错误。
-- 使用同一条 `renderSprite()` 路径提供预览。
+- [ ] 增加设置页宠物 id 选择入口。
+- [ ] 用易懂文案展示校验错误。
+- [ ] 使用同一条 `renderSprite()` 路径提供预览。
+- [ ] 将正式用户资产路径收敛到 `~/.ai-pad/pets/<id>`，保留 query/localStorage 作为开发入口。
 
 ### Phase D：导出内置资产
 
-- 把当前小猫导出成 manifest-compatible asset pack。
-- 至少发布一个带 loader 的版本后，再考虑是否弱化 `sprite.js` fallback。
+- [x] 把当前小猫导出成 manifest-compatible asset pack。
+- [ ] 至少发布一个带 loader 的版本后，再考虑是否弱化 `sprite.js` fallback。
 
 ## 待决策问题
 
-- 自定义宠物是否只允许放在 `~/.ai-pad/pets`，还是开发期也允许 project-local pets？
-- Palette 是否必须存在，还是 v1 就支持直接 RGBA 图片渲染？
-- 外部宠物是否允许独立覆盖 performance action sprites？
-- v1 是否固定 16x16 frame，还是允许 32x32 并带 scale factor？
+- 自定义宠物正式入口使用 `~/.ai-pad/pets`；开发期继续允许 query/localStorage 指向 project-local fixture。
+- v1 要求 palette，暂不支持直接 RGBA 图片渲染。
+- 外部宠物允许独立覆盖 performance action sprites。
+- v1 固定 16x16 frame，暂不支持 32x32 或 scale factor。
 - Manifest 校验只放前端，还是也通过 Rust 设置命令执行？
 
 ## 推荐下一步
 
-实现 loader 之前，先从当前内置小猫导出一个小型 fixture pack：
+下一步进入 Phase C：把外部宠物选择做成可用的设置页能力。推荐先支持用户目录：
 
 ```text
-app/frontend/__fixtures__/pets/default-cat/
+~/.ai-pad/pets/default-cat/
   manifest.json
   sprites.png
 ```
 
-这个 fixture 能让 loader 测试不依赖用户数据目录，也能给当前 8-bit 小猫一个稳定的参考资产格式。
+设置页应列出可用 pack、显示 manifest 校验结果，并用同一条 `SpriteRenderer.renderSprite()` 路径预览 `idle` / `talk` / `focused` / `preparing` / `gamewin` / `gamelose`。

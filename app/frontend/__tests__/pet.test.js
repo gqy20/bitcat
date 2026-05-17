@@ -49,6 +49,27 @@ describe('PetStateMachine', () => {
   });
 
   describe('时间轴帧推进', () => {
+    it('可以使用外部 stateConfig 驱动时间轴', () => {
+      const custom = new PetStateMachine({
+        stateConfig: {
+          ...STATE_CONFIG,
+          idle: {
+            frames: [
+              { sprite: 7, duration: 10 },
+              { sprite: 8, duration: 10 },
+            ],
+            loop: true,
+          },
+        },
+        random: () => 0,
+      });
+
+      custom.update(9);
+      expect(custom.frame).toBe(7);
+      custom.update(1);
+      expect(custom.frame).toBe(8);
+    });
+
     it('使用非均匀 idle 帧时长', () => {
       pet.update(1499);
       expect(pet.frame).toBe(0);

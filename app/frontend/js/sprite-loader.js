@@ -4,20 +4,22 @@ import {
   SPRITE_H,
   SPRITE_W,
   cloneSprite,
-  getSprite as builtinGetSprite,
-  renderMini as builtinRenderMini,
-  renderSprite as builtinRenderSprite,
   runSpriteTests,
 } from './sprite.js';
 
-const REQUIRED_STATES = ['idle', 'walk', 'sleep', 'talk', 'happy', 'confused'];
-const STATE_FALLBACKS = {
-  focused: 'idle',
-  preparing: 'talk',
-  gameplay: 'happy',
-  gamewin: 'happy',
-  gamelose: 'confused',
-};
+const REQUIRED_STATES = [
+  'idle',
+  'walk',
+  'sleep',
+  'talk',
+  'happy',
+  'confused',
+  'focused',
+  'preparing',
+  'gameplay',
+  'gamewin',
+  'gamelose',
+];
 
 function normalizeBaseUrl(baseUrl) {
   if (!baseUrl) return null;
@@ -123,6 +125,7 @@ function rendererFromRuntime(runtime, source) {
     renderMini,
     runSpriteTests,
     cloneSprite,
+    stateConfig: runtime.stateConfig,
     assetSource: source,
   };
 }
@@ -131,6 +134,7 @@ function builtinRuntime() {
   return {
     sprites: cloneSprites(BUILTIN_SPRITES),
     palette: clonePalette(BUILTIN_PALETTE),
+    stateConfig: null,
     mini: { headRows: 10 },
   };
 }
@@ -282,23 +286,28 @@ function frameFromImageData(imageData, manifest, frameIndex, lookup) {
   return frame;
 }
 
-function remapTimeline(timeline, globalFrames, frameCount, stateName, allStates) {
+function remapTimeline(timeline, localFrames, frameCount, stateName, allStates) {
   const withStates = { ...timeline, __states: allStates };
   validateTimeline(withStates, frameCount, `states.${stateName}`);
-  const frames = timeline.frames.map((frame) => ({
-    ...frame,
-    sprite: globalFrames[frame.sprite],
-  }));
+  const localIndexByGlobal = new Map(localFrames.map((spriteIndex, index) => [spriteIndex, index]));
+
+  function toLocalFrame(frame, label) {
+    const sprite = localIndexByGlobal.get(frame.sprite);
+    if (sprite == null) {
+      throw new Error(`${label} references sprite ${frame.sprite}, outside ${stateName}.spriteFrames`);
+    }
+    return { ...frame, sprite };
+  }
+
+  const frames = timeline.frames.map((frame) => toLocalFrame(frame, `states.${stateName}.frames`));
   const out = { ...timeline, frames };
   if (timeline.variants) {
     out.variants = timeline.variants.map((variant) => ({
       ...variant,
-      frames: variant.frames.map((frame) => ({
-        ...frame,
-        sprite: globalFrames[frame.sprite],
-      })),
+      frames: variant.frames.map((frame) => toLocalFrame(frame, `states.${stateName}.variants`)),
     }));
   }
+  delete out.__states;
   return out;
 }
 
@@ -321,25 +330,22 @@ function buildRuntimeFromManifest(manifest, imageData) {
 
   const sprites = {};
   for (const [state, timeline] of Object.entries(manifest.states)) {
-    const refs = timeline.spriteFrames || timeline.frames.map((frame) => frame.sprite);
-    sprites[state] = refs.map((spriteIndex) => sheetFrames[spriteIndex]);
-  }
-  for (const [missing, fallback] of Object.entries(STATE_FALLBACKS)) {
-    if (!sprites[missing] && sprites[fallback]) {
-      sprites[missing] = sprites[fallback];
+    if (!Array.isArray(timeline.spriteFrames) || timeline.spriteFrames.length === 0) {
+      throw new Error(`states.${state}.spriteFrames is required`);
     }
+    const refs = timeline.spriteFrames;
+    sprites[state] = refs.map((spriteIndex) => sheetFrames[spriteIndex]);
   }
   for (const [action, config] of Object.entries(manifest.actions || {})) {
     validateFrameRef(config.sprite, manifest.sprite.frameCount, `actions.${action}`);
     sprites[action] = [sheetFrames[config.sprite]];
   }
 
-  const globalFrames = sheetFrames.map((_, index) => index);
   const stateConfig = {};
   for (const [state, timeline] of Object.entries(manifest.states)) {
     stateConfig[state] = remapTimeline(
       timeline,
-      globalFrames,
+      timeline.spriteFrames,
       manifest.sprite.frameCount,
       state,
       manifest.states
@@ -424,7 +430,6 @@ if (typeof window !== 'undefined') {
 
 export {
   REQUIRED_STATES,
-  STATE_FALLBACKS,
   buildRuntimeFromManifest,
   builtinRenderer,
   configuredPetAssetUrl,

@@ -51,6 +51,10 @@ describe('sprite-loader', () => {
       ...manifest,
       states: { ...manifest.states, idle: undefined },
     })).toThrow(/missing required state/);
+    expect(() => validateManifest({
+      ...manifest,
+      states: { ...manifest.states, focused: undefined },
+    })).toThrow(/missing required state/);
   });
 
   it('builds a runtime renderer model from the default-cat fixture', () => {
@@ -63,6 +67,25 @@ describe('sprite-loader', () => {
     expect(runtime.sprites.jump).toHaveLength(1);
     expect(runtime.palette[0]).toBeNull();
     expect(runtime.sprites.idle[0][6 * 16 + 3]).toBe(4);
+    expect(runtime.stateConfig.focused.frames.map((frame) => frame.sprite)).toEqual([0, 1, 0, 2]);
+    expect(runtime.stateConfig.idle.variants[0].frames.map((frame) => frame.sprite)).toEqual([4, 0]);
+  });
+
+  it('rejects timelines that reference frames outside their local spriteFrames', () => {
+    const imageData = decodeFixturePng(path.join(fixtureDir, 'sprites.png'));
+    const broken = {
+      ...manifest,
+      states: {
+        ...manifest.states,
+        focused: {
+          ...manifest.states.focused,
+          spriteFrames: [21, 22],
+          frames: [{ sprite: 23, duration: 100 }],
+        },
+      },
+    };
+
+    expect(() => buildRuntimeFromManifest(broken, imageData)).toThrow(/outside focused\.spriteFrames/);
   });
 
   it('loads a configured pack through injected fetch and imageData hooks', async () => {

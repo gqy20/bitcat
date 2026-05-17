@@ -5,7 +5,7 @@ import { PerformerHost } from './performance/performer-host.js';
 (function() {
   'use strict';
 
-  const SpriteRenderer = window.SpriteRenderer;
+  let SpriteRenderer = window.SpriteRenderer;
   const PetState = window.PetState;
   const Particles = window.Particles;
 
@@ -25,7 +25,7 @@ import { PerformerHost } from './performance/performer-host.js';
     return x >= 22 * ratio && x <= 44 * ratio && y >= 44 * ratio && y <= 62 * ratio;
   }
 
-  const pet = new PetState.PetStateMachine();
+  let pet = null;
   let lastTime = performance.now();
   let canvas, ctx;
   let prevState = null;
@@ -85,6 +85,15 @@ import { PerformerHost } from './performance/performer-host.js';
   };
 
   async function init() {
+    if (window.SpriteRendererReady) {
+      SpriteRenderer = await window.SpriteRendererReady;
+    } else {
+      SpriteRenderer = window.SpriteRenderer;
+    }
+    pet = new PetState.PetStateMachine({
+      stateConfig: SpriteRenderer && SpriteRenderer.stateConfig,
+    });
+
     canvas = document.getElementById('sprite');
     ctx = canvas.getContext('2d');
     bodyEl = document.body;

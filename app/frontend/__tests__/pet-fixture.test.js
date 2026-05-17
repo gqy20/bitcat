@@ -5,8 +5,19 @@ import path from 'node:path';
 const fixtureDir = path.join(process.cwd(), '__fixtures__', 'pets', 'default-cat');
 const manifest = JSON.parse(readFileSync(path.join(fixtureDir, 'manifest.json'), 'utf8'));
 
-const requiredStates = ['idle', 'walk', 'sleep', 'talk', 'happy', 'confused'];
-const recommendedStates = ['focused', 'preparing', 'gameplay', 'gamewin', 'gamelose'];
+const requiredStates = [
+  'idle',
+  'walk',
+  'sleep',
+  'talk',
+  'happy',
+  'confused',
+  'focused',
+  'preparing',
+  'gameplay',
+  'gamewin',
+  'gamelose',
+];
 const actions = ['jump', 'spin', 'wave', 'shake'];
 
 function collectSpriteRefsFromTimeline(timeline) {
@@ -46,8 +57,8 @@ describe('default-cat pet fixture pack', () => {
     });
   });
 
-  it('covers required and recommended states', () => {
-    for (const state of [...requiredStates, ...recommendedStates]) {
+  it('covers every visual state the pet window can enter', () => {
+    for (const state of requiredStates) {
       expect(manifest.states[state]).toBeTruthy();
       expect(manifest.states[state].frames.length).toBeGreaterThan(0);
     }
