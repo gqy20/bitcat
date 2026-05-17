@@ -242,6 +242,7 @@ pub struct AgentSessionView {
     pub source: String,
     pub workspace: String,
     pub workspace_name: String,
+    pub machine: Option<String>,
     pub parent_session_id: Option<String>,
     pub status: String,
     pub status_label: String,
@@ -268,6 +269,7 @@ impl AgentSessionView {
             source: session.source.as_str().to_string(),
             workspace: session.workspace.clone(),
             workspace_name: session.workspace_name(),
+            machine: session.machine.clone(),
             parent_session_id: session.parent_session_id.clone(),
             status: session.status.as_str().to_string(),
             status_label: session.status.label().to_string(),
@@ -777,9 +779,11 @@ mod tests {
 
     #[test]
     fn view_derives_workspace_name_and_age() {
-        let session = event("abc", AgentStatus::Done, 1000).into_session();
+        let mut session = event("abc", AgentStatus::Done, 1000).into_session();
+        session.machine = Some("macbook-pro".into());
         let view = AgentSessionView::from_session(&session, 6100);
         assert_eq!(view.workspace_name, "abc");
+        assert_eq!(view.machine.as_deref(), Some("macbook-pro"));
         assert_eq!(view.status, "done");
         assert_eq!(view.age_sec, 5);
         assert_eq!(view.display.headline, "已完成");

@@ -314,6 +314,19 @@ body {
   max-width: 92px;
 }
 
+.task-device {
+  font-size: 10px;
+  line-height: 1.1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: rgba(126, 165, 232, 0.16);
+  color: rgba(156, 190, 248, 0.92);
+}
+
+.task-card.collapsed .task-device {
+  max-width: 92px;
+}
+
 .task-card.collapsed .task-kind {
   max-width: 128px;
 }

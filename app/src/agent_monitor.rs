@@ -15,8 +15,8 @@ use ai_pad_core::pet_event::PetEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::io::Read;
-use std::net::{TcpListener, TcpStream};
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream, UdpSocket};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -24,6 +24,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tracing::{debug, info, warn};
 
 pub const DEFAULT_AGENT_MONITOR_PORT: u16 = 5342;
+pub const DEFAULT_AGENT_VIEW_PORT: u16 = 5344;
 const MAX_HOOK_PAYLOAD_BYTES: u64 = 512 * 1024;
 
 /// Claude Code 看管共享状态。
@@ -52,6 +53,7 @@ pub struct AgentSessionsSnapshot {
     pub primary: Option<AgentSessionView>,
     pub generated_at_ms: u64,
     pub monitor_port: u16,
+    pub view_port: u16,
     pub event_count: u64,
     pub last_event_at_ms: Option<u64>,
     pub log_dir: Option<String>,
@@ -67,6 +69,25 @@ struct AgentNudgeLogRecord {
     status: String,
     reason: Option<String>,
     message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RemoteInstallInfo {
+    pub local_ip: String,
+    pub port: u16,
+    pub view_port: u16,
+    pub watch_url: String,
+    pub script_path: String,
+    pub install_command: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DeviceSummary {
+    pub machine: String,
+    pub session_count: usize,
+    pub active_count: usize,
+    pub last_updated_at_ms: u64,
+    pub stale: bool,
 }
 
 impl SharedAgentMonitor {
@@ -116,7 +137,7 @@ impl SharedAgentMonitor {
 /// 启动 Claude Code hook TCP 接收线程。
 pub fn spawn_agent_monitor(app: AppHandle) {
     std::thread::spawn(move || {
-        let addr = format!("127.0.0.1:{DEFAULT_AGENT_MONITOR_PORT}");
+        let addr = format!("0.0.0.0:{DEFAULT_AGENT_MONITOR_PORT}");
         let listener = match TcpListener::bind(&addr) {
             Ok(listener) => listener,
             Err(e) => {
@@ -142,6 +163,37 @@ pub fn spawn_agent_monitor(app: AppHandle) {
             }
         }
         info!("Claude Code monitor stopped");
+    });
+}
+
+pub fn spawn_agent_view_server(app: AppHandle) {
+    std::thread::spawn(move || {
+        let addr = format!("0.0.0.0:{DEFAULT_AGENT_VIEW_PORT}");
+        let listener = match TcpListener::bind(&addr) {
+            Ok(listener) => listener,
+            Err(e) => {
+                warn!(error = %e, addr, "Agent Watch view server bind failed");
+                return;
+            }
+        };
+        if let Err(e) = listener.set_nonblocking(true) {
+            warn!(error = %e, "Agent Watch view server set_nonblocking failed");
+        }
+        info!(addr, "Agent Watch view server listening");
+
+        while !crate::shutdown::is_requested() {
+            match listener.accept() {
+                Ok((stream, _)) => handle_view_stream(&app, stream),
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                Err(e) => {
+                    warn!(error = %e, "Agent Watch view server accept failed");
+                    std::thread::sleep(Duration::from_millis(250));
+                }
+            }
+        }
+        info!("Agent Watch view server stopped");
     });
 }
 
@@ -171,6 +223,134 @@ fn handle_hook_stream(app: &AppHandle, stream: TcpStream) {
         }
         Err(e) => warn!(error = %e, "Claude hook read failed"),
     }
+}
+
+fn handle_view_stream(app: &AppHandle, mut stream: TcpStream) {
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+    let mut buffer = [0u8; 2048];
+    let read = match stream.read(&mut buffer) {
+        Ok(read) => read,
+        Err(e) => {
+            debug!(error = %e, "Agent Watch view request read failed");
+            return;
+        }
+    };
+    let request = String::from_utf8_lossy(&buffer[..read]);
+    let path = request
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .unwrap_or("/");
+    let (status, content_type, body) = view_response(app, path);
+    let response = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}; charset=utf-8\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.as_bytes().len()
+    );
+    if let Err(e) = stream.write_all(response.as_bytes()) {
+        debug!(error = %e, "Agent Watch view response write failed");
+    }
+}
+
+fn view_response(app: &AppHandle, path: &str) -> (&'static str, &'static str, String) {
+    let clean_path = path.split('?').next().unwrap_or(path);
+    match clean_path {
+        "/" | "/watch" => ("200 OK", "text/html", watch_page_html()),
+        "/agent-sessions" => {
+            let monitor: tauri::State<SharedAgentMonitor> = app.state();
+            match monitor
+                .snapshot(now_ms())
+                .and_then(|snapshot| serde_json::to_string(&snapshot).map_err(|e| e.to_string()))
+            {
+                Ok(body) => ("200 OK", "application/json", body),
+                Err(e) => (
+                    "500 Internal Server Error",
+                    "application/json",
+                    json_error(&e),
+                ),
+            }
+        }
+        "/devices" => {
+            let monitor: tauri::State<SharedAgentMonitor> = app.state();
+            match remote_devices(&monitor, now_ms())
+                .and_then(|devices| serde_json::to_string(&devices).map_err(|e| e.to_string()))
+            {
+                Ok(body) => ("200 OK", "application/json", body),
+                Err(e) => (
+                    "500 Internal Server Error",
+                    "application/json",
+                    json_error(&e),
+                ),
+            }
+        }
+        "/health" => ("200 OK", "application/json", "{\"ok\":true}".to_string()),
+        _ => (
+            "404 Not Found",
+            "application/json",
+            "{\"error\":\"not found\"}".to_string(),
+        ),
+    }
+}
+
+fn json_error(error: &str) -> String {
+    serde_json::json!({ "error": error }).to_string()
+}
+
+fn watch_page_html() -> String {
+    r#"<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Watch</title>
+  <style>
+    :root { color-scheme: dark; font-family: "Segoe UI", system-ui, sans-serif; background: #0f1115; color: rgba(255,255,255,.92); }
+    body { margin: 0; padding: 18px; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
+    h1 { margin: 0; font-size: 22px; }
+    #status { color: rgba(255,255,255,.55); font-size: 13px; }
+    .stack { display: grid; gap: 10px; }
+    .card { border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 12px 14px; background: rgba(255,255,255,.045); }
+    .top { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+    .title { font-weight: 760; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .age { color: rgba(255,255,255,.48); font-size: 12px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; color: rgba(255,255,255,.62); font-size: 13px; }
+    .meta span { border: 1px solid rgba(255,255,255,.08); border-radius: 999px; padding: 2px 8px; }
+    .done { border-color: rgba(142,230,168,.32); }
+    .waiting, .error { border-color: rgba(255,138,122,.42); }
+    p { margin: 8px 0 0; color: rgba(255,255,255,.76); line-height: 1.45; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Agent Watch</h1>
+    <div id="status">loading</div>
+  </header>
+  <main id="stack" class="stack"></main>
+  <script>
+    const stack = document.getElementById('stack');
+    const status = document.getElementById('status');
+    function esc(v) { return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    async function refresh() {
+      try {
+        const snap = await fetch('/agent-sessions', { cache: 'no-store' }).then(r => r.json());
+        status.textContent = `${snap.sessions?.length || 0} sessions`;
+        stack.innerHTML = (snap.sessions || []).map(s => `
+          <article class="card ${esc(s.status)}">
+            <div class="top"><div class="title">${esc(s.display?.headline || s.status_label || s.status)}</div><div class="age">${esc(s.display?.age_label || '')}</div></div>
+            <div class="meta"><span>${esc(s.workspace_name || 'unknown')}</span><span>${esc(s.display?.source_label || s.source)}</span>${s.machine ? `<span>${esc(s.machine)}</span>` : ''}<span>${esc(s.display?.action_label || 'Task')}</span></div>
+            ${s.display?.detail ? `<p>${esc(s.display.detail)}</p>` : ''}
+          </article>
+        `).join('') || '<p>No sessions yet.</p>';
+      } catch (e) {
+        status.textContent = 'offline';
+      }
+    }
+    refresh();
+    setInterval(refresh, 2000);
+  </script>
+</body>
+</html>"#
+        .to_string()
 }
 
 pub fn handle_hook_payload(app: &AppHandle, raw: &str) -> Result<(), String> {
@@ -215,6 +395,8 @@ pub fn handle_hook_payload(app: &AppHandle, raw: &str) -> Result<(), String> {
 #[derive(Debug, Deserialize)]
 struct AgentHookEnvelope {
     source: String,
+    #[serde(default)]
+    machine: Option<String>,
     payload: Value,
 }
 
@@ -227,7 +409,11 @@ fn parse_agent_hook_payload(raw: &str, now_ms: u64) -> Result<AgentSessionEvent,
         };
         let payload = serde_json::to_string(&envelope.payload)
             .map_err(|e| format!("agent hook envelope payload serialize failed: {e}"))?;
-        return ClaudeHookEvent::from_json(&payload)?.into_session_event_from(source, now_ms);
+        return ClaudeHookEvent::from_json(&payload)?.into_session_event_from(
+            source,
+            now_ms,
+            envelope.machine,
+        );
     }
 
     ClaudeHookEvent::from_json(raw)?.into_session_event(now_ms)
@@ -379,6 +565,7 @@ fn snapshot_from_sessions(
         sessions: views,
         generated_at_ms: now_ms,
         monitor_port: DEFAULT_AGENT_MONITOR_PORT,
+        view_port: DEFAULT_AGENT_VIEW_PORT,
         event_count,
         last_event_at_ms,
         log_dir: log_dir().map(|path| path.to_string_lossy().to_string()),
@@ -430,6 +617,67 @@ pub async fn cmd_get_agent_sessions(
 }
 
 #[tauri::command]
+pub async fn cmd_get_remote_install_cmd() -> Result<RemoteInstallInfo, String> {
+    let local_ip = get_lan_ip()?;
+    let script_path = "scripts/remote-install.sh".to_string();
+    let install_command =
+        format!("bash {script_path} --host {local_ip} --port {DEFAULT_AGENT_MONITOR_PORT}");
+    Ok(RemoteInstallInfo {
+        watch_url: format!("http://{local_ip}:{DEFAULT_AGENT_VIEW_PORT}/watch"),
+        local_ip,
+        port: DEFAULT_AGENT_MONITOR_PORT,
+        view_port: DEFAULT_AGENT_VIEW_PORT,
+        script_path,
+        install_command,
+    })
+}
+
+#[tauri::command]
+pub async fn cmd_list_remote_devices(
+    monitor: tauri::State<'_, SharedAgentMonitor>,
+) -> Result<Vec<DeviceSummary>, String> {
+    remote_devices(&monitor, now_ms())
+}
+
+fn remote_devices(monitor: &SharedAgentMonitor, now: u64) -> Result<Vec<DeviceSummary>, String> {
+    let sessions = monitor
+        .sessions
+        .lock()
+        .map_err(|e| format!("agent sessions lock poisoned: {e}"))?;
+    let mut devices: HashMap<String, DeviceSummary> = HashMap::new();
+    for session in sessions.values() {
+        let Some(machine) = session
+            .machine
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+        else {
+            continue;
+        };
+        let entry = devices
+            .entry(machine.to_string())
+            .or_insert_with(|| DeviceSummary {
+                machine: machine.to_string(),
+                session_count: 0,
+                active_count: 0,
+                last_updated_at_ms: 0,
+                stale: false,
+            });
+        entry.session_count += 1;
+        if session.is_active() {
+            entry.active_count += 1;
+        }
+        entry.last_updated_at_ms = entry.last_updated_at_ms.max(session.updated_at_ms);
+    }
+    let mut devices = devices.into_values().collect::<Vec<_>>();
+    for device in &mut devices {
+        device.stale = now.saturating_sub(device.last_updated_at_ms) > 5 * 60 * 1000;
+    }
+    devices.sort_by(|left, right| left.machine.cmp(&right.machine));
+    Ok(devices)
+}
+
+#[tauri::command]
 pub async fn cmd_dismiss_agent_session(
     app: AppHandle,
     monitor: tauri::State<'_, SharedAgentMonitor>,
@@ -462,6 +710,21 @@ pub async fn cmd_open_agent_workspace(
     app.opener()
         .open_path(session.workspace.clone(), None::<String>)
         .map_err(|e| e.to_string())
+}
+
+fn get_lan_ip() -> Result<String, String> {
+    let socket = UdpSocket::bind("0.0.0.0:0").map_err(|e| format!("bind UDP failed: {e}"))?;
+    socket
+        .connect("8.8.8.8:80")
+        .map_err(|e| format!("detect LAN IP failed: {e}"))?;
+    let addr = socket
+        .local_addr()
+        .map_err(|e| format!("read LAN IP failed: {e}"))?;
+    let ip = addr.ip();
+    if ip.is_loopback() || !ip.is_ipv4() {
+        return Err(format!("no LAN IPv4 found, got {ip}"));
+    }
+    Ok(ip.to_string())
 }
 
 #[cfg(test)]
@@ -526,6 +789,7 @@ mod tests {
     fn parses_codex_hook_envelope() {
         let raw = r#"{
             "source": "codex",
+            "machine": "macbook-pro",
             "payload": {
                 "session_id": "codex-session",
                 "hook_event_name": "PreToolUse",
@@ -537,6 +801,7 @@ mod tests {
         let event = parse_agent_hook_payload(raw, 42).unwrap();
         assert_eq!(event.session_id, "codex-session");
         assert_eq!(event.source, AgentSource::Codex);
+        assert_eq!(event.machine.as_deref(), Some("macbook-pro"));
         assert_eq!(event.status, AgentStatus::ToolRunning);
         assert_eq!(event.tool_name.as_deref(), Some("Bash"));
         assert!(event.tool_input_preview.unwrap().contains("cargo test"));

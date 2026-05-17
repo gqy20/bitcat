@@ -2,6 +2,8 @@
 
 Agent Watch observes Claude Code and Codex through read-only hooks. The hook scripts only forward local JSON events to the 8Bit Cat monitor on `127.0.0.1:5342`; they do not approve permissions, modify prompts, or control the external agent.
 
+For macOS/Linux machines watched over the LAN, see [Remote Agent Watch](remote-agent-watch.md). Remote hooks send the same event shape to the Windows monitor with an additional `machine` field.
+
 ## Files
 
 Claude Code:
@@ -41,12 +43,16 @@ Claude Code hooks:
 - `PreToolUse`
 - `PostToolUse`
 - `PostToolUseFailure`
+- `PostToolBatch`
 - `PermissionRequest`
 - `PermissionDenied`
 - `PreCompact` with `auto` and `manual`
 - `Stop`
 - `StopFailure`
+- `SubagentStart`
 - `SubagentStop`
+- `TaskCreated`
+- `TaskCompleted`
 - `SessionEnd`
 - `Notification`
 

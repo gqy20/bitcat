@@ -655,6 +655,7 @@ async function loadAgentSessions() {
   try {
     const snapshot = await invoke("cmd_get_agent_sessions");
     renderAgentSessions(snapshot);
+    loadRemoteDevices();
     if (status) status.textContent = snapshot?.generated_at_ms ? "已更新" : "等待状态";
   } catch (e) {
     log("加载 Agent 会话失败: " + e);
@@ -664,6 +665,7 @@ async function loadAgentSessions() {
 }
 
 function startAgentWatchRefresh() {
+  loadRemoteInstallCommand();
   loadAgentSessions();
   if (agentWatchTimer) return;
   agentWatchTimer = setInterval(() => {
@@ -675,6 +677,45 @@ function stopAgentWatchRefresh() {
   if (!agentWatchTimer) return;
   clearInterval(agentWatchTimer);
   agentWatchTimer = null;
+}
+
+async function loadRemoteInstallCommand() {
+  const code = $("aw-remote-command");
+  const watchUrl = $("aw-remote-watch-url");
+  const status = $("aw-remote-status");
+  if (!code) return;
+  try {
+    const info = await invoke("cmd_get_remote_install_cmd");
+    code.textContent = info.install_command || `bash scripts/remote-install.sh --host ${info.local_ip} --port ${info.port}`;
+    if (watchUrl) watchUrl.textContent = info.watch_url || `http://${info.local_ip}:${info.view_port}/watch`;
+    if (status) status.textContent = `${info.local_ip}:${info.port} / ${info.view_port}`;
+  } catch (e) {
+    code.textContent = "Cannot generate remote install command";
+    if (watchUrl) watchUrl.textContent = "Cannot generate watch URL";
+    if (status) status.textContent = "failed";
+    log("remote install command failed: " + e);
+  }
+}
+
+async function loadRemoteDevices() {
+  const box = $("aw-remote-devices");
+  if (!box) return;
+  try {
+    const devices = await invoke("cmd_list_remote_devices");
+    if (!devices?.length) {
+      box.innerHTML = `<div class="empty-note">No remote devices yet.</div>`;
+      return;
+    }
+    box.innerHTML = devices.map(device => `
+      <div class="remote-device ${device.stale ? "stale" : ""}">
+        <strong>${escapeHtml(device.machine)}</strong>
+        <span>${device.active_count || 0} active / ${device.session_count || 0} sessions</span>
+        <small>${device.last_updated_at_ms ? new Date(device.last_updated_at_ms).toLocaleTimeString() : ""}</small>
+      </div>
+    `).join("");
+  } catch (e) {
+    box.innerHTML = `<div class="empty-note">Remote device status unavailable.</div>`;
+  }
 }
 
 function renderAgentSessions(snapshot) {
@@ -702,6 +743,7 @@ function renderAgentSessions(snapshot) {
       </div>
       <div class="agent-session-sub">
         <span>${escapeHtml(agentSourceLabel(session.source))}</span>
+        ${session.machine ? `<small>${escapeHtml(session.machine)}</small>` : ""}
         <code>${escapeHtml(session.workspace || session.session_id)}</code>
         ${session.tool_name ? `<small>${escapeHtml(session.tool_name)}</small>` : ""}
       </div>
@@ -867,6 +909,22 @@ function renderPetEventLog(logView) {
 function bindMusicDiagnostics() {
   if (musicDiagnosticsBound) return;
   musicDiagnosticsBound = true;
+  $("aw-remote-copy").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText($("aw-remote-command").textContent || "");
+      toast("Remote install command copied", "ok");
+    } catch (e) {
+      toast("Copy failed: " + String(e), "err");
+    }
+  });
+  $("aw-remote-url-copy").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText($("aw-remote-watch-url").textContent || "");
+      toast("Watch URL copied", "ok");
+    } catch (e) {
+      toast("Copy failed: " + String(e), "err");
+    }
+  });
   const eventApi = window.__TAURI__?.event;
   if (!eventApi?.listen) return;
 

@@ -116,6 +116,8 @@ pub fn run() {
             settings::cmd_settings_close,
             settings::cmd_settings_log,
             agent_monitor::cmd_get_agent_sessions,
+            agent_monitor::cmd_get_remote_install_cmd,
+            agent_monitor::cmd_list_remote_devices,
             agent_monitor::cmd_dismiss_agent_session,
             agent_monitor::cmd_open_agent_workspace,
             agent_watch_window::cmd_agent_watch_hide,
@@ -423,6 +425,7 @@ pub fn run() {
 
             // ── 后台线程 ──
             agent_monitor::spawn_agent_monitor(app.handle().clone());
+            agent_monitor::spawn_agent_view_server(app.handle().clone());
 
             // 手柄轮询线程：SDL2 80ms tick，处理按键→命令→AI 对话。
             let handle = app.handle().clone();

@@ -73,6 +73,7 @@
       detail: display.detail || display.project || session.workspace_name || "",
       project: display.project || session.workspace_name || "",
       source: display.source_label || agentSourceLabel(session.source),
+      machine: session.machine || "",
       age: display.age_label || ageLabel(session.age_sec),
       tone: display.tone || session.status || "idle",
       quiet: Boolean(display.quiet),
@@ -131,6 +132,7 @@
       const metaKind = !isCollapsed || !isNoisyActionLabel(view.kind, session)
         ? `<span class="task-kind">${escapeHtml(view.kind)}</span>`
         : "";
+      const device = view.machine ? `<span class="task-device">${escapeHtml(view.machine)}</span>` : "";
       return `
         <article class="task-card ${escapeAttr(status)} tone-${escapeAttr(view.tone)} ${view.quiet ? "quiet" : ""} ${isCollapsed ? "collapsed" : ""}" data-id="${escapeAttr(id)}">
           <span class="task-rail" aria-hidden="true"></span>
@@ -144,6 +146,7 @@
               <span class="task-dot"></span>
               <span class="task-project">${escapeHtml(view.project)}</span>
               <span class="task-source">${escapeHtml(view.source)}</span>
+              ${device}
               ${metaKind}
             </div>
           </div>

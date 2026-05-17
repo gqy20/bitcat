@@ -11,3 +11,5 @@
 - `rig-pet-semantic-events.md`：宠物语义事件 Phase 1-6 已落地。
 - `structured-output-design.md`：舞蹈结构化工具主线已落地，游戏后续转入 `../minigame-system.md`。
 - `rig-capability-roadmap.md`：Rig 主线能力改造已完成核心阶段，剩余方向转入 roadmap/活跃计划。
+
+- `remote-agent-monitor.md`: Remote Agent Watch LAN ingest/viewer MVP landed; user-facing setup lives in `../../guide/remote-agent-watch.md`.

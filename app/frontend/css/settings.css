@@ -1158,6 +1158,60 @@ input[type="checkbox"]:checked::after {
     rgba(18, 23, 31, 0.68);
 }
 
+.agent-watch-remote-panel {
+  background: rgba(18, 23, 31, 0.62);
+}
+
+.remote-install-box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin: 12px 0;
+}
+
+.remote-install-box code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 10px 12px;
+  border: 1px solid var(--line-subtle);
+  border-radius: 8px;
+  color: #d7e4f7;
+  background: rgba(8, 12, 18, 0.46);
+}
+
+.remote-devices {
+  display: grid;
+  gap: 8px;
+}
+
+.remote-device {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 11px;
+  border: 1px solid rgba(122, 167, 255, 0.14);
+  border-radius: 8px;
+  color: var(--text);
+  background: rgba(122, 167, 255, 0.055);
+}
+
+.remote-device.stale {
+  opacity: 0.58;
+}
+
+.remote-device strong,
+.remote-device span,
+.remote-device small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .agent-watch-diag {
   display: flex;
   flex-wrap: wrap;

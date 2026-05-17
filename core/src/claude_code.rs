@@ -58,7 +58,7 @@ impl ClaudeHookEvent {
 
     /// 转换为归一 session event。
     pub fn into_session_event(self, now_ms: u64) -> Result<AgentSessionEvent, String> {
-        self.into_session_event_from(AgentSource::ClaudeCode, now_ms)
+        self.into_session_event_from(AgentSource::ClaudeCode, now_ms, None)
     }
 
     /// 转换为归一 session event，并允许调用方标记真实来源。
@@ -66,6 +66,7 @@ impl ClaudeHookEvent {
         self,
         source: AgentSource,
         now_ms: u64,
+        machine: Option<String>,
     ) -> Result<AgentSessionEvent, String> {
         let session_id_alias = string_field(&self.extra, "sessionId");
         let session_id_snake_alias = string_field(&self.extra, "session_id");
@@ -169,7 +170,7 @@ impl ClaudeHookEvent {
             agent_type: background.agent_type,
             task_id: background.task_id,
             output_file: background.output_file,
-            machine: None,
+            machine,
             at_ms: now_ms,
             needs_user: status.needs_user(),
         })

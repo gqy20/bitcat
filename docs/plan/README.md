@@ -26,3 +26,5 @@
 | [archive/rig-capability-roadmap.md](archive/rig-capability-roadmap.md) | P0/P1.5/宠物语义事件主线已完成；剩余方向已并入活跃计划或 roadmap |
 
 归档不是删除：后续需要查设计取舍、实现阶段或历史背景时，仍优先引用 archive 中的原文。
+
+| [archive/remote-agent-monitor.md](archive/remote-agent-monitor.md) | Remote Agent Watch LAN ingest/viewer MVP ����أ��û�˵��ת�� `docs/guide/remote-agent-watch.md` |
