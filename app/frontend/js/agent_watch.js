@@ -10,6 +10,7 @@
   const collapsed = new Set(JSON.parse(localStorage.getItem("agentWatchCollapsed") || "[]"));
   let folded = localStorage.getItem("agentWatchFolded") === "true";
   let latest = null;
+  let suppressNextHeaderClick = false;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -466,6 +467,48 @@
     watchExpandToggle.setAttribute("aria-label", watchExpandToggle.title);
   }
 
+  function currentWindow() {
+    try {
+      return window.__TAURI__?.window?.getCurrentWindow?.();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function setupWindowDrag() {
+    if (!watchHeader) return;
+    let pointerDown = null;
+
+    watchHeader.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      if (event.target.closest("button")) return;
+      pointerDown = { id: event.pointerId, x: event.clientX, y: event.clientY };
+    });
+
+    watchHeader.addEventListener("pointermove", async (event) => {
+      if (!pointerDown || event.pointerId !== pointerDown.id) return;
+      if (Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) < 5) return;
+      pointerDown = null;
+      suppressNextHeaderClick = true;
+      const win = currentWindow();
+      if (!win) return;
+      try {
+        await invoke?.("cmd_agent_watch_mark_user_placed");
+      } catch (_) {}
+      try {
+        await win.startDragging();
+      } catch (e) {
+        console.error("[agent-watch] drag failed", e);
+      }
+    });
+
+    for (const type of ["pointerup", "pointercancel", "pointerleave"]) {
+      watchHeader.addEventListener(type, () => {
+        pointerDown = null;
+      });
+    }
+  }
+
   if (watchActions) {
     watchActions.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -477,7 +520,13 @@
     });
   }
 
-  watchHeader.addEventListener("click", toggleFolded);
+  watchHeader.addEventListener("click", () => {
+    if (suppressNextHeaderClick) {
+      suppressNextHeaderClick = false;
+      return;
+    }
+    toggleFolded();
+  });
   watchHeader.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
@@ -496,6 +545,7 @@
 
   window.__agentWatchRefresh = refresh;
   setFolded(folded, false);
+  setupWindowDrag();
   refresh();
   if (listen) {
     listen("agent-watch-update", (event) => render(event.payload));

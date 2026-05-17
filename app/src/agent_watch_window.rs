@@ -4,6 +4,7 @@
 //! 它只负责窗口生命周期、跟随宠物定位和快照推送，不参与 hook 解析或提醒策略。
 //! 会话状态由 `agent_monitor` 管理，前端通过 `agent-watch-update` 实时渲染。
 use crate::agent_monitor::{AgentSessionsSnapshot, DEFAULT_AGENT_MONITOR_PORT};
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder,
@@ -15,6 +16,7 @@ const WINDOW_H: f64 = 260.0;
 const FOLDED_WINDOW_W: f64 = 64.0;
 const FOLDED_WINDOW_H: f64 = 64.0;
 const EDGE_MARGIN: i32 = 12;
+static USER_PLACED: AtomicBool = AtomicBool::new(false);
 
 /// 启动 Agent Watch 浮窗跟随线程。
 pub fn spawn_agent_watch_follower(app: AppHandle) {
@@ -35,7 +37,7 @@ pub fn spawn_agent_watch_follower(app: AppHandle) {
             };
             if let Ok(pos) = pet.outer_position() {
                 let key = (pos.x, pos.y);
-                if Some(key) != prev_pet_pos {
+                if Some(key) != prev_pet_pos && !USER_PLACED.load(Ordering::Relaxed) {
                     prev_pet_pos = Some(key);
                     position_near_pet(&app, &watch);
                 }
@@ -50,7 +52,9 @@ pub fn show_snapshot(app: &AppHandle, snapshot: &AgentSessionsSnapshot) {
     let Ok(window) = ensure_agent_watch_window(app) else {
         return;
     };
-    position_near_pet(app, &window);
+    if !USER_PLACED.load(Ordering::Relaxed) {
+        position_near_pet(app, &window);
+    }
     let has_sessions = !snapshot.sessions.is_empty();
     if has_sessions {
         let _ = window.show();
@@ -138,6 +142,48 @@ fn position_near_pet(app: &AppHandle, watch: &WebviewWindow) {
     let _ = watch.set_position(PhysicalPosition::new(x, y));
 }
 
+fn set_size_preserving_anchor(
+    window: &WebviewWindow,
+    new_size: PhysicalSize<u32>,
+) -> Result<(), tauri::Error> {
+    let old_pos = window.outer_position().ok();
+    let old_size = window.inner_size().ok();
+    let monitor = window.current_monitor().ok().flatten();
+
+    window.set_size(new_size)?;
+
+    let (Some(old_pos), Some(old_size), Some(monitor)) = (old_pos, old_size, monitor) else {
+        return Ok(());
+    };
+
+    let mon_pos = monitor.position();
+    let mon_size = monitor.size();
+    let left_gap = old_pos.x - mon_pos.x;
+    let right_gap = mon_pos.x + mon_size.width as i32 - (old_pos.x + old_size.width as i32);
+    let top_gap = old_pos.y - mon_pos.y;
+    let bottom_gap = mon_pos.y + mon_size.height as i32 - (old_pos.y + old_size.height as i32);
+
+    let min_x = mon_pos.x + EDGE_MARGIN;
+    let max_x = mon_pos.x + mon_size.width as i32 - new_size.width as i32 - EDGE_MARGIN;
+    let min_y = mon_pos.y + EDGE_MARGIN;
+    let max_y = mon_pos.y + mon_size.height as i32 - new_size.height as i32 - EDGE_MARGIN;
+
+    let x = if right_gap < left_gap {
+        old_pos.x + old_size.width as i32 - new_size.width as i32
+    } else {
+        old_pos.x
+    }
+    .clamp(min_x, max_x.max(min_x));
+    let y = if bottom_gap < top_gap {
+        old_pos.y + old_size.height as i32 - new_size.height as i32
+    } else {
+        old_pos.y
+    }
+    .clamp(min_y, max_y.max(min_y));
+
+    window.set_position(PhysicalPosition::new(x, y))
+}
+
 /// 前端请求隐藏浮窗。
 #[tauri::command]
 pub async fn cmd_agent_watch_hide(app: AppHandle) -> Result<(), String> {
@@ -157,14 +203,19 @@ pub async fn cmd_agent_watch_set_folded(app: AppHandle, folded: bool) -> Result<
         } else {
             (WINDOW_W, WINDOW_H)
         };
-        window
-            .set_size(PhysicalSize::new(
-                (w * scale).round() as u32,
-                (h * scale).round() as u32,
-            ))
-            .map_err(|e| e.to_string())?;
-        position_near_pet(&app, &window);
+        set_size_preserving_anchor(
+            &window,
+            PhysicalSize::new((w * scale).round() as u32, (h * scale).round() as u32),
+        )
+        .map_err(|e| e.to_string())?;
     }
+    Ok(())
+}
+
+/// 记录用户已经手动摆放 Agent Watch，避免后续宠物跟随逻辑把它抢回去。
+#[tauri::command]
+pub async fn cmd_agent_watch_mark_user_placed() -> Result<(), String> {
+    USER_PLACED.store(true, Ordering::Relaxed);
     Ok(())
 }
 
