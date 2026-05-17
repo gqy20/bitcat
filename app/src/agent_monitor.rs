@@ -244,7 +244,7 @@ fn handle_view_stream(app: &AppHandle, mut stream: TcpStream) {
     let (status, content_type, body) = view_response(app, path);
     let response = format!(
         "HTTP/1.1 {status}\r\nContent-Type: {content_type}; charset=utf-8\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.as_bytes().len()
+        body.len()
     );
     if let Err(e) = stream.write_all(response.as_bytes()) {
         debug!(error = %e, "Agent Watch view response write failed");
