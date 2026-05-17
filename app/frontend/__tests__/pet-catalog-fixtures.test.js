@@ -4,17 +4,17 @@ import { describe, expect, it } from 'vitest';
 import { loadPetAssetPack } from '../js/sprite-loader.js';
 
 const packs = [
-  { id: 'piggy', dir: 'piggy', image: 'sprites.png', minSize: 50_000, displayWidth: 74, displayHeight: 80 },
-  { id: 'cat', dir: 'cat', image: 'sprites.png', minSize: 500, displayWidth: 128, displayHeight: 128 },
-  { id: 'core', dir: 'core', image: 'spritesheet.webp' },
-  { id: 'status', dir: 'status', image: 'spritesheet.webp' },
-  { id: 'dewey', dir: 'dewey', image: 'spritesheet.webp' },
-  { id: 'fireball', dir: 'fireball', image: 'spritesheet.webp' },
-  { id: 'rocky', dir: 'rocky', image: 'spritesheet.webp' },
-  { id: 'seedy', dir: 'seedy', image: 'spritesheet.webp' },
-  { id: 'stacky', dir: 'stacky', image: 'spritesheet.webp' },
-  { id: 'bsod', dir: 'bsod', image: 'spritesheet.webp' },
-  { id: 'null-signal', dir: 'null-signal', image: 'spritesheet.webp' },
+  { id: 'piggy', dir: 'piggy', image: 'sprites.png', minSize: 50_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
+  { id: 'cat', dir: 'cat', image: 'sprites.png', minSize: 500, displayWidth: 128, displayHeight: 128, qualityTier: 'legacy', assetClass: 'legacy-pixel' },
+  { id: 'core', dir: 'core', image: 'spritesheet.webp', qualityTier: 'polished', assetClass: 'terminal-status' },
+  { id: 'status', dir: 'status', image: 'spritesheet.webp', qualityTier: 'polished', assetClass: 'terminal-status' },
+  { id: 'dewey', dir: 'dewey', image: 'spritesheet.webp', qualityTier: 'standard', assetClass: 'character' },
+  { id: 'fireball', dir: 'fireball', image: 'spritesheet.webp', qualityTier: 'standard', assetClass: 'character' },
+  { id: 'rocky', dir: 'rocky', image: 'spritesheet.webp', qualityTier: 'standard', assetClass: 'character' },
+  { id: 'seedy', dir: 'seedy', image: 'spritesheet.webp', qualityTier: 'standard', assetClass: 'character' },
+  { id: 'stacky', dir: 'stacky', image: 'spritesheet.webp', qualityTier: 'polished', assetClass: 'terminal-status' },
+  { id: 'bsod', dir: 'bsod', image: 'spritesheet.webp', qualityTier: 'polished', assetClass: 'terminal-status' },
+  { id: 'null-signal', dir: 'null-signal', image: 'spritesheet.webp', qualityTier: 'polished', assetClass: 'terminal-status' },
 ];
 
 const fixturesRoot = path.join(process.cwd(), '__fixtures__', 'pets');
@@ -41,6 +41,14 @@ describe('pet catalog fixtures', () => {
       expect(manifest.id).toBe(pack.id);
       expect(manifest.sprite.image).toBe(pack.image);
       expect(statSync(imagePath).size).toBeGreaterThan(pack.minSize ?? 100_000);
+      expect(manifest.metadata).toMatchObject({
+        qualityTier: pack.qualityTier,
+        assetClass: pack.assetClass,
+      });
+      expect(typeof manifest.metadata.style).toBe('string');
+      expect(typeof manifest.metadata.recommendedUse).toBe('string');
+      expect(typeof manifest.metadata.releaseTier).toBe('string');
+      expect(typeof manifest.metadata.optimizedFor).toBe('string');
     }
   });
 

@@ -261,5 +261,13 @@
   },
   "id": "null-signal",
   "displayName": "Null Signal",
-  "description": "Quiet signal from the void."
+  "description": "Quiet signal from the void.",
+  "metadata": {
+    "assetClass": "terminal-status",
+    "qualityTier": "polished",
+    "style": "quiet void-signal companion",
+    "recommendedUse": "waiting and low-attention states",
+    "releaseTier": "optional",
+    "optimizedFor": "smooth-scaled desktop pet window"
+  }
 }

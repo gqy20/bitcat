@@ -7,18 +7,18 @@ const invoke = window.__TAURI__?.core?.invoke || mockInvoke;
 
 const ACTION_TYPES = ["unbound", "launch", "hotkey", "script", "voice", "screenshot"];
 const PET_ASSET_PRESETS = [
-  { value: "", label: "内置小猪" },
-  { value: "/__fixtures__/pets/piggy", label: "Piggy" },
-  { value: "/__fixtures__/pets/cat", label: "Cat" },
-  { value: "/__fixtures__/pets/status", label: "Status" },
-  { value: "/__fixtures__/pets/core", label: "Core" },
-  { value: "/__fixtures__/pets/dewey", label: "Dewey" },
-  { value: "/__fixtures__/pets/fireball", label: "Fireball" },
-  { value: "/__fixtures__/pets/rocky", label: "Rocky" },
-  { value: "/__fixtures__/pets/seedy", label: "Seedy" },
-  { value: "/__fixtures__/pets/stacky", label: "Stacky" },
-  { value: "/__fixtures__/pets/bsod", label: "BSOD" },
-  { value: "/__fixtures__/pets/null-signal", label: "Null Signal" },
+  { value: "", label: "内置小猪", group: "推荐" },
+  { value: "/__fixtures__/pets/piggy", label: "Piggy", group: "推荐" },
+  { value: "/__fixtures__/pets/status", label: "Status", group: "终端状态" },
+  { value: "/__fixtures__/pets/core", label: "Core", group: "终端状态" },
+  { value: "/__fixtures__/pets/stacky", label: "Stacky", group: "终端状态" },
+  { value: "/__fixtures__/pets/bsod", label: "BSOD", group: "终端状态" },
+  { value: "/__fixtures__/pets/null-signal", label: "Null Signal", group: "终端状态" },
+  { value: "/__fixtures__/pets/dewey", label: "Dewey", group: "角色" },
+  { value: "/__fixtures__/pets/fireball", label: "Fireball", group: "角色" },
+  { value: "/__fixtures__/pets/rocky", label: "Rocky", group: "角色" },
+  { value: "/__fixtures__/pets/seedy", label: "Seedy", group: "角色" },
+  { value: "/__fixtures__/pets/cat", label: "Cat", group: "经典像素" },
 ];
 const PET_ASSET_PIGGY = "/__fixtures__/pets/piggy";
 const PET_ASSET_PRESET_VALUES = new Set(PET_ASSET_PRESETS.map(item => item.value).filter(Boolean));
@@ -544,9 +544,19 @@ function renderPetAssetPresetOptions() {
   const select = $("a-pet-asset-preset");
   if (!select) return;
   const current = select.value;
-  const options = PET_ASSET_PRESETS.map(({ value, label }) =>
-    `<option value="${escapeAttr(value)}">${escapeHtml(label)}</option>`
-  ).join("") + `<option value="__custom">自定义地址</option>`;
+  let lastGroup = null;
+  let openGroup = false;
+  const options = PET_ASSET_PRESETS.map(({ value, label, group }) => {
+    const parts = [];
+    if (group !== lastGroup) {
+      if (openGroup) parts.push("</optgroup>");
+      parts.push(`<optgroup label="${escapeAttr(group || "其他")}">`);
+      openGroup = true;
+      lastGroup = group;
+    }
+    parts.push(`<option value="${escapeAttr(value)}">${escapeHtml(label)}</option>`);
+    return parts.join("");
+  }).join("") + (openGroup ? "</optgroup>" : "") + `<option value="__custom">自定义地址</option>`;
   if (select.innerHTML !== options) {
     select.innerHTML = options;
   }

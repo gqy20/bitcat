@@ -261,5 +261,13 @@
   },
   "id": "core",
   "displayName": "Core",
-  "description": "Original terminal companion adapted for status events."
+  "description": "Original terminal companion adapted for status events.",
+  "metadata": {
+    "assetClass": "terminal-status",
+    "qualityTier": "polished",
+    "style": "compact status core companion",
+    "recommendedUse": "agent activity and focused work",
+    "releaseTier": "builtin-candidate",
+    "optimizedFor": "smooth-scaled desktop pet window"
+  }
 }

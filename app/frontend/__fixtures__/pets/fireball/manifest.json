@@ -261,5 +261,13 @@
   },
   "id": "fireball",
   "displayName": "Fireball",
-  "description": "Fast iteration energy for active sessions."
+  "description": "Fast iteration energy for active sessions.",
+  "metadata": {
+    "assetClass": "character",
+    "qualityTier": "standard",
+    "style": "warm energy companion",
+    "recommendedUse": "active and playful feedback",
+    "releaseTier": "optional",
+    "optimizedFor": "smooth-scaled desktop pet window"
+  }
 }

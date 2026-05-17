@@ -261,5 +261,13 @@
   },
   "id": "stacky",
   "displayName": "Stacky",
-  "description": "A balanced stack for deep work."
+  "description": "A balanced stack for deep work.",
+  "metadata": {
+    "assetClass": "terminal-status",
+    "qualityTier": "polished",
+    "style": "stacked terminal companion",
+    "recommendedUse": "deep work and multi-step tasks",
+    "releaseTier": "builtin-candidate",
+    "optimizedFor": "smooth-scaled desktop pet window"
+  }
 }

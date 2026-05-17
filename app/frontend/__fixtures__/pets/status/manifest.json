@@ -261,5 +261,13 @@
   },
   "id": "status",
   "displayName": "Status",
-  "description": "Semantic status companion for agent activity."
+  "description": "Semantic status companion for agent activity.",
+  "metadata": {
+    "assetClass": "terminal-status",
+    "qualityTier": "polished",
+    "style": "minimal terminal status companion",
+    "recommendedUse": "agent activity and focused work",
+    "releaseTier": "builtin-candidate",
+    "optimizedFor": "smooth-scaled desktop pet window"
+  }
 }

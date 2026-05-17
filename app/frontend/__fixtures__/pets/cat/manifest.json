@@ -404,7 +404,13 @@
       "spin:0",
       "wave:0",
       "shake:0"
-    ]
+    ],
+    "assetClass": "legacy-pixel",
+    "qualityTier": "legacy",
+    "style": "classic 16x16 pixel cat",
+    "recommendedUse": "nostalgia and compatibility reference",
+    "releaseTier": "builtin",
+    "optimizedFor": "pixelated desktop pet window"
   },
   "render": {
     "mode": "sheet",

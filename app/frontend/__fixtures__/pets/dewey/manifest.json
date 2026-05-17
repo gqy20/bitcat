@@ -261,5 +261,13 @@
   },
   "id": "dewey",
   "displayName": "Dewey",
-  "description": "A tidy companion for calm workspace days."
+  "description": "A tidy companion for calm workspace days.",
+  "metadata": {
+    "assetClass": "character",
+    "qualityTier": "standard",
+    "style": "tidy desk companion",
+    "recommendedUse": "calm general-purpose pet",
+    "releaseTier": "optional",
+    "optimizedFor": "smooth-scaled desktop pet window"
+  }
 }

@@ -261,5 +261,13 @@
   },
   "id": "rocky",
   "displayName": "Rocky",
-  "description": "A steady presence when the diff gets large."
+  "description": "A steady presence when the diff gets large.",
+  "metadata": {
+    "assetClass": "character",
+    "qualityTier": "standard",
+    "style": "solid stone companion",
+    "recommendedUse": "steady background presence",
+    "releaseTier": "optional",
+    "optimizedFor": "smooth-scaled desktop pet window"
+  }
 }

@@ -450,7 +450,7 @@
     "generatedFrom": [
       "app/frontend/tools/generate-piggy-pack.cjs"
     ],
-    "style": "high-resolution terminal-status pig companion",
+    "style": "terminal-status pig companion",
     "frameLabels": [
       "idle:0",
       "idle:1",
@@ -496,6 +496,11 @@
       "idle:41",
       "failed:42",
       "idle:43"
-    ]
+    ],
+    "assetClass": "default-companion",
+    "qualityTier": "polished",
+    "recommendedUse": "default pet and status feedback",
+    "releaseTier": "builtin",
+    "optimizedFor": "smooth-scaled desktop pet window"
   }
 }

@@ -261,5 +261,13 @@
   },
   "id": "bsod",
   "displayName": "BSOD",
-  "description": "A tiny blue-screen status companion."
+  "description": "A tiny blue-screen status companion.",
+  "metadata": {
+    "assetClass": "terminal-status",
+    "qualityTier": "polished",
+    "style": "blue-screen diagnostic companion",
+    "recommendedUse": "failure and debugging states",
+    "releaseTier": "optional",
+    "optimizedFor": "smooth-scaled desktop pet window"
+  }
 }

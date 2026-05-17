@@ -261,5 +261,13 @@
   },
   "id": "seedy",
   "displayName": "Seedy",
-  "description": "Small green shoots for new ideas."
+  "description": "Small green shoots for new ideas.",
+  "metadata": {
+    "assetClass": "character",
+    "qualityTier": "standard",
+    "style": "small green growth companion",
+    "recommendedUse": "ideas and progress feedback",
+    "releaseTier": "optional",
+    "optimizedFor": "smooth-scaled desktop pet window"
+  }
 }
