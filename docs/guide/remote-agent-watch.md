@@ -22,6 +22,14 @@ On the Windows host, open Settings -> Agent Watch and copy the remote install co
 bash scripts/remote-install.sh --host <windows-ip> --port 5342
 ```
 
+The generated `<windows-ip>` prefers real LAN addresses over virtual or benchmark networks. Selection order is:
+
+```text
+10.x.x.x -> 192.168.x.x -> 172.16-31.x.x -> other private IPv4 -> public IPv4 -> 198.18/15 -> 169.254/16
+```
+
+For example, when Windows has both `198.18.0.1` and `10.10.11.206`, the Settings page should generate `10.10.11.206` for the install command and `/watch` URL.
+
 Run that command on the remote macOS/Linux machine. The installer:
 
 - writes `~/.ai-pad/hooks/sender.sh`;

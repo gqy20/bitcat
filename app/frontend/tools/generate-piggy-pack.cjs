@@ -355,6 +355,36 @@ const manifest = {
     spin: { sprite: 37 },
     wave: { sprite: 38 },
     shake: { sprite: 39 },
+    observe: {
+      spriteFrames: [21, 22, 23, 24],
+      frames: [{ sprite: 21, duration: 120 }, { sprite: 22, duration: 120 }, { sprite: 23, duration: 120 }, { sprite: 24, duration: 220 }],
+      repeat: 1,
+      fallback: 'idle',
+    },
+    nudge: {
+      spriteFrames: [13, 14, 15],
+      frames: [{ sprite: 13, duration: 150 }, { sprite: 14, duration: 180 }, { sprite: 15, duration: 180 }],
+      repeat: 1,
+      fallback: 'idle',
+    },
+    acknowledge: {
+      spriteFrames: [16, 17, 18],
+      frames: [{ sprite: 16, duration: 220 }, { sprite: 17, duration: 160 }, { sprite: 18, duration: 260 }],
+      repeat: 1,
+      fallback: 'idle',
+    },
+    blocked: {
+      spriteFrames: [34, 35],
+      frames: [{ sprite: 34, duration: 170 }, { sprite: 35, duration: 170 }, { sprite: 34, duration: 260 }],
+      repeat: 1,
+      fallback: 'idle',
+    },
+    dragging: {
+      spriteFrames: [29, 30],
+      frames: [{ sprite: 29, duration: 180 }, { sprite: 30, duration: 180 }],
+      repeat: 2,
+      fallback: 'idle',
+    },
   },
   mini: {
     state: 'idle',
@@ -363,8 +393,13 @@ const manifest = {
   },
   metadata: {
     generatedFrom: ['app/frontend/tools/generate-piggy-pack.cjs'],
-    style: 'high-resolution terminal-status pig companion',
-    frameLabels: frameSpecs.map(([mode], index) => `${mode}:${index}`),
+    assetClass: 'default-companion',
+    qualityTier: 'polished',
+    style: 'terminal-status pig companion',
+    recommendedUse: 'default pet and status feedback',
+    releaseTier: 'builtin',
+    optimizedFor: 'smooth-scaled desktop pet window',
+    frameLabels: frameSpecs.slice(0, frameCount).map(([mode], index) => `${mode}:${index}`),
   },
 };
 

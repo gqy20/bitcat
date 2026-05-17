@@ -41,6 +41,7 @@ Phase 1 的主体已经落地：`core/src/agent_session.rs`、`core/src/claude_c
 - hook stdin JSON 使用 `session_id` / `hook_event_name` / `cwd` 等字段进入内部 `AgentSessionEvent`，不会把完整工具输入或完整对话落盘。
 - PowerShell 脚本显式设置 UTF-8 stdin/stdout，发送 TCP 后执行 socket shutdown，避免 Rust 端 `read_to_string` 卡住。
 - 第一版保持只读观察，不回写权限批准结果。
+- 远程看管入口已接入设置页，`cmd_get_remote_install_cmd` 会枚举本机 IPv4 并优先选择真实局域网地址：`10.x`、`192.168.x`、`172.16-31.x` 优先，`198.18/15` 这类虚拟/benchmark 网段靠后，避免生成不可达的 `/watch` URL。
 
 待加固点按优先级排序：
 

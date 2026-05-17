@@ -172,10 +172,13 @@ class PetStateMachine {
   constructor(options) {
     options = options || {};
     this.stateConfig = options.stateConfig || STATE_CONFIG;
+    this.actionConfig = options.actionConfig || {};
     this.state = 'idle';
+    this.action = null;
     this.frame = 0;
     this.frameTimeMs = 0;
     this.stateTimeMs = 0;
+    this.actionTimeMs = 0;
     this.x = 64;
     this.y = 64;
     this.facingRight = true;
@@ -205,6 +208,25 @@ class PetStateMachine {
     if (newState === 'idle') {
       this.nextIdleVariantAtMs = this.scheduleIdleVariantAfter(this.stateTimeMs);
     }
+  }
+
+  playAction(action, options) {
+    const config = this.actionConfig[action] || this.stateConfig[action];
+    if (!config || !Array.isArray(config.frames) || config.frames.length === 0) return false;
+    options = options || {};
+    this.action = action;
+    this.actionTimeMs = 0;
+    this.frame = config.frames[0].sprite;
+    if (options.clearIdleVariant !== false) this.resetIdleVariant();
+    return true;
+  }
+
+  clearAction() {
+    this.action = null;
+    this.actionTimeMs = 0;
+    this.frameTimeMs = 0;
+    this.frame = 0;
+    this.applySemanticState();
   }
 
   walkTo(x) {
@@ -285,10 +307,18 @@ class PetStateMachine {
     this.setState(next);
   }
 
+  visualState() {
+    return this.action || this.state;
+  }
+
   update(dtMs) {
     this.expireNotifications(performance.now());
     this.stateTimeMs += dtMs;
     this.frameTimeMs += dtMs;
+
+    if (this.action && this.advanceAction(dtMs)) {
+      return;
+    }
 
     const config = this.stateConfig[this.state] || this.stateConfig.idle;
     const frames = config.frames;
@@ -351,6 +381,9 @@ class PetStateMachine {
         case 'show_bubble':
           this.bubble = event.text;
           break;
+        case 'play_action':
+          this.playAction(event.action || event.name);
+          break;
         case 'exit':
           break;
         case 'play_dance':
@@ -359,6 +392,25 @@ class PetStateMachine {
       return;
     }
 
+  }
+
+  advanceAction(dtMs) {
+    const config = this.actionConfig[this.action] || this.stateConfig[this.action];
+    if (!config || !Array.isArray(config.frames) || config.frames.length === 0) {
+      this.clearAction();
+      return false;
+    }
+
+    this.actionTimeMs += dtMs;
+    const duration = timelineDuration(config.frames);
+    const repeat = config.repeat == null ? 1 : config.repeat;
+    if (duration === 0 || this.actionTimeMs >= duration * repeat) {
+      this.clearAction();
+      return false;
+    }
+
+    this.frame = resolveTimelineSprite(config.frames, this.actionTimeMs);
+    return true;
   }
 
   resetIdleVariant() {

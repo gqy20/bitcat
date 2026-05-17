@@ -84,6 +84,10 @@ import { PerformerHost } from './performance/performer-host.js';
   let normalPetWidth = 128;
   let normalPetHeight = 128;
 
+  function playPetAction(name) {
+    return !!(pet && pet.playAction && pet.playAction(name));
+  }
+
   // Tauri 2 正确的 API 路径：getCurrentWindow() 不是 getCurrent()
   function getCurrentWin() {
     try {
@@ -129,6 +133,7 @@ import { PerformerHost } from './performance/performer-host.js';
     }
     pet = new PetState.PetStateMachine({
       stateConfig: SpriteRenderer && SpriteRenderer.stateConfig,
+      actionConfig: SpriteRenderer && SpriteRenderer.actionConfig,
     });
 
     canvas = document.getElementById('sprite');
@@ -156,7 +161,7 @@ import { PerformerHost } from './performance/performer-host.js';
       restoreSemanticState: function() {
         pet.applySemanticState();
         syncStateClass(pet.state);
-        SpriteRenderer.renderSprite(ctx, pet.state, pet.frame, pet.facingRight);
+        SpriteRenderer.renderSprite(ctx, pet.visualState(), pet.frame, pet.facingRight);
         prevState = pet.state;
       },
       log: function(msg) {
@@ -372,14 +377,17 @@ import { PerformerHost } from './performance/performer-host.js';
       e.preventDefault();
       e.stopPropagation();
       flashPetHotspot('observe');
+      playPetAction('observe');
 
       if (window.__TAURI__ && window.__TAURI__.core) {
         window.__TAURI__.core.invoke('cmd_pet_log', { msg: '✓ 左眼双击命中 → cmd_screenshot_now' }).catch(function() {});
         try {
           await window.__TAURI__.core.invoke('cmd_screenshot_now');
           flashScreenshotFeedback();
+          playPetAction('acknowledge');
         }
         catch (err) {
+          playPetAction('blocked');
           window.__TAURI__.core.invoke('cmd_pet_log', { msg: 'cmd_screenshot_now 失败: ' + err }).catch(function() {});
         }
       }
@@ -414,21 +422,25 @@ import { PerformerHost } from './performance/performer-host.js';
       if (observeHit) {
         e.preventDefault();
         flashPetHotspot('observe');
+        playPetAction('observe');
         if (window.__TAURI__ && window.__TAURI__.core) {
           window.__TAURI__.core.invoke('cmd_pet_log', { msg: '左眼热区按下，等待 dblclick' }).catch(function() {});
         }
       } else if (inputHit) {
         flashPetHotspot('input');
+        playPetAction('acknowledge');
         if (window.__TAURI__ && window.__TAURI__.core) {
           window.__TAURI__.core.invoke('cmd_pet_log', { msg: '✓ 嘴巴热区命中 → cmd_open_chat' }).catch(function() {});
         }
         try { await window.__TAURI__.core.invoke('cmd_open_chat'); }
         catch (err) {
+          playPetAction('blocked');
           if (window.__TAURI__ && window.__TAURI__.core) {
             window.__TAURI__.core.invoke('cmd_pet_log', { msg: 'cmd_open_chat 失败: ' + err }).catch(function() {});
           }
         }
       } else {
+        playPetAction('dragging');
         if (window.__TAURI__ && window.__TAURI__.core) {
           window.__TAURI__.core.invoke('cmd_pet_log', { msg: '→ 拖拽模式' }).catch(function() {});
         }
@@ -621,6 +633,7 @@ import { PerformerHost } from './performance/performer-host.js';
       } else {
         // 正常模式：状态机驱动
         pet.update(dt);
+        var visualState = pet.visualState();
 
         if (pet.state !== prevState) {
           syncStateClass(pet.state);
@@ -629,7 +642,7 @@ import { PerformerHost } from './performance/performer-host.js';
           prevState = pet.state;
         }
 
-        SpriteRenderer.renderSprite(ctx, pet.state, pet.frame, pet.facingRight);
+        SpriteRenderer.renderSprite(ctx, visualState, pet.frame, pet.facingRight);
         Particles.tick(pet.state, dt);
       }
     } else {
@@ -741,6 +754,7 @@ import { PerformerHost } from './performance/performer-host.js';
 
   function flashScreenshotFeedback() {
     flashSprite();
+    playPetAction('observe');
     if (screenshotFeedbackTimer) {
       clearTimeout(screenshotFeedbackTimer);
       screenshotFeedbackTimer = null;

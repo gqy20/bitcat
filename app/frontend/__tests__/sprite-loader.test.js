@@ -101,6 +101,7 @@ describe('sprite-loader', () => {
     expect(runtime.sprites.working).toHaveLength(6);
     expect(runtime.sprites.focused).toBe(runtime.sprites.working);
     expect(runtime.sprites.confused).toBe(runtime.sprites.failed);
+    expect(runtime.actionConfig.jump.frames).toEqual([{ sprite: 0, duration: 220 }]);
     expect(runtime.stateConfig.focused.frames.map((frame) => frame.sprite))
       .toEqual(runtime.stateConfig.working.frames.map((frame) => frame.sprite));
   });
@@ -165,6 +166,8 @@ describe('sprite-loader', () => {
     expect(renderer.displayWidth).toBe(74);
     expect(renderer.displayHeight).toBe(80);
     expect(renderer.pixelated).toBe(false);
+    expect(renderer.actionConfig.observe.frames.map((frame) => frame.sprite)).toEqual([0, 1, 2, 3]);
+    expect(renderer.getSprite('observe', 0)).toBe(renderer.SPRITES.observe[0]);
   });
 
   it('loads the status v2 pack through injected fetch and imageData hooks', async () => {

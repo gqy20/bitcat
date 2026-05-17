@@ -690,9 +690,9 @@ async function loadRemoteInstallCommand() {
     if (watchUrl) watchUrl.textContent = info.watch_url || `http://${info.local_ip}:${info.view_port}/watch`;
     if (status) status.textContent = `${info.local_ip}:${info.port} / ${info.view_port}`;
   } catch (e) {
-    code.textContent = "Cannot generate remote install command";
-    if (watchUrl) watchUrl.textContent = "Cannot generate watch URL";
-    if (status) status.textContent = "failed";
+    code.textContent = "无法生成远程安装命令";
+    if (watchUrl) watchUrl.textContent = "无法生成看管地址";
+    if (status) status.textContent = "失败";
     log("remote install command failed: " + e);
   }
 }
@@ -703,7 +703,7 @@ async function loadRemoteDevices() {
   try {
     const devices = await invoke("cmd_list_remote_devices");
     if (!devices?.length) {
-      box.innerHTML = `<div class="empty-note">No remote devices yet.</div>`;
+      box.innerHTML = `<div class="empty-note">暂无远程设备。</div>`;
       return;
     }
     box.innerHTML = devices.map(device => `
@@ -714,7 +714,7 @@ async function loadRemoteDevices() {
       </div>
     `).join("");
   } catch (e) {
-    box.innerHTML = `<div class="empty-note">Remote device status unavailable.</div>`;
+    box.innerHTML = `<div class="empty-note">远程设备状态不可用。</div>`;
   }
 }
 
@@ -912,17 +912,17 @@ function bindMusicDiagnostics() {
   $("aw-remote-copy").addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText($("aw-remote-command").textContent || "");
-      toast("Remote install command copied", "ok");
+      toast("远程安装命令已复制", "ok");
     } catch (e) {
-      toast("Copy failed: " + String(e), "err");
+      toast("复制失败：" + String(e), "err");
     }
   });
   $("aw-remote-url-copy").addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText($("aw-remote-watch-url").textContent || "");
-      toast("Watch URL copied", "ok");
+      toast("看管地址已复制", "ok");
     } catch (e) {
-      toast("Copy failed: " + String(e), "err");
+      toast("复制失败：" + String(e), "err");
     }
   });
   const eventApi = window.__TAURI__?.event;

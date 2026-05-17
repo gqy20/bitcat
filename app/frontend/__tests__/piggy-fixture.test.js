@@ -18,7 +18,7 @@ const requiredStates = [
   'gamewin',
   'gamelose',
 ];
-const actions = ['jump', 'spin', 'wave', 'shake'];
+const actions = ['jump', 'spin', 'wave', 'shake', 'observe', 'nudge', 'acknowledge', 'blocked', 'dragging'];
 
 function collectSpriteRefsFromTimeline(timeline) {
   const refs = [
@@ -77,7 +77,13 @@ describe('piggy pet fixture pack', () => {
       refs.push(...collectSpriteRefsFromTimeline(timeline));
     }
     for (const action of actions) {
-      refs.push(manifest.actions[action].sprite);
+      const config = manifest.actions[action];
+      if (Number.isInteger(config.sprite)) {
+        refs.push(config.sprite);
+      } else {
+        refs.push(...(config.spriteFrames || []));
+        refs.push(...config.frames.map((frame) => frame.sprite));
+      }
     }
 
     for (const ref of refs) {
@@ -108,5 +114,14 @@ describe('piggy pet fixture pack', () => {
       width: manifest.sprite.columns * manifest.sprite.frameWidth,
       height: manifest.sprite.rows * manifest.sprite.frameHeight,
     });
+  });
+
+  it('declares semantic interaction actions as timelines', () => {
+    for (const action of ['observe', 'nudge', 'acknowledge', 'blocked', 'dragging']) {
+      expect(manifest.actions[action]).toBeTruthy();
+      expect(manifest.actions[action].frames.length).toBeGreaterThan(0);
+      expect(manifest.actions[action].repeat).toBeGreaterThan(0);
+      expect(manifest.actions[action].fallback).toBe('idle');
+    }
   });
 });

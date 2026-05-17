@@ -16,8 +16,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream, UdpSocket};
+use std::net::{Ipv4Addr, TcpListener, TcpStream, UdpSocket};
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
@@ -713,6 +714,7 @@ pub async fn cmd_open_agent_workspace(
 }
 
 fn get_lan_ip() -> Result<String, String> {
+    let mut candidates = local_ipv4_candidates();
     let socket = UdpSocket::bind("0.0.0.0:0").map_err(|e| format!("bind UDP failed: {e}"))?;
     socket
         .connect("8.8.8.8:80")
@@ -721,10 +723,68 @@ fn get_lan_ip() -> Result<String, String> {
         .local_addr()
         .map_err(|e| format!("read LAN IP failed: {e}"))?;
     let ip = addr.ip();
-    if ip.is_loopback() || !ip.is_ipv4() {
+    if let std::net::IpAddr::V4(ipv4) = ip {
+        candidates.push(ipv4);
+    } else {
         return Err(format!("no LAN IPv4 found, got {ip}"));
     }
-    Ok(ip.to_string())
+    select_lan_ipv4(candidates)
+        .map(|ip| ip.to_string())
+        .ok_or_else(|| format!("no LAN IPv4 found, got {ip}"))
+}
+
+fn local_ipv4_candidates() -> Vec<Ipv4Addr> {
+    let mut out = Vec::new();
+    for command in local_ip_commands() {
+        if let Ok(output) = Command::new(command.0).args(command.1).output() {
+            out.extend(parse_ipv4_addrs(&String::from_utf8_lossy(&output.stdout)));
+        }
+    }
+    out
+}
+
+#[cfg(windows)]
+fn local_ip_commands() -> Vec<(&'static str, Vec<&'static str>)> {
+    vec![("ipconfig", vec![])]
+}
+
+#[cfg(not(windows))]
+fn local_ip_commands() -> Vec<(&'static str, Vec<&'static str>)> {
+    vec![
+        ("hostname", vec!["-I"]),
+        ("ip", vec!["-4", "addr", "show"]),
+        ("ifconfig", vec![]),
+    ]
+}
+
+fn parse_ipv4_addrs(text: &str) -> Vec<Ipv4Addr> {
+    text.split(|ch: char| !(ch.is_ascii_digit() || ch == '.'))
+        .filter(|part| part.matches('.').count() == 3)
+        .filter_map(|part| part.parse::<Ipv4Addr>().ok())
+        .collect()
+}
+
+fn select_lan_ipv4(candidates: Vec<Ipv4Addr>) -> Option<Ipv4Addr> {
+    let mut candidates = candidates
+        .into_iter()
+        .filter(|ip| !ip.is_loopback() && !ip.is_unspecified() && !ip.is_multicast())
+        .collect::<Vec<_>>();
+    candidates.sort_by_key(|ip| (ipv4_score(*ip), ip.octets()[3] == 1, *ip));
+    candidates.dedup();
+    candidates.into_iter().next()
+}
+
+fn ipv4_score(ip: Ipv4Addr) -> u8 {
+    let [a, b, _, _] = ip.octets();
+    match (a, b) {
+        (10, _) => 0,
+        (192, 168) => 1,
+        (172, 16..=31) => 2,
+        (198, 18 | 19) => 20,
+        (169, 254) => 30,
+        _ if ip.is_private() => 3,
+        _ => 10,
+    }
 }
 
 #[cfg(test)]
@@ -805,5 +865,31 @@ mod tests {
         assert_eq!(event.status, AgentStatus::ToolRunning);
         assert_eq!(event.tool_name.as_deref(), Some("Bash"));
         assert!(event.tool_input_preview.unwrap().contains("cargo test"));
+    }
+
+    #[test]
+    fn selects_private_lan_before_benchmark_network() {
+        let selected = select_lan_ipv4(vec![
+            "198.18.0.1".parse().unwrap(),
+            "172.28.96.110".parse().unwrap(),
+            "10.10.11.206".parse().unwrap(),
+            "10.10.11.1".parse().unwrap(),
+        ]);
+        assert_eq!(selected, Some("10.10.11.206".parse().unwrap()));
+    }
+
+    #[test]
+    fn parses_windows_ipconfig_ipv4_lines() {
+        let parsed = parse_ipv4_addrs(
+            r#"
+   IPv4 Address. . . . . . . . . . . : 198.18.0.1
+                                       198.18.0.2
+   IPv4 Address. . . . . . . . . . . : 172.28.96.110
+   IPv4 Address. . . . . . . . . . . : 10.10.11.206
+                                       10.10.11.1
+"#,
+        );
+        assert!(parsed.contains(&"198.18.0.1".parse().unwrap()));
+        assert!(parsed.contains(&"10.10.11.206".parse().unwrap()));
     }
 }

@@ -197,6 +197,7 @@ panel → cmd_start_game → app/src/game.rs 动态创建 game 窗口
 
 - ~~呼吸微动、眨眼、走路改进~~ ✅ **已完成 (2026-05-13)** — 非均匀帧时长 + 瞬态 repeat+fallback
 - ~~硬编码小猫迁移到资源包~~ ✅ **已完成 (2026-05-17)** — v2-only manifest loader，默认 `piggy`，`cat` 作为普通可选包
+- ~~语义短动作 overlay~~ ✅ **已完成 (2026-05-17)** — manifest action timeline，`observe/nudge/acknowledge/blocked/dragging` 可用于截图、输入和拖拽反馈
 - 宠物资源包发布策略：决定大 WebP pack 是进入 bundle 还是外置下载，见 [plan/pet-asset-packaging.md](plan/pet-asset-packaging.md)
 - 粒子系统迁移到 Three.js Points
 - 舞蹈系统 3D 化（真实抛物线轨迹、翻滚感）

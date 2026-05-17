@@ -30,6 +30,7 @@ Bundled 资源包位于 `app/frontend/__fixtures__/pets/`：
 - `cat` 去掉 `default-` 命名，仅作为普通可选资源包。
 - catalog 资源包统一使用 manifest 加载。
 - catalog 资源包已补 `metadata.qualityTier` / `assetClass` / `releaseTier`，设置页按推荐、终端状态、角色、经典像素分组展示。
+- manifest `actions` 已支持 timeline；`piggy` 提供 `observe` / `nudge` / `acknowledge` / `blocked` / `dragging` 语义动作，用于截图、输入和拖拽反馈。
 - 配置了外部资源时加载失败直接失败，不回退内置宠物。
 - 设置页已经提供 bundled preset 选择和自定义地址入口。
 

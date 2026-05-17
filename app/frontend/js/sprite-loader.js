@@ -180,6 +180,7 @@ function rendererFromRuntime(runtime, source) {
     renderSprite,
     renderMini,
     stateConfig: runtime.stateConfig,
+    actionConfig: runtime.actionConfig || {},
     hotspots: cloneHotspots(runtime.hotspots),
     assetSource: source,
   };
@@ -293,6 +294,32 @@ function validateTimeline(timeline, frameCount, label) {
   }
 }
 
+function normalizeActionTimeline(config, frameCount, label) {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    throw new Error(`${label} must be an object`);
+  }
+  if (Number.isInteger(config.sprite)) {
+    validateFrameRef(config.sprite, frameCount, label);
+    return {
+      spriteFrames: [config.sprite],
+      frames: [{ sprite: config.sprite, duration: Number.isFinite(config.duration) ? config.duration : 220 }],
+      repeat: config.repeat == null ? 1 : config.repeat,
+      fallback: config.fallback || 'idle',
+    };
+  }
+  const frames = Array.isArray(config.frames) ? config.frames : [];
+  const timeline = {
+    ...config,
+    spriteFrames: Array.isArray(config.spriteFrames)
+      ? config.spriteFrames
+      : Array.from(new Set(frames.map((frame) => frame.sprite))),
+    repeat: config.repeat == null ? 1 : config.repeat,
+    fallback: config.fallback || 'idle',
+  };
+  validateTimeline({ ...timeline, __states: { idle: true, action: true } }, frameCount, label);
+  return timeline;
+}
+
 function normalizePalette(palette) {
   const source = palette;
   if (!source || typeof source !== 'object') {
@@ -401,9 +428,11 @@ function buildRuntimeFromManifest(manifest, imageData) {
     const refs = timeline.spriteFrames;
     sprites[state] = refs.map((spriteIndex) => sheetFrames[spriteIndex]);
   }
+  const normalizedActions = {};
   for (const [action, config] of Object.entries(manifest.actions || {})) {
-    validateFrameRef(config.sprite, manifest.sprite.frameCount, `actions.${action}`);
-    sprites[action] = [sheetFrames[config.sprite]];
+    const timeline = normalizeActionTimeline(config, manifest.sprite.frameCount, `actions.${action}`);
+    normalizedActions[action] = timeline;
+    sprites[action] = timeline.spriteFrames.map((spriteIndex) => sheetFrames[spriteIndex]);
   }
 
   const stateConfig = {};
@@ -422,6 +451,16 @@ function buildRuntimeFromManifest(manifest, imageData) {
     }
     sprites[alias] = sprites[target];
     stateConfig[alias] = { ...stateConfig[target] };
+  }
+  const actionConfig = {};
+  for (const [action, timeline] of Object.entries(normalizedActions)) {
+    actionConfig[action] = remapTimeline(
+      timeline,
+      timeline.spriteFrames,
+      manifest.sprite.frameCount,
+      action,
+      { idle: manifest.states.idle, action: timeline }
+    );
   }
   for (const state of REQUIRED_STATES) {
     if (!sprites[state] || !stateConfig[state]) {
@@ -451,6 +490,7 @@ function buildRuntimeFromManifest(manifest, imageData) {
     displayHeight,
     sheetColumns: manifest.sprite.columns,
     stateConfig,
+    actionConfig,
     mini: manifest.mini || { headRows: 10 },
     hotspots: cloneHotspots(manifest.hotspots),
     manifest,

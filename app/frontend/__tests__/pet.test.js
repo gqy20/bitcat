@@ -155,6 +155,40 @@ describe('PetStateMachine', () => {
     });
   });
 
+  describe('action overlay', () => {
+    it('播放一次动作后回到语义状态', () => {
+      const actionPet = new PetStateMachine({
+        stateConfig: STATE_CONFIG,
+        actionConfig: {
+          observe: {
+            frames: [
+              { sprite: 7, duration: 100 },
+              { sprite: 8, duration: 100 },
+            ],
+            repeat: 1,
+            fallback: 'idle',
+          },
+        },
+      });
+
+      expect(actionPet.playAction('observe')).toBe(true);
+      expect(actionPet.action).toBe('observe');
+      expect(actionPet.visualState()).toBe('observe');
+      actionPet.update(100);
+      expect(actionPet.frame).toBe(8);
+      actionPet.update(100);
+      expect(actionPet.action).toBeNull();
+      expect(actionPet.visualState()).toBe('idle');
+    });
+
+    it('未知动作不打断当前状态', () => {
+      pet.setState('focused');
+      expect(pet.playAction('missing')).toBe(false);
+      expect(pet.state).toBe('focused');
+      expect(pet.action).toBeNull();
+    });
+  });
+
   describe('Walk 移动', () => {
     it('向目标移动并更新朝向', () => {
       pet.x = 0;
