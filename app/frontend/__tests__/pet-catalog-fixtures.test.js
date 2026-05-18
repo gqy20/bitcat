@@ -5,7 +5,7 @@ import { loadPetAssetPack } from '../js/sprite-loader.js';
 
 const packs = [
   { id: 'piggy', dir: 'piggy', image: 'spritesheet.webp', minSize: 50_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
-  { id: 'cat', dir: 'cat', image: 'spritesheet.webp', minSize: 400, displayWidth: 128, displayHeight: 128, qualityTier: 'legacy', assetClass: 'legacy-pixel' },
+  { id: 'cat', dir: 'cat', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
   { id: 'core', dir: 'core', image: 'spritesheet.webp', qualityTier: 'polished', assetClass: 'terminal-status' },
   { id: 'status', dir: 'status', image: 'spritesheet.webp', qualityTier: 'polished', assetClass: 'terminal-status' },
   { id: 'dewey', dir: 'dewey', image: 'spritesheet.webp', qualityTier: 'standard', assetClass: 'character' },

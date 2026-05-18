@@ -2,47 +2,35 @@
   "schemaVersion": 2,
   "id": "cat",
   "displayName": "Cat",
-  "description": "A v2 pixel cat companion.",
+  "description": "A high-resolution v2 cat companion with expressive status animations.",
+  "render": {
+    "mode": "sheet",
+    "displayWidth": 74,
+    "displayHeight": 80,
+    "scale": 0.38461538461538464,
+    "pixelated": false
+  },
+  "hotspots": {
+    "observe": {
+      "x": 0.2,
+      "y": 0.12,
+      "w": 0.6,
+      "h": 0.38
+    },
+    "input": {
+      "x": 0.24,
+      "y": 0.42,
+      "w": 0.52,
+      "h": 0.32
+    }
+  },
   "sprite": {
     "image": "spritesheet.webp",
-    "frameWidth": 16,
-    "frameHeight": 16,
+    "frameWidth": 192,
+    "frameHeight": 208,
     "columns": 8,
-    "rows": 5,
-    "frameCount": 40
-  },
-  "palette": {
-    "0": null,
-    "1": [
-      30,
-      30,
-      40,
-      255
-    ],
-    "2": [
-      255,
-      180,
-      140,
-      255
-    ],
-    "3": [
-      255,
-      220,
-      190,
-      255
-    ],
-    "4": [
-      40,
-      35,
-      50,
-      255
-    ],
-    "5": [
-      255,
-      120,
-      140,
-      255
-    ]
+    "rows": 8,
+    "frameCount": 64
   },
   "states": {
     "idle": {
@@ -53,7 +41,14 @@
         3,
         4,
         5,
-        6
+        6,
+        13,
+        14,
+        15,
+        43,
+        45,
+        46,
+        49
       ],
       "frames": [
         {
@@ -62,56 +57,88 @@
         },
         {
           "sprite": 1,
-          "duration": 120
+          "duration": 520
         },
         {
           "sprite": 2,
-          "duration": 200
+          "duration": 520
         },
         {
-          "sprite": 1,
-          "duration": 120
+          "sprite": 3,
+          "duration": 640
         },
         {
-          "sprite": 0,
-          "duration": 1800
+          "sprite": 4,
+          "duration": 640
+        },
+        {
+          "sprite": 5,
+          "duration": 1700
         }
       ],
       "loop": true,
       "variants": [
         {
-          "name": "ear_twitch",
+          "name": "ear_ping",
           "weight": 3,
-          "cooldownMinMs": 8000,
-          "cooldownMaxMs": 16000,
+          "cooldownMinMs": 9000,
+          "cooldownMaxMs": 18000,
           "frames": [
             {
-              "sprite": 4,
+              "sprite": 13,
+              "duration": 160
+            },
+            {
+              "sprite": 46,
               "duration": 180
             },
             {
               "sprite": 0,
-              "duration": 140
+              "duration": 260
             }
           ]
         },
         {
-          "name": "look_around",
+          "name": "curious_tail",
           "weight": 2,
           "cooldownMinMs": 12000,
-          "cooldownMaxMs": 25000,
+          "cooldownMaxMs": 24000,
           "frames": [
             {
-              "sprite": 5,
-              "duration": 360
+              "sprite": 14,
+              "duration": 300
             },
             {
-              "sprite": 6,
-              "duration": 360
+              "sprite": 15,
+              "duration": 300
+            },
+            {
+              "sprite": 45,
+              "duration": 220
             },
             {
               "sprite": 0,
-              "duration": 240
+              "duration": 260
+            }
+          ]
+        },
+        {
+          "name": "question_popup",
+          "weight": 1,
+          "cooldownMinMs": 16000,
+          "cooldownMaxMs": 30000,
+          "frames": [
+            {
+              "sprite": 43,
+              "duration": 360
+            },
+            {
+              "sprite": 49,
+              "duration": 300
+            },
+            {
+              "sprite": 0,
+              "duration": 260
             }
           ]
         }
@@ -134,11 +161,11 @@
           "duration": 150
         },
         {
-          "sprite": 7,
+          "sprite": 9,
           "duration": 150
         },
         {
-          "sprite": 9,
+          "sprite": 10,
           "duration": 150
         }
       ],
@@ -153,33 +180,38 @@
       "frames": [
         {
           "sprite": 11,
-          "duration": 800
+          "duration": 900
         },
         {
           "sprite": 12,
-          "duration": 800
+          "duration": 900
         }
       ],
       "loop": true
     },
     "talk": {
       "spriteFrames": [
-        13,
-        14,
-        15
+        21,
+        22,
+        23,
+        24
       ],
       "frames": [
         {
-          "sprite": 13,
-          "duration": 300
+          "sprite": 21,
+          "duration": 180
         },
         {
-          "sprite": 14,
-          "duration": 300
+          "sprite": 22,
+          "duration": 180
         },
         {
-          "sprite": 15,
-          "duration": 400
+          "sprite": 23,
+          "duration": 180
+        },
+        {
+          "sprite": 24,
+          "duration": 260
         }
       ],
       "repeat": 3,
@@ -189,20 +221,32 @@
       "spriteFrames": [
         16,
         17,
-        18
+        18,
+        50,
+        51,
+        52,
+        53
       ],
       "frames": [
         {
           "sprite": 16,
-          "duration": 250
+          "duration": 240
         },
         {
-          "sprite": 17,
-          "duration": 120
+          "sprite": 50,
+          "duration": 170
         },
         {
-          "sprite": 16,
-          "duration": 230
+          "sprite": 51,
+          "duration": 150
+        },
+        {
+          "sprite": 52,
+          "duration": 170
+        },
+        {
+          "sprite": 53,
+          "duration": 280
         }
       ],
       "repeat": 3,
@@ -211,16 +255,26 @@
     "confused": {
       "spriteFrames": [
         19,
-        20
+        20,
+        43,
+        49
       ],
       "frames": [
         {
           "sprite": 19,
-          "duration": 400
+          "duration": 320
+        },
+        {
+          "sprite": 43,
+          "duration": 420
+        },
+        {
+          "sprite": 49,
+          "duration": 360
         },
         {
           "sprite": 20,
-          "duration": 400
+          "duration": 300
         }
       ],
       "repeat": 2,
@@ -231,24 +285,36 @@
         21,
         22,
         23,
-        24
+        24,
+        40,
+        41,
+        42,
+        44
       ],
       "frames": [
         {
           "sprite": 21,
-          "duration": 700
-        },
-        {
-          "sprite": 22,
           "duration": 140
         },
         {
-          "sprite": 21,
-          "duration": 520
+          "sprite": 40,
+          "duration": 150
         },
         {
-          "sprite": 23,
-          "duration": 120
+          "sprite": 41,
+          "duration": 150
+        },
+        {
+          "sprite": 42,
+          "duration": 150
+        },
+        {
+          "sprite": 44,
+          "duration": 220
+        },
+        {
+          "sprite": 24,
+          "duration": 180
         }
       ],
       "loop": true
@@ -258,24 +324,36 @@
         25,
         26,
         27,
-        28
+        28,
+        40,
+        41,
+        42,
+        44
       ],
       "frames": [
         {
-          "sprite": 26,
-          "duration": 180
-        },
-        {
-          "sprite": 27,
-          "duration": 180
-        },
-        {
-          "sprite": 26,
-          "duration": 180
-        },
-        {
           "sprite": 25,
-          "duration": 260
+          "duration": 130
+        },
+        {
+          "sprite": 26,
+          "duration": 130
+        },
+        {
+          "sprite": 40,
+          "duration": 130
+        },
+        {
+          "sprite": 41,
+          "duration": 130
+        },
+        {
+          "sprite": 42,
+          "duration": 130
+        },
+        {
+          "sprite": 28,
+          "duration": 220
         }
       ],
       "loop": true
@@ -283,16 +361,36 @@
     "gameplay": {
       "spriteFrames": [
         29,
-        30
+        30,
+        58,
+        59,
+        60,
+        61
       ],
       "frames": [
         {
           "sprite": 29,
-          "duration": 300
+          "duration": 220
+        },
+        {
+          "sprite": 58,
+          "duration": 160
+        },
+        {
+          "sprite": 59,
+          "duration": 160
+        },
+        {
+          "sprite": 60,
+          "duration": 160
+        },
+        {
+          "sprite": 61,
+          "duration": 220
         },
         {
           "sprite": 30,
-          "duration": 300
+          "duration": 220
         }
       ],
       "loop": true
@@ -301,20 +399,37 @@
       "spriteFrames": [
         31,
         32,
-        33
+        33,
+        50,
+        51,
+        52,
+        53,
+        62
       ],
       "frames": [
         {
           "sprite": 31,
-          "duration": 250
+          "duration": 220
         },
         {
-          "sprite": 32,
-          "duration": 120
+          "sprite": 50,
+          "duration": 150
         },
         {
-          "sprite": 31,
-          "duration": 230
+          "sprite": 62,
+          "duration": 150
+        },
+        {
+          "sprite": 51,
+          "duration": 150
+        },
+        {
+          "sprite": 52,
+          "duration": 150
+        },
+        {
+          "sprite": 53,
+          "duration": 260
         }
       ],
       "repeat": 5,
@@ -323,46 +438,445 @@
     "gamelose": {
       "spriteFrames": [
         34,
-        35
+        35,
+        54,
+        55,
+        56,
+        57
       ],
       "frames": [
         {
-          "sprite": 34,
-          "duration": 400
+          "sprite": 54,
+          "duration": 220
+        },
+        {
+          "sprite": 55,
+          "duration": 180
+        },
+        {
+          "sprite": 56,
+          "duration": 180
+        },
+        {
+          "sprite": 57,
+          "duration": 300
         },
         {
           "sprite": 35,
-          "duration": 400
+          "duration": 360
         }
       ],
       "repeat": 4,
+      "fallback": "idle"
+    },
+    "working": {
+      "spriteFrames": [
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        40,
+        41,
+        42,
+        44
+      ],
+      "frames": [
+        {
+          "sprite": 21,
+          "duration": 150
+        },
+        {
+          "sprite": 22,
+          "duration": 150
+        },
+        {
+          "sprite": 40,
+          "duration": 140
+        },
+        {
+          "sprite": 41,
+          "duration": 140
+        },
+        {
+          "sprite": 42,
+          "duration": 140
+        },
+        {
+          "sprite": 44,
+          "duration": 220
+        }
+      ],
+      "loop": true
+    },
+    "waiting": {
+      "spriteFrames": [
+        19,
+        20
+      ],
+      "frames": [
+        {
+          "sprite": 19,
+          "duration": 620
+        },
+        {
+          "sprite": 20,
+          "duration": 620
+        }
+      ],
+      "loop": true
+    },
+    "review": {
+      "spriteFrames": [
+        16,
+        17,
+        18,
+        50,
+        51,
+        52,
+        53
+      ],
+      "frames": [
+        {
+          "sprite": 16,
+          "duration": 320
+        },
+        {
+          "sprite": 50,
+          "duration": 220
+        },
+        {
+          "sprite": 51,
+          "duration": 220
+        },
+        {
+          "sprite": 52,
+          "duration": 220
+        },
+        {
+          "sprite": 53,
+          "duration": 420
+        }
+      ],
+      "loop": true
+    },
+    "failed": {
+      "spriteFrames": [
+        34,
+        35,
+        54,
+        55,
+        56,
+        57
+      ],
+      "frames": [
+        {
+          "sprite": 54,
+          "duration": 170
+        },
+        {
+          "sprite": 55,
+          "duration": 170
+        },
+        {
+          "sprite": 56,
+          "duration": 170
+        },
+        {
+          "sprite": 57,
+          "duration": 260
+        },
+        {
+          "sprite": 34,
+          "duration": 400
+        }
+      ],
+      "repeat": 2,
       "fallback": "idle"
     }
   },
   "actions": {
     "jump": {
-      "sprite": 36
+      "spriteFrames": [
+        36,
+        62,
+        31
+      ],
+      "frames": [
+        {
+          "sprite": 36,
+          "duration": 120
+        },
+        {
+          "sprite": 62,
+          "duration": 160
+        },
+        {
+          "sprite": 31,
+          "duration": 140
+        }
+      ],
+      "repeat": 1,
+      "fallback": "idle"
     },
     "spin": {
-      "sprite": 37
+      "spriteFrames": [
+        37,
+        63,
+        40,
+        42
+      ],
+      "frames": [
+        {
+          "sprite": 37,
+          "duration": 90
+        },
+        {
+          "sprite": 63,
+          "duration": 90
+        },
+        {
+          "sprite": 40,
+          "duration": 90
+        },
+        {
+          "sprite": 42,
+          "duration": 90
+        }
+      ],
+      "repeat": 2,
+      "fallback": "idle"
     },
     "wave": {
-      "sprite": 38
+      "spriteFrames": [
+        38,
+        48,
+        50,
+        53
+      ],
+      "frames": [
+        {
+          "sprite": 38,
+          "duration": 140
+        },
+        {
+          "sprite": 48,
+          "duration": 140
+        },
+        {
+          "sprite": 50,
+          "duration": 140
+        },
+        {
+          "sprite": 53,
+          "duration": 220
+        }
+      ],
+      "repeat": 1,
+      "fallback": "idle"
     },
     "shake": {
-      "sprite": 39
+      "spriteFrames": [
+        39,
+        54,
+        55,
+        56,
+        57
+      ],
+      "frames": [
+        {
+          "sprite": 39,
+          "duration": 100
+        },
+        {
+          "sprite": 54,
+          "duration": 100
+        },
+        {
+          "sprite": 55,
+          "duration": 100
+        },
+        {
+          "sprite": 56,
+          "duration": 100
+        },
+        {
+          "sprite": 57,
+          "duration": 180
+        }
+      ],
+      "repeat": 1,
+      "fallback": "idle"
+    },
+    "observe": {
+      "spriteFrames": [
+        40,
+        41,
+        42,
+        43,
+        44,
+        45
+      ],
+      "frames": [
+        {
+          "sprite": 40,
+          "duration": 120
+        },
+        {
+          "sprite": 41,
+          "duration": 120
+        },
+        {
+          "sprite": 42,
+          "duration": 120
+        },
+        {
+          "sprite": 44,
+          "duration": 180
+        },
+        {
+          "sprite": 43,
+          "duration": 240
+        },
+        {
+          "sprite": 45,
+          "duration": 220
+        }
+      ],
+      "repeat": 1,
+      "fallback": "idle"
+    },
+    "nudge": {
+      "spriteFrames": [
+        46,
+        47,
+        48,
+        49
+      ],
+      "frames": [
+        {
+          "sprite": 46,
+          "duration": 140
+        },
+        {
+          "sprite": 47,
+          "duration": 140
+        },
+        {
+          "sprite": 48,
+          "duration": 160
+        },
+        {
+          "sprite": 49,
+          "duration": 240
+        }
+      ],
+      "repeat": 1,
+      "fallback": "idle"
+    },
+    "acknowledge": {
+      "spriteFrames": [
+        50,
+        51,
+        52,
+        53
+      ],
+      "frames": [
+        {
+          "sprite": 50,
+          "duration": 160
+        },
+        {
+          "sprite": 51,
+          "duration": 160
+        },
+        {
+          "sprite": 52,
+          "duration": 160
+        },
+        {
+          "sprite": 53,
+          "duration": 260
+        }
+      ],
+      "repeat": 1,
+      "fallback": "idle"
+    },
+    "blocked": {
+      "spriteFrames": [
+        54,
+        55,
+        56,
+        57
+      ],
+      "frames": [
+        {
+          "sprite": 54,
+          "duration": 150
+        },
+        {
+          "sprite": 55,
+          "duration": 150
+        },
+        {
+          "sprite": 56,
+          "duration": 150
+        },
+        {
+          "sprite": 57,
+          "duration": 280
+        }
+      ],
+      "repeat": 1,
+      "fallback": "idle"
+    },
+    "dragging": {
+      "spriteFrames": [
+        58,
+        59,
+        60,
+        61
+      ],
+      "frames": [
+        {
+          "sprite": 58,
+          "duration": 120
+        },
+        {
+          "sprite": 59,
+          "duration": 120
+        },
+        {
+          "sprite": 60,
+          "duration": 120
+        },
+        {
+          "sprite": 61,
+          "duration": 160
+        }
+      ],
+      "repeat": 2,
+      "fallback": "idle"
     }
   },
   "mini": {
     "state": "idle",
     "frame": 0,
-    "headRows": 10
+    "headRows": 140
   },
   "metadata": {
     "generatedFrom": [
-      "app/frontend/js/sprite.js",
-      "app/frontend/js/pet.js"
+      "app/frontend/tools/generate-cat-pack.cjs"
     ],
+    "assetClass": "default-companion",
+    "qualityTier": "polished",
+    "style": "smooth-scaled expressive orange cat companion",
+    "recommendedUse": "default pet, game reactions, and status feedback",
+    "releaseTier": "builtin",
+    "optimizedFor": "smooth-scaled desktop pet window",
     "frameLabels": [
       "idle:0",
       "idle:1",
@@ -371,52 +885,63 @@
       "idle:4",
       "idle:5",
       "idle:6",
-      "walk:0",
-      "walk:1",
-      "walk:2",
-      "walk:3",
-      "sleep:0",
-      "sleep:1",
-      "talk:0",
-      "talk:1",
-      "talk:2",
-      "happy:0",
-      "happy:1",
-      "happy:2",
-      "confused:0",
-      "confused:1",
-      "focused:0",
-      "focused:1",
-      "focused:2",
-      "focused:3",
-      "preparing:0",
-      "preparing:1",
-      "preparing:2",
-      "preparing:3",
-      "gameplay:0",
-      "gameplay:1",
-      "gamewin:0",
-      "gamewin:1",
-      "gamewin:2",
-      "gamelose:0",
-      "gamelose:1",
-      "jump:0",
-      "spin:0",
-      "wave:0",
-      "shake:0"
-    ],
-    "assetClass": "legacy-pixel",
-    "qualityTier": "legacy",
-    "style": "classic 16x16 pixel cat",
-    "recommendedUse": "nostalgia and compatibility reference",
-    "releaseTier": "builtin",
-    "optimizedFor": "pixelated desktop pet window"
-  },
-  "render": {
-    "mode": "sheet",
-    "displayWidth": 128,
-    "displayHeight": 128,
-    "scale": 8,
-    "pixelated": true
+      "idle:7",
+      "idle:8",
+      "idle:9",
+      "idle:10",
+      "waiting:11",
+      "waiting:12",
+      "idle:13",
+      "idle:14",
+      "idle:15",
+      "review:16",
+      "review:17",
+      "review:18",
+      "waiting:19",
+      "waiting:20",
+      "working:21",
+      "working:22",
+      "working:23",
+      "working:24",
+      "working:25",
+      "working:26",
+      "working:27",
+      "working:28",
+      "idle:29",
+      "idle:30",
+      "idle:31",
+      "failed:32",
+      "failed:33",
+      "idle:34",
+      "idle:35",
+      "idle:36",
+      "failed:37",
+      "failed:38",
+      "idle:39",
+      "idle:40",
+      "idle:41",
+      "failed:42",
+      "idle:43",
+      "working:44",
+      "working:45",
+      "working:46",
+      "curious:47",
+      "working:48",
+      "idle:49",
+      "idle:50",
+      "idle:51",
+      "delight:52",
+      "waiting:53",
+      "delight:54",
+      "delight:55",
+      "review:56",
+      "idle:57",
+      "failed:58",
+      "failed:59",
+      "failed:60",
+      "failed:61",
+      "idle:62",
+      "idle:63"
+    ]
   }
 }

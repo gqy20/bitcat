@@ -11,6 +11,7 @@
 | [progression-capability-unlock.md](progression-capability-unlock.md) | 设计落地计划，未开始实现 | 先做 ProgressStore + 对话成长上下文注入，再做工具权限 gate |
 | [music-reactive-dance-research.md](music-reactive-dance-research.md) | 第一版可用，舞感状态机仍活跃 | 扩展音乐状态机、fake source 模式、后端特征字段和调参入口 |
 | [claude-code-agent-watch.md](claude-code-agent-watch.md) | 设计草案，Claude Code hook MVP 已部分落地 | 继续完善只读 Hook、会话状态收敛和 Agent Watch 展示 |
+| [topdown-rpg-ai.md](topdown-rpg-ai.md) | 规划中，未开始 | 俯视角 RPG + AI NPC 对话 / AI 关卡生成，Phase 1 MVP |
 | [3d-architecture.md](3d-architecture.md) | 规划中，未开始 | 等 2D 桌宠/游戏主线稳定后再评估 Three.js/voxel 迁移 |
 
 ## 已归档
@@ -27,4 +28,4 @@
 
 归档不是删除：后续需要查设计取舍、实现阶段或历史背景时，仍优先引用 archive 中的原文。
 
-| [archive/remote-agent-monitor.md](archive/remote-agent-monitor.md) | Remote Agent Watch LAN ingest/viewer MVP ����أ��û�˵��ת�� `docs/guide/remote-agent-watch.md` |
+| [archive/remote-agent-monitor.md](archive/remote-agent-monitor.md) | Remote Agent Watch LAN ingest/viewer MVP ����أ��û�˵��ת�� `docs/guide/remote-agent-watch.md` |

@@ -22,7 +22,7 @@ const PET_ASSET_PRESETS = [
   { value: "/__fixtures__/pets/mossbot", label: "Mossbot", group: "角色" },
   { value: "/__fixtures__/pets/moonbit", label: "Moonbit", group: "角色" },
   { value: "/__fixtures__/pets/sparkle", label: "Sparkle", group: "角色" },
-  { value: "/__fixtures__/pets/cat", label: "Cat", group: "经典像素" },
+  { value: "/__fixtures__/pets/cat", label: "Cat", group: "推荐" },
 ];
 const PET_ASSET_PIGGY = "/__fixtures__/pets/piggy";
 const PET_ASSET_PRESET_VALUES = new Set(PET_ASSET_PRESETS.map(item => item.value).filter(Boolean));

@@ -18,7 +18,17 @@ const requiredStates = [
   'gamewin',
   'gamelose',
 ];
-const actions = ['jump', 'spin', 'wave', 'shake'];
+const actions = [
+  'jump',
+  'spin',
+  'wave',
+  'shake',
+  'observe',
+  'nudge',
+  'acknowledge',
+  'blocked',
+  'dragging',
+];
 
 function collectSpriteRefsFromTimeline(timeline) {
   const refs = [
@@ -73,18 +83,30 @@ describe('cat pet fixture pack', () => {
     expect(manifest.id).toBe('cat');
     expect(manifest.sprite).toEqual({
       image: 'spritesheet.webp',
-      frameWidth: 16,
-      frameHeight: 16,
+      frameWidth: 192,
+      frameHeight: 208,
       columns: 8,
-      rows: 5,
-      frameCount: 40,
+      rows: 8,
+      frameCount: 64,
     });
     expect(manifest.render).toMatchObject({
       mode: 'sheet',
-      displayWidth: 128,
-      displayHeight: 128,
-      scale: 8,
-      pixelated: true,
+      displayWidth: 74,
+      displayHeight: 80,
+      pixelated: false,
+    });
+    expect(manifest.render.scale).toBeCloseTo(80 / 208);
+    expect(manifest.hotspots.observe).toEqual({
+      x: 0.2,
+      y: 0.12,
+      w: 0.6,
+      h: 0.38,
+    });
+    expect(manifest.hotspots.input).toEqual({
+      x: 0.24,
+      y: 0.42,
+      w: 0.52,
+      h: 0.32,
     });
   });
 
@@ -101,7 +123,7 @@ describe('cat pet fixture pack', () => {
       refs.push(...collectSpriteRefsFromTimeline(timeline));
     }
     for (const action of actions) {
-      refs.push(manifest.actions[action].sprite);
+      refs.push(...collectSpriteRefsFromTimeline(manifest.actions[action]));
     }
 
     for (const ref of refs) {
@@ -109,6 +131,21 @@ describe('cat pet fixture pack', () => {
       expect(ref).toBeGreaterThanOrEqual(0);
       expect(ref).toBeLessThan(manifest.sprite.frameCount);
     }
+  });
+
+  it('ships the full v2 status and interaction vocabulary', () => {
+    expect(Object.keys(manifest.actions).sort()).toEqual([...actions].sort());
+    expect(manifest.states.working.frames).toHaveLength(6);
+    expect(manifest.states.waiting.frames).toHaveLength(2);
+    expect(manifest.states.review.frames).toHaveLength(5);
+    expect(manifest.states.failed.frames).toHaveLength(5);
+    expect(manifest.actions.observe.frames.map((frame) => frame.sprite)).toEqual([40, 41, 42, 44, 43, 45]);
+    expect(manifest.actions.dragging.frames.map((frame) => frame.sprite)).toEqual([58, 59, 60, 61]);
+    expect(manifest.metadata).toMatchObject({
+      qualityTier: 'polished',
+      assetClass: 'default-companion',
+      releaseTier: 'builtin',
+    });
   });
 
   it('keeps timeline durations positive', () => {

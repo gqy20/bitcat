@@ -45,20 +45,22 @@ describe('sprite-loader', () => {
     const imageData = zeroImageData(manifest);
     const runtime = buildRuntimeFromManifest(manifest, imageData);
 
-    expect(runtime.sprites.idle).toHaveLength(7);
-    expect(runtime.sprites.focused).toHaveLength(4);
-    expect(runtime.sprites.preparing).toHaveLength(4);
-    expect(runtime.sprites.jump).toHaveLength(1);
-    expect(runtime.frameWidth).toBe(16);
-    expect(runtime.frameHeight).toBe(16);
-    expect(runtime.renderScale).toBe(8);
-    expect(runtime.displayWidth).toBe(128);
-    expect(runtime.displayHeight).toBe(128);
-    expect(runtime.pixelated).toBe(true);
+    expect(runtime.sprites.idle).toHaveLength(14);
+    expect(runtime.sprites.focused).toHaveLength(8);
+    expect(runtime.sprites.preparing).toHaveLength(8);
+    expect(runtime.sprites.jump).toHaveLength(3);
+    expect(runtime.frameWidth).toBe(192);
+    expect(runtime.frameHeight).toBe(208);
+    expect(runtime.renderScale).toBeCloseTo(80 / 208);
+    expect(runtime.displayWidth).toBe(74);
+    expect(runtime.displayHeight).toBe(80);
+    expect(runtime.pixelated).toBe(false);
     expect(runtime.sheetColumns).toBe(8);
-    expect(runtime.palette[0]).toBeNull();
-    expect(runtime.stateConfig.focused.frames.map((frame) => frame.sprite)).toEqual([0, 1, 0, 2]);
-    expect(runtime.stateConfig.idle.variants[0].frames.map((frame) => frame.sprite)).toEqual([4, 0]);
+    expect(runtime.palette).toEqual({});
+    expect(runtime.hotspots.observe).toEqual(manifest.hotspots.observe);
+    expect(runtime.stateConfig.focused.frames.map((frame) => frame.sprite)).toEqual([0, 4, 5, 6, 7, 3]);
+    expect(runtime.stateConfig.idle.variants[0].frames.map((frame) => frame.sprite)).toEqual([7, 12, 0]);
+    expect(runtime.actionConfig.observe.frames.map((frame) => frame.sprite)).toEqual([0, 1, 2, 4, 3, 5]);
   });
 
   it('builds a status-sized v2 sheet runtime with aliases from the status fixture', () => {
