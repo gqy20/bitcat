@@ -40,6 +40,7 @@ app/frontend/package-lock.json
 *.log
 *.tmp
 *.bak
+tools/steamworks_sdk/
 
 # Test artifacts (make test copies config/ to core/config/ and app/config/)
 core/config/

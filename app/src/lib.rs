@@ -35,6 +35,7 @@ pub mod screenshot;
 pub mod settings;
 pub mod shutdown;
 pub mod snap;
+pub mod steam;
 pub mod tray;
 pub mod tts;
 pub mod voice;
@@ -201,6 +202,11 @@ pub fn run() {
             if !env_loaded {
                 warn!(".env 未找到，将使用 ~/.claude/settings.json 或默认配置");
             }
+
+            // ── Steamworks 本地探针 ──
+            // 动态加载 steam_api64.dll，只验证 AppID / Steam 客户端 / DLL 链路是否可用。
+            // 深度功能（成就、云存档、Workshop）后续再接完整 wrapper。
+            steam::init_probe();
 
             // ── 系统托盘 ──
             shutdown::install_ctrlc_handler(app.handle().clone());
