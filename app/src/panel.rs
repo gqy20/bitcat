@@ -316,18 +316,26 @@ mod tests {
     #[test]
     fn test_load_panel_actions_from_yml() {
         let config = ai_pad_core::panel_action::PanelActionConfig::load(PANEL_CONFIG_PATH).unwrap();
-        assert!(config.actions.contains_key("vscode"));
-        assert!(config.actions.contains_key("browser"));
-        assert!(config.actions.contains_key("explorer"));
-        assert!(config.actions.contains_key("powershell"));
-        assert!(config.actions.contains_key("notepad"));
+        assert_eq!(config.defaults.width, 480);
+        assert_eq!(config.defaults.height, 360);
+        assert_eq!(config.defaults.columns, 2);
+        assert_eq!(config.defaults.rows, 2);
+
+        for action_id in ["game", "memory", "catch", "battle"] {
+            assert!(config.actions.contains_key(action_id));
+        }
     }
 
     #[test]
-    fn test_panel_actions_are_launch_type() {
+    fn test_panel_actions_are_builtin_games() {
         let config = ai_pad_core::panel_action::PanelActionConfig::load(PANEL_CONFIG_PATH).unwrap();
-        let action = config.actions.get("vscode").unwrap();
-        assert_eq!(action.action_type, "launch", "vscode 应为 launch 类型");
+        for action_id in ["game", "memory", "catch", "battle"] {
+            let action = config.actions.get(action_id).unwrap();
+            assert_eq!(
+                action.action_type, "builtin",
+                "{action_id} 应为 builtin 类型"
+            );
+        }
     }
 
     #[test]
