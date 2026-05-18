@@ -208,25 +208,10 @@
       ctx.fillStyle = 'rgba(12, 18, 24, 0.18)';
       ctx.fillRect(0, 0, grid.width * cell, grid.height * cell);
 
-      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-      ctx.lineWidth = Math.max(1, Math.floor(cell / 14));
-      for (let x = 0; x <= grid.width; x++) {
-        ctx.beginPath();
-        ctx.moveTo(x * cell, 0);
-        ctx.lineTo(x * cell, grid.height * cell);
-        ctx.stroke();
-      }
-      for (let y = 0; y <= grid.height; y++) {
-        ctx.beginPath();
-        ctx.moveTo(0, y * cell);
-        ctx.lineTo(grid.width * cell, y * cell);
-        ctx.stroke();
-      }
+      drawSnakeField(ctx, grid, cell);
 
       drawFood(ctx, this.food, cell, this.config.theme.food);
-      for (let i = this.snake.length - 1; i >= 0; i--) {
-        drawSnakePart(ctx, this.snake[i], cell, i === 0, this.config.theme);
-      }
+      drawSnake(ctx, this.snake, cell, this.dir, this.config.theme);
       ctx.restore();
     }
   }
@@ -365,7 +350,8 @@
       this.state = 'ready';
       this.score = 0;
       this.ended = false;
-      this.playerX = Math.floor(config.grid.width / 2);
+      const lane = this.laneColumns();
+      this.playerX = Math.floor((lane.min + lane.max) / 2);
       this.spawnMs = 0;
       this.fallMs = 0;
       this.misses = 0;
@@ -397,7 +383,8 @@
       }
       if (input.type === 'direction') {
         if (this.state === 'ready') this.state = 'playing';
-        this.playerX = clamp(this.playerX + Math.sign(input.dx || 0), 0, this.config.grid.width - 1);
+        const lane = this.laneColumns();
+        this.playerX = clamp(this.playerX + Math.sign(input.dx || 0), lane.playerMin, lane.playerMax);
       }
     }
 
@@ -407,8 +394,9 @@
       this.fallMs += dtMs;
       if (this.spawnMs <= 0) {
         this.spawnMs = Math.max(240, this.config.player.speed_ms * 6 * this.config.rules.speed_ramp);
+        const lane = this.laneColumns();
         for (let i = 0; i < this.config.rules.food_count; i++) {
-          this.items.push({ x: Math.floor(this.rng() * this.config.grid.width), y: 0 });
+          this.items.push({ x: lane.min + Math.floor(this.rng() * lane.width), y: 0 });
         }
       }
       const stepMs = Math.max(70, this.config.player.speed_ms);
@@ -442,21 +430,39 @@
       this.state = result;
     }
 
+    laneColumns() {
+      const gridWidth = this.config.grid.width;
+      const width = Math.max(5, Math.floor(gridWidth * 0.5));
+      const min = Math.floor((gridWidth - width) / 2);
+      const max = min + width - 1;
+      return {
+        min,
+        max,
+        width,
+        playerMin: Math.min(max, min + 1),
+        playerMax: Math.max(min, max - 1),
+      };
+    }
+
     render(ctx, metrics) {
       ctx.clearRect(0, 0, metrics.width, metrics.height);
       const grid = this.config.grid;
       const cell = metrics.cell;
+      const lane = this.laneColumns();
       ctx.save();
-      ctx.translate(metrics.x, metrics.y);
+      ctx.translate(metrics.x + lane.min * cell, metrics.y);
       ctx.fillStyle = 'rgba(12, 18, 24, 0.18)';
-      ctx.fillRect(0, 0, grid.width * cell, grid.height * cell);
-      for (const item of this.items) drawFood(ctx, item, cell, this.config.theme.food);
+      ctx.fillRect(0, 0, lane.width * cell, grid.height * cell);
+      ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+      ctx.strokeRect(0, 0, lane.width * cell, grid.height * cell);
+      for (const item of this.items) drawFood(ctx, { ...item, x: item.x - lane.min }, cell, this.config.theme.food);
       const y = grid.height - 1;
+      const playerX = this.playerX - lane.min;
       ctx.fillStyle = '#ffd166';
-      ctx.fillRect((this.playerX - 1) * cell + 4, y * cell + 6, cell * 3 - 8, cell - 12);
+      ctx.fillRect((playerX - 1) * cell + 4, y * cell + 6, cell * 3 - 8, cell - 12);
       ctx.fillStyle = '#20242a';
-      ctx.fillRect(this.playerX * cell + cell * 0.35, y * cell + cell * 0.36, cell * 0.12, cell * 0.12);
-      ctx.fillRect(this.playerX * cell + cell * 0.58, y * cell + cell * 0.36, cell * 0.12, cell * 0.12);
+      ctx.fillRect(playerX * cell + cell * 0.35, y * cell + cell * 0.36, cell * 0.12, cell * 0.12);
+      ctx.fillRect(playerX * cell + cell * 0.58, y * cell + cell * 0.36, cell * 0.12, cell * 0.12);
       ctx.restore();
     }
   }
@@ -879,13 +885,9 @@
       if (this.ended) return false;
       if (this.state === 'ready') this.state = 'playing';
       this.notifyStart();
-      const skill = this.hitTestSkill(x, y);
-      if (skill) {
-        this.useSkill(skill.slot);
-        return true;
-      }
       if (this.lastMetrics) {
-        this.ship.x = clamp(x / this.lastMetrics.width, 0.08, 0.92);
+        const lane = battleLane(this.lastMetrics);
+        this.ship.x = clamp((x - lane.x) / lane.width, 0.08, 0.92);
         this.ship.y = clamp(y / this.lastMetrics.height, 0.62, 0.90);
       }
       this.fireBullet('pointer');
@@ -1102,7 +1104,7 @@
         return this.hitTestOverlay(x, y);
       }
       if (this.state !== 'playing') return false;
-      return y >= this.lastMetrics.height * 0.58 || Boolean(this.hitTestSkill(x, y));
+      return y >= this.lastMetrics.height * 0.58;
     }
 
     hitTestSkill(x, y) {
@@ -1147,35 +1149,170 @@
       drawBattleEnemies(ctx, metrics, this.enemies);
       drawBattleShip(ctx, metrics, this.ship, this.guardMs);
       drawBattleBars(ctx, metrics, this);
-      drawSkillButtons(ctx, metrics, this.skillRects(metrics));
       drawFloaters(ctx, metrics, this.floaters);
     }
   }
 
-  function drawSnakePart(ctx, p, cell, head, theme) {
-    const pad = Math.max(2, Math.floor(cell * 0.13));
-    const x = p.x * cell + pad;
-    const y = p.y * cell + pad;
-    const s = cell - pad * 2;
-    ctx.fillStyle = head ? '#ffd166' : theme.body === 'dot' ? '#70d6ff' : '#b8f2e6';
-    ctx.fillRect(x, y, s, s);
-    ctx.fillStyle = 'rgba(20,20,24,0.88)';
-    if (head) {
-      const eye = Math.max(2, Math.floor(cell * 0.12));
-      ctx.fillRect(x + s * 0.25, y + s * 0.25, eye, eye);
-      ctx.fillRect(x + s * 0.65, y + s * 0.25, eye, eye);
+  function drawSnakeField(ctx, grid, cell) {
+    const width = grid.width * cell;
+    const height = grid.height * cell;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
+    if (cell >= 14) {
+      ctx.fillStyle = 'rgba(255,255,255,0.055)';
+      const dot = Math.max(1, cell * 0.055);
+      for (let y = 1; y < grid.height; y += 2) {
+        for (let x = 1; x < grid.width; x += 2) {
+          ctx.beginPath();
+          ctx.arc(x * cell, y * cell, dot, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
     }
+    ctx.restore();
+  }
+
+  function cellCenter(p, cell) {
+    return {
+      x: p.x * cell + cell / 2,
+      y: p.y * cell + cell / 2,
+    };
+  }
+
+  function drawSnake(ctx, snake, cell, dir, theme) {
+    if (!snake.length) return;
+    const bodyWidth = Math.max(8, cell * 0.72);
+    const points = snake.map((p) => cellCenter(p, cell));
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.shadowColor = 'rgba(0,0,0,0.28)';
+    ctx.shadowBlur = Math.max(4, cell * 0.25);
+
+    if (points.length > 1) {
+      ctx.strokeStyle = 'rgba(32,36,42,0.36)';
+      ctx.lineWidth = bodyWidth + Math.max(3, cell * 0.22);
+      drawRoundedPolyline(ctx, points, cell);
+      ctx.stroke();
+
+      const gradient = ctx.createLinearGradient(points[points.length - 1].x, points[points.length - 1].y, points[0].x, points[0].y);
+      gradient.addColorStop(0, 'rgba(112,214,255,0.82)');
+      gradient.addColorStop(0.55, theme.body === 'trail' ? 'rgba(184,242,230,0.86)' : 'rgba(184,242,230,0.94)');
+      gradient.addColorStop(1, '#ffd166');
+      ctx.strokeStyle = gradient;
+      ctx.lineWidth = bodyWidth;
+      drawRoundedPolyline(ctx, points, cell);
+      ctx.stroke();
+    }
+
+    drawSnakeTail(ctx, points[points.length - 1], bodyWidth);
+    drawSnakeHead(ctx, points[0], cell, dir);
+    ctx.restore();
+  }
+
+  function drawRoundedPolyline(ctx, points, cell) {
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    if (points.length === 2) {
+      ctx.lineTo(points[1].x, points[1].y);
+      return;
+    }
+    const radius = Math.max(2, cell * 0.48);
+    for (let i = 1; i < points.length - 1; i++) {
+      const prev = points[i - 1];
+      const curr = points[i];
+      const next = points[i + 1];
+      const prevDx = prev.x - curr.x;
+      const prevDy = prev.y - curr.y;
+      const nextDx = next.x - curr.x;
+      const nextDy = next.y - curr.y;
+      if (prevDx === -nextDx && prevDy === -nextDy) {
+        ctx.lineTo(curr.x, curr.y);
+        continue;
+      }
+      const prevLen = Math.hypot(prevDx, prevDy) || 1;
+      const nextLen = Math.hypot(nextDx, nextDy) || 1;
+      const r = Math.min(radius, prevLen * 0.5, nextLen * 0.5);
+      const cornerStart = {
+        x: curr.x + (prevDx / prevLen) * r,
+        y: curr.y + (prevDy / prevLen) * r,
+      };
+      const cornerEnd = {
+        x: curr.x + (nextDx / nextLen) * r,
+        y: curr.y + (nextDy / nextLen) * r,
+      };
+      ctx.lineTo(cornerStart.x, cornerStart.y);
+      ctx.quadraticCurveTo(curr.x, curr.y, cornerEnd.x, cornerEnd.y);
+    }
+    const tail = points[points.length - 1];
+    ctx.lineTo(tail.x, tail.y);
+  }
+
+  function drawSnakeTail(ctx, tail, bodyWidth) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(112,214,255,0.72)';
+    ctx.beginPath();
+    ctx.arc(tail.x, tail.y, bodyWidth * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawSnakeHead(ctx, head, cell, dir) {
+    const r = Math.max(6, cell * 0.56);
+    const angle = Math.atan2(dir.y, dir.x);
+    ctx.save();
+    ctx.translate(head.x, head.y);
+    ctx.rotate(angle);
+    ctx.fillStyle = '#ffd166';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * 1.12, r * 0.92, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(r * 0.18, -r * 0.28, r * 0.34, r * 0.20, -0.45, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#20242a';
+    const eye = Math.max(2, cell * 0.13);
+    ctx.beginPath();
+    ctx.arc(r * 0.28, -r * 0.32, eye, 0, Math.PI * 2);
+    ctx.arc(r * 0.28, r * 0.32, eye, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(32,36,42,0.55)';
+    ctx.lineWidth = Math.max(1.5, cell * 0.08);
+    ctx.beginPath();
+    ctx.moveTo(r * 0.72, 0);
+    ctx.lineTo(r * 1.04, -r * 0.14);
+    ctx.moveTo(r * 0.72, 0);
+    ctx.lineTo(r * 1.04, r * 0.14);
+    ctx.stroke();
+    ctx.restore();
   }
 
   function drawFood(ctx, p, cell, kind) {
-    const pad = Math.max(3, Math.floor(cell * 0.2));
-    const x = p.x * cell + pad;
-    const y = p.y * cell + pad;
-    const s = cell - pad * 2;
+    const c = cellCenter(p, cell);
+    const r = Math.max(4, cell * 0.34);
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,209,102,0.45)';
+    ctx.shadowBlur = Math.max(4, cell * 0.26);
     ctx.fillStyle = kind === 'fish' ? '#8ecae6' : kind === 'butterfly' ? '#ffafcc' : '#ef476f';
-    ctx.fillRect(x, y, s, s);
-    ctx.fillStyle = 'rgba(255,255,255,0.72)';
-    ctx.fillRect(x + Math.floor(s * 0.55), y + Math.floor(s * 0.22), Math.max(2, s / 6), Math.max(2, s / 6));
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y, r * 1.12, r * 0.78, 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (kind === 'fish') {
+      ctx.beginPath();
+      ctx.moveTo(c.x - r * 0.94, c.y);
+      ctx.lineTo(c.x - r * 1.45, c.y - r * 0.48);
+      ctx.lineTo(c.x - r * 1.45, c.y + r * 0.48);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.76)';
+    ctx.beginPath();
+    ctx.arc(c.x + r * 0.38, c.y - r * 0.22, Math.max(1.5, r * 0.16), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   function distanceSq(a, b) {
@@ -1189,11 +1326,24 @@
     return value - Math.floor(value);
   }
 
+  function battleLane(metrics) {
+    const width = Math.max(180, Math.floor(metrics.width * 0.5));
+    return {
+      x: Math.floor((metrics.width - width) / 2),
+      width,
+    };
+  }
+
+  function battleX(metrics, normalizedX) {
+    const lane = battleLane(metrics);
+    return lane.x + lane.width * normalizedX;
+  }
+
   function drawBattleBullets(ctx, metrics, bullets) {
     ctx.save();
     ctx.fillStyle = '#ffd166';
     for (const bullet of bullets) {
-      const x = metrics.width * bullet.x;
+      const x = battleX(metrics, bullet.x);
       const y = metrics.height * bullet.y;
       ctx.fillRect(x - 3, y - 12, 6, 18);
       ctx.fillStyle = 'rgba(255, 209, 102, 0.35)';
@@ -1206,10 +1356,11 @@
   function drawBattleEnemies(ctx, metrics, enemies) {
     ctx.save();
     for (const enemy of enemies) {
+      const lane = battleLane(metrics);
       const size = enemy.kind === 'heavy'
-        ? clamp(Math.floor(metrics.width * 0.05), 44, 76)
-        : clamp(Math.floor(metrics.width * 0.038), 34, 58);
-      const x = Math.floor(metrics.width * enemy.x - size / 2);
+        ? clamp(Math.floor(lane.width * 0.07), 36, 62)
+        : clamp(Math.floor(lane.width * 0.055), 28, 48);
+      const x = Math.floor(battleX(metrics, enemy.x) - size / 2);
       const y = Math.floor(metrics.height * enemy.y - size / 2);
       ctx.fillStyle = enemy.hitFlashMs > 0 ? '#ffafcc' : enemy.kind === 'fast' ? '#8ecae6' : '#70d6ff';
       ctx.fillRect(x, y + size * 0.2, size, size * 0.62);
@@ -1227,9 +1378,10 @@
   }
 
   function drawBattleShip(ctx, metrics, ship, guardMs) {
-    const x = metrics.width * ship.x;
+    const lane = battleLane(metrics);
+    const x = battleX(metrics, ship.x);
     const y = metrics.height * ship.y;
-    const size = clamp(Math.floor(metrics.width * 0.052), 44, 74);
+    const size = clamp(Math.floor(lane.width * 0.076), 38, 58);
     ctx.save();
     if (guardMs > 0) {
       ctx.strokeStyle = 'rgba(142, 202, 230, 0.72)';
@@ -1265,20 +1417,24 @@
   }
 
   function drawBattleBackdrop(ctx, metrics) {
-    const cx = metrics.width * 0.58;
-    const cy = metrics.height * 0.52;
+    const lane = battleLane(metrics);
     ctx.save();
     ctx.fillStyle = 'rgba(8, 12, 16, 0.18)';
     ctx.fillRect(0, 0, metrics.width, metrics.height);
-    ctx.strokeStyle = 'rgba(112, 214, 255, 0.28)';
-    ctx.lineWidth = 4;
+    const gradient = ctx.createLinearGradient(lane.x, 0, lane.x + lane.width, 0);
+    gradient.addColorStop(0, 'rgba(112, 214, 255, 0)');
+    gradient.addColorStop(0.18, 'rgba(112, 214, 255, 0.10)');
+    gradient.addColorStop(0.82, 'rgba(255, 209, 102, 0.10)');
+    gradient.addColorStop(1, 'rgba(255, 209, 102, 0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(lane.x, 0, lane.width, metrics.height);
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.arc(cx, cy, clamp(metrics.width * 0.12, 82, 160), 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(255, 209, 102, 0.24)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(cx, cy, clamp(metrics.width * 0.09, 64, 118), 0, Math.PI * 2);
+    ctx.moveTo(lane.x, 0);
+    ctx.lineTo(lane.x, metrics.height);
+    ctx.moveTo(lane.x + lane.width, 0);
+    ctx.lineTo(lane.x + lane.width, metrics.height);
     ctx.stroke();
     ctx.restore();
   }

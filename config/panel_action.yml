@@ -4,100 +4,35 @@
 defaults:
   terminal: powershell
   width: 480
-  height: 520
-  columns: 3
-  rows: 4
+  height: 360
+  columns: 2
+  rows: 2
 
 actions:
-  vscode:
-    label: VSCode
-    icon: "💻"
-    order: 10
-    type: launch
-    program: code
-    workdir: "D:\\C\\Desktop\\ai"
-    terminal: false
-
-  browser:
-    label: 浏览器
-    icon: "🌐"
-    order: 20
-    type: launch
-    program: explorer
-    args: "https://www.google.com"
-    terminal: false
-
-  explorer:
-    label: 资源管理器
-    icon: "📁"
-    order: 30
-    type: launch
-    program: explorer
-    args: "D:\\C\\Desktop\\ai"
-    terminal: false
-
-  powershell:
-    label: PowerShell
-    icon: "⚡"
-    order: 40
-    type: launch
-    program: powershell.exe
-    args: "-NoExit"
-    terminal: false
-
-  notepad:
-    label: 记事本
-    icon: "📝"
-    order: 50
-    type: launch
-    program: notepad.exe
-    terminal: false
-
-  dance:
-    label: 跳舞
-    icon: "💃"
-    order: 60
-    type: builtin
-    command: dance
-
   game:
-    label: 游戏
+    label: 毛线球大作战
     icon: "🎮"
-    order: 70
+    order: 10
     type: builtin
     command: game
 
   memory:
-    label: 翻牌
+    label: 翻牌配对
     icon: "M"
-    order: 72
+    order: 20
     type: builtin
     command: memory
 
   catch:
     label: 接食物
     icon: "C"
-    order: 73
+    order: 30
     type: builtin
     command: catch
 
   battle:
-    label: 守护战
+    label: 飞机守护战
     icon: "⚔"
-    order: 75
+    order: 40
     type: builtin
     command: battle
-
-  settings:
-    label: 设置
-    icon: "⚙️"
-    order: 80
-    type: builtin
-    command: settings
-
-  chat:
-    label: 聊天
-    icon: "💬"
-    order: 90
-    type: builtin
-    command: chat

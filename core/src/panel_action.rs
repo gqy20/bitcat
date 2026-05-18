@@ -187,35 +187,23 @@ mod tests {
     #[test]
     fn test_load_panel_action_yml() {
         let config = PanelActionConfig::load("config/panel_action.yml").unwrap();
-        for id in [
-            "vscode",
-            "browser",
-            "explorer",
-            "powershell",
-            "notepad",
-            "dance",
-            "game",
-            "memory",
-            "catch",
-            "battle",
-            "settings",
-            "chat",
-        ] {
+        for id in ["game", "memory", "catch", "battle"] {
             assert!(config.actions.contains_key(id), "missing panel action {id}");
         }
     }
 
     #[test]
-    fn test_panel_launch_actions_have_programs() {
+    fn test_panel_only_contains_minigames() {
         let config = PanelActionConfig::load("config/panel_action.yml").unwrap();
-        for id in ["vscode", "browser", "explorer", "powershell", "notepad"] {
-            let action = config.actions.get(id).unwrap();
-            assert_eq!(action.action_type, "launch", "{id} should be launch");
+        assert_eq!(config.actions.len(), 4);
+        for (id, action) in &config.actions {
+            assert_eq!(action.action_type, "builtin", "{id} should be builtin");
             assert!(
-                action
-                    .program
-                    .as_deref()
-                    .is_some_and(|program| !program.is_empty())
+                matches!(
+                    action.command.as_deref(),
+                    Some("game" | "memory" | "catch" | "battle")
+                ),
+                "{id} should launch a minigame"
             );
         }
     }
@@ -224,32 +212,25 @@ mod tests {
     fn test_load_missing_file_falls_back_to_default() {
         let config = PanelActionConfig::load("config/definitely_missing_panel_action.yml")
             .expect("missing file should fall back to embedded panel action config");
-        assert!(config.actions.contains_key("vscode"));
+        assert!(config.actions.contains_key("game"));
     }
 
     #[test]
     fn test_view_model_uses_layout_and_order() {
         let config = PanelActionConfig::load("config/panel_action.yml").unwrap();
         let vm = config.to_view_model();
-        assert_eq!((vm.width, vm.height, vm.columns, vm.rows), (480, 520, 3, 4));
-        assert_eq!(vm.actions.len(), 12);
+        assert_eq!((vm.width, vm.height, vm.columns, vm.rows), (480, 360, 2, 2));
+        assert_eq!(vm.actions.len(), 4);
         let ids: Vec<&str> = vm.actions.iter().map(|action| action.id.as_str()).collect();
+        assert_eq!(ids, vec!["game", "memory", "catch", "battle"]);
+        let labels: Vec<&str> = vm
+            .actions
+            .iter()
+            .map(|action| action.label.as_str())
+            .collect();
         assert_eq!(
-            ids,
-            vec![
-                "vscode",
-                "browser",
-                "explorer",
-                "powershell",
-                "notepad",
-                "dance",
-                "game",
-                "memory",
-                "catch",
-                "battle",
-                "settings",
-                "chat"
-            ]
+            labels,
+            vec!["毛线球大作战", "翻牌配对", "接食物", "飞机守护战"]
         );
     }
 }

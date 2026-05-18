@@ -1,7 +1,8 @@
 # 8Bit 成长与能力解锁实施计划
 
-状态：设计落地计划，未开始实现  
+状态：设计落地计划，未开始实现（2026-05-18 补充积分体系五层设计、商店、成就、每日任务、心情系统）
 前置调研：[core-gameplay-progression-research.md](../research/core-gameplay-progression-research.md)
+Steam 积分模式参考：Hades（多层货币）、Vampire Survivors（极简反馈）、Dead Cells（蓝图解锁）、Steam 成就系统、Tamagotchi（隐式状态）
 
 ## 目标
 
@@ -92,7 +93,22 @@ pub struct ProgressStore {
     pub unlocked_features: BTreeSet<FeatureId>,
     pub enabled_features: BTreeSet<FeatureId>,
     pub daily: DailyProgress,
+    pub mood: MoodState,
+    pub inventory: BTreeSet<String>,       // 已购买的商品 ID
+    pub achievements: BTreeMap<String, AchievementState>,  // 已达成的成就
+    pub daily_quests: DailyQuestState,
     pub updated_at: String,
+}
+
+pub struct AchievementState {
+    pub unlocked_at: String,
+    pub claimed: bool,  // 领取过奖励
+}
+
+pub struct DailyQuestState {
+    pub date: String,                       // 当日日期，跨日自动刷新
+    pub quests: Vec<DailyQuest>,
+    pub all_completed_bonus_claimed: bool,
 }
 
 pub enum ProgressEvent {
@@ -104,6 +120,7 @@ pub enum ProgressEvent {
     AgentWatchCompleted,
     SettingEnabled { key: String },
     SettingDisabled { key: String },
+    ItemPurchased { item_id: String, cost: u32 },
 }
 
 pub enum FeatureId {
@@ -127,8 +144,12 @@ pub enum FeatureId {
 本地文件：
 
 ```text
-~/.ai-pad/progression/progress.json
-~/.ai-pad/progression/ledger.jsonl
+~/.ai-pad/progression/progress.json      — 主状态（等级/Bit/默契/心情/库存/成就）
+~/.ai-pad/progression/ledger.jsonl       — Bit 收支流水（append-only，可 grep）
+~/.ai-pad/progression/daily_quests.json  — 当日任务状态
+config/shop.yml                          — 商品定义
+config/achievements.yml                  — 成就定义
+config/daily_quests.yml                  — 每日任务模板池
 ```
 
 `progress.json` 存当前状态；`ledger.jsonl` 追加奖励流水，便于排查重复奖励。
@@ -269,21 +290,366 @@ pub struct AgentPromptConfig {
 - 不奖励后台观察时长；
 - 不奖励 shell 次数；
 - 不奖励纯挂机；
-- 关闭敏感能力也能获得少量默契，表达“尊重边界也是关系成长”。
+- 关闭敏感能力也能获得少量默契，表达”尊重边界也是关系成长”。
+
+## 积分体系总览（五层设计）
+
+首版设计的 Bit + 默契 + 工具 Gate 三层仍然成立。以下是按 Steam 热门模式验证后的完整五层架构：
+
+```text
+┌─────────────────────────────────────────────────────┐
+│                 8Bit 积分体系                          │
+│                                                     │
+│  第一层：Bit（日常软货币，可花费）                       │
+│    赚：聊天/游戏/签到/截图                              │
+│    花：配饰商店/气泡皮肤/桌面摆件/小游戏道具              │
+│    节奏：每天都有赚有花，轻量循环                         │
+│    参考：Vampire Survivors（Gold）                     │
+│                                                     │
+│  第二层：默契（经验值，不可花费）                        │
+│    赚：所有互动累积                                    │
+│    用：等级提升 → 能力解锁 → 8Bit 变聪明                │
+│    节奏：长线累积，几周爬一级                            │
+│    参考：Dead Cells（Cells → 蓝图解锁）                │
+│                                                     │
+│  第三层：成就（里程碑，纯记录）                          │
+│    触发：特定条件达成                                   │
+│    展示：成就列表 + 稀有度 + 时间戳                      │
+│    不花不赚，但有收集感                                 │
+│    参考：Steam 成就系统                                 │
+│                                                     │
+│  第四层：每日任务（短期目标）                            │
+│    形式：每天 3 个随机小目标                             │
+│    奖励：Bit + 偶尔触发隐藏成就                          │
+│    心理：给用户”今天打开 8Bit 要做什么”的理由             │
+│    参考：Slay the Spire 每日挑战                       │
+│                                                     │
+│  第五层：8Bit 心情（隐式积分）                          │
+│    机制：受互动频率和类型影响，不显示具体数值              │
+│    效果：高心情 → 主动搭话/更积极的回复                  │
+│          低心情 → 安静/犯困/回复变简短                   │
+│    参考：Tamagotchi（不显示数值但用户能感知）             │
+└─────────────────────────────────────────────────────┘
+```
+
+为什么是五层而不是两层：
+
+- Bit + 默契处理经济和成长（已有设计）
+- 成就提供**长期收集目标**（Bit 花完了不会消失的东西）
+- 每日任务提供**短期登录理由**（日活驱动）
+- 心情提供**情感反馈**（不靠数字，靠用户自然感知）
+
+每层独立运作，不强制耦合。首版可以只实现前三层。
+
+## Bit 商店设计
+
+首版消耗池需要更具体的商品定义。原则：**只卖装饰和表达，不卖功能和权限**。
+
+### 商品分类
+
+| 分类 | 商品示例 | 价格区间 | 解锁条件 |
+|------|---------|---------|---------|
+| **气泡主题** | 暗色模式 / 樱花粉 / 终端绿 / 复古像素 | 50~200 Bit | Lv1+ |
+| **宠物配饰** | 小帽子 / 墨镜 / 领结 / 皇冠 / 蝴蝶结 | 80~300 Bit | Lv2+ |
+| **舞蹈解锁** | 街舞 / 芭蕾 / 迪斯科 / 机械舞 / 雨中曲 | 100~500 Bit | Lv3+ |
+| **小游戏皮肤** | 蛇头外观 / 记忆牌面 / 接东西主题 | 60~200 Bit | Lv3+ |
+| **问候语包** | 元气早安 / 毒舌问候 / 文艺开场 / 猫语 | 30~100 Bit | Lv1+ |
+| **桌面摆件** | 小鱼缸 / 像素花盆 / 迷你地球仪 | 150~400 Bit | Lv4+ |
+| **称号** | “猫奴” / “夜猫子” / “游戏达人” / “话痨之友” | 100~300 Bit | 特定成就触发购买资格 |
+
+### 商店数据结构
+
+```rust
+pub struct ShopItem {
+    pub id: String,
+    pub name: String,
+    pub category: ShopCategory,
+    pub price_bit: u32,
+    pub required_level: u8,
+    pub required_achievement: Option<String>,  // 某些商品需要先达成成就
+    pub asset_ref: String,                     // 精灵/主题资源引用
+    pub description: String,
+}
+
+pub enum ShopCategory {
+    BubbleTheme,
+    PetAccessory,
+    Dance,
+    GameSkin,
+    GreetingPack,
+    DesktopDecor,
+    Title,
+}
+```
+
+### 商店文件
+
+```text
+config/shop.yml          — 商品定义（可扩展，无需改代码）
+~/.ai-pad/progression/inventory.json  — 已购买商品记录
+```
+
+商店内容在 `shop.yml` 中定义而非硬编码，方便后续追加商品而不用改 Rust 代码。
+
+### 防通胀设计
+
+Bit 的日常获取上限约 300~400 Bit（按奖励表推算），商品价格分布在 30~500 Bit，意味着：
+- 轻度用户：每天攒够买一个气泡主题（~3 天）
+- 活跃用户：每天买一个配饰或存着买舞蹈
+- 不存在”买完所有东西没事做”的问题：持续追加新商品即可
+
+## 成就系统
+
+独立于 Bit 和默契的纯收集系统。成就不花不赚，但有稀有度和展示价值。
+
+### 成就定义
+
+```rust
+pub struct Achievement {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub icon: String,          // emoji 或精灵引用
+    pub rarity: Rarity,
+    pub hidden: bool,          // 隐藏成就：条件未知直到达成
+    pub condition: AchievementCondition,
+    pub unlocked_at: Option<DateTime<Utc>>,
+}
+
+pub enum Rarity {
+    Common,     // >50% 用户会获得
+    Uncommon,   // 20~50%
+    Rare,       // 5~20%
+    Epic,       // 1~5%
+    Legendary,  // <1%
+}
+
+pub enum AchievementCondition {
+    TotalChats(u32),                    // 累计聊天 N 次
+    GameScore { game: String, min: u32 }, // 小游戏达到指定分数
+    ConsecutiveDays(u32),               // 连续使用 N 天
+    TotalDances(u32),                   // 累计跳舞 N 次
+    TotalScreenshots(u32),              // 累计手动截图 N 次
+    SpecificTime { hour_start: u32, hour_end: u32 }, // 特定时间段使用
+    SpecificPhrase(String),             // 对 8Bit 说出特定内容（隐藏成就）
+    Custom(String),                     // 自定义条件表达式
+}
+```
+
+### 首版成就列表（~30 个）
+
+**成长类**：
+| ID | 名称 | 条件 | 稀有度 |
+|----|------|------|--------|
+| first_chat | 初次对话 | 聊天 1 次 | Common |
+| chat_10 | 渐入佳境 | 聊天 10 次 | Common |
+| chat_50 | 无话不谈 | 聊天 50 次 | Uncommon |
+| chat_100 | AI 之友 | 聊天 100 次 | Rare |
+| first_memory | 我记住了 | 首条长期记忆 | Common |
+| memory_10 | 过目不忘 | 10 条长期记忆 | Uncommon |
+
+**游戏类**：
+| ID | 名称 | 条件 | 稀有度 |
+|----|------|------|--------|
+| snake_50 | 毛线球新手 | Snake 达到 50 分 | Common |
+| snake_100 | 毛线球大师 | Snake 达到 100 分 | Rare |
+| memory_perfect | 完美记忆 | Memory 零失误通关 | Uncommon |
+| catch_master | 接物达人 | Catch 达到 50 分 | Uncommon |
+| battle_first_win | 首次胜利 | Battle 胜利 1 次 | Common |
+| battle_10_wins | 身经百战 | Battle 胜利 10 次 | Rare |
+
+**时间类**：
+| ID | 名称 | 条件 | 稀有度 |
+|----|------|------|--------|
+| daily_3 | 三日之约 | 连续使用 3 天 | Common |
+| daily_7 | 一周常客 | 连续使用 7 天 | Uncommon |
+| daily_30 | 月度搭档 | 连续使用 30 天 | Rare |
+| night_owl | 夜猫子 | 凌晨 2-5 点使用 | Uncommon |
+| early_bird | 早起鸟 | 早上 5-7 点使用 | Uncommon |
+
+**隐藏成就**（条件不公开，达成后揭晓）：
+| ID | 名称 | 条件 | 稀有度 |
+|----|------|------|--------|
+| secret_cat_person | ??? | 对 8Bit 说”你是最好的” | Rare |
+| secret_hacker | ??? | shell 命令执行成功 5 次 | Epic |
+| secret_midnight | ??? | 0:00 正好在和 8Bit 聊天 | Rare |
+| secret_patience | ??? | 连续 10 分钟不操作 | Uncommon |
+
+**成就解锁奖励**：大部分成就不给 Bit（避免刷成就通胀），但有 2 个例外：
+- 每个 Epic 以上成就给 50 Bit（稀有度本身控制了频率）
+- 特定成就解锁对应商品的购买资格（如”毛线球大师”解锁限定蛇皮肤购买权）
+
+## 每日任务系统
+
+给用户”今天打开 8Bit 要做什么”的短期目标。每天 3 个随机任务，次日 0 点刷新。
+
+### 任务定义
+
+```rust
+pub struct DailyQuest {
+    pub id: String,
+    pub description: String,
+    pub target: u32,
+    pub progress: u32,
+    pub reward_bit: u32,
+    pub quest_type: QuestType,
+}
+
+pub enum QuestType {
+    Chat { count: u32 },             // 聊天 N 次
+    PlayGame { game_type: String },  // 玩一局指定游戏
+    Dance { count: u32 },            // 跳舞 N 次
+    Screenshot,                      // 手动截图一次
+    UseTool,                         // 使用任何 AI 工具一次
+    PlayAnyGame,                     // 玩任意一局游戏
+}
+```
+
+### 任务池
+
+| 任务模板 | 概率权重 | Bit 奖励 |
+|---------|---------|---------|
+| 和 8Bit 聊 3 次 | 3 | 15 |
+| 和 8Bit 聊 5 次 | 2 | 25 |
+| 玩一局 Snake | 2 | 20 |
+| 玩一局 Memory | 2 | 20 |
+| 玩任意一局游戏 | 3 | 15 |
+| 让 8Bit 跳一段舞 | 2 | 10 |
+| 手动截一张图 | 1 | 15 |
+| 使用 AI 工具 1 次 | 2 | 20 |
+| 连续对话 3 轮 | 1 | 30 |
+
+每日从池中按权重随机抽 3 个，不重复。全部完成额外奖励 30 Bit。
+
+### 任务数据
+
+```text
+~/.ai-pad/progression/daily_quests.json  — 当日任务状态
+config/daily_quests.yml                  — 任务模板池
+```
+
+任务刷新时如果前一天的未完成，**不惩罚**，直接替换为新任务（参考研究文档的”断签不惩罚”原则）。
+
+## 8Bit 心情系统
+
+隐式积分：影响 8Bit 的回复风格和主动行为，不向用户显示具体数值。
+
+### 心情因子
+
+```rust
+pub struct MoodState {
+    /// 0.0~1.0，由近期互动频率和类型计算
+    pub happiness: f32,
+    /// 上次互动时间戳，用于衰减计算
+    pub last_interaction: DateTime<Utc>,
+    /// 心情更新时间
+    pub updated_at: DateTime<Utc>,
+}
+```
+
+### 心情计算规则
+
+```
+每次有效互动（聊天/游戏/舞蹈）→ happiness += 0.05~0.15（根据互动类型）
+每小时自然衰减 → happiness -= 0.02
+连续 2 天无互动 → happiness 快速衰减到 0.1 以下
+happiness 钳位到 [0.0, 1.0]
+```
+
+### 心情对行为的影响
+
+| happiness 范围 | 表现 |
+|---------------|------|
+| 0.8~1.0 高兴 | 回复更活泼、主动搭话频率高、偶尔给惊喜（”我在想昨天你说的事...”） |
+| 0.5~0.8 平静 | 正常回复、按需互动、不主动打扰 |
+| 0.2~0.5 低落 | 回复变简短、更多犯困动画、不太主动 |
+| 0.0~0.2 孤单 | 安静待机、偶尔叹气动画、用户回来时特别高兴 |
+
+**关键设计**：心情不显示具体数值。用户通过 8Bit 的行为自然感知”它今天好像不太开心”。如果用户主动关心（”你还好吗”），8Bit 可以诚实回答自己的感受，这本身就是互动的一部分。
+
+### 心情不影响的东西
+
+- **不影响 AI 回复质量**：模型能力不随心情下降，只是表达风格变化
+- **不影响工具能力**：心情低不会拒绝执行工具
+- **不产生惩罚**：不会因为心情低而损失 Bit 或默契
+- **不可购买**：没有”花 Bit 提升心情”的选项
+
+## 可视化反馈设计
+
+积分反馈必须可感知，不能默默存进 json。参考 Vampire Survivors 的”满屏飞金币”。
+
+### Bit 获取动画
+
+```
+获得 Bit 时：
+  1. 宠物头顶弹出 “+10 Bit” 浮动文字，持续 1.2s 后上浮消失
+  2. 右上角 Bit 计数器数字跳动更新（CSS transition）
+  3. 如果是首次获得某种奖励，额外弹出一个小气泡说明
+
+关键场景：
+  - 聊天完成 → 宠物头顶 “+10” 飘出
+  - 游戏结束结算 → 屏幕中央 “+40 Bit” 大字 + 星星粒子
+  - 每日任务完成 → 右侧滑入提示 “任务完成！+20 Bit”
+  - 成就解锁 → 全屏横幅 + 特效 + 打字机文案
+```
+
+### 等级提升动画
+
+```
+默契达到门槛时：
+  1. 宠物进入特殊动画（发光 + 跳跃）
+  2. 全屏半透明遮罩
+  3. “8Bit 长大了！” 标题
+  4. 新等级名称 + 解锁能力描述
+  5. 如果新能力需要授权，显示”去设置开启”按钮
+  6. 3s 后自动消失，或用户点击关闭
+```
+
+### 商店购买动画
+
+```
+购买成功时：
+  1. 商品卡片翻转/闪光
+  2. 宠物做出对应反应（戴帽子/换气泡/跳舞）
+  3. Bit 计数器数字减少动画
+```
+
+### 前端实现位置
+
+这些动画主要复用现有管线：
+- 浮动数字：`game_engine.js` 的 `drawFloaters` 模式
+- 宠物特殊动画：现有 `PetStateMachine` + `PetEvent`
+- 全屏遮罩/横幅：CSS animation，类似游戏结束 overlay
+- Bit 计数器：panel 窗口或宠物窗口角落的 DOM 元素
 
 ## UI 计划
 
 新增设置页 tab：`成长`。
 
-首版展示：
+首版展示（四个子面板）：
 
-- 当前等级；
-- Bit 余额；
-- 默契进度条；
-- 下一解锁能力；
-- 最近 10 条奖励流水；
-- 已解锁/已启用能力；
-- 高风险能力的授权状态。
+### 成长概览
+- 当前等级 + 等级名称
+- Bit 余额 + 今日获取/消耗
+- 默契进度条 + 距下一级差值
+- 下一解锁能力预览
+- 最近 10 条奖励流水
+
+### 能力与权限
+- 已解锁/已启用能力列表
+- 高风险能力的授权状态
+- 每个能力的"首次解锁"时间
+
+### 成就（独立滚动列表）
+- 按稀有度分组展示
+- 已达成：全彩 + 解锁时间
+- 未达成：灰色 + 条件描述（隐藏成就显示 "???"）
+- 总成就数 / 总数 进度
+
+### 每日任务（当日 3 个）
+- 任务描述 + 进度条 + 奖励
+- 全部完成额外奖励提示
+- 距刷新倒计时
 
 宠物/气泡表现：
 
@@ -294,10 +660,12 @@ pub struct AgentPromptConfig {
 不建议首版做：
 
 - 大型技能树；
-- 抽卡；
-- 复杂商店；
-- 排行榜；
-- 成就同步到 Steam。
+- 抽卡 / 盲盒机制；
+- 复杂商店（需要服务端验证的）；
+- 排行榜 / 社交比较；
+- 成就同步到 Steam；
+- Bit 交易 / 转赠；
+- 花钱提升心情。
 
 ## 实施阶段
 
@@ -305,6 +673,10 @@ pub struct AgentPromptConfig {
 
 - 新增 `core/src/progression.rs`。
 - 实现 load/save、事件奖励、等级计算、每日上限。
+- 实现 Bit 商店验证（购买 / 库存 / 余额扣除）。
+- 实现成就条件检查和解锁。
+- 实现每日任务生成和进度跟踪。
+- 实现心情因子计算。
 - 添加 `insta` 快照测试和 `rstest` 参数化测试。
 - `core/src/lib.rs` 导出模块。
 
@@ -313,7 +685,11 @@ pub struct AgentPromptConfig {
 - 事件重复触发不会突破日上限；
 - 中文字段序列化稳定；
 - 等级边界正确；
-- ledger JSONL 可 grep。
+- ledger JSONL 可 grep；
+- 商店购买余额不足时拒绝；
+- 成就条件达成时正确触发且不重复；
+- 每日任务跨日自动刷新且不惩罚；
+- 心情在无互动时自然衰减。
 
 ### Phase 1：接入聊天上下文
 
@@ -356,17 +732,24 @@ pub struct AgentPromptConfig {
 - Lv5 授权后危险命令仍被拒绝；
 - `get_time` 始终可用。
 
-### Phase 4：设置页成长 tab
+### Phase 4：设置页成长 tab + 可视化反馈
 
-- 后端新增 `cmd_get_progression`。
-- 前端新增 `growth/progression` tab。
-- 展示等级、Bit、下一解锁、奖励流水、能力授权。
+- 后端新增 `cmd_get_progression` / `cmd_get_achievements` / `cmd_get_daily_quests` / `cmd_shop_list` / `cmd_shop_buy`。
+- 前端新增 `growth` tab（四个子面板：成长概览 / 能力与权限 / 成就 / 每日任务）。
+- Bit 获取动画（宠物头顶浮动数字 + 计数器跳动）。
+- 等级提升全屏动画。
+- 成就解锁横幅。
+- 心情影响宠物 idle 动画选择。
 
 验收：
 
 - 用户能看懂为什么某能力还没开；
 - 用户能关闭敏感能力；
-- 关闭敏感能力后不会被升级流程重新打开。
+- 关闭敏感能力后不会被升级流程重新打开；
+- Bit 获取时有可见的动画反馈；
+- 等级提升时有仪式感动画；
+- 成就列表按稀有度正确分组；
+- 每日任务跨日刷新无惩罚。
 
 ## 测试策略
 
@@ -396,11 +779,15 @@ frontend：
 
 ## 风险
 
-- 核心功能锁太久会像“买了但不给用”。首版应在 30 分钟内开放聊天和基础玩法。
+- 核心功能锁太久会像”买了但不给用”。首版应在 30 分钟内开放聊天和基础玩法。
 - 靠提示词控制权限不可靠，必须 Rust gate。
 - 奖励若绑定 API 消耗，会鼓励浪费 token。
 - 后台截图不能成为积分来源，否则隐私观感很差。
 - 多套完整 prompt 会难维护；只使用 overlay。
+- Bit 只赚不花会通胀。商店必须有足够多的消费出口，首版至少 15 个商品。
+- 成就刷分：稀有度本身限制频率，Epic+ 成就给 Bit 的上限是每天 50，不构成通胀路径。
+- 每日任务变成负担：任务要简单（”聊 3 次”而非”聊 30 分钟”），完不成不惩罚。
+- 心情系统让用户焦虑：心情不影响功能和积分，低心情只是表达风格变化。不在 UI 显示具体数值。
 
 ## 推荐首个 PR 范围
 
@@ -409,8 +796,11 @@ frontend：
 - `core/src/progression.rs`
 - `core/src/lib.rs`
 - `core/src/prompts.rs` 和 `config/prompts.yml` 加 `stage_overlays`
+- `config/shop.yml`（15~20 个首版商品）
+- `config/achievements.yml`（30 个首版成就）
+- `config/daily_quests.yml`（9 个任务模板）
 - `app/src/gamepad.rs` 注入成长上下文并记录聊天完成
 - 基础测试
 
-这个 PR 完成后，8Bit 就能在对话里表现出“当前阶段”，但还不动工具权限和设置页，风险最低。
+这个 PR 完成后，8Bit 就能在对话里表现出”当前阶段”，Bit / 默契 / 成就 / 每日任务的数据层就位，但还不动工具权限和设置页 UI，风险最低。
 

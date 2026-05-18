@@ -118,20 +118,20 @@ impl GameDef {
             game_type: MinigameType::Snake,
             title: "毛线球大作战".into(),
             grid: GameGrid {
-                width: 30,
-                height: 20,
-                cell_size: 24,
+                width: 48,
+                height: 32,
+                cell_size: 16,
             },
             player: PlayerConfig {
-                speed_ms: 140,
-                initial_length: 3,
+                speed_ms: 95,
+                initial_length: 5,
             },
             rules: GameRules {
                 walls_kill: true,
                 self_kill: true,
                 food_count: 1,
-                speed_ramp: 0.95,
-                win_length: 80,
+                speed_ramp: 0.975,
+                win_length: 140,
             },
             theme: GameTheme {
                 head: "cat".into(),
