@@ -196,7 +196,7 @@ impl GameDef {
                 cell_size: 32,
             },
             player: PlayerConfig {
-                speed_ms: 120,
+                speed_ms: 180,
                 initial_length: 3,
             },
             rules: GameRules {
@@ -256,29 +256,29 @@ impl GameDef {
             battle: Some(BattleConfig {
                 pet: BattlePetConfig {
                     hp: 48,
-                    attack: 5,
-                    auto_attack_ms: 1400,
+                    attack: 1,
+                    auto_attack_ms: 420,
                 },
                 monster: BattleMonsterConfig {
-                    id: "slime".into(),
+                    id: "intruder".into(),
                     name: "小史莱姆".into(),
-                    hp: 42,
+                    hp: 10,
                     attack: 4,
-                    attack_interval_ms: 2200,
-                    reward_exp: 8,
+                    attack_interval_ms: 1200,
+                    reward_exp: 20,
                 },
                 skills: vec![
                     BattleSkillConfig {
-                        id: "heavy_hit".into(),
+                        id: "burst".into(),
                         name: "重击".into(),
-                        cooldown_ms: 3000,
-                        damage: 12,
+                        cooldown_ms: 4500,
+                        damage: 2,
                         heal: 0,
                     },
                     BattleSkillConfig {
-                        id: "snack".into(),
+                        id: "repair".into(),
                         name: "小鱼干".into(),
-                        cooldown_ms: 6000,
+                        cooldown_ms: 7000,
                         damage: 0,
                         heal: 10,
                     },

@@ -406,7 +406,7 @@
       this.spawnMs -= dtMs;
       this.fallMs += dtMs;
       if (this.spawnMs <= 0) {
-        this.spawnMs = Math.max(180, this.config.player.speed_ms * 5 * this.config.rules.speed_ramp);
+        this.spawnMs = Math.max(240, this.config.player.speed_ms * 6 * this.config.rules.speed_ramp);
         for (let i = 0; i < this.config.rules.food_count; i++) {
           this.items.push({ x: Math.floor(this.rng() * this.config.grid.width), y: 0 });
         }
@@ -461,7 +461,7 @@
     }
   }
 
-  class BattleEngine {
+  class LegacyBattleEngine {
     constructor(config) {
       this.config = config;
       this.battle = config.battle || defaultBattleConfig();
@@ -766,20 +766,390 @@
 
   function defaultBattleConfig() {
     return {
-      pet: { hp: 48, attack: 5, auto_attack_ms: 1400 },
+      pet: { hp: 48, attack: 1, auto_attack_ms: 420 },
       monster: {
-        id: 'slime',
+        id: 'intruder',
         name: '小史莱姆',
-        hp: 42,
+        hp: 10,
         attack: 4,
-        attack_interval_ms: 2200,
-        reward_exp: 8,
+        attack_interval_ms: 1200,
+        reward_exp: 20,
       },
       skills: [
         { id: 'heavy_hit', name: '重击', cooldown_ms: 3000, damage: 12, heal: 0 },
         { id: 'snack', name: '小鱼干', cooldown_ms: 6000, damage: 0, heal: 10 },
       ],
     };
+  }
+
+  class BattleEngine {
+    constructor(config) {
+      this.config = config;
+      this.battle = config.battle || defaultBattleConfig();
+      this.state = 'ready';
+      this.ended = false;
+      this.score = 0;
+      this.pet = {
+        hp: this.battle.pet.hp,
+        maxHp: this.battle.pet.hp,
+        attack: Math.max(1, this.battle.pet.attack),
+        autoAttackMs: Math.max(260, this.battle.pet.auto_attack_ms),
+      };
+      this.skills = (this.battle.skills || []).map((skill, index) => ({
+        ...skill,
+        slot: index + 1,
+        cooldownLeftMs: 0,
+      }));
+      this.ship = { x: 0.5, y: 0.84, flashMs: 0 };
+      this.bullets = [];
+      this.enemies = [];
+      this.enemySpawnMs = 250;
+      this.enemyWave = 0;
+      this.shotCooldownMs = 0;
+      this.autoShotMs = this.pet.autoAttackMs;
+      this.targetScore = Number(config.rules?.win_length) || Number(this.battle.monster?.reward_exp) || 20;
+      this.guardMs = 0;
+      this.floaters = [];
+      this.lastMetrics = null;
+      this.startedNotified = false;
+      this.inputCapture = null;
+      this.inputCaptureCheckMs = 0;
+      this.inputCaptureInFlight = false;
+      this.inputCaptureSupported = Boolean(invoke);
+    }
+
+    getState() {
+      return this.state;
+    }
+
+    handleInput(input) {
+      if (!input) return;
+      if (this.ended) {
+        if (input.type === 'confirm' || input.type === 'attack_primary') restartGame();
+        else if (input.type === 'cancel') closeEndedGame(this.state);
+        return;
+      }
+      if (input.type === 'cancel') {
+        this.finish('cancel');
+        return;
+      }
+      if (input.type === 'pause' && (this.state === 'playing' || this.state === 'paused')) {
+        this.state = this.state === 'playing' ? 'paused' : 'playing';
+        return;
+      }
+      if (input.type === 'confirm' && this.state === 'ready') {
+        this.state = 'playing';
+        this.notifyStart();
+        this.fireBullet('start');
+        return;
+      }
+      if (input.type === 'attack_primary') {
+        if (this.state === 'ready') this.state = 'playing';
+        this.notifyStart();
+        this.fireBullet('button');
+        return;
+      }
+      if (input.type === 'skill') {
+        if (this.state === 'ready') this.state = 'playing';
+        this.notifyStart();
+        this.useSkill(input.slot);
+        return;
+      }
+      if (input.type === 'guard') {
+        if (this.state === 'ready') this.state = 'playing';
+        this.notifyStart();
+        this.guardMs = Math.max(this.guardMs, 1000);
+        this.addFloater('shield', this.ship.x, this.ship.y - 0.08, '#8ecae6');
+        emitBattlePet('guard', { source: 'guard', hpRatio: this.petHpRatio() });
+        return;
+      }
+      if (input.type === 'direction') {
+        const dx = Math.sign(input.dx || 0);
+        const dy = Math.sign(input.dy || 0);
+        if (dx !== 0 || dy !== 0) {
+          if (this.state === 'ready') this.state = 'playing';
+          this.ship.x = clamp(this.ship.x + dx * 0.065, 0.08, 0.92);
+          this.ship.y = clamp(this.ship.y + dy * 0.045, 0.62, 0.90);
+          this.notifyStart();
+        }
+      }
+    }
+
+    handlePointer(x, y) {
+      if (this.ended) return false;
+      if (this.state === 'ready') this.state = 'playing';
+      this.notifyStart();
+      const skill = this.hitTestSkill(x, y);
+      if (skill) {
+        this.useSkill(skill.slot);
+        return true;
+      }
+      if (this.lastMetrics) {
+        this.ship.x = clamp(x / this.lastMetrics.width, 0.08, 0.92);
+        this.ship.y = clamp(y / this.lastMetrics.height, 0.62, 0.90);
+      }
+      this.fireBullet('pointer');
+      return true;
+    }
+
+    notifyStart() {
+      if (this.startedNotified) return;
+      this.startedNotified = true;
+      emitBattlePet('start');
+    }
+
+    update(dtMs) {
+      this.updateInputCapture(dtMs);
+      this.floaters.forEach((f) => {
+        f.age += dtMs;
+        f.y -= dtMs * 0.00008;
+      });
+      this.floaters = this.floaters.filter((f) => f.age < 900);
+      this.skills.forEach((skill) => {
+        skill.cooldownLeftMs = Math.max(0, skill.cooldownLeftMs - dtMs);
+      });
+      this.guardMs = Math.max(0, this.guardMs - dtMs);
+      this.ship.flashMs = Math.max(0, this.ship.flashMs - dtMs);
+
+      if (this.state !== 'playing' || this.ended) return;
+
+      this.shotCooldownMs = Math.max(0, this.shotCooldownMs - dtMs);
+      this.autoShotMs -= dtMs;
+      if (this.autoShotMs <= 0) {
+        this.autoShotMs += this.pet.autoAttackMs;
+        this.fireBullet('auto', true);
+      }
+      this.enemySpawnMs -= dtMs;
+      if (this.enemySpawnMs <= 0) this.spawnEnemy();
+      this.updateBullets(dtMs);
+      this.updateEnemies(dtMs);
+      this.resolveBulletHits();
+      this.resolveShipHits();
+    }
+
+    fireBullet(source = 'button', quiet = false) {
+      if (this.ended || this.state === 'paused' || this.shotCooldownMs > 0) return;
+      this.shotCooldownMs = source === 'auto' ? 0 : 150;
+      this.bullets.push({
+        x: this.ship.x,
+        y: this.ship.y - 0.07,
+        vy: -0.00135,
+        damage: this.pet.attack,
+      });
+      if (!quiet) emitBattlePet('attack', { source, damage: this.pet.attack, hpRatio: this.monsterHpRatio() });
+    }
+
+    spawnEnemy() {
+      this.enemyWave += 1;
+      const hard = this.enemyWave % 7 === 0;
+      const fast = this.enemyWave % 5 === 0;
+      const hp = hard ? Math.max(2, Math.ceil(this.battle.monster.hp / 14)) : 1;
+      const attack = hard ? this.battle.monster.attack + 1 : this.battle.monster.attack;
+      this.enemies.push({
+        x: 0.08 + battleRandom(this.enemyWave) * 0.84,
+        y: -0.08,
+        hp,
+        maxHp: hp,
+        attack,
+        vy: fast ? 0.00035 : hard ? 0.00022 : 0.00027,
+        wobble: (this.enemyWave % 2 === 0 ? 1 : -1) * 0.000045,
+        kind: hard ? 'heavy' : fast ? 'fast' : 'normal',
+        hitFlashMs: 0,
+      });
+      const ramp = Math.min(420, this.score * 8);
+      this.enemySpawnMs = Math.max(520, this.battle.monster.attack_interval_ms - ramp);
+    }
+
+    updateBullets(dtMs) {
+      for (const bullet of this.bullets) bullet.y += bullet.vy * dtMs;
+      this.bullets = this.bullets.filter((bullet) => bullet.y > -0.12);
+    }
+
+    updateEnemies(dtMs) {
+      for (const enemy of this.enemies) {
+        enemy.y += enemy.vy * dtMs;
+        enemy.x = clamp(enemy.x + Math.sin((enemy.y + this.enemyWave) * 9) * enemy.wobble * dtMs, 0.06, 0.94);
+        enemy.hitFlashMs = Math.max(0, enemy.hitFlashMs - dtMs);
+      }
+      const remaining = [];
+      for (const enemy of this.enemies) {
+        if (enemy.y > 1.04) {
+          this.damagePet(enemy.attack, 'leak');
+        } else {
+          remaining.push(enemy);
+        }
+      }
+      this.enemies = remaining;
+    }
+
+    resolveBulletHits() {
+      const bullets = [];
+      for (const bullet of this.bullets) {
+        const enemy = this.enemies.find((candidate) => distanceSq(bullet, candidate) < 0.0022);
+        if (!enemy) {
+          bullets.push(bullet);
+          continue;
+        }
+        enemy.hp -= bullet.damage;
+        enemy.hitFlashMs = 120;
+        if (enemy.hp <= 0) this.defeatEnemy(enemy, bullet.damage);
+      }
+      this.bullets = bullets;
+      this.enemies = this.enemies.filter((enemy) => enemy.hp > 0);
+    }
+
+    resolveShipHits() {
+      const remaining = [];
+      for (const enemy of this.enemies) {
+        if (distanceSq(enemy, this.ship) < 0.0048) {
+          this.damagePet(enemy.attack, 'collision');
+        } else {
+          remaining.push(enemy);
+        }
+      }
+      this.enemies = remaining;
+    }
+
+    defeatEnemy(enemy, damage) {
+      this.score += 1;
+      this.addFloater('+1', enemy.x, enemy.y, '#ffd166');
+      emitBattlePet('skill', { source: 'enemy_down', damage, hpRatio: this.monsterHpRatio() });
+      if (this.score >= this.targetScore) this.finish('win');
+    }
+
+    damagePet(amount, source) {
+      const guarded = this.guardMs > 0;
+      const damage = guarded ? Math.max(1, Math.floor(amount * 0.35)) : amount;
+      this.pet.hp = Math.max(0, this.pet.hp - damage);
+      this.ship.flashMs = 180;
+      this.addFloater(`-${damage}`, this.ship.x, this.ship.y - 0.10, guarded ? '#8ecae6' : '#ff6b6b');
+      emitBattlePet('pet_hit', {
+        source: guarded ? `guarded_${source}` : source,
+        damage,
+        hpRatio: this.petHpRatio(),
+      });
+      if (this.pet.hp <= 0) this.finish('lose');
+    }
+
+    useSkill(slot) {
+      const skill = this.skills.find((s) => s.slot === Number(slot));
+      if (!skill || skill.cooldownLeftMs > 0 || this.state === 'paused') return;
+      if (skill.damage > 0) {
+        const targets = this.enemies.slice(0, 8);
+        for (const enemy of targets) {
+          enemy.hp -= skill.damage;
+          enemy.hitFlashMs = 160;
+          if (enemy.hp <= 0) this.defeatEnemy(enemy, skill.damage);
+        }
+        this.enemies = this.enemies.filter((enemy) => enemy.hp > 0);
+        this.addFloater('blast', this.ship.x, this.ship.y - 0.16, '#ffd166');
+        emitBattlePet('skill', { source: 'skill', skillId: skill.id, damage: skill.damage, hpRatio: this.monsterHpRatio() });
+      }
+      if (skill.heal > 0) {
+        this.pet.hp = Math.min(this.pet.maxHp, this.pet.hp + skill.heal);
+        this.addFloater(`+${skill.heal}`, this.ship.x, this.ship.y - 0.10, '#95d5b2');
+      }
+      skill.cooldownLeftMs = skill.cooldown_ms;
+    }
+
+    finish(result) {
+      if (this.ended) return;
+      this.ended = true;
+      this.state = result;
+      this.setInputCapture(true);
+      if (result === 'win' || result === 'lose') {
+        emitBattlePet(result, { hpRatio: result === 'win' ? this.monsterHpRatio() : this.petHpRatio() });
+      }
+    }
+
+    monsterHpRatio() {
+      return this.targetScore > 0 ? clamp(1 - this.score / this.targetScore, 0, 1) : 0;
+    }
+
+    petHpRatio() {
+      return this.pet.maxHp > 0 ? this.pet.hp / this.pet.maxHp : 0;
+    }
+
+    updateInputCapture(dtMs) {
+      if (!this.inputCaptureSupported || this.inputCaptureInFlight) return;
+      this.inputCaptureCheckMs -= dtMs;
+      if (this.inputCaptureCheckMs > 0) return;
+      this.inputCaptureCheckMs = 70;
+      this.inputCaptureInFlight = true;
+      invoke('cmd_game_cursor_position')
+        .then((pos) => {
+          const enabled = this.isInteractiveAt(pos?.x, pos?.y);
+          this.setInputCapture(enabled);
+        })
+        .catch((e) => {
+          this.inputCaptureSupported = false;
+          log(`cmd_game_cursor_position disabled: ${e}`);
+        })
+        .finally(() => {
+          this.inputCaptureInFlight = false;
+        });
+    }
+
+    setInputCapture(enabled) {
+      if (!this.inputCaptureSupported || this.inputCapture === enabled) return;
+      this.inputCapture = enabled;
+      setGameInputCapture(enabled);
+    }
+
+    isInteractiveAt(x, y) {
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !this.lastMetrics) return false;
+      if (this.state === 'ready' || this.state === 'paused' || this.ended) {
+        return this.hitTestOverlay(x, y);
+      }
+      if (this.state !== 'playing') return false;
+      return y >= this.lastMetrics.height * 0.58 || Boolean(this.hitTestSkill(x, y));
+    }
+
+    hitTestSkill(x, y) {
+      if (!this.lastMetrics) return null;
+      return this.skillRects(this.lastMetrics).find((entry) => (
+        x >= entry.x && x <= entry.x + entry.w && y >= entry.y && y <= entry.y + entry.h
+      )) || null;
+    }
+
+    hitTestOverlay(x, y) {
+      if (!this.lastMetrics) return false;
+      const m = this.lastMetrics;
+      const w = Math.min(460, m.width * 0.82);
+      const h = this.ended ? 220 : 180;
+      const left = (m.width - w) / 2;
+      const top = (m.height - h) / 2;
+      return x >= left && x <= left + w && y >= top && y <= top + h;
+    }
+
+    skillRects(metrics) {
+      const size = clamp(Math.floor(metrics.width * 0.055), 44, 64);
+      const gap = 10;
+      const y = metrics.height - size - 28;
+      return this.skills.map((skill, index) => ({
+        ...skill,
+        x: Math.floor(metrics.width / 2 - (this.skills.length * size + (this.skills.length - 1) * gap) / 2 + index * (size + gap)),
+        y,
+        w: size,
+        h: size,
+      }));
+    }
+
+    addFloater(text, x, y, color) {
+      this.floaters.push({ text, x, y, color, age: 0 });
+    }
+
+    render(ctx, metrics) {
+      this.lastMetrics = metrics;
+      ctx.clearRect(0, 0, metrics.width, metrics.height);
+      drawBattleBackdrop(ctx, metrics);
+      drawBattleBullets(ctx, metrics, this.bullets);
+      drawBattleEnemies(ctx, metrics, this.enemies);
+      drawBattleShip(ctx, metrics, this.ship, this.guardMs);
+      drawBattleBars(ctx, metrics, this);
+      drawSkillButtons(ctx, metrics, this.skillRects(metrics));
+      drawFloaters(ctx, metrics, this.floaters);
+    }
   }
 
   function drawSnakePart(ctx, p, cell, head, theme) {
@@ -806,6 +1176,82 @@
     ctx.fillRect(x, y, s, s);
     ctx.fillStyle = 'rgba(255,255,255,0.72)';
     ctx.fillRect(x + Math.floor(s * 0.55), y + Math.floor(s * 0.22), Math.max(2, s / 6), Math.max(2, s / 6));
+  }
+
+  function distanceSq(a, b) {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return dx * dx + dy * dy;
+  }
+
+  function battleRandom(seed) {
+    const value = Math.sin(seed * 12.9898 + performance.now() * 0.001) * 43758.5453;
+    return value - Math.floor(value);
+  }
+
+  function drawBattleBullets(ctx, metrics, bullets) {
+    ctx.save();
+    ctx.fillStyle = '#ffd166';
+    for (const bullet of bullets) {
+      const x = metrics.width * bullet.x;
+      const y = metrics.height * bullet.y;
+      ctx.fillRect(x - 3, y - 12, 6, 18);
+      ctx.fillStyle = 'rgba(255, 209, 102, 0.35)';
+      ctx.fillRect(x - 6, y + 4, 12, 10);
+      ctx.fillStyle = '#ffd166';
+    }
+    ctx.restore();
+  }
+
+  function drawBattleEnemies(ctx, metrics, enemies) {
+    ctx.save();
+    for (const enemy of enemies) {
+      const size = enemy.kind === 'heavy'
+        ? clamp(Math.floor(metrics.width * 0.05), 44, 76)
+        : clamp(Math.floor(metrics.width * 0.038), 34, 58);
+      const x = Math.floor(metrics.width * enemy.x - size / 2);
+      const y = Math.floor(metrics.height * enemy.y - size / 2);
+      ctx.fillStyle = enemy.hitFlashMs > 0 ? '#ffafcc' : enemy.kind === 'fast' ? '#8ecae6' : '#70d6ff';
+      ctx.fillRect(x, y + size * 0.2, size, size * 0.62);
+      ctx.fillStyle = '#20242a';
+      ctx.fillRect(x + size * 0.25, y + size * 0.42, size * 0.12, size * 0.12);
+      ctx.fillRect(x + size * 0.62, y + size * 0.42, size * 0.12, size * 0.12);
+      if (enemy.maxHp > 1) {
+        ctx.fillStyle = 'rgba(255,255,255,0.72)';
+        ctx.fillRect(x + 4, y - 8, size - 8, 5);
+        ctx.fillStyle = '#ef476f';
+        ctx.fillRect(x + 4, y - 8, (size - 8) * (enemy.hp / enemy.maxHp), 5);
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawBattleShip(ctx, metrics, ship, guardMs) {
+    const x = metrics.width * ship.x;
+    const y = metrics.height * ship.y;
+    const size = clamp(Math.floor(metrics.width * 0.052), 44, 74);
+    ctx.save();
+    if (guardMs > 0) {
+      ctx.strokeStyle = 'rgba(142, 202, 230, 0.72)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(x, y, size * 0.72, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.fillStyle = ship.flashMs > 0 ? '#ffafcc' : '#ffd166';
+    ctx.beginPath();
+    ctx.moveTo(x, y - size * 0.68);
+    ctx.lineTo(x - size * 0.48, y + size * 0.45);
+    ctx.lineTo(x, y + size * 0.20);
+    ctx.lineTo(x + size * 0.48, y + size * 0.45);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#20242a';
+    ctx.fillRect(x - size * 0.10, y - size * 0.18, size * 0.20, size * 0.20);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.fillRect(x - size * 0.28, y + size * 0.50, size * 0.18, size * 0.24);
+    ctx.fillRect(x + size * 0.10, y + size * 0.50, size * 0.18, size * 0.24);
+    ctx.restore();
   }
 
   function monsterRect(metrics, monster) {
@@ -865,10 +1311,10 @@
     ctx.save();
     ctx.fillStyle = '#f7fbff';
     ctx.font = '700 16px "Segoe UI", "Microsoft YaHei", sans-serif';
-    ctx.fillText(engine.monster.name, 22, 36);
+    ctx.fillText(engine.battle.monster.name, 22, 36);
     ctx.font = '600 13px "Segoe UI", "Microsoft YaHei", sans-serif';
     ctx.fillText(`桌宠 HP ${engine.pet.hp}/${engine.pet.maxHp}`, 22, 58);
-    ctx.fillText(`EXP ${engine.score}`, 22, 78);
+    ctx.fillText(`Targets ${engine.score}/${engine.targetScore}`, 22, 78);
     if (engine.guardMs > 0) {
       ctx.fillStyle = '#8ecae6';
       ctx.fillText('Guard', 22, 98);
@@ -948,7 +1394,7 @@
       overlay.classList.remove('hidden');
       overlayTitle.textContent = engine.config.dialogue.start;
       if (engine instanceof BattleEngine) {
-        overlayText.textContent = 'Space / A attack · 1/2 or X/Y skills';
+        overlayText.textContent = 'Move ship - A / Space fire - X/Y skills - L1 / Shift shield';
       } else if (engine instanceof MemoryEngine) {
         overlayText.textContent = 'Move cursor · Enter / A flip';
       } else if (engine instanceof CatchEngine) {
@@ -1031,7 +1477,7 @@
     titleEl.textContent = engine.config.title;
     scoreEl.textContent = String(engine.score);
     lengthEl.textContent = engine instanceof BattleEngine
-      ? `${engine.monster.hp}/${engine.monster.maxHp}`
+      ? `${engine.pet.hp}/${engine.pet.maxHp} HP - ${engine.score}/${engine.targetScore}`
       : engine instanceof MemoryEngine
         ? `${engine.matched.size}/${engine.cards.length}`
         : engine instanceof CatchEngine
@@ -1093,6 +1539,14 @@
         case 'd':
         case 'D':
           return { type: 'direction', dx: 1, dy: 0 };
+        case 'ArrowUp':
+        case 'w':
+        case 'W':
+          return { type: 'direction', dx: 0, dy: -1 };
+        case 'ArrowDown':
+        case 's':
+        case 'S':
+          return { type: 'direction', dx: 0, dy: 1 };
         case 'Escape':
           return { type: 'cancel' };
         case 'p':
