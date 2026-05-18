@@ -12,8 +12,9 @@ Remote Agent Watch、宠物 v2 资源包和语义短动作反馈更新，准备�
 
 ### 新增
 
-- **Remote Agent Watch LAN viewer**：新增远程 Agent 看管 viewer，远程 Mac/Linux 可通过 `5342` 上报 hook envelope，并通过 `5344 /watch` 查看只读状态。
-- **远程安装入口**：设置页 Agent 看管区域新增远程安装命令、watch URL、远程设备列表和复制按钮，方便把 Claude Code / Codex 远程会话接回 Windows 桌宠。
+- **Remote Agent Watch viewer**：新增远程 Agent 看管 viewer，远程 Mac/Linux 可通过 `5342` 上报 hook envelope，并通过 `5344 /watch` 查看只读状态。
+- **远程一键安装入口**：设置页 Agent 看管区域新增远程安装命令、watch URL、远程设备列表和复制按钮，远程机器可直接从 `5344 /remote-install.sh` 拉取安装脚本，不需要检出本仓库。
+- **远程 endpoint 发现**：远程安装命令生成已拆到 `app/src/remote_endpoint.rs`，支持 LAN、Tailscale/tailnet、VPN 和其他可达地址候选，并通过 `--hosts` 支持多地址回传重试。
 - **Claude background task 看管**：Agent Watch 支持 Claude Code background task 信号，任务栈可展示后台任务、完成态和折叠状态。
 - **宠物 v2-only 资源包**：清理 v1/硬编码 fallback 路径，默认宠物、cat 和 catalog 资源均通过 manifest + spritesheet 加载。
 - **高精 `piggy` 资源包**：默认内置小猪升级为 192×208 原始帧、高分辨率 PNG sheet，显示尺寸收敛到 74×80，并新增可重复生成脚本。
@@ -23,7 +24,7 @@ Remote Agent Watch、宠物 v2 资源包和语义短动作反馈更新，准备�
 ### 修复
 
 - 修复 Agent Watch 设置页远程设备区域中文乱码和破损 `<p>` 标签。
-- 修复远程看管 URL 可能错误选择 `198.18/15` 虚拟/benchmark 网段的问题；现在优先 `10.x`、`192.168.x`、`172.16-31.x` 局域网地址。
+- 修复远程看管 URL 可能错误选择 `198.18/15` 虚拟/benchmark 网段的问题；现在会按 endpoint 类型排序，并把 tailnet/CGNAT `100.64/10` 纳入候选。
 - 修复 Agent Watch 折叠任务栈和任务摘要展示细节，使完成、等待和运行中的任务层级更稳定。
 - 修复 Agent Watch viewer response 的 clippy warning，确保发布前 Rust 检查干净。
 
@@ -33,17 +34,19 @@ Remote Agent Watch、宠物 v2 资源包和语义短动作反馈更新，准备�
 - 配置了外部宠物资源包时加载失败会直接暴露错误，不再静默回退到旧内置小猫。
 - 宠物截图、输入、拖拽交互会播放一次性语义动作，不重置当前 `working` / `waiting` 等基础状态。
 - Agent Watch 任务排序更偏向需要用户注意的完成/等待/运行状态，低优先级任务可折叠。
+- Agent Watch 设置页默认脱敏展示远程 endpoint 标签，复制安装命令和 watch URL 时才包含完整地址。
 
 ### 工具链
 
 - 更新 core / app / xtask / Tauri 版本号到 0.1.5。
 - 新增 pet action overlay、piggy fixture、sprite-loader action timeline、资源 catalog 和 Agent Monitor IP 选择测试。
-- 远程看管 IP 选择逻辑增加 Windows `ipconfig` 解析测试，覆盖 `198.18.0.1` 与 `10.10.11.206` 同时存在的场景。
+- 远程看管 endpoint 选择逻辑增加 Windows `ipconfig` 解析、tailnet/CGNAT 排序、Tailscale adapter hint 和多地址安装命令测试。
 
 ### 文档
 
 - 更新 README，补充宠物资源包、语义短动作、远程 Agent Watch 和 0.1.5 发布 tag 示例。
-- 更新 Remote Agent Watch 用户指南，说明 LAN IP 选择优先级和 `198.18/15` 避让策略。
+- 更新 Remote Agent Watch 用户指南，说明 endpoint 发现、多地址重试、无需重启、健康检查和 `5342`/`5344` 防火墙排查。
+- 补充 Codex CLI hook trust 操作说明：出现 `hooks need review` 时进入 `/hooks`，逐个进入 8Bit Cat hook 并按 `T` 信任。
 - 更新 Claude Code Agent Watch 计划、宠物资源包计划和 roadmap，记录远程看管 IP 选择、v2 资源包和语义 action overlay 进展。
 
 ---

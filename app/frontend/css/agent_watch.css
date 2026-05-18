@@ -293,38 +293,30 @@ body {
 }
 
 .task-card.collapsed .task-meta {
-  display: grid;
-  grid-template-columns: 9px minmax(0, auto) minmax(0, auto) minmax(0, 1fr);
-  justify-content: start;
-  column-gap: 8px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
   min-width: 0;
   color: var(--muted);
   font-size: 13px;
   font-weight: 650;
 }
 
-.task-card.collapsed .task-meta span:not(.task-dot) {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.task-card.collapsed .task-source {
-  max-width: 92px;
-}
-
 .task-device {
-  font-size: 10px;
-  line-height: 1.1;
-  padding: 2px 5px;
-  border-radius: 4px;
-  background: rgba(126, 165, 232, 0.16);
-  color: rgba(156, 190, 248, 0.92);
+  max-width: 112px;
+  padding: 2px 6px;
+  border: 1px solid rgba(126, 165, 232, 0.24);
+  border-radius: 5px;
+  background: rgba(126, 165, 232, 0.13);
+  color: rgba(176, 205, 255, 0.96);
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.15;
 }
 
 .task-card.collapsed .task-device {
-  max-width: 92px;
+  max-width: 116px;
+  font-size: 13px;
 }
 
 .task-card.collapsed .task-kind {
@@ -345,21 +337,37 @@ body {
   font-size: 11px;
 }
 
-.task-meta span:last-child {
+.task-meta-item {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.task-meta span:not(.task-dot)::before {
-  content: "";
+.task-project {
+  max-width: 120px;
 }
 
-.task-meta span:not(.task-dot):not(:nth-child(2))::before {
-  content: "/";
-  margin-right: 6px;
+.task-source {
+  max-width: 104px;
+}
+
+.task-kind {
+  max-width: 138px;
+}
+
+.task-separator {
+  flex: 0 0 auto;
   color: rgba(255, 255, 255, 0.24);
+  font-weight: 680;
+}
+
+.task-card.collapsed .task-project {
+  max-width: 124px;
+}
+
+.task-card.collapsed .task-source {
+  max-width: 106px;
 }
 
 .task-dot {

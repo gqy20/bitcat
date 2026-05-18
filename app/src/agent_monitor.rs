@@ -312,6 +312,7 @@ fn watch_page_html() -> String {
     .age { color: rgba(255,255,255,.48); font-size: 12px; }
     .meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; color: rgba(255,255,255,.62); font-size: 13px; }
     .meta span { border: 1px solid rgba(255,255,255,.08); border-radius: 999px; padding: 2px 8px; }
+    .meta .device { border-color: rgba(126,165,232,.28); background: rgba(126,165,232,.12); color: rgba(184,211,255,.95); font-weight: 760; }
     .done { border-color: rgba(142,230,168,.32); }
     .waiting, .error { border-color: rgba(255,138,122,.42); }
     p { margin: 8px 0 0; color: rgba(255,255,255,.76); line-height: 1.45; }
@@ -331,13 +332,19 @@ fn watch_page_html() -> String {
       try {
         const snap = await fetch('/agent-sessions', { cache: 'no-store' }).then(r => r.json());
         status.textContent = `${snap.sessions?.length || 0} sessions`;
-        stack.innerHTML = (snap.sessions || []).map(s => `
+        stack.innerHTML = (snap.sessions || []).map(s => {
+          const meta = [];
+          if (s.machine) meta.push(s.machine);
+          meta.push(s.workspace_name || 'unknown');
+          meta.push(s.display?.source_label || s.source);
+          meta.push(s.display?.action_label || 'Task');
+          return `
           <article class="card ${esc(s.status)}">
             <div class="top"><div class="title">${esc(s.display?.headline || s.status_label || s.status)}</div><div class="age">${esc(s.display?.age_label || '')}</div></div>
-            <div class="meta"><span>${esc(s.workspace_name || 'unknown')}</span><span>${esc(s.display?.source_label || s.source)}</span>${s.machine ? `<span>${esc(s.machine)}</span>` : ''}<span>${esc(s.display?.action_label || 'Task')}</span></div>
+            <div class="meta">${meta.map((item, index) => `<span class="${index === 0 && s.machine ? 'device' : ''}">${esc(item)}</span>`).join('')}</div>
             ${s.display?.detail ? `<p>${esc(s.display.detail)}</p>` : ''}
           </article>
-        `).join('') || '<p>No sessions yet.</p>';
+        `}).join('') || '<p>No sessions yet.</p>';
       } catch (e) {
         status.textContent = 'offline';
       }

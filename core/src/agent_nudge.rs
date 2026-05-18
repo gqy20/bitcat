@@ -4,7 +4,7 @@
 //! 不访问窗口、Tauri 或系统 API。app 层负责把 `AgentNudge` 转成宠物事件、
 //! 气泡、TTS 和审计日志。
 
-use crate::agent_session::{AgentSession, AgentSource, AgentStatus};
+use crate::agent_session::{AgentSession, AgentStatus};
 use crate::app_settings::AgentWatchSettings;
 use crate::pet_event::PetMood;
 use serde::{Deserialize, Serialize};
@@ -177,7 +177,7 @@ impl AgentNudgePolicy {
         AgentNudgeDecision::Send(AgentNudge {
             session_id: session.session_id.clone(),
             kind: AgentNudgeKind::WaitingForUser,
-            message: format!("{} 需要你处理一下。", source_name(session.source)),
+            message: nudge_message(session, "需要你处理一下。", task_context(session)),
             mood: PetMood::Confused,
             ttl_ms: DEFAULT_NUDGE_TTL_MS,
             use_tts: settings.use_tts,
@@ -200,7 +200,7 @@ impl AgentNudgePolicy {
         AgentNudgeDecision::Send(AgentNudge {
             session_id: session.session_id.clone(),
             kind: AgentNudgeKind::TaskDone,
-            message: "这轮完成了，可以回来看看。".to_string(),
+            message: nudge_message(session, "这轮完成了，可以回来看看。", task_context(session)),
             mood: PetMood::Happy,
             ttl_ms: DEFAULT_NUDGE_TTL_MS,
             use_tts: settings.use_tts,
@@ -219,8 +219,10 @@ impl AgentNudgePolicy {
         }
         state.error_notified_for_entered_at_ms = Some(state.status_entered_at_ms);
         let message = match session.status {
-            AgentStatus::Interrupted => format!("{} 这轮被中断了。", source_name(session.source)),
-            _ => format!("{} 这轮遇到异常了。", source_name(session.source)),
+            AgentStatus::Interrupted => {
+                nudge_message(session, "这轮被中断了。", task_context(session))
+            }
+            _ => nudge_message(session, "这轮遇到异常了。", task_context(session)),
         };
         AgentNudgeDecision::Send(AgentNudge {
             session_id: session.session_id.clone(),
@@ -257,8 +259,14 @@ impl AgentNudgePolicy {
             return skip(AgentNudgeSkipReason::Cooldown, session.status);
         }
         let message = match session.status {
-            AgentStatus::ToolRunning => "命令还在跑，我帮你盯着。".to_string(),
-            _ => "我帮你盯着，你可以先去做点别的。".to_string(),
+            AgentStatus::ToolRunning => {
+                nudge_message(session, "命令还在跑，我帮你盯着。", task_context(session))
+            }
+            _ => nudge_message(
+                session,
+                "我帮你盯着，你可以先去做点别的。",
+                task_context(session),
+            ),
         };
         AgentNudgeDecision::Send(AgentNudge {
             session_id: session.session_id.clone(),
@@ -275,8 +283,63 @@ fn skip(reason: AgentNudgeSkipReason, status: AgentStatus) -> AgentNudgeDecision
     AgentNudgeDecision::Skip { reason, status }
 }
 
-fn source_name(source: AgentSource) -> &'static str {
-    source.display_name()
+fn nudge_message(session: &AgentSession, headline: &str, detail: Option<String>) -> String {
+    let mut lines = vec![format!("{} {}", session_context(session), headline)];
+    if !session.workspace.trim().is_empty() {
+        lines.push(format!("位置：{}", session.workspace));
+    }
+    if let Some(detail) = detail {
+        lines.push(detail);
+    }
+    lines.join("\n")
+}
+
+fn session_context(session: &AgentSession) -> String {
+    let machine = session
+        .machine
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("本机");
+    let project = session.workspace_name();
+    format!("{machine} / {project} / {}", session.source.display_name())
+}
+
+fn task_context(session: &AgentSession) -> Option<String> {
+    if let Some(tool) = session
+        .tool_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Some(format!("任务：{}", truncate_chars(tool, 48)));
+    }
+    if let Some(input) = session
+        .tool_input_preview
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Some(format!("任务：{}", truncate_chars(input, 72)));
+    }
+    if let Some(prompt) = session
+        .user_prompt_preview
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Some(format!("请求：{}", truncate_chars(prompt, 72)));
+    }
+    None
+}
+
+fn truncate_chars(value: &str, max_chars: usize) -> String {
+    let mut chars = value.chars();
+    let mut out = chars.by_ref().take(max_chars).collect::<String>();
+    if chars.next().is_some() {
+        out.push('…');
+    }
+    out
 }
 
 #[cfg(test)]
@@ -389,14 +452,21 @@ mod tests {
             enabled: true,
             ..AgentWatchSettings::default()
         };
-        let s = session(AgentStatus::Waiting, 10);
-        assert!(matches!(
-            policy.evaluate(&s, &settings, 20),
-            AgentNudgeDecision::Send(AgentNudge {
-                kind: AgentNudgeKind::WaitingForUser,
-                ..
-            })
-        ));
+        let mut s = session(AgentStatus::Waiting, 10);
+        s.machine = Some("qy113".into());
+        s.source = AgentSource::Codex;
+        s.workspace = "D:\\C\\Desktop\\ai\\8bit".into();
+        s.tool_name = Some("Patch".into());
+        let decision = policy.evaluate(&s, &settings, 20);
+        match decision {
+            AgentNudgeDecision::Send(nudge) => {
+                assert_eq!(nudge.kind, AgentNudgeKind::WaitingForUser);
+                assert!(nudge.message.contains("qy113 / 8bit / Codex"));
+                assert!(nudge.message.contains("位置：D:\\C\\Desktop\\ai\\8bit"));
+                assert!(nudge.message.contains("任务：Patch"));
+            }
+            other => panic!("expected waiting nudge, got {other:?}"),
+        }
         assert!(matches!(
             policy.evaluate(&s, &settings, 30),
             AgentNudgeDecision::Skip {

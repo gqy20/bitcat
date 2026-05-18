@@ -2,7 +2,7 @@
 
 Agent Watch observes Claude Code and Codex through read-only hooks. The hook scripts only forward local JSON events to the 8Bit Cat monitor on `127.0.0.1:5342`; they do not approve permissions, modify prompts, or control the external agent.
 
-For macOS/Linux machines watched over the LAN, see [Remote Agent Watch](remote-agent-watch.md). Remote hooks send the same event shape to the Windows monitor with an additional `machine` field.
+For reachable macOS/Linux machines watched over LAN, Tailscale/tailnet, VPN, or another routable address, see [Remote Agent Watch](remote-agent-watch.md). Remote hooks send the same event shape to the Windows monitor with an additional `machine` field.
 
 ## Files
 
@@ -71,4 +71,4 @@ Codex hooks:
 
 Claude Code or VS Code may need a restart after repair because running agent processes may have already loaded their hook configuration.
 
-Codex may additionally require trusting newly discovered hooks in the Codex UI or CLI before they execute. The repair command writes the hook config but does not bypass Codex's trust model.
+Codex may additionally require trusting newly discovered hooks in the Codex UI or CLI before they execute. If Codex shows `hooks need review`, run `/hooks`, enter each 8Bit Cat hook item, and press `T` to trust it. The repair and remote install commands write the hook config but do not bypass Codex's trust model.

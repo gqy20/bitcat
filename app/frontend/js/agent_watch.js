@@ -105,6 +105,23 @@
     return source || "Agent";
   }
 
+  function renderMetaItem(item, index) {
+    const cls = item.className ? ` ${item.className}` : "";
+    const separator = index > 0 ? `<span class="task-separator" aria-hidden="true">/</span>` : "";
+    return `${separator}<span class="task-meta-item${cls}" title="${escapeAttr(item.value)}">${escapeHtml(item.value)}</span>`;
+  }
+
+  function renderMeta(view, session, isCollapsed) {
+    const items = [];
+    if (view.machine) items.push({ value: view.machine, className: "task-device" });
+    if (view.project) items.push({ value: view.project, className: "task-project" });
+    if (view.source) items.push({ value: view.source, className: "task-source" });
+    if (!isCollapsed || !isNoisyActionLabel(view.kind, session)) {
+      items.push({ value: view.kind, className: "task-kind" });
+    }
+    return items.map(renderMetaItem).join("");
+  }
+
   function render(snapshot) {
     latest = snapshot || latest;
     const sessions = latest?.sessions || [];
@@ -129,10 +146,7 @@
       const isCollapsed = collapsed.has(id);
       const status = session.status || "idle";
       const view = viewOf(session);
-      const metaKind = !isCollapsed || !isNoisyActionLabel(view.kind, session)
-        ? `<span class="task-kind">${escapeHtml(view.kind)}</span>`
-        : "";
-      const device = view.machine ? `<span class="task-device">${escapeHtml(view.machine)}</span>` : "";
+      const meta = renderMeta(view, session, isCollapsed);
       return `
         <article class="task-card ${escapeAttr(status)} tone-${escapeAttr(view.tone)} ${view.quiet ? "quiet" : ""} ${isCollapsed ? "collapsed" : ""}" data-id="${escapeAttr(id)}">
           <span class="task-rail" aria-hidden="true"></span>
@@ -144,10 +158,7 @@
             <p class="task-summary">${escapeHtml(view.detail)}</p>
             <div class="task-meta">
               <span class="task-dot"></span>
-              <span class="task-project">${escapeHtml(view.project)}</span>
-              <span class="task-source">${escapeHtml(view.source)}</span>
-              ${device}
-              ${metaKind}
+              ${meta}
             </div>
           </div>
           <div class="task-actions">
