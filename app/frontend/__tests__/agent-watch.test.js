@@ -131,6 +131,15 @@ describe('agent watch metadata', () => {
     expect(card.querySelector('.task-separator')).toBeNull();
   });
 
+  it('keeps expanded actions out of the summary layout column', () => {
+    const sheet = readFileSync(resolve(process.cwd(), 'css/agent_watch.css'), 'utf8');
+
+    expect(sheet).toContain('.task-card:not(.collapsed) {');
+    expect(sheet).toContain('grid-template-columns: 4px minmax(0, 1fr);');
+    expect(sheet).toContain('.task-card:not(.collapsed) .task-actions');
+    expect(sheet).toContain('position: absolute;');
+  });
+
   it('keeps specific task context in the view model', () => {
     const view = dom.window.__agentWatchTest.viewOf({
       source: 'codex',

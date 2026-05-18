@@ -23,7 +23,8 @@ function isVitestRuntime() {
   return typeof process !== 'undefined' && process.env && process.env.VITEST;
 }
 
-function configuredPetAssetUrl() {
+function configuredPetAssetUrl(options = {}) {
+  const fallbackToDefault = options.fallbackToDefault !== false;
   if (typeof window === 'undefined') return DEFAULT_PET_ASSET_URL;
   if (window.__PET_ASSET_URL__) return normalizeBaseUrl(window.__PET_ASSET_URL__);
   const params = new URLSearchParams(window.location ? window.location.search : '');
@@ -33,14 +34,14 @@ function configuredPetAssetUrl() {
     const fromSession = window.sessionStorage && window.sessionStorage.getItem('ai-pad.petAssetUrl');
     if (fromSession) return normalizeBaseUrl(fromSession);
     const fromLocal = window.localStorage && window.localStorage.getItem('ai-pad.petAssetUrl');
-    return normalizeBaseUrl(fromLocal) || DEFAULT_PET_ASSET_URL;
+    return normalizeBaseUrl(fromLocal) || (fallbackToDefault ? DEFAULT_PET_ASSET_URL : null);
   } catch (_) {
-    return DEFAULT_PET_ASSET_URL;
+    return fallbackToDefault ? DEFAULT_PET_ASSET_URL : null;
   }
 }
 
 async function configuredPetAssetUrlAsync() {
-  const configured = configuredPetAssetUrl();
+  const configured = configuredPetAssetUrl({ fallbackToDefault: false });
   if (configured) return configured;
   if (typeof window === 'undefined' || !window.__TAURI__ || !window.__TAURI__.core) return null;
   try {

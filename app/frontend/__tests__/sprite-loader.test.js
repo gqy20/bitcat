@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_PET_ASSET_URL,
   buildRuntimeFromManifest,
+  configuredPetAssetUrlAsync,
   loadPetAssetPack,
   validateManifest,
 } from '../js/sprite-loader.js';
@@ -115,6 +116,33 @@ describe('sprite-loader', () => {
     expect(renderer.assetSource.id).toBe('cat');
     expect(renderer.getSprite('focused', 0)).toBe(renderer.SPRITES.focused[0]);
     expect(renderer.getSprite('unknown', 0)).toBe(renderer.SPRITES.idle[0]);
+  });
+
+  it('reads the persisted pet asset setting before falling back to the default pack', async () => {
+    const previousTauri = window.__TAURI__;
+    const previousPetAssetUrl = window.__PET_ASSET_URL__;
+    window.__PET_ASSET_URL__ = '';
+    window.sessionStorage.removeItem('ai-pad.petAssetUrl');
+    window.localStorage.removeItem('ai-pad.petAssetUrl');
+    window.__TAURI__ = {
+      core: {
+        invoke: async (command) => {
+          expect(command).toBe('cmd_settings_load');
+          return {
+            appearance: {
+              pet_asset_url: '/__fixtures__/pets/status',
+            },
+          };
+        },
+      },
+    };
+
+    await expect(configuredPetAssetUrlAsync()).resolves.toBe('/__fixtures__/pets/status');
+    expect(window.sessionStorage.getItem('ai-pad.petAssetUrl')).toBe('/__fixtures__/pets/status');
+
+    window.__TAURI__ = previousTauri;
+    window.__PET_ASSET_URL__ = previousPetAssetUrl;
+    window.sessionStorage.removeItem('ai-pad.petAssetUrl');
   });
 
   it('loads the piggy v2 pack when no asset url is configured', async () => {
