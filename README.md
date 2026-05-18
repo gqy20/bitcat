@@ -16,9 +16,9 @@ make release
 # 打包为版本化 ZIP
 make dist
 
-# 发布 0.1.5 时使用 tag 驱动产物命名
-git tag v0.1.5
-git push origin v0.1.5
+# 发布 0.1.6 时使用 tag 驱动产物命名
+git tag v0.1.6
+git push origin v0.1.6
 ```
 
 启动后看到屏幕角落的像素猫即为成功。
@@ -48,9 +48,9 @@ git push origin v0.1.5
 
 ## 弹出面板
 
-弹出面板由 `config/panel_action.yml` 驱动，默认 480×520、3×4 玻璃风格网格。窗口尺寸、网格行列、按钮数量、图标、排序、启用状态和动作类型都可以通过 YAML 修改。
+弹出面板由 `config/panel_action.yml` 驱动，默认 480×360、2×2 玻璃风格网格。窗口尺寸、网格行列、按钮数量、图标、排序、启用状态和动作类型都可以通过 YAML 修改。
 
-默认按钮：VSCode / 浏览器 / 资源管理器 / PowerShell / 记事本 / 跳舞 / 游戏 / 翻牌 / 接食物 / 守护战 / 设置 / 聊天。
+默认按钮现在只保留 4 个小游戏入口：毛线球大作战 / 翻牌配对 / 接食物 / 飞机守护战。VSCode、浏览器、设置、聊天等非小游戏入口可按需手动加回 YAML。
 
 - 弹出后窗口居中、置顶、跳过任务栏、失焦自动隐藏
 - 选中项用蓝色光晕高亮，鼠标悬停或方向键移动都会同步选中
@@ -140,10 +140,10 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
 
 面板可启动 4 个内置玩法：
 
-- **毛线球大作战**：Snake 玩法，默认胜利长度为 80，支持更长一局。
-- **翻牌**：Memory 配对玩法，方向键移动光标，A / Enter 翻牌。
-- **接食物**：Catch 玩法，左右移动接住掉落食物，累计失误 5 次失败。
-- **守护战**：Battle 玩法，保留真实桌宠窗口，通过点击、A、X/Y、L1 等输入攻击、技能和防御。
+- **毛线球大作战**：Snake 玩法，默认 48×32 加密网格，圆润连续身体渲染；前 20 个食物优先刷在中间区域，按住 A / Space / Enter 可加速，BOOST 吃到食物得分更高。
+- **翻牌配对**：Memory 配对玩法，方向键移动光标，A / Enter 翻牌；记录 flips / moves / misses，最终得分包含匹配分、combo 和通关效率奖励，翻牌越少分数越高。
+- **接食物**：Catch 玩法，半宽赛道、篮子造型和接住弹字反馈；连续接住会提高 combo 得分，漏掉会扣分、断 combo，累计失误 5 次失败。
+- **飞机守护战**：原守护战已改为飞行射击玩法，按住方向可持续移动，A / Space 发射，X/Y 技能，L1 防护；击杀有 combo、爆炸粒子和目标进度，漏怪/碰撞会扣生命值并扣分。
 
 1. 后端创建透明置顶 `game` 窗口并读取 `GameDef`
 2. 前端 `game_engine.js` 按 `game_type` 创建 Snake / Memory / Catch / Battle 引擎，运行网格逻辑、键盘/手柄方向输入和胜负判定
@@ -162,9 +162,13 @@ Agent Watch 是桌宠侧的只读任务看管面板，用于观察 Claude Code /
 - 监控窗口与普通桌宠窗口解耦，游戏运行或桌宠表演不会阻塞会话事件记录。
 - 设置页提供远程 Mac/Linux 一键安装命令和只读 `/watch` 地址；地址发现已抽象为远程 endpoint，支持 LAN、Tailscale/tailnet、VPN 和其他可达地址，UI 默认脱敏显示，复制命令时使用完整地址并支持多地址重试。远程安装脚本会做一次自检上报，且远程看板和安装脚本可以分别关闭。
 
+## Steamworks 探针
+
+应用启动时会非致命地尝试从 exe 同目录加载 `steam_api64.dll` 并调用 `SteamAPI_InitFlat`，用于验证 Steam 客户端、AppID 和 DLL 链路。缺少 DLL、未登录 Steam 或缺少 `steam_appid.txt` 只会写入 warn 日志，不影响普通非 Steam 构建运行；后续 Steam 成就、DLC 和商店能力会在这条诊断链路上扩展。
+
 ## 宠物资源包
 
-桌宠渲染已进入 v2 manifest 资源包模式。默认内置 `piggy` 是 192×208 原始帧的高分辨率资源包，设置页可切换 `status`、`core`、`stacky`、`bsod`、`null-signal` 等终端状态风资源，也保留 `cat` 作为经典像素包。
+桌宠渲染已进入 v2 manifest 资源包模式。默认内置 `piggy` 是 192×208 原始帧的高分辨率资源包，`cat` 也已升级为同规格的高分辨率 v2 资源包；设置页可切换 `status`、`core`、`stacky`、`bsod`、`null-signal` 等终端状态风资源，以及 `byte-bun`、`mossbot`、`moonbit`、`sparkle` 等角色资源包。
 
 - 资源包位于 `app/frontend/__fixtures__/pets/<id>/manifest.json`
 - `manifest.actions` 支持 timeline，可声明 `observe` / `nudge` / `acknowledge` / `blocked` / `dragging` 等语义短动作
@@ -266,6 +270,7 @@ Agent Watch 是桌宠侧的只读任务看管面板，用于观察 Claude Code /
     │   ├── panel.rs        # 弹出面板（YAML 布局, 方向键导航, 动作执行）
     │   ├── settings.rs     # 设置窗口后端命令（读/写 app_settings + yml 重载）
     │   ├── screenshot.rs   # 截图线程（BitBlt + 熄屏检测 + Vision API + 聊天/舞蹈暂停）
+    │   ├── steam.rs        # Steamworks 本地 DLL/AppID 探针，失败只写诊断日志
     │   ├── joystick.rs     # SDL2 手柄封装 + is_attached 热插拔检测
     │   ├── tts.rs          # Windows SAPI TTS 语音合成
     │   └── tray.rs         # 系统托盘（右键菜单 + 设置入口 + 重载配置）
