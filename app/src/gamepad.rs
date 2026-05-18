@@ -731,6 +731,8 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                     if let Some((dx, dy)) = hat {
                         info!(dx = dx, dy = dy, "→ 游戏方向");
                         emit_game_input(app, GameInput::Direction { dx, dy: -dy });
+                    } else {
+                        emit_game_input(app, GameInput::Direction { dx: 0, dy: 0 });
                     }
                 }
             } else if panel_visible {

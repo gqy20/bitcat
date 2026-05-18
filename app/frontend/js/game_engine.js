@@ -184,7 +184,7 @@
 
       this.snake.unshift(next);
       if (ate) {
-        this.score += 10;
+        this.score += this.boostHeld ? 14 : 10;
         this.foodEaten += 1;
         this.addFoodBurst(next);
         this.stepMs = Math.max(40, Math.floor(this.stepMs * rules.speed_ramp));
@@ -280,6 +280,7 @@
       drawFood(ctx, this.food, cell, this.config.theme.food, this.animMs);
       drawFoodBursts(ctx, this.foodBursts, cell);
       drawSnake(ctx, this.renderSnake(), cell, this.dir, this.config.theme, this.animMs);
+      if (this.boostHeld) drawBoostBadge(ctx, grid.width * cell, cell);
       ctx.restore();
     }
 
@@ -311,6 +312,11 @@
       this.selected = [];
       this.matched = new Set();
       this.lockMs = 0;
+      this.combo = 0;
+      this.flips = 0;
+      this.moves = 0;
+      this.misses = 0;
+      this.effects = [];
       this.cards = [];
       this.reset();
     }
@@ -363,6 +369,7 @@
     }
 
     update(dtMs) {
+      this.updateEffects(dtMs);
       if (this.state !== 'playing' || this.ended) return;
       if (this.lockMs > 0) {
         this.lockMs -= dtMs;
@@ -373,23 +380,58 @@
     flipCursor() {
       if (this.state !== 'playing' || this.lockMs > 0 || this.matched.has(this.cursor)) return;
       if (this.selected.includes(this.cursor)) return;
+      this.flips += 1;
       this.selected.push(this.cursor);
       if (this.selected.length < 2) return;
       const [a, b] = this.selected;
+      this.moves += 1;
       if (this.cards[a] === this.cards[b]) {
         this.matched.add(a);
         this.matched.add(b);
-        this.score += 10;
+        this.combo += 1;
+        this.score += 12 + Math.min(12, Math.max(0, this.combo - 1) * 3);
+        this.addEffect('MATCH', a, '#ffd166');
+        this.addEffect(`x${this.combo}`, b, '#95d5b2');
         this.selected = [];
         if (this.matched.size >= this.cards.length) this.finish('win');
       } else {
-        this.score = Math.max(0, this.score - 2);
+        this.combo = 0;
+        this.misses += 1;
+        this.score = Math.max(0, this.score - 4);
+        this.addEffect('MISS', a, '#ff6b6b');
+        this.addEffect('-4', b, '#ff6b6b');
         this.lockMs = 650;
       }
     }
 
+    addEffect(text, index, color) {
+      const w = this.config.grid.width;
+      this.effects.push({
+        text,
+        x: index % w,
+        y: Math.floor(index / w),
+        color,
+        age: 0,
+      });
+    }
+
+    updateEffects(dtMs) {
+      for (const effect of this.effects) {
+        effect.age += dtMs;
+        effect.y -= dtMs * 0.0018;
+      }
+      this.effects = this.effects.filter((effect) => effect.age < 720);
+    }
+
     finish(result) {
       if (this.ended) return;
+      if (result === 'win') {
+        const perfectMoves = this.cards.length / 2;
+        const extraMoves = Math.max(0, this.moves - perfectMoves);
+        const efficiencyBonus = Math.max(0, 60 - extraMoves * 4 - this.misses * 2);
+        this.score += efficiencyBonus;
+        if (efficiencyBonus > 0) this.addEffect(`EFF +${efficiencyBonus}`, this.cursor, '#95d5b2');
+      }
       this.ended = true;
       this.state = result;
     }
@@ -417,6 +459,7 @@
           drawMemorySymbol(ctx, x + cell / 2, y + cell / 2, cell, this.cards[i]);
         }
       }
+      drawGridEffects(ctx, this.effects, cell);
       ctx.restore();
       ctx.textAlign = 'start';
       ctx.textBaseline = 'alphabetic';
@@ -435,6 +478,8 @@
       this.spawnMs = 0;
       this.fallMs = 0;
       this.misses = 0;
+      this.combo = 0;
+      this.effects = [];
       this.items = [];
     }
 
@@ -469,6 +514,7 @@
     }
 
     update(dtMs) {
+      this.updateEffects(dtMs);
       if (this.state !== 'playing' || this.ended) return;
       this.spawnMs -= dtMs;
       this.fallMs += dtMs;
@@ -492,16 +538,34 @@
       for (const item of this.items) {
         const next = { x: item.x, y: item.y + 1 };
         if (next.y >= bottom && Math.abs(next.x - this.playerX) <= 1) {
-          this.score += 1;
+          this.combo += 1;
+          const gain = 1 + Math.floor(Math.min(10, this.combo - 1) / 3);
+          this.score += gain;
+          this.addEffect(this.combo >= 2 ? `+${gain} x${this.combo}` : `+${gain}`, next.x, bottom - 1, '#ffd166');
           if (this.score >= this.config.rules.win_length) this.finish('win');
         } else if (next.y > bottom) {
+          this.combo = 0;
           this.misses += 1;
+          this.score = Math.max(0, this.score - 3);
+          this.addEffect('MISS', item.x, bottom - 2, '#ff6b6b');
           if (this.misses >= 5) this.finish('lose');
         } else {
           remaining.push(next);
         }
       }
       this.items = remaining;
+    }
+
+    addEffect(text, x, y, color) {
+      this.effects.push({ text, x, y, color, age: 0 });
+    }
+
+    updateEffects(dtMs) {
+      for (const effect of this.effects) {
+        effect.age += dtMs;
+        effect.y -= dtMs * 0.0015;
+      }
+      this.effects = this.effects.filter((effect) => effect.age < 760);
     }
 
     finish(result) {
@@ -534,6 +598,7 @@
       fillBoardPanel(ctx, lane.width * cell, grid.height * cell);
       drawCatchLane(ctx, lane.width, grid.height, cell);
       for (const item of this.items) drawFood(ctx, { ...item, x: item.x - lane.min }, cell, this.config.theme.food);
+      drawGridEffects(ctx, this.effects.map((effect) => ({ ...effect, x: effect.x - lane.min })), cell);
       const y = grid.height - 1;
       const playerX = this.playerX - lane.min;
       drawCatchBasket(ctx, playerX, y, cell);
@@ -659,9 +724,10 @@
       this.updateInputCapture(dtMs);
       this.floaters.forEach((f) => {
         f.age += dtMs;
-        f.y -= dtMs * 0.00008;
+        f.x += (f.vx || 0) * dtMs;
+        f.y += (f.vy || -0.00008) * dtMs;
       });
-      this.floaters = this.floaters.filter((f) => f.age < 900);
+      this.floaters = this.floaters.filter((f) => f.age < (f.life || 900));
       this.skills.forEach((skill) => {
         skill.cooldownLeftMs = Math.max(0, skill.cooldownLeftMs - dtMs);
       });
@@ -881,6 +947,7 @@
         cooldownLeftMs: 0,
       }));
       this.ship = { x: 0.5, y: 0.84, flashMs: 0 };
+      this.moveInput = { dx: 0, dy: 0 };
       this.bullets = [];
       this.enemies = [];
       this.enemySpawnMs = 250;
@@ -889,6 +956,9 @@
       this.autoShotMs = this.pet.autoAttackMs;
       this.targetScore = Number(config.rules?.win_length) || Number(this.battle.monster?.reward_exp) || 20;
       this.guardMs = 0;
+      this.combo = 0;
+      this.comboMs = 0;
+      this.screenShakeMs = 0;
       this.floaters = [];
       this.lastMetrics = null;
       this.startedNotified = false;
@@ -946,10 +1016,9 @@
       if (input.type === 'direction') {
         const dx = Math.sign(input.dx || 0);
         const dy = Math.sign(input.dy || 0);
+        this.moveInput = { dx, dy };
         if (dx !== 0 || dy !== 0) {
           if (this.state === 'ready') this.state = 'playing';
-          this.ship.x = clamp(this.ship.x + dx * 0.065, 0.08, 0.92);
-          this.ship.y = clamp(this.ship.y + dy * 0.045, 0.62, 0.90);
           this.notifyStart();
         }
       }
@@ -986,9 +1055,13 @@
       });
       this.guardMs = Math.max(0, this.guardMs - dtMs);
       this.ship.flashMs = Math.max(0, this.ship.flashMs - dtMs);
+      this.comboMs = Math.max(0, this.comboMs - dtMs);
+      this.screenShakeMs = Math.max(0, this.screenShakeMs - dtMs);
+      if (this.comboMs <= 0) this.combo = 0;
 
       if (this.state !== 'playing' || this.ended) return;
 
+      this.updateShipMovement(dtMs);
       this.shotCooldownMs = Math.max(0, this.shotCooldownMs - dtMs);
       this.autoShotMs -= dtMs;
       if (this.autoShotMs <= 0) {
@@ -1001,6 +1074,12 @@
       this.updateEnemies(dtMs);
       this.resolveBulletHits();
       this.resolveShipHits();
+    }
+
+    updateShipMovement(dtMs) {
+      if (this.moveInput.dx === 0 && this.moveInput.dy === 0) return;
+      this.ship.x = clamp(this.ship.x + this.moveInput.dx * dtMs * 0.00062, 0.08, 0.92);
+      this.ship.y = clamp(this.ship.y + this.moveInput.dy * dtMs * 0.00044, 0.62, 0.90);
     }
 
     fireBullet(source = 'button', quiet = false) {
@@ -1088,16 +1167,24 @@
     }
 
     defeatEnemy(enemy, damage) {
-      this.score += 1;
-      this.addFloater('+1', enemy.x, enemy.y, '#ffd166');
+      this.combo += 1;
+      this.comboMs = 1800;
+      const gain = 1 + Math.floor(Math.min(12, this.combo - 1) / 4);
+      this.score += gain;
+      this.addExplosion(enemy.x, enemy.y, enemy.kind === 'heavy' ? 10 : 7);
+      this.addFloater(this.combo >= 2 ? `+${gain} x${this.combo}` : `+${gain}`, enemy.x, enemy.y, '#ffd166');
       emitBattlePet('skill', { source: 'enemy_down', damage, hpRatio: this.monsterHpRatio() });
       if (this.score >= this.targetScore) this.finish('win');
     }
 
     damagePet(amount, source) {
+      this.combo = 0;
+      this.comboMs = 0;
+      this.screenShakeMs = 220;
       const guarded = this.guardMs > 0;
       const damage = guarded ? Math.max(1, Math.floor(amount * 0.35)) : amount;
       this.pet.hp = Math.max(0, this.pet.hp - damage);
+      this.score = Math.max(0, this.score - damage);
       this.ship.flashMs = 180;
       const y = source === 'leak' ? 0.86 : this.ship.y - 0.10;
       this.addFloater(`HP -${damage}`, this.ship.x, y, guarded ? '#8ecae6' : '#ff6b6b');
@@ -1107,6 +1194,23 @@
         hpRatio: this.petHpRatio(),
       });
       if (this.pet.hp <= 0) this.finish('lose');
+    }
+
+    addExplosion(x, y, count) {
+      for (let i = 0; i < count; i++) {
+        const angle = (Math.PI * 2 * i) / count + battleRandom(i + this.enemyWave) * 0.35;
+        const speed = 0.00018 + battleRandom(i + 99) * 0.00016;
+        this.floaters.push({
+          text: '•',
+          x,
+          y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          color: i % 2 ? '#ffd166' : '#ffafcc',
+          age: 0,
+          life: 520,
+        });
+      }
     }
 
     useSkill(slot) {
@@ -1220,12 +1324,18 @@
     render(ctx, metrics) {
       this.lastMetrics = metrics;
       ctx.clearRect(0, 0, metrics.width, metrics.height);
+      ctx.save();
+      if (this.screenShakeMs > 0) {
+        const shake = Math.sin(this.screenShakeMs * 0.45) * 4;
+        ctx.translate(shake, -shake * 0.35);
+      }
       drawBattleBackdrop(ctx, metrics);
       drawBattleBullets(ctx, metrics, this.bullets);
       drawBattleEnemies(ctx, metrics, this.enemies);
       drawBattleShip(ctx, metrics, this.ship, this.guardMs);
       drawBattleBars(ctx, metrics, this);
       drawFloaters(ctx, metrics, this.floaters);
+      ctx.restore();
     }
   }
 
@@ -1279,6 +1389,42 @@
         if ((x + y) % 2 === 0) ctx.fillRect(x * cell, y * cell, cell, cell);
       }
     }
+    ctx.restore();
+  }
+
+  function drawGridEffects(ctx, effects, cell) {
+    if (!effects.length) return;
+    ctx.save();
+    ctx.font = `800 ${Math.max(14, cell * 0.22)}px "Segoe UI", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const effect of effects) {
+      const alpha = clamp(1 - effect.age / 760, 0, 1);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = effect.color;
+      ctx.fillText(effect.text, effect.x * cell + cell / 2, effect.y * cell + cell / 2);
+    }
+    ctx.restore();
+  }
+
+  function drawBoostBadge(ctx, width, cell) {
+    const w = Math.max(76, cell * 5.5);
+    const h = Math.max(24, cell * 1.45);
+    const x = width - w - cell * 0.8;
+    const y = cell * 0.8;
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,209,102,0.20)';
+    ctx.strokeStyle = 'rgba(255,209,102,0.86)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, h / 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#ffd166';
+    ctx.font = `800 ${Math.max(13, cell * 0.72)}px "Segoe UI", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('BOOST', x + w / 2, y + h / 2 + 1);
     ctx.restore();
   }
 
@@ -1816,7 +1962,8 @@
     ctx.font = '800 18px "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     floaters.forEach((f) => {
-      ctx.globalAlpha = clamp(1 - f.age / 900, 0, 1);
+      const life = f.life || 900;
+      ctx.globalAlpha = clamp(1 - f.age / life, 0, 1);
       ctx.fillStyle = f.color;
       ctx.fillText(f.text, metrics.width * f.x, metrics.height * f.y);
     });
@@ -1863,6 +2010,8 @@
         overlayText.textContent = 'Move cursor · Enter / A flip';
       } else if (engine instanceof CatchEngine) {
         overlayText.textContent = 'Left / Right to catch · miss 5 and lose';
+      } else if (engine instanceof SnakeEngine) {
+        overlayText.textContent = 'Arrow keys / WASD to steer - hold A / Space / Enter to boost';
       } else {
         overlayText.textContent = 'Arrow keys / WASD to start';
       }
@@ -1941,12 +2090,12 @@
     titleEl.textContent = engine.config.title;
     scoreEl.textContent = String(engine.score);
     lengthEl.textContent = engine instanceof BattleEngine
-      ? `${engine.pet.hp}/${engine.pet.maxHp} HP - ${engine.score}/${engine.targetScore}`
+      ? `${engine.pet.hp}/${engine.pet.maxHp} HP - ${engine.score}/${engine.targetScore}${engine.combo > 1 ? ` x${engine.combo}` : ''}`
       : engine instanceof MemoryEngine
-        ? `${engine.matched.size}/${engine.cards.length}`
+        ? `${engine.matched.size}/${engine.cards.length} · ${engine.moves} moves${engine.combo > 1 ? ` x${engine.combo}` : ''}`
         : engine instanceof CatchEngine
-          ? `${engine.misses}/5`
-          : String(engine.snake.length);
+          ? `${engine.misses}/5${engine.combo > 1 ? ` x${engine.combo}` : ''}`
+          : `${engine.snake.length}${engine.boostHeld ? ' BOOST' : ''}`;
   }
 
   function loop(now) {
@@ -2062,10 +2211,16 @@
       engine.handleInput(input);
     });
     document.addEventListener('keyup', (e) => {
-      if (!(engine instanceof SnakeEngine)) return;
-      if (e.key !== 'Enter' && e.key !== ' ') return;
-      e.preventDefault();
-      engine.handleInput({ type: 'boost', active: false });
+      if (engine instanceof SnakeEngine) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        engine.handleInput({ type: 'boost', active: false });
+        return;
+      }
+      if (engine instanceof BattleEngine && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'a', 'A', 'd', 'D', 'w', 'W', 's', 'S'].includes(e.key)) {
+        e.preventDefault();
+        engine.handleInput({ type: 'direction', dx: 0, dy: 0 });
+      }
     });
     window.addEventListener('resize', resizeCanvas);
     canvas.addEventListener('pointerdown', (e) => {
