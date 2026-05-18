@@ -15,6 +15,8 @@ The viewer endpoints are:
 - `http://<windows-ip>:5344/health`
 - `http://<windows-ip>:5344/remote-install.sh`
 
+`/health` remains available as a lightweight reachability probe. The Settings -> Agent Watch page has separate safety switches for the remote viewer (`/watch`, `/agent-sessions`, `/devices`) and the remote install script (`/remote-install.sh`). Turning either switch off makes that surface return `403` instead of serving content.
+
 ## Remote Install
 
 On the Windows host, open Settings -> Agent Watch and copy the remote install command. It looks like:
@@ -48,7 +50,9 @@ The installer:
 
 The sender is intentionally best-effort: it uses a short network timeout and exits successfully even when the Windows monitor is unreachable, so it does not block Claude Code or Codex.
 
-You do not need to restart 8Bit Cat after installing remote hooks. New remote sessions appear after the remote Claude Code or Codex process emits its next hook event, such as a prompt submit, tool call, permission request, stop, or notification.
+After installation, the script sends one self-test envelope to the Windows monitor. This should make the remote device appear in Agent Watch immediately when port `5342` is reachable. You can opt out with `--no-self-test`.
+
+You do not need to restart 8Bit Cat after installing remote hooks. After the self-test, real remote sessions continue to update whenever Claude Code or Codex emits a hook event, such as a prompt submit, tool call, permission request, stop, or notification.
 
 ## Trust Codex Hooks
 
@@ -101,7 +105,7 @@ It should return:
 {"ok":true}
 ```
 
-Then trigger a Claude Code or Codex event on the remote machine. The Windows Settings -> Agent Watch page should show the remote device and session after the hook sends its first envelope. The standalone `/watch` page is read-only and can be opened from any reachable device.
+The installer normally sends a self-test event right after writing the hooks, so the Windows Settings -> Agent Watch page should show the remote device without restarting 8Bit Cat. Then trigger a Claude Code or Codex event on the remote machine to verify real hook traffic. The standalone `/watch` page is read-only and can be opened from any reachable device while the remote viewer switch is enabled.
 
 If the script downloads but sessions never appear, the remote machine can probably reach `5344` but not `5342`. Allow inbound TCP `5342` through Windows Firewall and make sure the selected endpoint is reachable from that remote network.
 
@@ -113,6 +117,7 @@ Remote sessions appear in the same Agent Watch stack as local sessions. Cards in
 
 - Windows firewall must allow inbound TCP on `5342` for remote hook ingest and `5344` for the read-only viewer.
 - Settings shows redacted endpoint labels by default; copied install commands and watch URLs still contain the full selected addresses.
+- The remote viewer and remote installer can be disabled independently in Settings -> Agent Watch. `/health` stays available for diagnostics.
 - The read-only viewer does not expose control actions; it only serves snapshots and a lightweight page.
 - Remote permission approval and remote screenshots are intentionally out of scope.
 - The endpoint discovery and install command generation live in `app/src/remote_endpoint.rs`; Agent Watch session ingest remains in `app/src/agent_monitor.rs`.

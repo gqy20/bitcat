@@ -56,6 +56,10 @@ pub struct AgentWatchSettings {
     pub done_alert: bool,
     #[serde(default)]
     pub use_tts: bool,
+    #[serde(default = "default_true")]
+    pub remote_view_enabled: bool,
+    #[serde(default = "default_true")]
+    pub remote_install_enabled: bool,
 }
 
 /// 外观与行为设置：置顶、折叠、TTS、全局快捷键、截图间隔等
@@ -114,6 +118,8 @@ impl Default for AgentWatchSettings {
             waiting_alert: true,
             done_alert: true,
             use_tts: false,
+            remote_view_enabled: true,
+            remote_install_enabled: true,
         }
     }
 }
@@ -221,6 +227,8 @@ mod tests {
         assert!(s.waiting_alert);
         assert!(s.done_alert);
         assert!(!s.use_tts);
+        assert!(s.remote_view_enabled);
+        assert!(s.remote_install_enabled);
     }
 
     #[test]
@@ -249,6 +257,8 @@ mod tests {
                 waiting_alert: true,
                 done_alert: false,
                 use_tts: true,
+                remote_view_enabled: false,
+                remote_install_enabled: false,
             },
         };
         let json = serde_json::to_string_pretty(&s).unwrap();
@@ -266,6 +276,8 @@ mod tests {
         );
         assert_eq!(restored.agent_watch.first_nudge_after_sec, 120);
         assert!(restored.agent_watch.use_tts);
+        assert!(!restored.agent_watch.remote_view_enabled);
+        assert!(!restored.agent_watch.remote_install_enabled);
     }
 
     #[test]

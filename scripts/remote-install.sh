@@ -9,10 +9,11 @@ HOSTS=""
 PORT="5342"
 SOURCE="all"
 UNINSTALL="0"
+SELF_TEST="1"
 
 usage() {
   cat <<'EOF'
-Usage: remote-install.sh --host <windows-ip> [--hosts "ip1 ip2"] [--port 5342] [--source claude_code|codex|all] [--uninstall]
+Usage: remote-install.sh --host <windows-ip> [--hosts "ip1 ip2"] [--port 5342] [--source claude_code|codex|all] [--no-self-test] [--uninstall]
 
 Examples:
   curl -fsSL http://192.0.2.10:5344/remote-install.sh | bash -s -- --host 192.0.2.10
@@ -45,6 +46,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --uninstall)
       UNINSTALL="1"
+      shift
+      ;;
+    --no-self-test)
+      SELF_TEST="0"
       shift
       ;;
     -h|--help)
@@ -283,6 +288,63 @@ PY
   echo "removed 8Bit Cat remote hooks"
 }
 
+send_self_test() {
+  [ "$SELF_TEST" = "1" ] || return 0
+  test_source="$SOURCE"
+  if [ "$test_source" = "all" ]; then
+    if [ -d "${HOME}/.codex" ]; then
+      test_source="codex"
+    elif [ -d "${HOME}/.claude" ]; then
+      test_source="claude_code"
+    else
+      test_source="codex"
+    fi
+  fi
+  cwd="$(pwd 2>/dev/null || printf '%s' "$HOME")"
+  if command -v python3 >/dev/null 2>&1; then
+    envelope="$(AI_PAD_SOURCE="$test_source" MACHINE="$MACHINE" CWD="$cwd" python3 - <<'PY' 2>/dev/null || true
+import json, os
+source = os.environ.get("AI_PAD_SOURCE", "codex")
+machine = os.environ.get("MACHINE", "remote")
+cwd = os.environ.get("CWD", "")
+print(json.dumps({
+  "source": source,
+  "machine": machine,
+  "payload": {
+    "session_id": "ai-pad-remote-self-test-" + machine,
+    "hook_event_name": "UserPromptSubmit",
+    "cwd": cwd,
+    "prompt": "8Bit Cat remote hook self-test"
+  }
+}, separators=(",", ":")))
+PY
+)"
+  else
+    envelope="$(printf '{"source":"%s","machine":"%s","payload":{"session_id":"ai-pad-remote-self-test-%s","hook_event_name":"UserPromptSubmit","cwd":"%s","prompt":"8Bit Cat remote hook self-test"}}' "$test_source" "$MACHINE" "$MACHINE" "$cwd")"
+  fi
+  [ -n "$envelope" ] || {
+    echo "remote self-test: skipped, could not build payload" >&2
+    return 0
+  }
+  for host in $(printf '%s' "$HOSTS" | tr ',' ' '); do
+    if command -v nc >/dev/null 2>&1; then
+      printf '%s' "$envelope" | nc -w 2 "$host" "$PORT" >/dev/null 2>&1 && {
+        echo "remote self-test: sent to $host:$PORT"
+        return 0
+      }
+    elif command -v bash >/dev/null 2>&1; then
+      bash -c 'cat > /dev/tcp/"$0"/"$1"' "$host" "$PORT" <<TCP_EOF >/dev/null 2>&1 && {
+$envelope
+TCP_EOF
+        echo "remote self-test: sent to $host:$PORT"
+        return 0
+      }
+    fi
+  done
+  echo "remote self-test: could not reach any target on port $PORT" >&2
+  return 0
+}
+
 if [ "$UNINSTALL" = "1" ]; then
   uninstall_all
   exit 0
@@ -298,6 +360,7 @@ case "$SOURCE" in
     ;;
 esac
 
+send_self_test
 echo "remote watch sender: $SENDER"
 echo "targets: $HOSTS -> $PORT"
 echo "machine: $MACHINE"

@@ -9,7 +9,7 @@ use ai_pad_core::agent_session::{
     apply_session_event, sort_sessions, AgentSession, AgentSessionEvent, AgentSessionView,
     AgentSource,
 };
-use ai_pad_core::app_settings::AppSettings;
+use ai_pad_core::app_settings::{AgentWatchSettings, AppSettings};
 use ai_pad_core::claude_code::ClaudeHookEvent;
 use ai_pad_core::pet_event::PetEvent;
 use serde::{Deserialize, Serialize};
@@ -245,6 +245,10 @@ fn handle_view_stream(app: &AppHandle, mut stream: TcpStream) {
 
 fn view_response(app: &AppHandle, path: &str) -> (&'static str, &'static str, String) {
     let clean_path = path.split('?').next().unwrap_or(path);
+    let settings = AppSettings::load().agent_watch;
+    if let Some(response) = remote_access_forbidden(clean_path, &settings) {
+        return response;
+    }
     match clean_path {
         "/" | "/watch" => ("200 OK", "text/html", watch_page_html()),
         "/agent-sessions" => {
@@ -286,6 +290,28 @@ fn view_response(app: &AppHandle, path: &str) -> (&'static str, &'static str, St
             "{\"error\":\"not found\"}".to_string(),
         ),
     }
+}
+
+fn remote_access_forbidden(
+    clean_path: &str,
+    settings: &AgentWatchSettings,
+) -> Option<(&'static str, &'static str, String)> {
+    let is_view_path = matches!(clean_path, "/" | "/watch" | "/agent-sessions" | "/devices");
+    if is_view_path && !settings.remote_view_enabled {
+        return Some((
+            "403 Forbidden",
+            "application/json",
+            json_error("remote Agent Watch view is disabled"),
+        ));
+    }
+    if clean_path == "/remote-install.sh" && !settings.remote_install_enabled {
+        return Some((
+            "403 Forbidden",
+            "application/json",
+            json_error("remote Agent Watch installer is disabled"),
+        ));
+    }
+    None
 }
 
 fn json_error(error: &str) -> String {
@@ -622,6 +648,9 @@ pub async fn cmd_get_agent_sessions(
 
 #[tauri::command]
 pub async fn cmd_get_remote_install_cmd() -> Result<RemoteInstallInfo, String> {
+    if !AppSettings::load().agent_watch.remote_install_enabled {
+        return Err("remote Agent Watch installer is disabled in settings".to_string());
+    }
     crate::remote_endpoint::remote_install_info()
 }
 
@@ -783,5 +812,28 @@ mod tests {
         assert_eq!(event.status, AgentStatus::ToolRunning);
         assert_eq!(event.tool_name.as_deref(), Some("Bash"));
         assert!(event.tool_input_preview.unwrap().contains("cargo test"));
+    }
+
+    #[test]
+    fn remote_access_switches_gate_view_and_installer() {
+        let mut settings = AgentWatchSettings::default();
+        settings.remote_view_enabled = false;
+        assert_eq!(
+            remote_access_forbidden("/watch", &settings).map(|(status, _, _)| status),
+            Some("403 Forbidden")
+        );
+        assert_eq!(
+            remote_access_forbidden("/agent-sessions", &settings).map(|(status, _, _)| status),
+            Some("403 Forbidden")
+        );
+        assert!(remote_access_forbidden("/health", &settings).is_none());
+
+        settings.remote_view_enabled = true;
+        settings.remote_install_enabled = false;
+        assert_eq!(
+            remote_access_forbidden("/remote-install.sh", &settings).map(|(status, _, _)| status),
+            Some("403 Forbidden")
+        );
+        assert!(remote_access_forbidden("/watch", &settings).is_none());
     }
 }

@@ -217,6 +217,10 @@ pub struct AgentWatchInput {
     pub waiting_alert: bool,
     pub done_alert: bool,
     pub use_tts: bool,
+    #[serde(default = "default_true")]
+    pub remote_view_enabled: bool,
+    #[serde(default = "default_true")]
+    pub remote_install_enabled: bool,
 }
 
 fn default_screenshot_interval_sec() -> u64 {
@@ -227,6 +231,9 @@ fn default_first_nudge_after_sec() -> u64 {
 }
 fn default_repeat_nudge_after_min() -> u64 {
     8
+}
+fn default_true() -> bool {
+    true
 }
 
 fn token_session_view(session: &TokenSession) -> TokenSessionView {
@@ -804,6 +811,8 @@ pub async fn cmd_settings_save_agent_watch(payload: AgentWatchInput) -> Result<(
         waiting_alert: payload.waiting_alert,
         done_alert: payload.done_alert,
         use_tts: payload.use_tts,
+        remote_view_enabled: payload.remote_view_enabled,
+        remote_install_enabled: payload.remote_install_enabled,
     };
     s.save()?;
     info!(agent_watch = ?s.agent_watch, "[settings] Agent 看管设置已保存");
@@ -934,6 +943,8 @@ mod tests {
         assert!(input.enabled);
         assert_eq!(input.first_nudge_after_sec, 30);
         assert_eq!(input.repeat_nudge_after_min, 8);
+        assert!(input.remote_view_enabled);
+        assert!(input.remote_install_enabled);
     }
 
     #[test]

@@ -100,6 +100,8 @@ async function mockInvoke(command) {
         waiting_alert: true,
         done_alert: true,
         use_tts: false,
+        remote_view_enabled: true,
+        remote_install_enabled: true,
       },
       about: {
         version: "preview",
@@ -578,7 +580,9 @@ function renderAgentWatch(a) {
   $("aw-waiting").checked = cfg.waiting_alert !== false;
   $("aw-done").checked = cfg.done_alert !== false;
   $("aw-tts").checked = !!cfg.use_tts;
-  ["aw-enabled","aw-away","aw-waiting","aw-done","aw-tts"].forEach(id => { $(id).onchange = () => markDirty("agent_watch"); });
+  $("aw-remote-view").checked = cfg.remote_view_enabled !== false;
+  $("aw-remote-install").checked = cfg.remote_install_enabled !== false;
+  ["aw-enabled","aw-away","aw-waiting","aw-done","aw-tts","aw-remote-view","aw-remote-install"].forEach(id => { $(id).onchange = () => markDirty("agent_watch"); });
   ["aw-first","aw-repeat"].forEach(id => { $(id).oninput = () => markDirty("agent_watch"); });
 }
 
@@ -593,6 +597,8 @@ function collectAgentWatch() {
     waiting_alert: $("aw-waiting").checked,
     done_alert: $("aw-done").checked,
     use_tts: $("aw-tts").checked,
+    remote_view_enabled: $("aw-remote-view").checked,
+    remote_install_enabled: $("aw-remote-install").checked,
   };
 }
 

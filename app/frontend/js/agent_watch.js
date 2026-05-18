@@ -331,6 +331,12 @@
   });
 
   window.__agentWatchRefresh = refresh;
+  window.__agentWatchTest = {
+    agentSourceLabel,
+    renderMeta,
+    renderMetaItem,
+    viewOf,
+  };
   setFolded(folded, false);
   setupWindowDrag();
   refresh();
