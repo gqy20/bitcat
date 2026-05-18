@@ -6,8 +6,8 @@ const outDir = path.join(__dirname, '..', '__fixtures__', 'pets', 'piggy');
 const frameWidth = 192;
 const frameHeight = 208;
 const columns = 8;
-const rows = 5;
-const frameCount = 40;
+const rows = 8;
+const frameCount = 64;
 const sheetWidth = frameWidth * columns;
 const sheetHeight = frameHeight * rows;
 
@@ -30,6 +30,7 @@ const C = {
   cyan: rgba('#8df7f0', 255),
   cyanDim: rgba('#45bfc6', 230),
   green: rgba('#89f0a6', 255),
+  yellow: rgba('#ffe66b', 255),
   magenta: rgba('#f058ff', 255),
   red: rgba('#ff5b72', 255),
   white: rgba('#fff2fb', 255),
@@ -125,6 +126,35 @@ function drawChevron(fx, fy, x, y, size, color, flip = false) {
   line(fx, fy, x + dir * size * 0.25, y, x - dir * size * 0.55, y + size * 0.6, 6, color);
 }
 
+function drawSpark(fx, fy, cx, cy, size, color) {
+  line(fx, fy, cx, cy - size, cx, cy + size, 4, color);
+  line(fx, fy, cx - size, cy, cx + size, cy, 4, color);
+  line(fx, fy, cx - size * 0.7, cy - size * 0.7, cx + size * 0.7, cy + size * 0.7, 3, color);
+  line(fx, fy, cx + size * 0.7, cy - size * 0.7, cx - size * 0.7, cy + size * 0.7, 3, color);
+}
+
+function drawQuestion(fx, fy, cx, cy, color) {
+  line(fx, fy, cx - 10, cy - 12, cx, cy - 18, 5, color);
+  line(fx, fy, cx, cy - 18, cx + 11, cy - 10, 5, color);
+  line(fx, fy, cx + 11, cy - 10, cx + 2, cy + 1, 5, color);
+  line(fx, fy, cx + 2, cy + 1, cx + 2, cy + 8, 5, color);
+  ellipse(fx, fy, cx + 2, cy + 20, 4, 4, color);
+}
+
+function drawWarning(fx, fy, cx, cy, color) {
+  line(fx, fy, cx, cy - 18, cx - 18, cy + 15, 5, color);
+  line(fx, fy, cx - 18, cy + 15, cx + 18, cy + 15, 5, color);
+  line(fx, fy, cx + 18, cy + 15, cx, cy - 18, 5, color);
+  rect(fx, fy, cx - 2, cy - 4, 4, 13, color);
+  ellipse(fx, fy, cx, cy + 14, 3, 3, color);
+}
+
+function drawLens(fx, fy, cx, cy, color) {
+  ellipse(fx, fy, cx, cy, 13, 13, [color[0], color[1], color[2], 80]);
+  ellipse(fx, fy, cx, cy, 10, 10, [color[0], color[1], color[2], 36]);
+  line(fx, fy, cx + 9, cy + 9, cx + 23, cy + 23, 5, color);
+}
+
 function drawFace(fx, fy, cfg) {
   const y = cfg.y;
   roundRect(fx, fy, 48, y, 96, 60, 18, C.screenDark);
@@ -144,6 +174,22 @@ function drawFace(fx, fy, cfg) {
     ellipse(fx, fy, 81, y + 32, 8, 8, C.green);
     ellipse(fx, fy, 111, y + 32, 8, 8, C.magenta);
     rect(fx, fy, 82, y + 46, 28, 4, C.cyanDim);
+    return;
+  }
+
+  if (cfg.mode === 'delight') {
+    drawSpark(fx, fy, 82, y + 32, 8, C.yellow);
+    drawSpark(fx, fy, 111, y + 32, 8, C.green);
+    line(fx, fy, 82, y + 44, 96, y + 51, 5, C.cyan);
+    line(fx, fy, 96, y + 51, 110, y + 44, 5, C.cyan);
+    return;
+  }
+
+  if (cfg.mode === 'curious') {
+    ellipse(fx, fy, 80, y + 32, 6, 9, C.cyan);
+    ellipse(fx, fy, 112, y + 32, 9, 6, C.magenta);
+    drawQuestion(fx, fy, 124, y + 12, C.yellow);
+    rect(fx, fy, 84, y + 46, 24, 4, C.cyanDim);
     return;
   }
 
@@ -217,6 +263,23 @@ function drawPiggy(index, mode = 'idle', opts = {}) {
   }
 
   rect(fx, fy, 63, 190, 66, 4, rgba('#2e1830', 170));
+
+  if (opts.symbol === 'spark') {
+    drawSpark(fx, fy, 40, 44 + bob, 12, C.yellow);
+    drawSpark(fx, fy, 153, 45 + bob, 10, C.green);
+  } else if (opts.symbol === 'question') {
+    drawQuestion(fx, fy, 154, 48 + bob, C.yellow);
+  } else if (opts.symbol === 'warning') {
+    drawWarning(fx, fy, 151, 45 + bob, C.red);
+  } else if (opts.symbol === 'lens') {
+    drawLens(fx, fy, 151, 48 + bob, C.cyan);
+  } else if (opts.symbol === 'ping') {
+    glow(fx, fy, 65 + lean, 24 + bob, 8, 8, C.cyan);
+    glow(fx, fy, 128 + lean, 24 + bob, 8, 8, C.magenta);
+  } else if (opts.symbol === 'grip') {
+    line(fx, fy, 38 + lean, bodyY + 16, 26 + lean, bodyY + 2, 5, C.white);
+    line(fx, fy, 154 + lean, bodyY + 16, 166 + lean, bodyY + 2, 5, C.white);
+  }
 }
 
 const frameSpecs = [
@@ -249,6 +312,30 @@ const frameSpecs = [
   ['idle', { bob: 0, arm: -9 }],
   ['failed', { bob: 2, alert: 'failed' }],
   ['idle', { bob: 0, lean: -7 }],
+  ['working', { bob: -2, lean: -4, scan: -8, symbol: 'lens' }],
+  ['working', { bob: -1, lean: 0, scan: 2, symbol: 'lens' }],
+  ['working', { bob: -2, lean: 4, scan: 12, symbol: 'lens' }],
+  ['curious', { bob: -1, lean: 2, symbol: 'question' }],
+  ['working', { bob: 0, scan: 14, arm: 3, symbol: 'lens' }],
+  ['idle', { bob: -1, scan: -10, arm: -3, symbol: 'question' }],
+  ['idle', { bob: -3, arm: 8, lean: -4, symbol: 'ping' }],
+  ['idle', { bob: 0, arm: -8, lean: 4, symbol: 'ping' }],
+  ['delight', { bob: -4, arm: 9, alert: 'review', symbol: 'spark' }],
+  ['waiting', { bob: 1, blink: true, symbol: 'question' }],
+  ['delight', { bob: -4, arm: 8, alert: 'review', symbol: 'spark' }],
+  ['delight', { bob: -7, lean: -3, arm: 10, alert: 'review', symbol: 'spark' }],
+  ['review', { bob: -2, lean: 3, alert: 'review', symbol: 'spark' }],
+  ['idle', { bob: 0, alert: 'review', symbol: 'spark' }],
+  ['failed', { bob: 0, alert: 'failed', symbol: 'warning' }],
+  ['failed', { bob: 1, lean: -5, alert: 'failed', symbol: 'warning' }],
+  ['failed', { bob: -1, lean: 5, alert: 'failed', symbol: 'warning' }],
+  ['failed', { bob: 1, alert: 'failed', symbol: 'question' }],
+  ['idle', { bob: -2, lean: -8, arm: 8, symbol: 'grip' }],
+  ['idle', { bob: -1, lean: 8, arm: -8, symbol: 'grip' }],
+  ['idle', { bob: -3, arm: 12, symbol: 'grip' }],
+  ['idle', { bob: 0, lean: -10, arm: 6, symbol: 'grip' }],
+  ['delight', { bob: -12, arm: 10, alert: 'review', symbol: 'spark' }],
+  ['working', { bob: -2, lean: 10, scan: 10, arm: 5 }],
 ];
 
 frameSpecs.forEach(([mode, opts], index) => drawPiggy(index, mode, opts));
@@ -294,7 +381,7 @@ function pngBuffer() {
 
 const states = {
   idle: {
-    spriteFrames: [0, 1, 2, 3, 4, 5, 6, 13, 14, 15],
+    spriteFrames: [0, 1, 2, 3, 4, 5, 6, 13, 14, 15, 43, 45, 46, 49],
     frames: [
       { sprite: 0, duration: 1500 },
       { sprite: 1, duration: 520 },
@@ -305,24 +392,25 @@ const states = {
     ],
     loop: true,
     variants: [
-      { name: 'antenna_ping', weight: 3, cooldownMinMs: 9000, cooldownMaxMs: 18000, frames: [{ sprite: 13, duration: 160 }, { sprite: 0, duration: 260 }] },
-      { name: 'terminal_glance', weight: 2, cooldownMinMs: 12000, cooldownMaxMs: 24000, frames: [{ sprite: 14, duration: 300 }, { sprite: 15, duration: 300 }, { sprite: 0, duration: 260 }] },
+      { name: 'antenna_ping', weight: 3, cooldownMinMs: 9000, cooldownMaxMs: 18000, frames: [{ sprite: 13, duration: 160 }, { sprite: 46, duration: 180 }, { sprite: 0, duration: 260 }] },
+      { name: 'terminal_glance', weight: 2, cooldownMinMs: 12000, cooldownMaxMs: 24000, frames: [{ sprite: 14, duration: 300 }, { sprite: 15, duration: 300 }, { sprite: 45, duration: 220 }, { sprite: 0, duration: 260 }] },
+      { name: 'curious_popup', weight: 1, cooldownMinMs: 16000, cooldownMaxMs: 30000, frames: [{ sprite: 43, duration: 360 }, { sprite: 49, duration: 300 }, { sprite: 0, duration: 260 }] },
     ],
   },
   walk: { spriteFrames: [7, 8, 9, 10], frames: [{ sprite: 7, duration: 150 }, { sprite: 8, duration: 150 }, { sprite: 9, duration: 150 }, { sprite: 10, duration: 150 }], loop: true, autoIdleTimeout: 3000 },
   sleep: { spriteFrames: [11, 12], frames: [{ sprite: 11, duration: 900 }, { sprite: 12, duration: 900 }], loop: true },
   talk: { spriteFrames: [21, 22, 23, 24], frames: [{ sprite: 21, duration: 180 }, { sprite: 22, duration: 180 }, { sprite: 23, duration: 180 }, { sprite: 24, duration: 260 }], repeat: 3, fallback: 'idle' },
-  happy: { spriteFrames: [16, 17, 18], frames: [{ sprite: 16, duration: 260 }, { sprite: 17, duration: 160 }, { sprite: 18, duration: 320 }], repeat: 3, fallback: 'idle' },
-  confused: { spriteFrames: [19, 20], frames: [{ sprite: 19, duration: 420 }, { sprite: 20, duration: 420 }], repeat: 2, fallback: 'idle' },
-  focused: { spriteFrames: [21, 22, 23, 24], frames: [{ sprite: 21, duration: 170 }, { sprite: 22, duration: 170 }, { sprite: 23, duration: 170 }, { sprite: 24, duration: 240 }], loop: true },
-  preparing: { spriteFrames: [25, 26, 27, 28], frames: [{ sprite: 25, duration: 150 }, { sprite: 26, duration: 150 }, { sprite: 27, duration: 150 }, { sprite: 28, duration: 240 }], loop: true },
-  gameplay: { spriteFrames: [29, 30], frames: [{ sprite: 29, duration: 300 }, { sprite: 30, duration: 300 }], loop: true },
-  gamewin: { spriteFrames: [31, 32, 33], frames: [{ sprite: 31, duration: 250 }, { sprite: 32, duration: 150 }, { sprite: 33, duration: 260 }], repeat: 5, fallback: 'idle' },
-  gamelose: { spriteFrames: [34, 35], frames: [{ sprite: 34, duration: 360 }, { sprite: 35, duration: 360 }], repeat: 4, fallback: 'idle' },
-  working: { spriteFrames: [21, 22, 23, 24], frames: [{ sprite: 21, duration: 170 }, { sprite: 22, duration: 170 }, { sprite: 23, duration: 170 }, { sprite: 24, duration: 240 }], loop: true },
+  happy: { spriteFrames: [16, 17, 18, 50, 51, 52, 53], frames: [{ sprite: 16, duration: 240 }, { sprite: 50, duration: 170 }, { sprite: 51, duration: 150 }, { sprite: 52, duration: 170 }, { sprite: 53, duration: 280 }], repeat: 3, fallback: 'idle' },
+  confused: { spriteFrames: [19, 20, 43, 49], frames: [{ sprite: 19, duration: 320 }, { sprite: 43, duration: 420 }, { sprite: 49, duration: 360 }, { sprite: 20, duration: 300 }], repeat: 2, fallback: 'idle' },
+  focused: { spriteFrames: [21, 22, 23, 24, 40, 41, 42, 44], frames: [{ sprite: 21, duration: 140 }, { sprite: 40, duration: 150 }, { sprite: 41, duration: 150 }, { sprite: 42, duration: 150 }, { sprite: 44, duration: 220 }, { sprite: 24, duration: 180 }], loop: true },
+  preparing: { spriteFrames: [25, 26, 27, 28, 40, 41, 42, 44], frames: [{ sprite: 25, duration: 130 }, { sprite: 26, duration: 130 }, { sprite: 40, duration: 130 }, { sprite: 41, duration: 130 }, { sprite: 42, duration: 130 }, { sprite: 28, duration: 220 }], loop: true },
+  gameplay: { spriteFrames: [29, 30, 58, 59, 60, 61], frames: [{ sprite: 29, duration: 220 }, { sprite: 58, duration: 160 }, { sprite: 59, duration: 160 }, { sprite: 60, duration: 160 }, { sprite: 61, duration: 220 }, { sprite: 30, duration: 220 }], loop: true },
+  gamewin: { spriteFrames: [31, 32, 33, 50, 51, 52, 53, 62], frames: [{ sprite: 31, duration: 220 }, { sprite: 50, duration: 150 }, { sprite: 62, duration: 150 }, { sprite: 51, duration: 150 }, { sprite: 52, duration: 150 }, { sprite: 53, duration: 260 }], repeat: 5, fallback: 'idle' },
+  gamelose: { spriteFrames: [34, 35, 54, 55, 56, 57], frames: [{ sprite: 54, duration: 220 }, { sprite: 55, duration: 180 }, { sprite: 56, duration: 180 }, { sprite: 57, duration: 300 }, { sprite: 35, duration: 360 }], repeat: 4, fallback: 'idle' },
+  working: { spriteFrames: [21, 22, 23, 24, 25, 26, 27, 28, 40, 41, 42, 44], frames: [{ sprite: 21, duration: 150 }, { sprite: 22, duration: 150 }, { sprite: 40, duration: 140 }, { sprite: 41, duration: 140 }, { sprite: 42, duration: 140 }, { sprite: 44, duration: 220 }], loop: true },
   waiting: { spriteFrames: [19, 20], frames: [{ sprite: 19, duration: 620 }, { sprite: 20, duration: 620 }], loop: true },
-  review: { spriteFrames: [16, 17, 18], frames: [{ sprite: 16, duration: 420 }, { sprite: 17, duration: 420 }, { sprite: 18, duration: 700 }], loop: true },
-  failed: { spriteFrames: [34, 35], frames: [{ sprite: 34, duration: 220 }, { sprite: 35, duration: 220 }, { sprite: 34, duration: 520 }], repeat: 2, fallback: 'idle' },
+  review: { spriteFrames: [16, 17, 18, 50, 51, 52, 53], frames: [{ sprite: 16, duration: 320 }, { sprite: 50, duration: 220 }, { sprite: 51, duration: 220 }, { sprite: 52, duration: 220 }, { sprite: 53, duration: 420 }], loop: true },
+  failed: { spriteFrames: [34, 35, 54, 55, 56, 57], frames: [{ sprite: 54, duration: 170 }, { sprite: 55, duration: 170 }, { sprite: 56, duration: 170 }, { sprite: 57, duration: 260 }, { sprite: 34, duration: 400 }], repeat: 2, fallback: 'idle' },
 };
 
 const manifest = {
@@ -351,37 +439,37 @@ const manifest = {
   },
   states,
   actions: {
-    jump: { sprite: 36 },
-    spin: { sprite: 37 },
-    wave: { sprite: 38 },
-    shake: { sprite: 39 },
+    jump: { spriteFrames: [36, 62, 31], frames: [{ sprite: 36, duration: 120 }, { sprite: 62, duration: 160 }, { sprite: 31, duration: 140 }], repeat: 1, fallback: 'idle' },
+    spin: { spriteFrames: [37, 63, 40, 42], frames: [{ sprite: 37, duration: 90 }, { sprite: 63, duration: 90 }, { sprite: 40, duration: 90 }, { sprite: 42, duration: 90 }], repeat: 2, fallback: 'idle' },
+    wave: { spriteFrames: [38, 48, 50, 53], frames: [{ sprite: 38, duration: 140 }, { sprite: 48, duration: 140 }, { sprite: 50, duration: 140 }, { sprite: 53, duration: 220 }], repeat: 1, fallback: 'idle' },
+    shake: { spriteFrames: [39, 54, 55, 56, 57], frames: [{ sprite: 39, duration: 100 }, { sprite: 54, duration: 100 }, { sprite: 55, duration: 100 }, { sprite: 56, duration: 100 }, { sprite: 57, duration: 180 }], repeat: 1, fallback: 'idle' },
     observe: {
-      spriteFrames: [21, 22, 23, 24],
-      frames: [{ sprite: 21, duration: 120 }, { sprite: 22, duration: 120 }, { sprite: 23, duration: 120 }, { sprite: 24, duration: 220 }],
+      spriteFrames: [40, 41, 42, 43, 44, 45],
+      frames: [{ sprite: 40, duration: 120 }, { sprite: 41, duration: 120 }, { sprite: 42, duration: 120 }, { sprite: 44, duration: 180 }, { sprite: 43, duration: 240 }, { sprite: 45, duration: 220 }],
       repeat: 1,
       fallback: 'idle',
     },
     nudge: {
-      spriteFrames: [13, 14, 15],
-      frames: [{ sprite: 13, duration: 150 }, { sprite: 14, duration: 180 }, { sprite: 15, duration: 180 }],
+      spriteFrames: [46, 47, 48, 49],
+      frames: [{ sprite: 46, duration: 140 }, { sprite: 47, duration: 140 }, { sprite: 48, duration: 160 }, { sprite: 49, duration: 240 }],
       repeat: 1,
       fallback: 'idle',
     },
     acknowledge: {
-      spriteFrames: [16, 17, 18],
-      frames: [{ sprite: 16, duration: 220 }, { sprite: 17, duration: 160 }, { sprite: 18, duration: 260 }],
+      spriteFrames: [50, 51, 52, 53],
+      frames: [{ sprite: 50, duration: 160 }, { sprite: 51, duration: 160 }, { sprite: 52, duration: 160 }, { sprite: 53, duration: 260 }],
       repeat: 1,
       fallback: 'idle',
     },
     blocked: {
-      spriteFrames: [34, 35],
-      frames: [{ sprite: 34, duration: 170 }, { sprite: 35, duration: 170 }, { sprite: 34, duration: 260 }],
+      spriteFrames: [54, 55, 56, 57],
+      frames: [{ sprite: 54, duration: 150 }, { sprite: 55, duration: 150 }, { sprite: 56, duration: 150 }, { sprite: 57, duration: 280 }],
       repeat: 1,
       fallback: 'idle',
     },
     dragging: {
-      spriteFrames: [29, 30],
-      frames: [{ sprite: 29, duration: 180 }, { sprite: 30, duration: 180 }],
+      spriteFrames: [58, 59, 60, 61],
+      frames: [{ sprite: 58, duration: 120 }, { sprite: 59, duration: 120 }, { sprite: 60, duration: 120 }, { sprite: 61, duration: 160 }],
       repeat: 2,
       fallback: 'idle',
     },

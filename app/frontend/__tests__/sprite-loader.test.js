@@ -166,7 +166,7 @@ describe('sprite-loader', () => {
     expect(renderer.displayWidth).toBe(74);
     expect(renderer.displayHeight).toBe(80);
     expect(renderer.pixelated).toBe(false);
-    expect(renderer.actionConfig.observe.frames.map((frame) => frame.sprite)).toEqual([0, 1, 2, 3]);
+    expect(renderer.actionConfig.observe.frames.map((frame) => frame.sprite)).toEqual([0, 1, 2, 4, 3, 5]);
     expect(renderer.getSprite('observe', 0)).toBe(renderer.SPRITES.observe[0]);
   });
 

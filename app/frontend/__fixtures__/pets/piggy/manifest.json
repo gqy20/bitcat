@@ -29,8 +29,8 @@
     "frameWidth": 192,
     "frameHeight": 208,
     "columns": 8,
-    "rows": 5,
-    "frameCount": 40
+    "rows": 8,
+    "frameCount": 64
   },
   "states": {
     "idle": {
@@ -44,7 +44,11 @@
         6,
         13,
         14,
-        15
+        15,
+        43,
+        45,
+        46,
+        49
       ],
       "frames": [
         {
@@ -85,6 +89,10 @@
               "duration": 160
             },
             {
+              "sprite": 46,
+              "duration": 180
+            },
+            {
               "sprite": 0,
               "duration": 260
             }
@@ -102,6 +110,30 @@
             },
             {
               "sprite": 15,
+              "duration": 300
+            },
+            {
+              "sprite": 45,
+              "duration": 220
+            },
+            {
+              "sprite": 0,
+              "duration": 260
+            }
+          ]
+        },
+        {
+          "name": "curious_popup",
+          "weight": 1,
+          "cooldownMinMs": 16000,
+          "cooldownMaxMs": 30000,
+          "frames": [
+            {
+              "sprite": 43,
+              "duration": 360
+            },
+            {
+              "sprite": 49,
               "duration": 300
             },
             {
@@ -189,20 +221,32 @@
       "spriteFrames": [
         16,
         17,
-        18
+        18,
+        50,
+        51,
+        52,
+        53
       ],
       "frames": [
         {
           "sprite": 16,
-          "duration": 260
+          "duration": 240
         },
         {
-          "sprite": 17,
-          "duration": 160
+          "sprite": 50,
+          "duration": 170
         },
         {
-          "sprite": 18,
-          "duration": 320
+          "sprite": 51,
+          "duration": 150
+        },
+        {
+          "sprite": 52,
+          "duration": 170
+        },
+        {
+          "sprite": 53,
+          "duration": 280
         }
       ],
       "repeat": 3,
@@ -211,16 +255,26 @@
     "confused": {
       "spriteFrames": [
         19,
-        20
+        20,
+        43,
+        49
       ],
       "frames": [
         {
           "sprite": 19,
+          "duration": 320
+        },
+        {
+          "sprite": 43,
           "duration": 420
         },
         {
+          "sprite": 49,
+          "duration": 360
+        },
+        {
           "sprite": 20,
-          "duration": 420
+          "duration": 300
         }
       ],
       "repeat": 2,
@@ -231,24 +285,36 @@
         21,
         22,
         23,
-        24
+        24,
+        40,
+        41,
+        42,
+        44
       ],
       "frames": [
         {
           "sprite": 21,
-          "duration": 170
+          "duration": 140
         },
         {
-          "sprite": 22,
-          "duration": 170
+          "sprite": 40,
+          "duration": 150
         },
         {
-          "sprite": 23,
-          "duration": 170
+          "sprite": 41,
+          "duration": 150
+        },
+        {
+          "sprite": 42,
+          "duration": 150
+        },
+        {
+          "sprite": 44,
+          "duration": 220
         },
         {
           "sprite": 24,
-          "duration": 240
+          "duration": 180
         }
       ],
       "loop": true
@@ -258,24 +324,36 @@
         25,
         26,
         27,
-        28
+        28,
+        40,
+        41,
+        42,
+        44
       ],
       "frames": [
         {
           "sprite": 25,
-          "duration": 150
+          "duration": 130
         },
         {
           "sprite": 26,
-          "duration": 150
+          "duration": 130
         },
         {
-          "sprite": 27,
-          "duration": 150
+          "sprite": 40,
+          "duration": 130
+        },
+        {
+          "sprite": 41,
+          "duration": 130
+        },
+        {
+          "sprite": 42,
+          "duration": 130
         },
         {
           "sprite": 28,
-          "duration": 240
+          "duration": 220
         }
       ],
       "loop": true
@@ -283,16 +361,36 @@
     "gameplay": {
       "spriteFrames": [
         29,
-        30
+        30,
+        58,
+        59,
+        60,
+        61
       ],
       "frames": [
         {
           "sprite": 29,
-          "duration": 300
+          "duration": 220
+        },
+        {
+          "sprite": 58,
+          "duration": 160
+        },
+        {
+          "sprite": 59,
+          "duration": 160
+        },
+        {
+          "sprite": 60,
+          "duration": 160
+        },
+        {
+          "sprite": 61,
+          "duration": 220
         },
         {
           "sprite": 30,
-          "duration": 300
+          "duration": 220
         }
       ],
       "loop": true
@@ -301,19 +399,36 @@
       "spriteFrames": [
         31,
         32,
-        33
+        33,
+        50,
+        51,
+        52,
+        53,
+        62
       ],
       "frames": [
         {
           "sprite": 31,
-          "duration": 250
+          "duration": 220
         },
         {
-          "sprite": 32,
+          "sprite": 50,
           "duration": 150
         },
         {
-          "sprite": 33,
+          "sprite": 62,
+          "duration": 150
+        },
+        {
+          "sprite": 51,
+          "duration": 150
+        },
+        {
+          "sprite": 52,
+          "duration": 150
+        },
+        {
+          "sprite": 53,
           "duration": 260
         }
       ],
@@ -323,12 +438,28 @@
     "gamelose": {
       "spriteFrames": [
         34,
-        35
+        35,
+        54,
+        55,
+        56,
+        57
       ],
       "frames": [
         {
-          "sprite": 34,
-          "duration": 360
+          "sprite": 54,
+          "duration": 220
+        },
+        {
+          "sprite": 55,
+          "duration": 180
+        },
+        {
+          "sprite": 56,
+          "duration": 180
+        },
+        {
+          "sprite": 57,
+          "duration": 300
         },
         {
           "sprite": 35,
@@ -343,24 +474,40 @@
         21,
         22,
         23,
-        24
+        24,
+        25,
+        26,
+        27,
+        28,
+        40,
+        41,
+        42,
+        44
       ],
       "frames": [
         {
           "sprite": 21,
-          "duration": 170
+          "duration": 150
         },
         {
           "sprite": 22,
-          "duration": 170
+          "duration": 150
         },
         {
-          "sprite": 23,
-          "duration": 170
+          "sprite": 40,
+          "duration": 140
         },
         {
-          "sprite": 24,
-          "duration": 240
+          "sprite": 41,
+          "duration": 140
+        },
+        {
+          "sprite": 42,
+          "duration": 140
+        },
+        {
+          "sprite": 44,
+          "duration": 220
         }
       ],
       "loop": true
@@ -386,20 +533,32 @@
       "spriteFrames": [
         16,
         17,
-        18
+        18,
+        50,
+        51,
+        52,
+        53
       ],
       "frames": [
         {
           "sprite": 16,
-          "duration": 420
+          "duration": 320
         },
         {
-          "sprite": 17,
-          "duration": 420
+          "sprite": 50,
+          "duration": 220
         },
         {
-          "sprite": 18,
-          "duration": 700
+          "sprite": 51,
+          "duration": 220
+        },
+        {
+          "sprite": 52,
+          "duration": 220
+        },
+        {
+          "sprite": 53,
+          "duration": 420
         }
       ],
       "loop": true
@@ -407,20 +566,32 @@
     "failed": {
       "spriteFrames": [
         34,
-        35
+        35,
+        54,
+        55,
+        56,
+        57
       ],
       "frames": [
         {
-          "sprite": 34,
-          "duration": 220
+          "sprite": 54,
+          "duration": 170
         },
         {
-          "sprite": 35,
-          "duration": 220
+          "sprite": 55,
+          "duration": 170
+        },
+        {
+          "sprite": 56,
+          "duration": 170
+        },
+        {
+          "sprite": 57,
+          "duration": 260
         },
         {
           "sprite": 34,
-          "duration": 520
+          "duration": 400
         }
       ],
       "repeat": 2,
@@ -429,39 +600,149 @@
   },
   "actions": {
     "jump": {
-      "sprite": 36
-    },
-    "spin": {
-      "sprite": 37
-    },
-    "wave": {
-      "sprite": 38
-    },
-    "shake": {
-      "sprite": 39
-    },
-    "observe": {
       "spriteFrames": [
-        21,
-        22,
-        23,
-        24
+        36,
+        62,
+        31
       ],
       "frames": [
         {
-          "sprite": 21,
+          "sprite": 36,
           "duration": 120
         },
         {
-          "sprite": 22,
+          "sprite": 62,
+          "duration": 160
+        },
+        {
+          "sprite": 31,
+          "duration": 140
+        }
+      ],
+      "repeat": 1,
+      "fallback": "idle"
+    },
+    "spin": {
+      "spriteFrames": [
+        37,
+        63,
+        40,
+        42
+      ],
+      "frames": [
+        {
+          "sprite": 37,
+          "duration": 90
+        },
+        {
+          "sprite": 63,
+          "duration": 90
+        },
+        {
+          "sprite": 40,
+          "duration": 90
+        },
+        {
+          "sprite": 42,
+          "duration": 90
+        }
+      ],
+      "repeat": 2,
+      "fallback": "idle"
+    },
+    "wave": {
+      "spriteFrames": [
+        38,
+        48,
+        50,
+        53
+      ],
+      "frames": [
+        {
+          "sprite": 38,
+          "duration": 140
+        },
+        {
+          "sprite": 48,
+          "duration": 140
+        },
+        {
+          "sprite": 50,
+          "duration": 140
+        },
+        {
+          "sprite": 53,
+          "duration": 220
+        }
+      ],
+      "repeat": 1,
+      "fallback": "idle"
+    },
+    "shake": {
+      "spriteFrames": [
+        39,
+        54,
+        55,
+        56,
+        57
+      ],
+      "frames": [
+        {
+          "sprite": 39,
+          "duration": 100
+        },
+        {
+          "sprite": 54,
+          "duration": 100
+        },
+        {
+          "sprite": 55,
+          "duration": 100
+        },
+        {
+          "sprite": 56,
+          "duration": 100
+        },
+        {
+          "sprite": 57,
+          "duration": 180
+        }
+      ],
+      "repeat": 1,
+      "fallback": "idle"
+    },
+    "observe": {
+      "spriteFrames": [
+        40,
+        41,
+        42,
+        43,
+        44,
+        45
+      ],
+      "frames": [
+        {
+          "sprite": 40,
           "duration": 120
         },
         {
-          "sprite": 23,
+          "sprite": 41,
           "duration": 120
         },
         {
-          "sprite": 24,
+          "sprite": 42,
+          "duration": 120
+        },
+        {
+          "sprite": 44,
+          "duration": 180
+        },
+        {
+          "sprite": 43,
+          "duration": 240
+        },
+        {
+          "sprite": 45,
           "duration": 220
         }
       ],
@@ -470,22 +751,27 @@
     },
     "nudge": {
       "spriteFrames": [
-        13,
-        14,
-        15
+        46,
+        47,
+        48,
+        49
       ],
       "frames": [
         {
-          "sprite": 13,
-          "duration": 150
+          "sprite": 46,
+          "duration": 140
         },
         {
-          "sprite": 14,
-          "duration": 180
+          "sprite": 47,
+          "duration": 140
         },
         {
-          "sprite": 15,
-          "duration": 180
+          "sprite": 48,
+          "duration": 160
+        },
+        {
+          "sprite": 49,
+          "duration": 240
         }
       ],
       "repeat": 1,
@@ -493,21 +779,26 @@
     },
     "acknowledge": {
       "spriteFrames": [
-        16,
-        17,
-        18
+        50,
+        51,
+        52,
+        53
       ],
       "frames": [
         {
-          "sprite": 16,
-          "duration": 220
-        },
-        {
-          "sprite": 17,
+          "sprite": 50,
           "duration": 160
         },
         {
-          "sprite": 18,
+          "sprite": 51,
+          "duration": 160
+        },
+        {
+          "sprite": 52,
+          "duration": 160
+        },
+        {
+          "sprite": 53,
           "duration": 260
         }
       ],
@@ -516,21 +807,27 @@
     },
     "blocked": {
       "spriteFrames": [
-        34,
-        35
+        54,
+        55,
+        56,
+        57
       ],
       "frames": [
         {
-          "sprite": 34,
-          "duration": 170
+          "sprite": 54,
+          "duration": 150
         },
         {
-          "sprite": 35,
-          "duration": 170
+          "sprite": 55,
+          "duration": 150
         },
         {
-          "sprite": 34,
-          "duration": 260
+          "sprite": 56,
+          "duration": 150
+        },
+        {
+          "sprite": 57,
+          "duration": 280
         }
       ],
       "repeat": 1,
@@ -538,17 +835,27 @@
     },
     "dragging": {
       "spriteFrames": [
-        29,
-        30
+        58,
+        59,
+        60,
+        61
       ],
       "frames": [
         {
-          "sprite": 29,
-          "duration": 180
+          "sprite": 58,
+          "duration": 120
         },
         {
-          "sprite": 30,
-          "duration": 180
+          "sprite": 59,
+          "duration": 120
+        },
+        {
+          "sprite": 60,
+          "duration": 120
+        },
+        {
+          "sprite": 61,
+          "duration": 160
         }
       ],
       "repeat": 2,
@@ -610,7 +917,31 @@
       "idle:36",
       "failed:37",
       "failed:38",
-      "idle:39"
+      "idle:39",
+      "idle:40",
+      "idle:41",
+      "failed:42",
+      "idle:43",
+      "working:44",
+      "working:45",
+      "working:46",
+      "curious:47",
+      "working:48",
+      "idle:49",
+      "idle:50",
+      "idle:51",
+      "delight:52",
+      "waiting:53",
+      "delight:54",
+      "delight:55",
+      "review:56",
+      "idle:57",
+      "failed:58",
+      "failed:59",
+      "failed:60",
+      "failed:61",
+      "idle:62",
+      "idle:63"
     ]
   }
 }

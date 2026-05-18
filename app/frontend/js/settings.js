@@ -18,6 +18,10 @@ const PET_ASSET_PRESETS = [
   { value: "/__fixtures__/pets/fireball", label: "Fireball", group: "角色" },
   { value: "/__fixtures__/pets/rocky", label: "Rocky", group: "角色" },
   { value: "/__fixtures__/pets/seedy", label: "Seedy", group: "角色" },
+  { value: "/__fixtures__/pets/byte-bun", label: "Byte Bun", group: "角色" },
+  { value: "/__fixtures__/pets/mossbot", label: "Mossbot", group: "角色" },
+  { value: "/__fixtures__/pets/moonbit", label: "Moonbit", group: "角色" },
+  { value: "/__fixtures__/pets/sparkle", label: "Sparkle", group: "角色" },
   { value: "/__fixtures__/pets/cat", label: "Cat", group: "经典像素" },
 ];
 const PET_ASSET_PIGGY = "/__fixtures__/pets/piggy";

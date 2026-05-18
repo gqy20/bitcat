@@ -52,8 +52,8 @@ describe('piggy pet fixture pack', () => {
       frameWidth: 192,
       frameHeight: 208,
       columns: 8,
-      rows: 5,
-      frameCount: 40,
+      rows: 8,
+      frameCount: 64,
     });
     expect(manifest.render).toMatchObject({
       mode: 'sheet',
@@ -122,6 +122,13 @@ describe('piggy pet fixture pack', () => {
       expect(manifest.actions[action].frames.length).toBeGreaterThan(0);
       expect(manifest.actions[action].repeat).toBeGreaterThan(0);
       expect(manifest.actions[action].fallback).toBe('idle');
+    }
+  });
+
+  it('declares dance actions as multi-frame timelines', () => {
+    for (const action of ['jump', 'spin', 'wave', 'shake']) {
+      expect(manifest.actions[action].frames.length).toBeGreaterThan(1);
+      expect(manifest.actions[action].spriteFrames.length).toBeGreaterThan(1);
     }
   });
 });
