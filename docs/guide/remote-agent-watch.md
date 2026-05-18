@@ -45,10 +45,11 @@ The installer:
 - writes `~/.ai-pad/hooks/sender.sh`;
 - installs marker-scoped Claude Code hooks when `~/.claude` exists;
 - installs marker-scoped Codex hooks when `~/.codex` exists;
+- repairs previous 8Bit Cat hook installs by removing known stale markers before writing the current hook set;
 - wraps hook payloads as `{ "source", "machine", "payload" }`;
 - sends the envelope to the Windows monitor.
 
-The sender is intentionally best-effort: it uses a short network timeout and exits successfully even when the Windows monitor is unreachable, so it does not block Claude Code or Codex.
+The sender is intentionally best-effort: it uses a short network timeout and exits successfully even when the Windows monitor is unreachable, so it does not block Claude Code or Codex. When the monitor is down, the sender records that state locally and skips network work until the next probe window. Defaults are `AI_PAD_PROBE_INTERVAL_SEC=45` and `AI_PAD_CONNECT_TIMEOUT_SEC=1`.
 
 After installation, the script sends one self-test envelope to the Windows monitor. This should make the remote device appear in Agent Watch immediately when port `5342` is reachable. You can opt out with `--no-self-test`.
 

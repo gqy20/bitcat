@@ -4,6 +4,7 @@
 set -eu
 
 MARKER="ai-pad-remote-watch"
+KNOWN_MARKERS="ai-pad-remote-watch,ai-pad-claude-code-watch,ai-pad-codex-watch"
 HOST=""
 HOSTS=""
 PORT="5342"
@@ -102,9 +103,67 @@ MACHINE="${MACHINE}"
 HOSTS="${HOSTS}"
 PORT="${PORT}"
 SOURCE="\${AI_PAD_SOURCE:-claude_code}"
+STATE_DIR="${HOOK_DIR}/state"
+STATE_FILE="\${STATE_DIR}/monitor-state"
+PROBE_INTERVAL_SEC="\${AI_PAD_PROBE_INTERVAL_SEC:-45}"
+CONNECT_TIMEOUT_SEC="\${AI_PAD_CONNECT_TIMEOUT_SEC:-1}"
 
 raw=\$(cat || true)
 if [ -z "\$raw" ]; then exit 0; fi
+
+now_epoch() {
+  date +%s 2>/dev/null || printf '0'
+}
+
+state_field() {
+  key="\$1"
+  [ -f "\$STATE_FILE" ] || return 0
+  awk -F= -v key="\$key" '\$1 == key { print \$2; exit }' "\$STATE_FILE" 2>/dev/null || true
+}
+
+write_state() {
+  status="\$1"
+  host="\${2:-}"
+  mkdir -p "\$STATE_DIR"
+  {
+    printf 'status=%s\n' "\$status"
+    printf 'host=%s\n' "\$host"
+    printf 'checked_at=%s\n' "\$(now_epoch)"
+  } > "\$STATE_FILE"
+}
+
+can_attempt_network() {
+  last_status="\$(state_field status)"
+  checked_at="\$(state_field checked_at)"
+  now="\$(now_epoch)"
+  case "\$checked_at" in
+    ''|*[!0-9]*) return 0 ;;
+  esac
+  case "\$PROBE_INTERVAL_SEC" in
+    ''|*[!0-9]*) PROBE_INTERVAL_SEC=45 ;;
+  esac
+  if [ "\$last_status" = "down" ] && [ \$((now - checked_at)) -lt "\$PROBE_INTERVAL_SEC" ]; then
+    return 1
+  fi
+  return 0
+}
+
+send_to_host() {
+  host="\$1"
+  if command -v nc >/dev/null 2>&1; then
+    printf '%s' "\$envelope" | nc -w "\$CONNECT_TIMEOUT_SEC" "\$host" "\$PORT" >/dev/null 2>&1
+    return \$?
+  fi
+  if command -v bash >/dev/null 2>&1; then
+    bash -c 'cat > /dev/tcp/"\$0"/"\$1"' "\$host" "\$PORT" <<TCP_EOF >/dev/null 2>&1
+\$envelope
+TCP_EOF
+    return \$?
+  fi
+  return 1
+}
+
+can_attempt_network || exit 0
 
 if command -v python3 >/dev/null 2>&1; then
   envelope=\$(SOURCE="\$SOURCE" MACHINE="\$MACHINE" python3 -c '
@@ -125,14 +184,12 @@ if [ -z "\$envelope" ]; then
 fi
 
 for host in \$(printf '%s' "\$HOSTS" | tr ',' ' '); do
-  if command -v nc >/dev/null 2>&1; then
-    printf '%s' "\$envelope" | nc -w 2 "\$host" "\$PORT" >/dev/null 2>&1 && exit 0
-  elif command -v bash >/dev/null 2>&1; then
-    bash -c 'cat > /dev/tcp/"\$0"/"\$1"' "\$host" "\$PORT" <<TCP_EOF >/dev/null 2>&1 && exit 0
-\$envelope
-TCP_EOF
+  if send_to_host "\$host"; then
+    write_state up "\$host"
+    exit 0
   fi
 done
+write_state down ""
 exit 0
 EOF
   chmod +x "$SENDER"
@@ -154,11 +211,12 @@ install_claude() {
   mkdir -p "$(dirname "$settings")"
   [ -f "$settings" ] || printf '{}\n' > "$settings"
   backup_file "$settings"
-  SETTINGS="$settings" SENDER="$SENDER" MARKER="$MARKER" python3 - <<'PY'
+  SETTINGS="$settings" SENDER="$SENDER" MARKER="$MARKER" KNOWN_MARKERS="$KNOWN_MARKERS" python3 - <<'PY'
 import json, os
 path = os.environ["SETTINGS"]
 sender = os.environ["SENDER"]
 marker = os.environ["MARKER"]
+known_markers = {m for m in os.environ.get("KNOWN_MARKERS", marker).split(",") if m}
 events = [
   ("UserPromptSubmit", None), ("SessionStart", None),
   ("PreToolUse", "*"), ("PostToolUse", "*"), ("PostToolUseFailure", "*"),
@@ -175,12 +233,23 @@ except Exception:
     root = {}
 hooks = root.setdefault("hooks", {})
 hook = {"type": "command", "command": f'AI_PAD_SOURCE=claude_code bash "{sender}"', "ai_pad_marker": marker}
-for event, matcher in events:
-    groups = hooks.setdefault(event, [])
-    groups[:] = [g for g in groups if g.get("ai_pad_marker") != marker]
+removed = 0
+for event, groups in list(hooks.items()):
+    if not isinstance(groups, list):
+        continue
+    before = len(groups)
+    groups[:] = [g for g in groups if not (isinstance(g, dict) and g.get("ai_pad_marker") in known_markers)]
+    removed += before - len(groups)
     for group in groups:
         if isinstance(group, dict) and isinstance(group.get("hooks"), list):
-            group["hooks"] = [h for h in group["hooks"] if h.get("ai_pad_marker") != marker]
+            before_hooks = len(group["hooks"])
+            group["hooks"] = [h for h in group["hooks"] if not (isinstance(h, dict) and h.get("ai_pad_marker") in known_markers)]
+            removed += before_hooks - len(group["hooks"])
+    hooks[event] = [g for g in groups if not (isinstance(g, dict) and g.get("hooks") == [])]
+    if hooks[event] == []:
+        hooks.pop(event, None)
+for event, matcher in events:
+    groups = hooks.setdefault(event, [])
     group = next((g for g in groups if isinstance(g, dict) and g.get("matcher") == matcher and isinstance(g.get("hooks"), list)), None)
     if group is None:
         group = {"hooks": []}
@@ -191,6 +260,7 @@ for event, matcher in events:
 with open(path, "w", encoding="utf-8") as f:
     json.dump(root, f, indent=2, ensure_ascii=False)
     f.write("\n")
+print(f"repaired Claude Code hooks: removed {removed} stale 8Bit Cat hook(s)")
 PY
   echo "installed Claude Code remote hooks"
 }
@@ -205,10 +275,21 @@ install_codex() {
   [ -f "$config" ] || : > "$config"
   backup_file "$config"
   tmp="${config}.tmp.$$"
-  awk -v marker="$MARKER" '
-    $0 ~ ("# " marker " begin") { skip=1; next }
-    $0 ~ ("# " marker " end") { skip=0; next }
-    !skip { print }
+  awk -v markers="$KNOWN_MARKERS" '
+    BEGIN {
+      n = split(markers, parts, ",")
+      for (i = 1; i <= n; i++) known[parts[i]] = 1
+    }
+    {
+      for (marker in known) {
+        if ($0 ~ ("# " marker " begin")) { skip=1; removed=1; next }
+        if ($0 ~ ("# " marker " end")) { skip=0; next }
+      }
+      if (!skip) print
+    }
+    END {
+      if (removed) print "repaired Codex hooks: removed stale 8Bit Cat block(s)" > "/dev/stderr"
+    }
   ' "$config" > "$tmp"
   cat >> "$tmp" <<EOF
 
@@ -255,20 +336,21 @@ EOF
 
 uninstall_all() {
   if [ -f "${HOME}/.claude/settings.json" ] && command -v python3 >/dev/null 2>&1; then
-    SETTINGS="${HOME}/.claude/settings.json" MARKER="$MARKER" python3 - <<'PY'
+    SETTINGS="${HOME}/.claude/settings.json" MARKER="$MARKER" KNOWN_MARKERS="$KNOWN_MARKERS" python3 - <<'PY'
 import json, os
 path = os.environ["SETTINGS"]
 marker = os.environ["MARKER"]
+known_markers = {m for m in os.environ.get("KNOWN_MARKERS", marker).split(",") if m}
 with open(path, "r", encoding="utf-8") as f:
     root = json.load(f)
 hooks = root.get("hooks", {})
 for event, groups in list(hooks.items()):
     if not isinstance(groups, list):
         continue
-    groups[:] = [g for g in groups if not (isinstance(g, dict) and g.get("ai_pad_marker") == marker)]
+    groups[:] = [g for g in groups if not (isinstance(g, dict) and g.get("ai_pad_marker") in known_markers)]
     for group in groups:
         if isinstance(group, dict) and isinstance(group.get("hooks"), list):
-            group["hooks"] = [h for h in group["hooks"] if not (isinstance(h, dict) and h.get("ai_pad_marker") == marker)]
+            group["hooks"] = [h for h in group["hooks"] if not (isinstance(h, dict) and h.get("ai_pad_marker") in known_markers)]
     hooks[event] = [g for g in groups if not (isinstance(g, dict) and g.get("hooks") == [])]
 with open(path, "w", encoding="utf-8") as f:
     json.dump(root, f, indent=2, ensure_ascii=False)
@@ -277,10 +359,18 @@ PY
   fi
   if [ -f "${HOME}/.codex/config.toml" ]; then
     tmp="${HOME}/.codex/config.toml.tmp.$$"
-    awk -v marker="$MARKER" '
-      $0 ~ ("# " marker " begin") { skip=1; next }
-      $0 ~ ("# " marker " end") { skip=0; next }
-      !skip { print }
+    awk -v markers="$KNOWN_MARKERS" '
+      BEGIN {
+        n = split(markers, parts, ",")
+        for (i = 1; i <= n; i++) known[parts[i]] = 1
+      }
+      {
+        for (marker in known) {
+          if ($0 ~ ("# " marker " begin")) { skip=1; next }
+          if ($0 ~ ("# " marker " end")) { skip=0; next }
+        }
+        if (!skip) print
+      }
     ' "${HOME}/.codex/config.toml" > "$tmp"
     mv "$tmp" "${HOME}/.codex/config.toml"
   fi

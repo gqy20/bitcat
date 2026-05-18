@@ -53,6 +53,84 @@ describe('agent watch metadata', () => {
     expect(html).toContain('task-source');
   });
 
+  it('renders compact metadata as prioritized context instead of breadcrumbs', () => {
+    const html = dom.window.__agentWatchTest.renderCompactMeta({
+      machine: 'qy113',
+      project: 'TrumanWorld',
+      source: 'Claude Code',
+      kind: 'Shell',
+    }, { status: 'working' });
+
+    expect(html).toContain('task-context-primary');
+    expect(html).toContain('task-context-secondary');
+    expect(html).toContain('qy113');
+    expect(html).toContain('TrumanWorld');
+    expect(html).toContain('Claude');
+    expect(html).toContain('Shell');
+    expect(html).not.toContain('task-separator');
+    expect(html).not.toContain('qy...');
+  });
+
+  it('renders collapsed cards with readable primary context', () => {
+    dom.window.__agentWatchTest.render({
+      sessions: [{
+        session_id: 's1',
+        source: 'codex',
+        machine: 'qy113',
+        workspace_name: 'TrumanWorld',
+        status: 'working',
+        display: {
+          action_label: 'Shell',
+          headline: '运行测试',
+          detail: 'cargo test',
+          project: 'TrumanWorld',
+          source_label: 'Codex',
+          tone: 'active',
+        },
+        age_sec: 2,
+      }],
+    });
+
+    dom.window.document.querySelector('.task-card [data-action="toggle"]').click();
+    const card = dom.window.document.querySelector('.task-card');
+
+    expect(card.classList.contains('collapsed')).toBe(true);
+    expect(card.querySelector('.task-context-primary')?.textContent).toContain('qy113');
+    expect(card.querySelector('.task-context-primary')?.textContent).toContain('TrumanWorld');
+    expect(card.querySelector('.task-separator')).toBeNull();
+  });
+
+  it('renders expanded cards without repeating command metadata', () => {
+    dom.window.__agentWatchTest.render({
+      sessions: [{
+        session_id: 's2',
+        source: 'codex',
+        machine: 'qy113',
+        workspace_name: 'TrumanWorld',
+        status: 'tool_running',
+        display: {
+          action_label: 'Shell',
+          headline: "正在运行 sed -n '1,260p' frontend/components/scene-style.ts",
+          detail: "sed -n '1,260p' frontend/components/scene-style.ts",
+          project: 'TrumanWorld',
+          source_label: 'Codex',
+          age_label: '13s',
+          tone: 'active',
+        },
+      }],
+    });
+
+    const card = dom.window.document.querySelector('.task-card');
+
+    expect(card.classList.contains('collapsed')).toBe(false);
+    expect(card.querySelector('.task-title')?.textContent).toBe('正在运行 Shell');
+    expect(card.querySelector('.task-summary')?.textContent).toContain("sed -n '1,260p'");
+    expect(card.querySelector('.task-context-primary')?.textContent).toContain('qy113');
+    expect(card.querySelector('.task-context-primary')?.textContent).toContain('TrumanWorld');
+    expect(card.querySelector('.task-context-secondary')?.textContent).toContain('Codex');
+    expect(card.querySelector('.task-separator')).toBeNull();
+  });
+
   it('keeps specific task context in the view model', () => {
     const view = dom.window.__agentWatchTest.viewOf({
       source: 'codex',

@@ -122,6 +122,60 @@
     return items.map(renderMetaItem).join("");
   }
 
+  function renderCompactMeta(view, session) {
+    const primary = [];
+    const secondary = [];
+    if (view.machine) primary.push({ value: view.machine, className: "task-device" });
+    if (view.project) primary.push({ value: view.project, className: "task-project" });
+    if (!primary.length && view.detail) primary.push({ value: view.detail, className: "task-project" });
+    if (view.source) secondary.push({ value: compactSourceLabel(view.source), className: "task-source" });
+    if (!isNoisyActionLabel(view.kind, session)) secondary.push({ value: view.kind, className: "task-kind" });
+    return `
+      <div class="task-context-primary">
+        ${primary.map((item) => renderPlainMetaItem(item)).join("")}
+      </div>
+      <div class="task-context-secondary">
+        ${secondary.map((item) => renderPlainMetaItem(item)).join("")}
+      </div>`;
+  }
+
+  function renderExpandedContext(view) {
+    const primary = [];
+    const secondary = [];
+    if (view.machine) primary.push({ value: view.machine, className: "task-device" });
+    if (view.project) primary.push({ value: view.project, className: "task-project" });
+    if (!primary.length && view.detail) primary.push({ value: view.detail, className: "task-project" });
+    if (view.source) secondary.push({ value: view.source, className: "task-source" });
+    return `
+      <div class="task-context-primary">
+        ${primary.map((item) => renderPlainMetaItem(item)).join("")}
+      </div>
+      <div class="task-context-secondary">
+        ${secondary.map((item) => renderPlainMetaItem(item)).join("")}
+      </div>`;
+  }
+
+  function expandedTitle(view, session) {
+    if (!isNoisyActionLabel(view.kind, session)) {
+      const status = String(session.status || view.tone || "").toLowerCase();
+      if (status === "done") return `已完成 ${view.kind}`;
+      if (status === "waiting") return `等待处理 ${view.kind}`;
+      if (status === "error") return `${view.kind} 需要处理`;
+      return `正在运行 ${view.kind}`;
+    }
+    return view.target;
+  }
+
+  function renderPlainMetaItem(item) {
+    const cls = item.className ? ` ${item.className}` : "";
+    return `<span class="task-meta-item${cls}" title="${escapeAttr(item.value)}">${escapeHtml(item.value)}</span>`;
+  }
+
+  function compactSourceLabel(source) {
+    if (source === "Claude Code") return "Claude";
+    return source;
+  }
+
   function render(snapshot) {
     latest = snapshot || latest;
     const sessions = latest?.sessions || [];
@@ -146,20 +200,21 @@
       const isCollapsed = collapsed.has(id);
       const status = session.status || "idle";
       const view = viewOf(session);
-      const meta = renderMeta(view, session, isCollapsed);
+      const meta = isCollapsed ? renderCompactMeta(view, session) : renderExpandedContext(view);
+      const title = isCollapsed ? view.target : expandedTitle(view, session);
       return `
         <article class="task-card ${escapeAttr(status)} tone-${escapeAttr(view.tone)} ${view.quiet ? "quiet" : ""} ${isCollapsed ? "collapsed" : ""}" data-id="${escapeAttr(id)}">
           <span class="task-rail" aria-hidden="true"></span>
           <div class="task-main">
-            <div class="task-headline">
-              <h2 class="task-title">${escapeHtml(view.target)}</h2>
-              <span class="task-age">${escapeHtml(view.age)}</span>
-            </div>
-            <p class="task-summary">${escapeHtml(view.detail)}</p>
             <div class="task-meta">
               <span class="task-dot"></span>
               ${meta}
+              ${!isCollapsed && view.age ? `<span class="task-age">${escapeHtml(view.age)}</span>` : ""}
             </div>
+            <div class="task-headline">
+              <h2 class="task-title">${escapeHtml(title)}</h2>
+            </div>
+            <p class="task-summary">${escapeHtml(view.detail)}</p>
           </div>
           <div class="task-actions">
             <button class="task-open" type="button" data-action="open" title="打开工作目录">打开</button>
@@ -335,6 +390,10 @@
     agentSourceLabel,
     renderMeta,
     renderMetaItem,
+    renderCompactMeta,
+    renderExpandedContext,
+    expandedTitle,
+    render,
     viewOf,
   };
   setFolded(folded, false);
