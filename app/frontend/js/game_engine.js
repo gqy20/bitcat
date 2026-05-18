@@ -50,6 +50,14 @@
     return Math.max(min, Math.min(max, n));
   }
 
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function easeOutCubic(t) {
+    return 1 - Math.pow(1 - t, 3);
+  }
+
   function samePoint(a, b) {
     return a.x === b.x && a.y === b.y;
   }
@@ -77,8 +85,13 @@
       this.stepMs = Number(config.player.speed_ms) || 140;
       this.tickMs = 0;
       this.ended = false;
+      this.boostHeld = false;
       this.snake = [];
+      this.prevSnake = [];
       this.food = { x: 0, y: 0 };
+      this.foodEaten = 0;
+      this.animMs = 0;
+      this.foodBursts = [];
       this.reset();
     }
 
@@ -91,6 +104,7 @@
       for (let i = 0; i < len; i++) {
         this.snake.push({ x: startX - i, y: startY });
       }
+      this.prevSnake = this.snake.map((p) => ({ ...p }));
       this.spawnFood();
     }
 
@@ -108,6 +122,11 @@
       }
       if (input.type === 'confirm' && this.state === 'ready') {
         this.state = 'playing';
+        return;
+      }
+      if (input.type === 'boost') {
+        this.boostHeld = Boolean(input.active);
+        if (this.boostHeld && this.state === 'ready') this.state = 'playing';
         return;
       }
       if (input.type === 'pause' && (this.state === 'playing' || this.state === 'paused')) {
@@ -128,15 +147,18 @@
     }
 
     update(dtMs) {
+      this.animMs += dtMs;
+      this.updateFoodBursts(dtMs);
       if (this.state !== 'playing' || this.ended) return;
       this.tickMs += dtMs;
-      while (this.tickMs >= this.stepMs && this.state === 'playing') {
-        this.tickMs -= this.stepMs;
+      while (this.tickMs >= this.effectiveStepMs() && this.state === 'playing') {
+        this.tickMs -= this.effectiveStepMs();
         this.step();
       }
     }
 
     step() {
+      this.prevSnake = this.snake.map((p) => ({ ...p }));
       this.dir = this.nextDir;
       const head = this.snake[0];
       let next = { x: head.x + this.dir.x, y: head.y + this.dir.y };
@@ -163,6 +185,8 @@
       this.snake.unshift(next);
       if (ate) {
         this.score += 10;
+        this.foodEaten += 1;
+        this.addFoodBurst(next);
         this.stepMs = Math.max(40, Math.floor(this.stepMs * rules.speed_ramp));
         if (this.snake.length >= rules.win_length) {
           this.finish('win');
@@ -172,6 +196,10 @@
       } else {
         this.snake.pop();
       }
+    }
+
+    effectiveStepMs() {
+      return this.boostHeld ? Math.max(28, Math.floor(this.stepMs * 0.55)) : this.stepMs;
     }
 
     spawnFood() {
@@ -187,7 +215,47 @@
         this.finish('win');
         return;
       }
-      this.food = free[Math.floor(this.rng() * free.length) % free.length];
+      const choices = this.foodEaten < 20 ? this.centerFoodChoices(free) : free;
+      this.food = choices[Math.floor(this.rng() * choices.length) % choices.length];
+    }
+
+    centerFoodChoices(free) {
+      const grid = this.config.grid;
+      const marginX = Math.max(3, Math.floor(grid.width * 0.24));
+      const marginY = Math.max(3, Math.floor(grid.height * 0.22));
+      const minX = marginX;
+      const maxX = grid.width - marginX - 1;
+      const minY = marginY;
+      const maxY = grid.height - marginY - 1;
+      const center = free.filter((point) => (
+        point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY
+      ));
+      return center.length > 0 ? center : free;
+    }
+
+    addFoodBurst(point) {
+      for (let i = 0; i < 10; i++) {
+        const angle = (Math.PI * 2 * i) / 10 + this.rng() * 0.35;
+        const speed = 0.0018 + this.rng() * 0.0012;
+        this.foodBursts.push({
+          x: point.x + 0.5,
+          y: point.y + 0.5,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          age: 0,
+          life: 420 + this.rng() * 180,
+        });
+      }
+    }
+
+    updateFoodBursts(dtMs) {
+      for (const burst of this.foodBursts) {
+        burst.age += dtMs;
+        burst.x += burst.vx * dtMs;
+        burst.y += burst.vy * dtMs;
+        burst.vy += 0.000002 * dtMs;
+      }
+      this.foodBursts = this.foodBursts.filter((burst) => burst.age < burst.life);
     }
 
     finish(result) {
@@ -205,14 +273,30 @@
 
       ctx.save();
       ctx.translate(ox, oy);
-      ctx.fillStyle = 'rgba(12, 18, 24, 0.18)';
-      ctx.fillRect(0, 0, grid.width * cell, grid.height * cell);
+      fillBoardPanel(ctx, grid.width * cell, grid.height * cell);
 
       drawSnakeField(ctx, grid, cell);
 
-      drawFood(ctx, this.food, cell, this.config.theme.food);
-      drawSnake(ctx, this.snake, cell, this.dir, this.config.theme);
+      drawFood(ctx, this.food, cell, this.config.theme.food, this.animMs);
+      drawFoodBursts(ctx, this.foodBursts, cell);
+      drawSnake(ctx, this.renderSnake(), cell, this.dir, this.config.theme, this.animMs);
       ctx.restore();
+    }
+
+    renderSnake() {
+      if (this.state !== 'playing' || this.ended || this.prevSnake.length === 0) {
+        return this.snake;
+      }
+      const progress = clamp(this.tickMs / this.effectiveStepMs(), 0, 1);
+      const eased = easeOutCubic(progress);
+      return this.snake.map((point, index) => {
+        const previous = this.prevSnake[index] || this.prevSnake[this.prevSnake.length - 1] || point;
+        if (Math.abs(point.x - previous.x) > 1 || Math.abs(point.y - previous.y) > 1) return point;
+        return {
+          x: lerp(previous.x, point.x, eased),
+          y: lerp(previous.y, point.y, eased),
+        };
+      });
     }
   }
 
@@ -1157,11 +1241,17 @@
     const width = grid.width * cell;
     const height = grid.height * cell;
     ctx.save();
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.strokeStyle = 'rgba(8,12,16,0.58)';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(3, 3, width - 6, height - 6);
+    ctx.strokeStyle = 'rgba(255,255,255,0.42)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, width - 2, height - 2);
+    ctx.strokeStyle = 'rgba(112,214,255,0.36)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
+    ctx.strokeRect(7.5, 7.5, width - 15, height - 15);
     if (cell >= 14) {
-      ctx.fillStyle = 'rgba(255,255,255,0.055)';
+      ctx.fillStyle = 'rgba(255,255,255,0.065)';
       const dot = Math.max(1, cell * 0.055);
       for (let y = 1; y < grid.height; y += 2) {
         for (let x = 1; x < grid.width; x += 2) {
@@ -1174,6 +1264,15 @@
     ctx.restore();
   }
 
+  function fillBoardPanel(ctx, width, height) {
+    const gradient = ctx.createLinearGradient(0, 0, width, height);
+    gradient.addColorStop(0, 'rgba(10,16,22,0.46)');
+    gradient.addColorStop(0.52, 'rgba(16,24,32,0.30)');
+    gradient.addColorStop(1, 'rgba(8,12,18,0.48)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+  }
+
   function cellCenter(p, cell) {
     return {
       x: p.x * cell + cell / 2,
@@ -1181,7 +1280,7 @@
     };
   }
 
-  function drawSnake(ctx, snake, cell, dir, theme) {
+  function drawSnake(ctx, snake, cell, dir, theme, timeMs = 0) {
     if (!snake.length) return;
     const bodyWidth = Math.max(8, cell * 0.72);
     const points = snake.map((p) => cellCenter(p, cell));
@@ -1208,7 +1307,7 @@
     }
 
     drawSnakeTail(ctx, points[points.length - 1], bodyWidth);
-    drawSnakeHead(ctx, points[0], cell, dir);
+    drawSnakeHead(ctx, points[0], cell, dir, timeMs);
     ctx.restore();
   }
 
@@ -1259,11 +1358,12 @@
     ctx.restore();
   }
 
-  function drawSnakeHead(ctx, head, cell, dir) {
+  function drawSnakeHead(ctx, head, cell, dir, timeMs = 0) {
     const r = Math.max(6, cell * 0.56);
     const angle = Math.atan2(dir.y, dir.x);
+    const bob = Math.sin(timeMs / 130) * cell * 0.025;
     ctx.save();
-    ctx.translate(head.x, head.y);
+    ctx.translate(head.x, head.y + bob);
     ctx.rotate(angle);
     ctx.fillStyle = '#ffd166';
     ctx.beginPath();
@@ -1290,9 +1390,10 @@
     ctx.restore();
   }
 
-  function drawFood(ctx, p, cell, kind) {
+  function drawFood(ctx, p, cell, kind, timeMs = 0) {
     const c = cellCenter(p, cell);
-    const r = Math.max(4, cell * 0.34);
+    const pulse = 1 + Math.sin(timeMs / 180 + p.x * 0.31 + p.y * 0.17) * 0.08;
+    const r = Math.max(4, cell * 0.34) * pulse;
     ctx.save();
     ctx.shadowColor = 'rgba(255,209,102,0.45)';
     ctx.shadowBlur = Math.max(4, cell * 0.26);
@@ -1312,6 +1413,20 @@
     ctx.beginPath();
     ctx.arc(c.x + r * 0.38, c.y - r * 0.22, Math.max(1.5, r * 0.16), 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
+  }
+
+  function drawFoodBursts(ctx, bursts, cell) {
+    if (!bursts.length) return;
+    ctx.save();
+    for (const burst of bursts) {
+      const alpha = clamp(1 - burst.age / burst.life, 0, 1);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = '#ffd166';
+      ctx.beginPath();
+      ctx.arc(burst.x * cell, burst.y * cell, Math.max(1.5, cell * 0.12 * alpha), 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 
@@ -1733,6 +1848,7 @@
         return { type: 'direction', dx: 1, dy: 0 };
       case 'Enter':
       case ' ':
+        if (engine instanceof SnakeEngine && !engine.ended) return { type: 'boost', active: true };
         return { type: 'confirm' };
       case 'Escape':
         return { type: 'cancel' };
@@ -1751,6 +1867,12 @@
       if (!input || !engine) return;
       e.preventDefault();
       engine.handleInput(input);
+    });
+    document.addEventListener('keyup', (e) => {
+      if (!(engine instanceof SnakeEngine)) return;
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      engine.handleInput({ type: 'boost', active: false });
     });
     window.addEventListener('resize', resizeCanvas);
     canvas.addEventListener('pointerdown', (e) => {

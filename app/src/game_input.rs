@@ -19,6 +19,8 @@ pub enum GameInput {
     Cancel,
     /// Toggle pause in games that support pausing.
     Pause,
+    /// Hold-to-speed-up input for games that support boost.
+    Boost { active: bool },
     /// Directional input from a d-pad, hat, arrow keys, or WASD.
     Direction { dx: i32, dy: i32 },
     /// Primary battle attack.

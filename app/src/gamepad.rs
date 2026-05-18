@@ -464,6 +464,7 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
 
             let buttons = gamepad.read_buttons();
             let new_presses = (buttons ^ prev_buttons) & buttons;
+            let releases = (buttons ^ prev_buttons) & prev_buttons;
 
             if new_presses != 0 {
                 for bit in 0..32 {
@@ -519,6 +520,12 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                                     "A" => {
                                         info!("→ 游戏确认");
                                         emit_game_input(app, GameInput::Confirm);
+                                        if matches!(
+                                            crate::game::current_game_type(app),
+                                            Some(ai_pad_core::minigame::MinigameType::Snake)
+                                        ) {
+                                            emit_game_input(app, GameInput::Boost { active: true });
+                                        }
                                     }
                                     "B" => {
                                         info!("→ 游戏取消");
@@ -627,6 +634,23 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                                     );
                                 }
                             }
+                        }
+                    }
+                }
+            }
+
+            if game_active && releases != 0 {
+                for bit in 0..32 {
+                    if releases & (1 << bit) != 0 {
+                        let name = button_name(bit as usize).unwrap_or("?");
+                        if name == "A"
+                            && matches!(
+                                crate::game::current_game_type(app),
+                                Some(ai_pad_core::minigame::MinigameType::Snake)
+                            )
+                        {
+                            info!("→ 贪吃蛇加速结束");
+                            emit_game_input(app, GameInput::Boost { active: false });
                         }
                     }
                 }
