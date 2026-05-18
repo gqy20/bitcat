@@ -5,18 +5,23 @@ set -eu
 
 MARKER="ai-pad-remote-watch"
 HOST=""
+HOSTS=""
 PORT="5342"
 SOURCE="all"
 UNINSTALL="0"
 
 usage() {
   cat <<'EOF'
-Usage: remote-install.sh --host <windows-ip> [--port 5342] [--source claude_code|codex|all] [--uninstall]
+Usage: remote-install.sh --host <windows-ip> [--hosts "ip1 ip2"] [--port 5342] [--source claude_code|codex|all] [--uninstall]
 
 Examples:
-  bash scripts/remote-install.sh --host 192.168.1.50
-  bash scripts/remote-install.sh --host 192.168.1.50 --source claude_code
-  bash scripts/remote-install.sh --host 192.168.1.50 --uninstall
+  curl -fsSL http://192.0.2.10:5344/remote-install.sh | bash -s -- --host 192.0.2.10
+  curl -fsSL http://192.0.2.10:5344/remote-install.sh | bash -s -- --hosts "192.0.2.10 100.64.0.10"
+  curl -fsSL http://192.0.2.10:5344/remote-install.sh | bash -s -- --host 192.0.2.10 --source claude_code
+  curl -fsSL http://192.0.2.10:5344/remote-install.sh | bash -s -- --uninstall
+
+Direct local checkout form, useful only when this repository exists on the remote machine:
+  bash scripts/remote-install.sh --host 192.0.2.10
 EOF
 }
 
@@ -24,6 +29,10 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --host)
       HOST="${2:-}"
+      shift 2
+      ;;
+    --hosts)
+      HOSTS="${2:-}"
       shift 2
       ;;
     --port)
@@ -58,8 +67,12 @@ case "$SOURCE" in
     ;;
 esac
 
-if [ "$UNINSTALL" = "0" ] && [ -z "$HOST" ]; then
-  echo "--host is required" >&2
+if [ -z "$HOSTS" ] && [ -n "$HOST" ]; then
+  HOSTS="$HOST"
+fi
+
+if [ "$UNINSTALL" = "0" ] && [ -z "$HOSTS" ]; then
+  echo "--host or --hosts is required" >&2
   usage
   exit 2
 fi
@@ -81,7 +94,7 @@ write_sender() {
 set -euo pipefail
 
 MACHINE="${MACHINE}"
-HOST="${HOST}"
+HOSTS="${HOSTS}"
 PORT="${PORT}"
 SOURCE="\${AI_PAD_SOURCE:-claude_code}"
 
@@ -106,13 +119,15 @@ if [ -z "\$envelope" ]; then
   envelope=\$(printf '{"source":"%s","machine":"%s","payload":%s}' "\$SOURCE" "\$MACHINE" "\$raw")
 fi
 
-if command -v nc >/dev/null 2>&1; then
-  printf '%s' "\$envelope" | nc -w 2 "\$HOST" "\$PORT" >/dev/null 2>&1 || true
-elif command -v bash >/dev/null 2>&1; then
-  bash -c 'cat > /dev/tcp/"\$0"/"\$1"' "\$HOST" "\$PORT" <<TCP_EOF >/dev/null 2>&1 || true
+for host in \$(printf '%s' "\$HOSTS" | tr ',' ' '); do
+  if command -v nc >/dev/null 2>&1; then
+    printf '%s' "\$envelope" | nc -w 2 "\$host" "\$PORT" >/dev/null 2>&1 && exit 0
+  elif command -v bash >/dev/null 2>&1; then
+    bash -c 'cat > /dev/tcp/"\$0"/"\$1"' "\$host" "\$PORT" <<TCP_EOF >/dev/null 2>&1 && exit 0
 \$envelope
 TCP_EOF
-fi
+  fi
+done
 exit 0
 EOF
   chmod +x "$SENDER"
@@ -284,5 +299,5 @@ case "$SOURCE" in
 esac
 
 echo "remote watch sender: $SENDER"
-echo "target: $HOST:$PORT"
+echo "targets: $HOSTS -> $PORT"
 echo "machine: $MACHINE"

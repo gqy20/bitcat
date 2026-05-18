@@ -16,13 +16,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::net::{Ipv4Addr, TcpListener, TcpStream, UdpSocket};
+use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 use tracing::{debug, info, warn};
+
+use crate::remote_endpoint::RemoteInstallInfo;
 
 pub const DEFAULT_AGENT_MONITOR_PORT: u16 = 5342;
 pub const DEFAULT_AGENT_VIEW_PORT: u16 = 5344;
@@ -70,16 +71,6 @@ struct AgentNudgeLogRecord {
     status: String,
     reason: Option<String>,
     message: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct RemoteInstallInfo {
-    pub local_ip: String,
-    pub port: u16,
-    pub view_port: u16,
-    pub watch_url: String,
-    pub script_path: String,
-    pub install_command: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -283,6 +274,11 @@ fn view_response(app: &AppHandle, path: &str) -> (&'static str, &'static str, St
                 ),
             }
         }
+        "/remote-install.sh" => (
+            "200 OK",
+            "text/x-shellscript",
+            include_str!("../../scripts/remote-install.sh").to_string(),
+        ),
         "/health" => ("200 OK", "application/json", "{\"ok\":true}".to_string()),
         _ => (
             "404 Not Found",
@@ -619,18 +615,7 @@ pub async fn cmd_get_agent_sessions(
 
 #[tauri::command]
 pub async fn cmd_get_remote_install_cmd() -> Result<RemoteInstallInfo, String> {
-    let local_ip = get_lan_ip()?;
-    let script_path = "scripts/remote-install.sh".to_string();
-    let install_command =
-        format!("bash {script_path} --host {local_ip} --port {DEFAULT_AGENT_MONITOR_PORT}");
-    Ok(RemoteInstallInfo {
-        watch_url: format!("http://{local_ip}:{DEFAULT_AGENT_VIEW_PORT}/watch"),
-        local_ip,
-        port: DEFAULT_AGENT_MONITOR_PORT,
-        view_port: DEFAULT_AGENT_VIEW_PORT,
-        script_path,
-        install_command,
-    })
+    crate::remote_endpoint::remote_install_info()
 }
 
 #[tauri::command]
@@ -713,80 +698,6 @@ pub async fn cmd_open_agent_workspace(
         .map_err(|e| e.to_string())
 }
 
-fn get_lan_ip() -> Result<String, String> {
-    let mut candidates = local_ipv4_candidates();
-    let socket = UdpSocket::bind("0.0.0.0:0").map_err(|e| format!("bind UDP failed: {e}"))?;
-    socket
-        .connect("8.8.8.8:80")
-        .map_err(|e| format!("detect LAN IP failed: {e}"))?;
-    let addr = socket
-        .local_addr()
-        .map_err(|e| format!("read LAN IP failed: {e}"))?;
-    let ip = addr.ip();
-    if let std::net::IpAddr::V4(ipv4) = ip {
-        candidates.push(ipv4);
-    } else {
-        return Err(format!("no LAN IPv4 found, got {ip}"));
-    }
-    select_lan_ipv4(candidates)
-        .map(|ip| ip.to_string())
-        .ok_or_else(|| format!("no LAN IPv4 found, got {ip}"))
-}
-
-fn local_ipv4_candidates() -> Vec<Ipv4Addr> {
-    let mut out = Vec::new();
-    for command in local_ip_commands() {
-        if let Ok(output) = Command::new(command.0).args(command.1).output() {
-            out.extend(parse_ipv4_addrs(&String::from_utf8_lossy(&output.stdout)));
-        }
-    }
-    out
-}
-
-#[cfg(windows)]
-fn local_ip_commands() -> Vec<(&'static str, Vec<&'static str>)> {
-    vec![("ipconfig", vec![])]
-}
-
-#[cfg(not(windows))]
-fn local_ip_commands() -> Vec<(&'static str, Vec<&'static str>)> {
-    vec![
-        ("hostname", vec!["-I"]),
-        ("ip", vec!["-4", "addr", "show"]),
-        ("ifconfig", vec![]),
-    ]
-}
-
-fn parse_ipv4_addrs(text: &str) -> Vec<Ipv4Addr> {
-    text.split(|ch: char| !(ch.is_ascii_digit() || ch == '.'))
-        .filter(|part| part.matches('.').count() == 3)
-        .filter_map(|part| part.parse::<Ipv4Addr>().ok())
-        .collect()
-}
-
-fn select_lan_ipv4(candidates: Vec<Ipv4Addr>) -> Option<Ipv4Addr> {
-    let mut candidates = candidates
-        .into_iter()
-        .filter(|ip| !ip.is_loopback() && !ip.is_unspecified() && !ip.is_multicast())
-        .collect::<Vec<_>>();
-    candidates.sort_by_key(|ip| (ipv4_score(*ip), ip.octets()[3] == 1, *ip));
-    candidates.dedup();
-    candidates.into_iter().next()
-}
-
-fn ipv4_score(ip: Ipv4Addr) -> u8 {
-    let [a, b, _, _] = ip.octets();
-    match (a, b) {
-        (10, _) => 0,
-        (192, 168) => 1,
-        (172, 16..=31) => 2,
-        (198, 18 | 19) => 20,
-        (169, 254) => 30,
-        _ if ip.is_private() => 3,
-        _ => 10,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -865,31 +776,5 @@ mod tests {
         assert_eq!(event.status, AgentStatus::ToolRunning);
         assert_eq!(event.tool_name.as_deref(), Some("Bash"));
         assert!(event.tool_input_preview.unwrap().contains("cargo test"));
-    }
-
-    #[test]
-    fn selects_private_lan_before_benchmark_network() {
-        let selected = select_lan_ipv4(vec![
-            "198.18.0.1".parse().unwrap(),
-            "172.28.96.110".parse().unwrap(),
-            "10.10.11.206".parse().unwrap(),
-            "10.10.11.1".parse().unwrap(),
-        ]);
-        assert_eq!(selected, Some("10.10.11.206".parse().unwrap()));
-    }
-
-    #[test]
-    fn parses_windows_ipconfig_ipv4_lines() {
-        let parsed = parse_ipv4_addrs(
-            r#"
-   IPv4 Address. . . . . . . . . . . : 198.18.0.1
-                                       198.18.0.2
-   IPv4 Address. . . . . . . . . . . : 172.28.96.110
-   IPv4 Address. . . . . . . . . . . : 10.10.11.206
-                                       10.10.11.1
-"#,
-        );
-        assert!(parsed.contains(&"198.18.0.1".parse().unwrap()));
-        assert!(parsed.contains(&"10.10.11.206".parse().unwrap()));
     }
 }

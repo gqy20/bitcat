@@ -30,6 +30,7 @@ pub mod joystick;
 pub mod observation_gate;
 pub mod panel;
 pub mod pet_event_bus;
+pub mod remote_endpoint;
 pub mod screenshot;
 pub mod settings;
 pub mod shutdown;

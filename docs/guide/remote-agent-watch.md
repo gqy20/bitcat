@@ -1,11 +1,11 @@
 # Remote Agent Watch
 
-Remote Agent Watch lets a Windows 8Bit Cat instance watch Claude Code and Codex sessions running on other macOS/Linux machines on the same LAN.
+Remote Agent Watch lets a Windows 8Bit Cat instance watch Claude Code and Codex sessions running on reachable macOS/Linux machines. Reachability can be LAN, Tailscale/tailnet, VPN, or another manually reachable address.
 
 ## Ports
 
 - `5342`: write-only hook ingest. Remote machines send hook JSON envelopes here.
-- `5344`: read-only LAN viewer. Other devices can open `/watch` or fetch JSON snapshots.
+- `5344`: read-only remote viewer. Other devices can open `/watch` or fetch JSON snapshots.
 
 The viewer endpoints are:
 
@@ -19,18 +19,23 @@ The viewer endpoints are:
 On the Windows host, open Settings -> Agent Watch and copy the remote install command. It looks like:
 
 ```bash
-bash scripts/remote-install.sh --host <windows-ip> --port 5342
+curl -fsSL http://<windows-ip>:5344/remote-install.sh | bash -s -- --host <windows-ip> --port 5342
 ```
 
-The generated `<windows-ip>` prefers real LAN addresses over virtual or benchmark networks. Selection order is:
+Run that command on the remote macOS/Linux machine. It does not require the remote machine to have this repository checked out; the script is downloaded from the Windows 8Bit Cat viewer service.
+
+When Windows has more than one plausible remote address, Settings generates a slightly longer command that tries each candidate and uses the first reachable one. This covers machines that can reach `192.168.x.x`, `10.x.x.x`, or a tailnet/CGNAT `100.64.0.0/10` address.
+
+The generated address list is typed in the UI as LAN / Tailscale / Public / Virtual and prefers addresses in this order:
 
 ```text
-10.x.x.x -> 192.168.x.x -> 172.16-31.x.x -> other private IPv4 -> public IPv4 -> 198.18/15 -> 169.254/16
+10.x.x.x -> 192.168.x.x -> 172.16-31.x.x -> other private IPv4 -> Tailscale/CGNAT 100.64/10 -> public IPv4 -> 198.18/15 -> 169.254/16
 ```
 
-For example, when Windows has both `198.18.0.1` and `10.10.11.206`, the Settings page should generate `10.10.11.206` for the install command and `/watch` URL.
+For example, when Windows has both `198.18.0.1` and `10.0.0.20`, the Settings page should prefer `10.0.0.20` for the install command and `/watch` URL.
+If Windows has `10.0.0.20`, `192.168.0.20`, and `100.64.0.10`, the generated command will try all three instead of forcing you to guess which network the remote server can see.
 
-Run that command on the remote macOS/Linux machine. The installer:
+The installer:
 
 - writes `~/.ai-pad/hooks/sender.sh`;
 - installs marker-scoped Claude Code hooks when `~/.claude` exists;
@@ -45,14 +50,14 @@ The sender is intentionally best-effort: it uses a short network timeout and exi
 Install only one agent source when needed:
 
 ```bash
-bash scripts/remote-install.sh --host <windows-ip> --source claude_code
-bash scripts/remote-install.sh --host <windows-ip> --source codex
+curl -fsSL http://<windows-ip>:5344/remote-install.sh | bash -s -- --host <windows-ip> --source claude_code
+curl -fsSL http://<windows-ip>:5344/remote-install.sh | bash -s -- --host <windows-ip> --source codex
 ```
 
 Remove 8Bit Cat remote hooks:
 
 ```bash
-bash scripts/remote-install.sh --uninstall
+curl -fsSL http://<windows-ip>:5344/remote-install.sh | bash -s -- --uninstall
 ```
 
 ## Display
@@ -62,5 +67,6 @@ Remote sessions appear in the same Agent Watch stack as local sessions. Cards in
 ## Notes
 
 - Windows firewall must allow inbound TCP on `5342` for remote hook ingest and `5344` for the read-only viewer.
+- Settings shows redacted endpoint labels by default; copied install commands and watch URLs still contain the full selected addresses.
 - The read-only viewer does not expose control actions; it only serves snapshots and a lightweight page.
 - Remote permission approval and remote screenshots are intentionally out of scope.

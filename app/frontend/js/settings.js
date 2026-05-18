@@ -691,11 +691,25 @@ async function loadRemoteInstallCommand() {
   try {
     const info = await invoke("cmd_get_remote_install_cmd");
     code.textContent = info.install_command || `bash scripts/remote-install.sh --host ${info.local_ip} --port ${info.port}`;
-    if (watchUrl) watchUrl.textContent = info.watch_url || `http://${info.local_ip}:${info.view_port}/watch`;
-    if (status) status.textContent = `${info.local_ip}:${info.port} / ${info.view_port}`;
+    code.dataset.copyValue = code.textContent;
+    if (watchUrl) {
+      const urls = Array.isArray(info.endpoints) && info.endpoints.length
+        ? info.endpoints.map(endpoint => `${endpoint.display_label || endpoint.label} /watch`).join("  ")
+        : Array.isArray(info.watch_urls) && info.watch_urls.length ? info.watch_urls.join("  ") : info.watch_url;
+      watchUrl.textContent = urls || `http://${info.local_ip}:${info.view_port}/watch`;
+      watchUrl.dataset.copyValue = Array.isArray(info.watch_urls) && info.watch_urls.length ? info.watch_urls.join("  ") : watchUrl.textContent;
+    }
+    if (status) {
+      const ips = Array.isArray(info.endpoints) && info.endpoints.length
+        ? info.endpoints.map(endpoint => endpoint.display_label || endpoint.label).join(", ")
+        : Array.isArray(info.local_ips) && info.local_ips.length ? info.local_ips.join(", ") : info.local_ip;
+      status.textContent = `${ips} -> ${info.port} / ${info.view_port}`;
+    }
   } catch (e) {
     code.textContent = "无法生成远程安装命令";
+    code.dataset.copyValue = "";
     if (watchUrl) watchUrl.textContent = "无法生成看管地址";
+    if (watchUrl) watchUrl.dataset.copyValue = "";
     if (status) status.textContent = "失败";
     log("remote install command failed: " + e);
   }
@@ -915,7 +929,8 @@ function bindMusicDiagnostics() {
   musicDiagnosticsBound = true;
   $("aw-remote-copy").addEventListener("click", async () => {
     try {
-      await navigator.clipboard.writeText($("aw-remote-command").textContent || "");
+      const command = $("aw-remote-command");
+      await navigator.clipboard.writeText(command.dataset.copyValue || command.textContent || "");
       toast("远程安装命令已复制", "ok");
     } catch (e) {
       toast("复制失败：" + String(e), "err");
@@ -923,7 +938,8 @@ function bindMusicDiagnostics() {
   });
   $("aw-remote-url-copy").addEventListener("click", async () => {
     try {
-      await navigator.clipboard.writeText($("aw-remote-watch-url").textContent || "");
+      const watchUrl = $("aw-remote-watch-url");
+      await navigator.clipboard.writeText(watchUrl.dataset.copyValue || watchUrl.textContent || "");
       toast("看管地址已复制", "ok");
     } catch (e) {
       toast("复制失败：" + String(e), "err");
