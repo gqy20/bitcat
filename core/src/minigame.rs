@@ -240,7 +240,7 @@ impl GameDef {
                 self_kill: true,
                 food_count: 1,
                 speed_ramp: 0.95,
-                win_length: 20,
+                win_length: 50,
             },
             theme: GameTheme {
                 head: "cat".into(),
@@ -265,7 +265,7 @@ impl GameDef {
                     hp: 10,
                     attack: 4,
                     attack_interval_ms: 1200,
-                    reward_exp: 20,
+                    reward_exp: 50,
                 },
                 skills: vec![
                     BattleSkillConfig {

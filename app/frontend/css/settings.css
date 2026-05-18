@@ -395,14 +395,6 @@ textarea::-webkit-scrollbar-thumb {
   margin-bottom: 22px;
 }
 
-.eyebrow {
-  margin-bottom: 8px;
-  color: var(--cat-green);
-  font-family: var(--font-brand);
-  font-size: var(--text-xs);
-  font-weight: 780;
-}
-
 h1 {
   margin-bottom: 9px;
   color: #ffffff;
@@ -1724,11 +1716,8 @@ input[type="checkbox"]:checked::after {
   min-height: 168px;
   border: 0;
   border-radius: 0;
-  background:
-    linear-gradient(90deg, rgba(124, 255, 178, 0.08) 0 1px, transparent 1px 100%),
-    rgba(13, 17, 23, 0.55);
-  background-size: 46px 100%, 100% 100%;
-  padding-left: 62px;
+  background: rgba(13, 17, 23, 0.55);
+  padding-left: 34px;
 }
 
 .editor-panel textarea:focus-visible {
