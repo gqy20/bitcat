@@ -25,7 +25,7 @@
     }
   },
   "sprite": {
-    "image": "sprites.png",
+    "image": "spritesheet.webp",
     "frameWidth": 192,
     "frameHeight": 208,
     "columns": 8,

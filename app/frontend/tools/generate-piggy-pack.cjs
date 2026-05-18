@@ -1,4 +1,5 @@
-const { writeFileSync } = require('node:fs');
+const { existsSync, rmSync, writeFileSync } = require('node:fs');
+const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 const { deflateSync } = require('node:zlib');
 
@@ -10,6 +11,9 @@ const rows = 8;
 const frameCount = 64;
 const sheetWidth = frameWidth * columns;
 const sheetHeight = frameHeight * rows;
+const tempPngPath = path.join(outDir, 'spritesheet.tmp.png');
+const webpPath = path.join(outDir, 'spritesheet.webp');
+const legacyPngPath = path.join(outDir, 'sprites.png');
 
 const pixels = new Uint8ClampedArray(sheetWidth * sheetHeight * 4);
 
@@ -379,6 +383,23 @@ function pngBuffer() {
   ]);
 }
 
+function convertPngToWebp(pngPath, outPath) {
+  execFileSync('ffmpeg', [
+    '-y',
+    '-loglevel',
+    'error',
+    '-i',
+    pngPath,
+    '-c:v',
+    'libwebp',
+    '-quality',
+    '90',
+    '-compression_level',
+    '6',
+    outPath,
+  ], { stdio: 'inherit' });
+}
+
 const states = {
   idle: {
     spriteFrames: [0, 1, 2, 3, 4, 5, 6, 13, 14, 15, 43, 45, 46, 49],
@@ -430,7 +451,7 @@ const manifest = {
     input: { x: 0.24, y: 0.42, w: 0.52, h: 0.32 },
   },
   sprite: {
-    image: 'sprites.png',
+    image: 'spritesheet.webp',
     frameWidth,
     frameHeight,
     columns,
@@ -491,5 +512,8 @@ const manifest = {
   },
 };
 
-writeFileSync(path.join(outDir, 'sprites.png'), pngBuffer());
+writeFileSync(tempPngPath, pngBuffer());
+convertPngToWebp(tempPngPath, webpPath);
+if (existsSync(tempPngPath)) rmSync(tempPngPath);
+if (existsSync(legacyPngPath)) rmSync(legacyPngPath);
 writeFileSync(path.join(outDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);

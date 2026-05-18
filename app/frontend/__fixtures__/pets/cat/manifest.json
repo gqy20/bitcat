@@ -4,7 +4,7 @@
   "displayName": "Cat",
   "description": "A v2 pixel cat companion.",
   "sprite": {
-    "image": "sprites.png",
+    "image": "spritesheet.webp",
     "frameWidth": 16,
     "frameHeight": 16,
     "columns": 8,

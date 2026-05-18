@@ -31,16 +31,40 @@ function collectSpriteRefsFromTimeline(timeline) {
   return refs;
 }
 
-function readPngDimensions(bytes) {
-  const signature = [137, 80, 78, 71, 13, 10, 26, 10];
-  for (let i = 0; i < signature.length; i += 1) {
-    expect(bytes[i]).toBe(signature[i]);
+function readWebpDimensions(bytes) {
+  expect(bytes.toString('ascii', 0, 4)).toBe('RIFF');
+  expect(bytes.toString('ascii', 8, 12)).toBe('WEBP');
+
+  let offset = 12;
+  while (offset + 8 <= bytes.length) {
+    const chunk = bytes.toString('ascii', offset, offset + 4);
+    const size = bytes.readUInt32LE(offset + 4);
+    const dataOffset = offset + 8;
+    if (chunk === 'VP8X') {
+      return {
+        width: 1 + bytes.readUIntLE(dataOffset + 4, 3),
+        height: 1 + bytes.readUIntLE(dataOffset + 7, 3),
+      };
+    }
+    if (chunk === 'VP8 ') {
+      return {
+        width: bytes.readUInt16LE(dataOffset + 6) & 0x3fff,
+        height: bytes.readUInt16LE(dataOffset + 8) & 0x3fff,
+      };
+    }
+    if (chunk === 'VP8L') {
+      const b0 = bytes[dataOffset + 1];
+      const b1 = bytes[dataOffset + 2];
+      const b2 = bytes[dataOffset + 3];
+      const b3 = bytes[dataOffset + 4];
+      return {
+        width: 1 + (((b1 & 0x3f) << 8) | b0),
+        height: 1 + (((b3 & 0x0f) << 10) | (b2 << 2) | ((b1 & 0xc0) >> 6)),
+      };
+    }
+    offset = dataOffset + size + (size % 2);
   }
-  expect(bytes.toString('ascii', 12, 16)).toBe('IHDR');
-  return {
-    width: bytes.readUInt32BE(16),
-    height: bytes.readUInt32BE(20),
-  };
+  throw new Error('unable to read WebP dimensions');
 }
 
 describe('cat pet fixture pack', () => {
@@ -48,7 +72,7 @@ describe('cat pet fixture pack', () => {
     expect(manifest.schemaVersion).toBe(2);
     expect(manifest.id).toBe('cat');
     expect(manifest.sprite).toEqual({
-      image: 'sprites.png',
+      image: 'spritesheet.webp',
       frameWidth: 16,
       frameHeight: 16,
       columns: 8,
@@ -101,9 +125,9 @@ describe('cat pet fixture pack', () => {
     }
   });
 
-  it('writes a PNG matching manifest dimensions', () => {
-    const pngPath = path.join(fixtureDir, manifest.sprite.image);
-    const dimensions = readPngDimensions(readFileSync(pngPath));
+  it('writes a WebP matching manifest dimensions', () => {
+    const imagePath = path.join(fixtureDir, manifest.sprite.image);
+    const dimensions = readWebpDimensions(readFileSync(imagePath));
     expect(dimensions).toEqual({
       width: manifest.sprite.columns * manifest.sprite.frameWidth,
       height: manifest.sprite.rows * manifest.sprite.frameHeight,
