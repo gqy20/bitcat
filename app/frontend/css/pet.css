@@ -206,10 +206,10 @@ body.state-walk .shadow {
 
 .resize-handle {
   position: absolute;
-  right: 5px;
-  bottom: 5px;
-  width: 20px;
-  height: 20px;
+  right: 6px;
+  bottom: 6px;
+  width: 14px;
+  height: 14px;
   cursor: nwse-resize;
   z-index: 6;
   opacity: 0;
@@ -222,19 +222,19 @@ body.state-walk .shadow {
   position: absolute;
   right: 0;
   bottom: 0;
-  border-right: 3px solid rgba(255, 255, 255, 0.92);
-  border-bottom: 3px solid rgba(255, 255, 255, 0.92);
+  border-right: 2px solid rgba(255, 255, 255, 0.9);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.9);
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.55));
 }
 
 .resize-handle::before {
-  width: 18px;
-  height: 18px;
+  width: 12px;
+  height: 12px;
 }
 
 .resize-handle::after {
-  width: 10px;
-  height: 10px;
+  width: 7px;
+  height: 7px;
 }
 
 body.pet-hover-active .resize-handle,
