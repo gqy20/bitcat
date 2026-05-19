@@ -8,7 +8,9 @@ const invoke = window.__TAURI__?.core?.invoke || mockInvoke;
 const ACTION_TYPES = ["unbound", "launch", "hotkey", "script", "voice", "screenshot"];
 const PET_ASSET_PRESETS = [
   { value: "", label: "内置小猪", group: "推荐" },
+  { value: "/__fixtures__/pets/padlet", label: "Padlet", group: "推荐" },
   { value: "/__fixtures__/pets/piggy", label: "Piggy", group: "推荐" },
+  { value: "/__fixtures__/pets/hackmark", label: "Hackmark", group: "极客风" },
   { value: "/__fixtures__/pets/status", label: "Status", group: "终端状态" },
   { value: "/__fixtures__/pets/core", label: "Core", group: "终端状态" },
   { value: "/__fixtures__/pets/stacky", label: "Stacky", group: "终端状态" },
