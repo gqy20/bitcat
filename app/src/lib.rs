@@ -27,6 +27,7 @@ pub mod game;
 pub mod game_input;
 pub mod gamepad;
 pub mod joystick;
+pub mod lifecycle;
 pub mod observation_gate;
 pub mod panel;
 pub mod pet_event_bus;

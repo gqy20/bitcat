@@ -74,9 +74,12 @@ fn main() {
         Err(e) => tracing::warn!(error = %e, "native crash handler install failed"),
     }
     log_startup_diagnostics(debug);
+    ai_pad_app_lib::lifecycle::record_lifecycle_event("startup", None);
 
     // ── 启动 Tauri ──
     ai_pad_app_lib::run();
+    ai_pad_app_lib::lifecycle::record_lifecycle_event("tauri-run-returned", None);
+    tracing::info!("tauri run returned");
 }
 
 fn log_startup_diagnostics(debug_console: bool) {

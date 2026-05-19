@@ -24,6 +24,7 @@ pub fn request_exit(app: &AppHandle, reason: &'static str) {
     }
 
     info!(reason, "shutdown requested");
+    crate::lifecycle::record_lifecycle_event("shutdown-requested", Some(reason));
     crate::snap::save_visible_pet_position(app);
     let _ = app.emit("app-shutdown", reason);
     app.exit(0);
