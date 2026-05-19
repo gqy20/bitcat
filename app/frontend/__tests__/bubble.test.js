@@ -501,7 +501,9 @@ describe('bubble tool status text', () => {
     const label = payload && payload.label ? payload.label : '调用工具';
     const phase = payload && payload.phase ? payload.phase : 'planned';
     const kind = payload && payload.kind ? payload.kind : 'utility';
-    if (kind === 'performance') {
+    const toolName = payload && payload.tool_name ? String(payload.tool_name) : '';
+    const isDanceTool = toolName === 'perform_dance' || toolName === 'play_dance';
+    if (kind === 'performance' && isDanceTool) {
       if (phase === 'blocked') return '表演已拦截';
       if (phase === 'failed') return '编舞失败';
       if (phase === 'finished' || (payload && payload.tool_name === 'play_dance')) return '准备开跳';
@@ -534,6 +536,22 @@ describe('bubble tool status text', () => {
       tool_name: 'play_dance',
       label: '播放舞蹈',
     })).toBe('准备开跳');
+  });
+
+  it('does not reuse dance copy for non-dance performance payloads', () => {
+    const text = getToolStatusText({
+      kind: 'performance',
+      phase: 'finished',
+      tool_name: 'Bash',
+      label: 'Shell',
+    });
+    expect(text).toContain('Shell');
+    expect(text).not.toBe(getToolStatusText({
+      kind: 'performance',
+      phase: 'finished',
+      tool_name: 'perform_dance',
+      label: 'x',
+    }));
   });
 
   it('keeps utility tool copy explicit', () => {

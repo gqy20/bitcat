@@ -322,7 +322,6 @@ body.collapsed .resize-handle {
   display: none;
 }
 
-body:not(.collapsed) .pet-badge,
 body:not(.has-pet-badge) .pet-badge {
   display: none;
 }

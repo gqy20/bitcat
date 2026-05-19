@@ -164,7 +164,7 @@ pub async fn cmd_snap_pet(app: tauri::AppHandle, x: i32, y: i32) -> Result<SnapR
         "cmd_snap_pet: 工作区信息"
     );
 
-    let snap_threshold = (80.0 * scale) as i32;
+    let snap_threshold = (20.0 * scale) as i32;
     let left_dist = (x - work.left).max(0);
     let right_dist = (work.right - pw - x).max(0);
     let top_dist = (y - work.top).max(0);

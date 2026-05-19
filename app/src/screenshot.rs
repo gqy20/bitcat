@@ -17,7 +17,7 @@
 use ai_pad_core::screenshot::{CapturedFrame, ScreenInfo, ScreenshotTarget};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tracing::{debug, info, warn};
 
 static SCREENSHOT_PIPELINE_LOCK: Mutex<()> = Mutex::new(());
@@ -390,6 +390,7 @@ pub fn enumerate_displays() -> Vec<ScreenInfo> {
 pub struct SharedScreenshotState {
     pub last_hash: Mutex<u64>,
     pub enabled: Mutex<bool>,
+    pub hidden_analysis_count: Mutex<u32>,
 }
 
 impl Default for SharedScreenshotState {
@@ -397,8 +398,56 @@ impl Default for SharedScreenshotState {
         Self {
             last_hash: Mutex::new(0),
             enabled: Mutex::new(true),
+            hidden_analysis_count: Mutex::new(0),
         }
     }
+}
+
+fn hidden_screenshot_count(state: &SharedScreenshotState) -> u32 {
+    *state
+        .hidden_analysis_count
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
+
+fn emit_hidden_screenshot_count(app: &tauri::AppHandle, count: u32) {
+    let _ = app.emit("screenshot-hidden-count-changed", count);
+}
+
+fn increment_hidden_screenshot_count(app: &tauri::AppHandle) {
+    let state: tauri::State<'_, SharedScreenshotState> = app.state();
+    let count = {
+        let mut guard = state
+            .hidden_analysis_count
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        *guard = guard.saturating_add(1);
+        *guard
+    };
+    emit_hidden_screenshot_count(app, count);
+}
+
+#[tauri::command]
+pub fn cmd_get_hidden_screenshot_count(
+    state: tauri::State<'_, SharedScreenshotState>,
+) -> Result<u32, String> {
+    Ok(hidden_screenshot_count(&state))
+}
+
+#[tauri::command]
+pub fn cmd_clear_hidden_screenshot_count(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SharedScreenshotState>,
+) -> Result<u32, String> {
+    {
+        let mut guard = state
+            .hidden_analysis_count
+            .lock()
+            .map_err(|e| format!("hidden screenshot count lock poisoned: {e}"))?;
+        *guard = 0;
+    }
+    emit_hidden_screenshot_count(&app, 0);
+    Ok(0)
 }
 
 /// 截图观察线程主循环（在独立线程上运行）。
@@ -593,6 +642,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
 
         if !show_bubble {
             debug!("[screenshot] 截屏分析弹窗已关闭，跳过气泡显示");
+            increment_hidden_screenshot_count(app);
         } else if bubble_parts.is_empty() {
             info!("[screenshot] 描述为空，显示兜底提示");
             let _ = crate::bubble::show_bubble(app, "喵~ 看不太清屏幕内容，可能需要检查 API 配置");

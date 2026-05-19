@@ -546,8 +546,8 @@ mod tests {
     // ===== 磁性预告 calc_snap_preview（Task 5）=====
 
     fn preview_at(x: i32, y: i32) -> SnapPreview {
-        // 典型工作区 1920x1080，宠物 128x128，阈值 80，snap 24x67
-        calc_snap_preview(x, y, 0, 0, 1920, 1040, 128, 128, 24, 67, 80)
+        // 典型工作区 1920x1080，宠物 128x128，阈值 20，snap 24x67
+        calc_snap_preview(x, y, 0, 0, 1920, 1040, 128, 128, 24, 67, 20)
     }
 
     #[test]

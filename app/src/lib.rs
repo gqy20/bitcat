@@ -109,6 +109,8 @@ pub fn run() {
             snap::cmd_get_snap_preview,
             tray::cmd_show_pet_context_menu,
             screenshot::cmd_screenshot_now,
+            screenshot::cmd_get_hidden_screenshot_count,
+            screenshot::cmd_clear_hidden_screenshot_count,
             gamepad::cmd_submit_chat,
             gamepad::cmd_open_chat,
             gamepad::cmd_enter_chat,

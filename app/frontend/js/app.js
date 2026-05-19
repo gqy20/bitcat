@@ -89,6 +89,7 @@ import { PerformerHost } from './performance/performer-host.js';
   const PET_BADGE_REFRESH_MS = 2500;
   const PET_MIN_SIZE = 72;
   const PET_MAX_SIZE = 256;
+  const petBadgeCounts = { agent: 0, screenshot: 0 };
 
   function playPetAction(name) {
     return !!(pet && pet.playAction && pet.playAction(name));
@@ -435,6 +436,7 @@ import { PerformerHost } from './performance/performer-host.js';
       logPet('observe dblclick -> cmd_screenshot_now');
       if (!window.__TAURI__ || !window.__TAURI__.core) return;
       try {
+        await clearHiddenScreenshotCount();
         await window.__TAURI__.core.invoke('cmd_screenshot_now');
       }
       catch (err) {
@@ -1002,13 +1004,43 @@ import { PerformerHost } from './performance/performer-host.js';
     }).length;
   }
 
-  function setPetBadgeCount(count) {
+  function renderPetBadgeCount() {
     var badge = document.getElementById('pet-badge');
     if (!badge || !bodyEl) return;
+    var count = petBadgeCounts.agent + petBadgeCounts.screenshot;
     var value = Math.max(0, Number(count) || 0);
     badge.textContent = value > 99 ? '99+' : String(value);
+    badge.title = petBadgeCounts.screenshot > 0
+      ? '隐藏的截图分析：' + petBadgeCounts.screenshot
+      : '';
     badge.hidden = value <= 0;
     bodyEl.classList.toggle('has-pet-badge', value > 0);
+  }
+
+  function setPetBadgeCount(count) {
+    petBadgeCounts.agent = Math.max(0, Number(count) || 0);
+    renderPetBadgeCount();
+  }
+
+  function setHiddenScreenshotCount(count) {
+    petBadgeCounts.screenshot = Math.max(0, Number(count) || 0);
+    renderPetBadgeCount();
+  }
+
+  async function refreshHiddenScreenshotCount() {
+    if (!window.__TAURI__ || !window.__TAURI__.core) return;
+    try {
+      var count = await window.__TAURI__.core.invoke('cmd_get_hidden_screenshot_count');
+      setHiddenScreenshotCount(count);
+    } catch (_) {}
+  }
+
+  async function clearHiddenScreenshotCount() {
+    if (!window.__TAURI__ || !window.__TAURI__.core) return;
+    try {
+      var count = await window.__TAURI__.core.invoke('cmd_clear_hidden_screenshot_count');
+      setHiddenScreenshotCount(count);
+    } catch (_) {}
   }
 
   async function refreshPetBadge() {
@@ -1020,9 +1052,11 @@ import { PerformerHost } from './performance/performer-host.js';
   }
 
   function setupPetBadge() {
-    setPetBadgeCount(0);
+    renderPetBadgeCount();
     refreshPetBadge();
+    refreshHiddenScreenshotCount();
     setInterval(refreshPetBadge, PET_BADGE_REFRESH_MS);
+    setInterval(refreshHiddenScreenshotCount, PET_BADGE_REFRESH_MS);
   }
 
   // ========== 右键菜单 ==========
@@ -1152,6 +1186,10 @@ import { PerformerHost } from './performance/performer-host.js';
         else window.sessionStorage.removeItem('ai-pad.petAssetUrl');
       } catch (_) {}
       window.location.reload();
+    });
+
+    window.__TAURI__.event.listen('screenshot-hidden-count-changed', (event) => {
+      setHiddenScreenshotCount(event.payload);
     });
 
     window.__TAURI__.event.listen('performance-start', async (event) => {

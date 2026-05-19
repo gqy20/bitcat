@@ -232,6 +232,7 @@
 
   function hide() {
     stopPolling();
+    clearToolStatus();
     hideInput('hide-bubble');
     resizeMode = 'auto';
     diag('resize: hide ' + (userPrefSize ? 'keep manual pref' : 'reset window to default') + ', pref=' +
@@ -390,7 +391,9 @@
     var label = payload && payload.label ? payload.label : '调用工具';
     var phase = payload && payload.phase ? payload.phase : 'planned';
     var kind = payload && payload.kind ? payload.kind : 'utility';
-    if (kind === 'performance') {
+    var toolName = payload && payload.tool_name ? String(payload.tool_name) : '';
+    var isDanceTool = toolName === 'perform_dance' || toolName === 'play_dance';
+    if (kind === 'performance' && isDanceTool) {
       if (phase === 'blocked') {
         return '表演已拦截';
       }
@@ -414,6 +417,14 @@
     return '准备' + label;
   }
 
+  function clearToolStatus() {
+    if (!toolStatusEl) return;
+    toolStatusEl.textContent = '';
+    toolStatusEl.style.display = 'none';
+    delete toolStatusEl.dataset.kind;
+    delete toolStatusEl.dataset.phase;
+  }
+
   function setToolStatus(payload) {
     if (!toolStatusEl) return;
     var phase = payload && payload.phase ? payload.phase : 'planned';
@@ -425,7 +436,8 @@
     hideThinking();
     ensureVisible();
     autoResize();
-    if (kind === 'performance' && phase === 'finished') {
+    if (kind === 'performance' && phase === 'finished' &&
+        (payload && (payload.tool_name === 'perform_dance' || payload.tool_name === 'play_dance'))) {
       startPerformanceHideTimer();
     }
   }
@@ -454,6 +466,7 @@
 
   function startPolling() {
     stopPolling();
+    clearToolStatus();
     streaming = true;       // 标记流式开始
     userScrolledUp = false; // 新流式开始，重置锁定
     // 🔧 不立即激活光标：等真正拉到非空文本再切 streaming，
@@ -502,6 +515,7 @@
     stopPolling();
     userScrolledUp = false;
     hideThinking();
+    clearToolStatus();
     setStreamingClass(false);
     if (finalText && finalText.length > 0) {
       setText(finalText);
@@ -755,6 +769,7 @@
       stopPolling();
       streaming = false;     // 截图摘要非流式，标记结束
       setStreamingClass(false);
+      clearToolStatus();
       var payload = event.payload || {};
       var text = typeof payload === 'string' ? payload : (payload.text || '');
       diag('bubble-update received, text_len=' + (text || '').length);

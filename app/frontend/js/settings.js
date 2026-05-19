@@ -7,27 +7,30 @@ const invoke = window.__TAURI__?.core?.invoke || mockInvoke;
 
 const ACTION_TYPES = ["unbound", "launch", "hotkey", "script", "voice", "screenshot"];
 const PET_ASSET_PRESETS = [
-  { value: "", label: "内置小猪", group: "推荐" },
+  { value: "", label: "默认", group: "推荐" },
+  { value: "/__fixtures__/pets/hackmark", label: "Hackmark", group: "推荐" },
   { value: "/__fixtures__/pets/padlet", label: "Padlet", group: "推荐" },
   { value: "/__fixtures__/pets/piggy", label: "Piggy", group: "推荐" },
-  { value: "/__fixtures__/pets/hackmark", label: "Hackmark", group: "极客风" },
+  { value: "/__fixtures__/pets/cat", label: "Cat", group: "推荐" },
   { value: "/__fixtures__/pets/status", label: "Status", group: "终端状态" },
   { value: "/__fixtures__/pets/core", label: "Core", group: "终端状态" },
   { value: "/__fixtures__/pets/stacky", label: "Stacky", group: "终端状态" },
-  { value: "/__fixtures__/pets/bsod", label: "BSOD", group: "终端状态" },
-  { value: "/__fixtures__/pets/null-signal", label: "Null Signal", group: "终端状态" },
-  { value: "/__fixtures__/pets/dewey", label: "Dewey", group: "角色" },
-  { value: "/__fixtures__/pets/fireball", label: "Fireball", group: "角色" },
-  { value: "/__fixtures__/pets/rocky", label: "Rocky", group: "角色" },
-  { value: "/__fixtures__/pets/seedy", label: "Seedy", group: "角色" },
+  { value: "/__fixtures__/pets/bsod", label: "BSOD", group: "特殊状态" },
+  { value: "/__fixtures__/pets/null-signal", label: "Null Signal", group: "特殊状态" },
   { value: "/__fixtures__/pets/byte-bun", label: "Byte Bun", group: "角色" },
   { value: "/__fixtures__/pets/mossbot", label: "Mossbot", group: "角色" },
   { value: "/__fixtures__/pets/moonbit", label: "Moonbit", group: "角色" },
   { value: "/__fixtures__/pets/sparkle", label: "Sparkle", group: "角色" },
-  { value: "/__fixtures__/pets/cat", label: "Cat", group: "推荐" },
+  { value: "/__fixtures__/pets/dewey", label: "Dewey", group: "角色" },
+  { value: "/__fixtures__/pets/fireball", label: "Fireball", group: "角色" },
+  { value: "/__fixtures__/pets/rocky", label: "Rocky", group: "角色" },
+  { value: "/__fixtures__/pets/seedy", label: "Seedy", group: "角色" },
 ];
 const PET_ASSET_PIGGY = "/__fixtures__/pets/piggy";
+const PET_ASSET_DEFAULT_PREVIEW = PET_ASSET_PIGGY;
 const PET_ASSET_PRESET_VALUES = new Set(PET_ASSET_PRESETS.map(item => item.value).filter(Boolean));
+const petAssetPreviewCache = new Map();
+let selectedPetAssetPreset = "";
 const ACTION_TYPE_LABELS = {
   unbound: "未绑定",
   launch: "启动程序",
@@ -485,16 +488,12 @@ function renderAppearance(a) {
   $("a-shortcut").value = a.global_shortcut;
   $("a-ss-interval").value = a.screenshot_interval_sec ?? 30;
   $("a-ss-bubble").checked = a.screenshot_show_bubble !== false;
-  renderPetAssetPresetOptions();
+  renderPetAssetPicker();
   renderPetAssetChoice(a.pet_asset_url || "");
   updateOverviewAppearance(a);
 
   ["a-top","a-collapsed","a-tts","a-ss-bubble"].forEach(id => { $(id).onchange = () => markDirty("appearance"); });
   ["a-shortcut","a-ss-interval","a-pet-asset"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
-  $("a-pet-asset-preset").onchange = () => {
-    applyPetAssetPreset($("a-pet-asset-preset").value);
-    markDirty("appearance");
-  };
 }
 
 function collectAppearance() {
@@ -514,33 +513,36 @@ function collectAppearance() {
 function renderPetAssetChoice(value) {
   const normalized = normalizePetAssetUrl(value);
   if (!normalized) {
-    $("a-pet-asset-preset").value = "";
+    selectedPetAssetPreset = "";
     $("a-pet-asset").value = "";
   } else if (PET_ASSET_PRESET_VALUES.has(normalized)) {
-    $("a-pet-asset-preset").value = normalized;
+    selectedPetAssetPreset = normalized;
     $("a-pet-asset").value = normalized;
   } else {
-    $("a-pet-asset-preset").value = "__custom";
+    selectedPetAssetPreset = "__custom";
     $("a-pet-asset").value = normalized;
   }
   updatePetAssetCustomVisibility();
+  updatePetAssetPickerSelection();
 }
 
 function applyPetAssetPreset(value) {
+  selectedPetAssetPreset = value;
   if (value === "__custom") {
     if (!$("a-pet-asset").value.trim()) $("a-pet-asset").value = PET_ASSET_PIGGY;
   } else {
     $("a-pet-asset").value = value;
   }
   updatePetAssetCustomVisibility();
+  updatePetAssetPickerSelection();
 }
 
 function updatePetAssetCustomVisibility() {
-  $("a-pet-asset").classList.toggle("hidden", $("a-pet-asset-preset").value !== "__custom");
+  $("a-pet-asset").classList.toggle("hidden", selectedPetAssetPreset !== "__custom");
 }
 
 function collectPetAssetUrl() {
-  const preset = $("a-pet-asset-preset").value;
+  const preset = selectedPetAssetPreset;
   if (!preset) return null;
   if (preset !== "__custom") return normalizePetAssetUrl(preset) || null;
   return normalizePetAssetUrl($("a-pet-asset").value) || null;
@@ -550,29 +552,165 @@ function normalizePetAssetUrl(value) {
   return String(value || "").trim().replace(/\/+$/, "");
 }
 
-function renderPetAssetPresetOptions() {
-  const select = $("a-pet-asset-preset");
-  if (!select) return;
-  const current = select.value;
-  let lastGroup = null;
-  let openGroup = false;
-  const options = PET_ASSET_PRESETS.map(({ value, label, group }) => {
-    const parts = [];
-    if (group !== lastGroup) {
-      if (openGroup) parts.push("</optgroup>");
-      parts.push(`<optgroup label="${escapeAttr(group || "其他")}">`);
-      openGroup = true;
-      lastGroup = group;
-    }
-    parts.push(`<option value="${escapeAttr(value)}">${escapeHtml(label)}</option>`);
-    return parts.join("");
-  }).join("") + (openGroup ? "</optgroup>" : "") + `<option value="__custom">自定义地址</option>`;
-  if (select.innerHTML !== options) {
-    select.innerHTML = options;
+function renderPetAssetPicker() {
+  const picker = $("a-pet-asset-picker");
+  if (!picker) return;
+  picker.innerHTML = "";
+  let currentGroup = null;
+  let groupEl = null;
+  let gridEl = null;
+
+  function ensureGroup(group) {
+    if (group === currentGroup && gridEl) return gridEl;
+    currentGroup = group;
+    groupEl = document.createElement("div");
+    groupEl.className = "pet-asset-group";
+    const title = document.createElement("div");
+    title.className = "pet-asset-group-title";
+    title.textContent = group || "其他";
+    gridEl = document.createElement("div");
+    gridEl.className = "pet-asset-grid";
+    groupEl.append(title, gridEl);
+    picker.appendChild(groupEl);
+    return gridEl;
   }
-  if (current && [...select.options].some(option => option.value === current)) {
-    select.value = current;
+
+  for (const preset of PET_ASSET_PRESETS) {
+    const grid = ensureGroup(preset.group);
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "pet-asset-card";
+    card.dataset.value = preset.value;
+    card.setAttribute("role", "option");
+    card.setAttribute("title", preset.label);
+    card.onkeydown = handlePetAssetCardKeydown;
+
+    const canvas = document.createElement("canvas");
+    canvas.className = "pet-asset-thumb";
+    canvas.width = 38;
+    canvas.height = 38;
+    canvas.setAttribute("aria-hidden", "true");
+
+    const label = document.createElement("span");
+    label.textContent = preset.label;
+    card.append(canvas, label);
+    card.onclick = () => {
+      applyPetAssetPreset(preset.value);
+      markDirty("appearance");
+    };
+    grid.appendChild(card);
+    renderPetAssetPreview(canvas, preset.value);
   }
+
+  const customGrid = ensureGroup("其他");
+  const custom = document.createElement("button");
+  custom.type = "button";
+  custom.className = "pet-asset-card";
+  custom.dataset.value = "__custom";
+  custom.setAttribute("role", "option");
+  custom.setAttribute("title", "自定义地址");
+  custom.onkeydown = handlePetAssetCardKeydown;
+  custom.innerHTML = `<canvas class="pet-asset-thumb" width="38" height="38" aria-hidden="true"></canvas><span>自定义地址</span>`;
+  custom.onclick = () => {
+    applyPetAssetPreset("__custom");
+    markDirty("appearance");
+  };
+  customGrid.appendChild(custom);
+  drawCustomPetAssetPreview(custom.querySelector("canvas"));
+  updatePetAssetPickerSelection();
+}
+
+function handlePetAssetCardKeydown(event) {
+  if (event.key !== "ArrowRight" && event.key !== "ArrowLeft" && event.key !== "ArrowDown" && event.key !== "ArrowUp") {
+    return;
+  }
+  const cards = Array.from($("a-pet-asset-picker")?.querySelectorAll(".pet-asset-card") || []);
+  const index = cards.indexOf(event.currentTarget);
+  if (index < 0) return;
+  event.preventDefault();
+  const delta = event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1;
+  cards[(index + delta + cards.length) % cards.length].focus();
+}
+
+function updatePetAssetPickerSelection() {
+  const picker = $("a-pet-asset-picker");
+  if (!picker) return;
+  const value = selectedPetAssetPreset;
+  picker.querySelectorAll(".pet-asset-card").forEach(card => {
+    const selected = card.dataset.value === value;
+    card.classList.toggle("selected", selected);
+    card.setAttribute("aria-selected", selected ? "true" : "false");
+    card.tabIndex = selected ? 0 : -1;
+  });
+}
+
+async function renderPetAssetPreview(canvas, value) {
+  if (!canvas) return;
+  const baseUrl = normalizePetAssetUrl(value || PET_ASSET_DEFAULT_PREVIEW);
+  if (!baseUrl) return;
+  try {
+    const asset = await loadPetAssetPreview(baseUrl);
+    drawPetAssetPreview(canvas, asset);
+  } catch (error) {
+    drawCustomPetAssetPreview(canvas);
+  }
+}
+
+async function loadPetAssetPreview(baseUrl) {
+  if (petAssetPreviewCache.has(baseUrl)) return petAssetPreviewCache.get(baseUrl);
+  const promise = (async () => {
+    const manifest = await fetch(`${baseUrl}/manifest.json`).then(res => {
+      if (!res.ok) throw new Error(`manifest ${res.status}`);
+      return res.json();
+    });
+    const image = new Image();
+    image.decoding = "sync";
+    image.src = `${baseUrl}/${manifest.sprite?.image || "spritesheet.webp"}`;
+    await image.decode();
+    return { manifest, image };
+  })();
+  petAssetPreviewCache.set(baseUrl, promise);
+  return promise;
+}
+
+function drawPetAssetPreview(canvas, asset) {
+  const ctx = canvas.getContext("2d");
+  const manifest = asset.manifest || {};
+  const sprite = manifest.sprite || {};
+  const fw = sprite.frameWidth || 1;
+  const fh = sprite.frameHeight || 1;
+  const columns = sprite.columns || 1;
+  const frame = Number.isInteger(manifest.mini?.frame)
+    ? manifest.mini.frame
+    : (manifest.states?.idle?.frames?.[0]?.sprite || 0);
+  const sx = (frame % columns) * fw;
+  const sy = Math.floor(frame / columns) * fh;
+  const scale = Math.min(32 / fw, 32 / fh);
+  const dw = Math.max(1, Math.round(fw * scale));
+  const dh = Math.max(1, Math.round(fh * scale));
+  const dx = Math.floor((canvas.width - dw) / 2);
+  const dy = Math.floor((canvas.height - dh) / 2);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.imageSmoothingEnabled = manifest.render?.pixelated === true ? false : true;
+  ctx.drawImage(asset.image, sx, sy, fw, fh, dx, dy, dw, dh);
+}
+
+function drawCustomPetAssetPreview(canvas) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "rgba(124,255,178,0.18)";
+  ctx.strokeStyle = "rgba(124,255,178,0.7)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(8, 8, 22, 22, 6);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#dce3ee";
+  ctx.font = "700 18px system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("+", 19, 19);
 }
 
 function renderAgentWatch(a) {
