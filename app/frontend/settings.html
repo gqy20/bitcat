@@ -274,30 +274,19 @@
               </div>
               <input id="a-ss-bubble" type="checkbox" />
             </div>
-            <div class="setting-row tall">
-              <div class="setting-copy">
-                <label for="a-pet-asset-picker">宠物资产</label>
-                <span>选择内置资源包；需要调试时可切到自定义地址。</span>
-              </div>
-              <div class="pet-asset-field">
-                <div id="a-pet-asset-picker" class="pet-asset-picker" role="listbox" aria-label="宠物资源"></div>
-                <input id="a-pet-asset" class="hidden" type="text" placeholder="/__fixtures__/pets/piggy" spellcheck="false" />
-                <small>保存后宠物窗口会重新加载资产。</small>
-              </div>
-            </div>
           </div>
 
-          <div class="section-panel">
-            <div class="section-head music-title">
+          <div class="section-panel pet-assets-panel">
+            <div class="section-head">
               <div>
-                <h3>表演与舞动</h3>
-                <span>这里负责启动或停止音乐响应；实时状态统一放到诊断页。</span>
+                <h3>宠物资产</h3>
+                <span>选择内置资源包；需要调试时可切到自定义地址。</span>
               </div>
-              <div class="music-actions">
-                <button id="music-fake" class="btn small" type="button">模拟</button>
-                <button id="music-wasapi" class="btn small" type="button">WASAPI</button>
-                <button id="music-stop" class="btn small ghost" type="button">停止</button>
-              </div>
+            </div>
+            <div class="pet-asset-field">
+              <div id="a-pet-asset-picker" class="pet-asset-picker" role="listbox" aria-label="宠物资源"></div>
+              <input id="a-pet-asset" class="hidden" type="text" placeholder="/__fixtures__/pets/piggy" spellcheck="false" />
+              <small>保存后宠物窗口会重新加载资产。</small>
             </div>
           </div>
         </section>
@@ -515,11 +504,6 @@
                 <strong id="resource-process-memory">-</strong>
                 <small>当前 Working Set</small>
               </div>
-              <div class="resource-card wide">
-                <span>系统内存</span>
-                <strong id="resource-system-memory">-</strong>
-                <div class="usage-bar resource-bar"><span id="resource-system-memory-bar"></span></div>
-              </div>
             </div>
           </div>
 
@@ -537,16 +521,6 @@
             <div class="usage-block-title">宠物事件</div>
             <div id="pet-events" class="pet-events"></div>
           </div>
-
-          <div class="usage-block">
-            <div class="usage-block-title">音乐响应状态</div>
-            <div id="music-diagnostics-usage" class="music-diagnostics compact"></div>
-          </div>
-
-          <details class="quiet-details usage-paths">
-            <summary>统计文件</summary>
-            <span id="usage-paths" class="ro mono">-</span>
-          </details>
           <div id="usage-status" class="status-line"></div>
         </section>
 

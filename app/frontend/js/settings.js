@@ -44,21 +44,8 @@ let SNAPSHOT = null;
 const dirty = { ai: false, user: false, actions: false, prompts: false, appearance: false, agent_watch: false };
 let currentTab = "overview";
 let selectedUsageModel = "__all";
-let musicDiagnosticsBound = false;
-let musicDiagnosticsRenderTimer = null;
+let agentWatchCopyBound = false;
 let agentWatchTimer = null;
-const MUSIC_STATE = {
-  status: "idle",
-  source: "-",
-  sessionId: null,
-  energy: 0,
-  bass: 0,
-  onset: false,
-  silence: true,
-  updatedAt: null,
-  error: null,
-};
-const MUSIC_DIAGNOSTICS_RENDER_MS = 500;
 
 async function mockInvoke(command) {
   if (command === "cmd_settings_load") {
@@ -161,9 +148,6 @@ async function mockInvoke(command) {
       generated_at: new Date().toISOString(),
       process_cpu_percent: 4.8,
       process_memory_mb: 156.4,
-      system_memory_used_mb: 18342,
-      system_memory_total_mb: 32674,
-      system_memory_percent: 56.1,
     };
   }
   if (command === "cmd_get_pet_event_log") {
@@ -774,7 +758,6 @@ function renderAbout(a) {
 
 async function loadUsageDiagnostics() {
   await Promise.all([loadTokenStats(), loadPetEventLog(), loadResourceUsage()]);
-  renderMusicDiagnostics();
 }
 
 async function loadResourceUsage() {
@@ -975,9 +958,6 @@ function renderTokenStats(stats) {
   $("usage-cache").innerHTML = pairedMetric("读", today.cache_read_tokens, "写", today.cache_write_tokens);
   $("usage-records").innerHTML = metricValue(today.record_count, "条");
   $("ov-usage-total").textContent = formatNumber(today.total_tokens);
-  $("usage-paths").textContent = stats
-    ? `${stats.paths.usage_jsonl}\n${stats.paths.sessions_json}`
-    : "-";
 
   renderUsageBreakdown(today);
   renderUsageSessions(stats?.recent_sessions || []);
@@ -1003,10 +983,6 @@ function renderUsageModelSelect(stats) {
 function renderResourceUsage(usage) {
   $("resource-cpu").innerHTML = usage ? metricValue(formatFixed(usage.process_cpu_percent, 1), "%") : "-";
   $("resource-process-memory").innerHTML = usage ? metricValue(formatFixed(usage.process_memory_mb, 1), "MB") : "-";
-  $("resource-system-memory").innerHTML = usage
-    ? pairedMetric("已用", `${formatFixed(usage.system_memory_used_mb / 1024, 1)} GB`, "总量", `${formatFixed(usage.system_memory_total_mb / 1024, 1)} GB`)
-    : "-";
-  $("resource-system-memory-bar").style.width = usage ? `${Math.round(usage.system_memory_percent)}%` : "0%";
   $("resource-updated").textContent = usage?.generated_at ? `更新于 ${formatDateTime(usage.generated_at)}` : "读取失败";
 }
 
@@ -1093,9 +1069,9 @@ function renderPetEventLog(logView) {
   }).join("");
 }
 
-function bindMusicDiagnostics() {
-  if (musicDiagnosticsBound) return;
-  musicDiagnosticsBound = true;
+function bindAgentWatchCopyActions() {
+  if (agentWatchCopyBound) return;
+  agentWatchCopyBound = true;
   $("aw-remote-copy").addEventListener("click", async () => {
     try {
       const command = $("aw-remote-command");
@@ -1114,151 +1090,6 @@ function bindMusicDiagnostics() {
       toast("复制失败：" + String(e), "err");
     }
   });
-  const eventApi = window.__TAURI__?.event;
-  if (!eventApi?.listen) return;
-
-  eventApi.listen("performance-start", (event) => {
-    const payload = event.payload || {};
-    if (payload.kind !== "music-reactive") return;
-    Object.assign(MUSIC_STATE, {
-      status: "active",
-      source: payload.source || MUSIC_STATE.source || "-",
-      sessionId: payload.session_id || null,
-      energy: 0,
-      bass: 0,
-      onset: false,
-      silence: false,
-      updatedAt: new Date(),
-      error: null,
-    });
-    renderMusicDiagnostics();
-  });
-
-  eventApi.listen("performance-frame", (event) => {
-    const payload = event.payload || {};
-    if (typeof payload.energy !== "number" && typeof payload.bass !== "number") return;
-    Object.assign(MUSIC_STATE, {
-      status: "active",
-      sessionId: payload.session_id || MUSIC_STATE.sessionId,
-      energy: clamp01(payload.energy),
-      bass: clamp01(payload.bass),
-      onset: Boolean(payload.onset),
-      silence: Boolean(payload.silence),
-      updatedAt: new Date(),
-      error: null,
-    });
-    scheduleMusicDiagnosticsRender();
-  });
-
-  eventApi.listen("performance-stop", (event) => {
-    const payload = event.payload || {};
-    if (payload.session_id && MUSIC_STATE.sessionId && payload.session_id !== MUSIC_STATE.sessionId) return;
-    MUSIC_STATE.status = "stopped";
-    MUSIC_STATE.updatedAt = new Date();
-    renderMusicDiagnostics();
-  });
-
-  eventApi.listen("performance-error", (event) => {
-    const payload = event.payload || {};
-    Object.assign(MUSIC_STATE, {
-      status: "error",
-      sessionId: payload.session_id || MUSIC_STATE.sessionId,
-      error: payload.message || String(payload.error || "unknown error"),
-      updatedAt: new Date(),
-    });
-    renderMusicDiagnostics();
-  });
-}
-
-function scheduleMusicDiagnosticsRender() {
-  if (musicDiagnosticsRenderTimer) return;
-  musicDiagnosticsRenderTimer = setTimeout(() => {
-    musicDiagnosticsRenderTimer = null;
-    renderMusicDiagnostics();
-  }, MUSIC_DIAGNOSTICS_RENDER_MS);
-}
-
-async function startMusicDance(source) {
-  const command = source === "wasapi" ? "cmd_start_wasapi_music_dance" : "cmd_start_fake_music_dance";
-  Object.assign(MUSIC_STATE, {
-    status: "starting",
-    source,
-    error: null,
-    updatedAt: new Date(),
-  });
-  renderMusicDiagnostics();
-  try {
-    const sessionId = await invoke(command);
-    Object.assign(MUSIC_STATE, {
-      status: "active",
-      source,
-      sessionId,
-      updatedAt: new Date(),
-      error: null,
-    });
-    renderMusicDiagnostics();
-    toast(source === "wasapi" ? "WASAPI 已启动" : "模拟音乐已启动", "ok");
-  } catch (e) {
-    Object.assign(MUSIC_STATE, {
-      status: "error",
-      error: String(e),
-      updatedAt: new Date(),
-    });
-    renderMusicDiagnostics();
-    toast("音乐启动失败：" + String(e), "err");
-  }
-}
-
-async function stopMusicDance() {
-  try {
-    await invoke("cmd_stop_music_dance");
-    Object.assign(MUSIC_STATE, {
-      status: "stopped",
-      updatedAt: new Date(),
-    });
-    renderMusicDiagnostics();
-    toast("音乐响应已停止", "ok");
-  } catch (e) {
-    MUSIC_STATE.error = String(e);
-    MUSIC_STATE.status = "error";
-    MUSIC_STATE.updatedAt = new Date();
-    renderMusicDiagnostics();
-    toast("停止失败：" + String(e), "err");
-  }
-}
-
-function renderMusicDiagnostics() {
-  const boxes = ["music-diagnostics-usage"]
-    .map(id => document.getElementById(id))
-    .filter(Boolean);
-  if (!boxes.length) return;
-  const energyPct = Math.round(clamp01(MUSIC_STATE.energy) * 100);
-  const bassPct = Math.round(clamp01(MUSIC_STATE.bass) * 100);
-  const session = MUSIC_STATE.sessionId || "-";
-  const updated = MUSIC_STATE.updatedAt ? MUSIC_STATE.updatedAt.toLocaleTimeString("zh-CN") : "-";
-  const error = MUSIC_STATE.error ? `<div class="music-error">${escapeHtml(MUSIC_STATE.error)}</div>` : "";
-  const html = `
-    <div class="music-status-grid">
-      <div class="music-kv"><span>状态</span><strong>${escapeHtml(MUSIC_STATE.status)}</strong></div>
-      <div class="music-kv"><span>来源</span><strong>${escapeHtml(MUSIC_STATE.source)}</strong></div>
-      <div class="music-kv"><span>会话</span><strong>${escapeHtml(session)}</strong></div>
-      <div class="music-kv"><span>更新</span><strong>${escapeHtml(updated)}</strong></div>
-    </div>
-    <div class="music-meter-row">
-      <div class="music-meter-label"><span>能量</span><strong>${energyPct}%</strong></div>
-      <div class="music-meter"><span style="width:${energyPct}%"></span></div>
-    </div>
-    <div class="music-meter-row">
-      <div class="music-meter-label"><span>低频</span><strong>${bassPct}%</strong></div>
-      <div class="music-meter bass"><span style="width:${bassPct}%"></span></div>
-    </div>
-    <div class="music-flags">
-      <span class="${MUSIC_STATE.onset ? "on" : ""}">起拍</span>
-      <span class="${MUSIC_STATE.silence ? "on" : ""}">静音</span>
-    </div>
-    ${error}
-  `;
-  boxes.forEach(box => { box.innerHTML = html; });
 }
 
 function renderMemoryReview(review) {
@@ -1451,10 +1282,7 @@ function bindGlobal() {
       if (currentTab === "agent-watch") renderAgentSessions(event.payload);
     });
   }
-  $("music-fake").addEventListener("click", () => startMusicDance("fake"));
-  $("music-wasapi").addEventListener("click", () => startMusicDance("wasapi"));
-  $("music-stop").addEventListener("click", stopMusicDance);
-  bindMusicDiagnostics();
+  bindAgentWatchCopyActions();
   $("ai-key-toggle").addEventListener("click", () => {
     const el = $("ai-key");
     const show = el.type === "password";
