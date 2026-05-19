@@ -79,25 +79,12 @@
             </div>
           </div>
 
-          <div class="two-col">
-            <div class="section-panel">
-              <div class="section-head">
-                <h3>常用入口</h3>
-                <span>优先调整这些项目</span>
-              </div>
-              <div class="quick-list">
-                <button class="quick-link" type="button" data-go="ai"><span class="icon icon-ai"></span><b>AI 与对话</b><small>模型、Base URL、API Key</small></button>
-                <button class="quick-link" type="button" data-go="memory"><span class="icon icon-memory"></span><b>记忆与画像</b><small>主人信息、长期记忆审查</small></button>
-                <button class="quick-link" type="button" data-go="appearance"><span class="icon icon-appearance"></span><b>外观与行为</b><small>置顶、折叠、语音、观察</small></button>
-              </div>
+          <div class="section-panel overview-note">
+            <div class="section-head">
+              <h3>需要处理的项目</h3>
+              <span>只显示异常、缺失或需要重启的状态</span>
             </div>
-            <div class="section-panel">
-              <div class="section-head">
-                <h3>当前生效配置</h3>
-                <span>来自环境变量、覆盖层或默认值</span>
-              </div>
-              <div class="effective compact" id="overview-effective"></div>
-            </div>
+            <div id="overview-notices" class="notice-list"></div>
           </div>
         </section>
 
@@ -109,12 +96,11 @@
             </div>
           </div>
 
-          <div class="effective" id="ai-effective"></div>
           <div class="settings-card">
             <div class="setting-row">
               <div class="setting-copy">
                 <label for="ai-key">API Key</label>
-                <span>保存在本机覆盖层，不会在界面里回显真实值。</span>
+                <span>保存在本机覆盖层，不会在界面里回显真实值。<small id="ai-key-current" class="field-current"></small></span>
               </div>
               <div class="input-with-action">
                 <input id="ai-key" type="password" placeholder="已保存则留空" autocomplete="off" spellcheck="false" />
@@ -124,21 +110,21 @@
             <div class="setting-row">
               <div class="setting-copy">
                 <label for="ai-baseurl">Base URL</label>
-                <span>Anthropic 兼容接口地址。</span>
+                <span>Anthropic 兼容接口地址。<small id="ai-baseurl-current" class="field-current"></small></span>
               </div>
               <input id="ai-baseurl" type="text" placeholder="https://api.anthropic.com" spellcheck="false" />
             </div>
             <div class="setting-row">
               <div class="setting-copy">
                 <label for="ai-model">模型</label>
-                <span>例如 claude-sonnet 或 glm 系列。</span>
+                <span>例如 claude-sonnet 或 glm 系列。<small id="ai-model-current" class="field-current"></small></span>
               </div>
               <input id="ai-model" type="text" placeholder="claude-sonnet-4-20250514" spellcheck="false" />
             </div>
             <div class="setting-row">
               <div class="setting-copy">
                 <label for="ai-maxtokens">最大 token</label>
-                <span>留空使用默认上限。</span>
+                <span>留空使用默认上限。<small id="ai-maxtokens-current" class="field-current"></small></span>
               </div>
               <input id="ai-maxtokens" type="number" min="1" placeholder="256000" />
             </div>
@@ -305,7 +291,7 @@
             <div class="section-head music-title">
               <div>
                 <h3>表演与舞动</h3>
-                <span>音乐响应舞蹈属于宠物行为；运行状态会同步到诊断页。</span>
+                <span>这里负责启动或停止音乐响应；实时状态统一放到诊断页。</span>
               </div>
               <div class="music-actions">
                 <button id="music-fake" class="btn small" type="button">模拟</button>
@@ -313,7 +299,6 @@
                 <button id="music-stop" class="btn small ghost" type="button">停止</button>
               </div>
             </div>
-            <div id="music-diagnostics" class="music-diagnostics"></div>
           </div>
         </section>
 
@@ -456,7 +441,9 @@
               <textarea id="p-vision-multi" rows="3" spellcheck="false"></textarea>
             </div>
           </div>
-          <div class="settings-card compact">
+          <details class="quiet-details advanced-settings">
+            <summary>高级参数</summary>
+          <div class="settings-card compact embedded">
             <div class="setting-row">
               <div class="setting-copy">
                 <label for="p-mem-max">滚动记忆条数</label>
@@ -479,6 +466,7 @@
               <input id="p-ss-interval" type="number" min="1" />
             </div>
           </div>
+          </details>
         </section>
 
         <section class="tab hidden" data-pane="usage">

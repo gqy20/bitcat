@@ -222,20 +222,41 @@ function renderAi(ai) {
   $("ai-maxtokens").value = ai.overlay.max_tokens == null ? "" : ai.overlay.max_tokens;
 
   const eff = ai.effective;
-  const effectiveHtml =
-    `<div class="effective-title">当前生效</div>` +
-    `<div class="effective-item"><span>API Key</span><b>${ai.has_effective_key ? "已配置" : "未配置"}</b></div>` +
-    `<div class="effective-item"><span>Base URL</span><b title="${escapeAttr(eff.base_url)}">${escapeHtml(eff.base_url)}</b></div>` +
-    `<div class="effective-item"><span>模型</span><b title="${escapeAttr(eff.model)}">${escapeHtml(eff.model)}</b></div>` +
-    `<div class="effective-item"><span>最大 token</span><b>${formatNumber(eff.max_tokens)}</b></div>`;
-  $("ai-effective").innerHTML = effectiveHtml;
-  $("overview-effective").innerHTML = effectiveHtml;
+  $("ai-key-current").textContent = ai.has_effective_key ? "当前：已配置" : "当前：未配置";
+  $("ai-baseurl-current").textContent = eff.base_url ? `当前：${eff.base_url}` : "";
+  $("ai-baseurl-current").title = eff.base_url || "";
+  $("ai-model-current").textContent = eff.model ? `当前：${eff.model}` : "";
+  $("ai-model-current").title = eff.model || "";
+  $("ai-maxtokens-current").textContent = eff.max_tokens == null ? "" : `当前：${formatNumber(eff.max_tokens)}`;
+  renderOverviewNotices(ai);
   $("ov-ai-model").textContent = eff.model || "-";
   $("ov-ai-key").textContent = ai.has_effective_key ? "API Key 已配置" : "API Key 未配置";
 
   ["ai-key", "ai-baseurl", "ai-model", "ai-maxtokens"].forEach(id => {
     $(id).oninput = () => markDirty("ai");
   });
+}
+
+function renderOverviewNotices(ai) {
+  const box = $("overview-notices");
+  if (!box) return;
+  const notices = [];
+  if (!ai.has_effective_key) {
+    notices.push(["API Key 未配置", "AI 对话会不可用，请在 AI 与对话页补充密钥。"]);
+  }
+  if (!ai.effective?.model) {
+    notices.push(["模型未配置", "请指定一个可用模型。"]);
+  }
+  if (!notices.length) {
+    box.innerHTML = `<div class="empty compact">当前没有需要处理的配置项。</div>`;
+    return;
+  }
+  box.innerHTML = notices.map(([title, body]) => `
+    <div class="notice-item">
+      <strong>${escapeHtml(title)}</strong>
+      <span>${escapeHtml(body)}</span>
+    </div>
+  `).join("");
 }
 
 function renderUser(user) {
@@ -1207,7 +1228,7 @@ async function stopMusicDance() {
 }
 
 function renderMusicDiagnostics() {
-  const boxes = ["music-diagnostics", "music-diagnostics-usage"]
+  const boxes = ["music-diagnostics-usage"]
     .map(id => document.getElementById(id))
     .filter(Boolean);
   if (!boxes.length) return;
@@ -1390,9 +1411,6 @@ async function tryClose() {
 function bindGlobal() {
   document.querySelectorAll(".nav-item").forEach(btn => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
-  });
-  document.querySelectorAll(".quick-link[data-go]").forEach(btn => {
-    btn.addEventListener("click", () => switchTab(btn.dataset.go));
   });
   $("btn-close").addEventListener("click", tryClose);
   $("btn-cancel").addEventListener("click", async () => {
