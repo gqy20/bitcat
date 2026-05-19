@@ -31,6 +31,7 @@ pub mod lifecycle;
 pub mod observation_gate;
 pub mod panel;
 pub mod pet_event_bus;
+pub mod pet_inbox;
 pub mod remote_endpoint;
 pub mod screenshot;
 pub mod settings;
@@ -111,6 +112,9 @@ pub fn run() {
             screenshot::cmd_screenshot_now,
             screenshot::cmd_get_hidden_screenshot_count,
             screenshot::cmd_clear_hidden_screenshot_count,
+            screenshot::cmd_get_recent_screenshot_analyses,
+            pet_inbox::cmd_show_pet_inbox,
+            pet_inbox::cmd_hide_pet_inbox,
             gamepad::cmd_submit_chat,
             gamepad::cmd_open_chat,
             gamepad::cmd_enter_chat,

@@ -281,11 +281,15 @@
   });
 
   function toggleFolded() {
+    invoke?.("cmd_agent_watch_mark_user_placed").catch(() => {});
     setFolded(!folded);
   }
 
   function unfold() {
-    if (folded) setFolded(false);
+    if (folded) {
+      invoke?.("cmd_agent_watch_mark_user_placed").catch(() => {});
+      setFolded(false);
+    }
   }
 
   function expandAllTasks() {

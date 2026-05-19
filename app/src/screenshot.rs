@@ -450,6 +450,33 @@ pub fn cmd_clear_hidden_screenshot_count(
     Ok(0)
 }
 
+#[derive(serde::Serialize)]
+pub struct RecentScreenshotAnalysisSummary {
+    pub day: String,
+    pub description: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[tauri::command]
+pub fn cmd_get_recent_screenshot_analyses(
+    count: Option<usize>,
+) -> Result<Vec<RecentScreenshotAnalysisSummary>, String> {
+    let count = count.unwrap_or(3).clamp(1, 6);
+    let base = ai_pad_core::screenshot::screenshot_base_dir()?;
+    Ok(
+        ai_pad_core::screenshot::list_recent_analyses_multi_day(&base, count)
+            .into_iter()
+            .map(|(day, record)| RecentScreenshotAnalysisSummary {
+                day,
+                description: record.description().to_string(),
+                width: record.width,
+                height: record.height,
+            })
+            .collect(),
+    )
+}
+
 /// 截图观察线程主循环（在独立线程上运行）。
 ///
 /// 每轮流程：sleep → 检查启停/跳舞/熄屏/聊天状态 → BitBlt 截屏 →

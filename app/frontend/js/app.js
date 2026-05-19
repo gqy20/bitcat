@@ -994,14 +994,18 @@ import { PerformerHost } from './performance/performer-host.js';
     if (bodyEl) bodyEl.classList.remove('pet-hover-active');
   }
 
-  function attentionCountFromAgentSnapshot(snapshot) {
+  function attentionSessionsFromAgentSnapshot(snapshot) {
     var sessions = (snapshot && snapshot.sessions) || [];
     return sessions.filter(function(session) {
       if (!session || (session.display && session.display.quiet)) return false;
       var status = String(session.status || '').toLowerCase();
       var tone = String((session.display && session.display.tone) || '').toLowerCase();
       return !!session.needs_user || tone === 'needs_user' || status === 'waiting' || status === 'error';
-    }).length;
+    });
+  }
+
+  function attentionCountFromAgentSnapshot(snapshot) {
+    return attentionSessionsFromAgentSnapshot(snapshot).length;
   }
 
   function renderPetBadgeCount() {
@@ -1014,6 +1018,8 @@ import { PerformerHost } from './performance/performer-host.js';
       ? '隐藏的截图分析：' + petBadgeCounts.screenshot
       : '';
     badge.hidden = value <= 0;
+    badge.classList.toggle('has-agent-alert', petBadgeCounts.agent > 0);
+    badge.setAttribute('aria-label', '待查看 ' + value + ' 项');
     bodyEl.classList.toggle('has-pet-badge', value > 0);
   }
 
@@ -1051,7 +1057,29 @@ import { PerformerHost } from './performance/performer-host.js';
     } catch (_) {}
   }
 
+  async function openPetInbox() {
+    if (!window.__TAURI__ || !window.__TAURI__.core) return;
+    try {
+      await window.__TAURI__.core.invoke('cmd_show_pet_inbox');
+    } catch (_) {}
+  }
+
+  function setupPetBadgeButton() {
+    var badge = document.getElementById('pet-badge');
+    if (badge) {
+      badge.addEventListener('pointerdown', function(e) {
+        e.stopPropagation();
+      });
+      badge.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        openPetInbox();
+      });
+    }
+  }
+
   function setupPetBadge() {
+    setupPetBadgeButton();
     renderPetBadgeCount();
     refreshPetBadge();
     refreshHiddenScreenshotCount();

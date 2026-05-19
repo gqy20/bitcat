@@ -7,7 +7,7 @@ use std::sync::atomic::Ordering;
 
 pub const SNAP_W: f64 = 24.0;
 pub const SNAP_H: i32 = 67;
-const SNAP_BOTTOM_GAP_LP: f64 = 14.0;
+const SNAP_EDGE_THRESHOLD_LP: f64 = 16.0;
 
 /// 切换 pet 窗口显示模式：正常(128x128) / 折叠(48x48)。
 #[tauri::command]
@@ -144,7 +144,6 @@ pub async fn cmd_snap_pet(app: tauri::AppHandle, x: i32, y: i32) -> Result<SnapR
     let scale = win.scale_factor().unwrap_or(1.0);
     let snap_h_px = (SNAP_H as f64 * scale) as i32;
     let snap_w_px = (SNAP_W * scale) as i32;
-    let bottom_gap_px = (SNAP_BOTTOM_GAP_LP * scale).round() as i32;
     let horizontal_snap_w_px = snap_h_px;
     let horizontal_snap_h_px = snap_w_px;
 
@@ -164,7 +163,7 @@ pub async fn cmd_snap_pet(app: tauri::AppHandle, x: i32, y: i32) -> Result<SnapR
         "cmd_snap_pet: 工作区信息"
     );
 
-    let snap_threshold = (20.0 * scale) as i32;
+    let snap_threshold = (SNAP_EDGE_THRESHOLD_LP * scale).round() as i32;
     let left_dist = (x - work.left).max(0);
     let right_dist = (work.right - pw - x).max(0);
     let top_dist = (y - work.top).max(0);
@@ -182,11 +181,17 @@ pub async fn cmd_snap_pet(app: tauri::AppHandle, x: i32, y: i32) -> Result<SnapR
         .copied()
         .unwrap_or(("none", snap_threshold + 1));
 
-    let side_snap_y =
-        (work.bottom - snap_h_px - bottom_gap_px).clamp(work.top, work.bottom - snap_h_px);
     let snap_result = match edge {
-        "left" if dist <= snap_threshold => ("left", work.left, side_snap_y),
-        "right" if dist <= snap_threshold => ("right", work.right - snap_w_px, side_snap_y),
+        "left" if dist <= snap_threshold => (
+            "left",
+            work.left,
+            y.clamp(work.top, work.bottom - snap_h_px),
+        ),
+        "right" if dist <= snap_threshold => (
+            "right",
+            work.right - snap_w_px,
+            y.clamp(work.top, work.bottom - snap_h_px),
+        ),
         "top" if dist <= snap_threshold => (
             "top",
             x.clamp(work.left, work.right - horizontal_snap_w_px),
@@ -248,7 +253,7 @@ pub async fn cmd_get_snap_preview(
     let scale = win.scale_factor().unwrap_or(1.0);
     let snap_h_px = (SNAP_H as f64 * scale) as i32;
     let snap_w_px = (SNAP_W * scale) as i32;
-    let threshold = (80.0 * scale) as i32;
+    let threshold = (SNAP_EDGE_THRESHOLD_LP * scale).round() as i32;
 
     let work = get_work_area_for_window(&win);
 

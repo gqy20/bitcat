@@ -6,8 +6,6 @@ use std::sync::Mutex;
 
 use tracing::info;
 
-const SNAP_SIDE_BOTTOM_GAP: i32 = 14;
-
 /// 共享宠物状态
 pub struct SharedPet {
     pub pet: Mutex<Pet>,
@@ -273,19 +271,17 @@ pub fn calc_snap_preview(
         };
     }
 
-    let side_snap_y = work_bottom - snap_h - SNAP_SIDE_BOTTOM_GAP;
-
     match edge {
         "left" => SnapPreview {
             edge: "left".to_string(),
             x: work_left,
-            y: side_snap_y.clamp(work_top, work_bottom - snap_h),
+            y: cursor_y.clamp(work_top, work_bottom - snap_h),
             visible: true,
         },
         "right" => SnapPreview {
             edge: "right".to_string(),
             x: work_right - snap_w,
-            y: side_snap_y.clamp(work_top, work_bottom - snap_h),
+            y: cursor_y.clamp(work_top, work_bottom - snap_h),
             visible: true,
         },
         "top" => SnapPreview {
@@ -546,8 +542,8 @@ mod tests {
     // ===== 磁性预告 calc_snap_preview（Task 5）=====
 
     fn preview_at(x: i32, y: i32) -> SnapPreview {
-        // 典型工作区 1920x1080，宠物 128x128，阈值 20，snap 24x67
-        calc_snap_preview(x, y, 0, 0, 1920, 1040, 128, 128, 24, 67, 20)
+        // 典型工作区 1920x1080，宠物 128x128，阈值 16，snap 24x67
+        calc_snap_preview(x, y, 0, 0, 1920, 1040, 128, 128, 24, 67, 16)
     }
 
     #[test]
@@ -556,7 +552,7 @@ mod tests {
         assert_eq!(p.edge, "left");
         assert!(p.visible);
         assert_eq!(p.x, 0);
-        assert_eq!(p.y, 1040 - 67 - SNAP_SIDE_BOTTOM_GAP);
+        assert_eq!(p.y, 500);
     }
 
     #[test]
@@ -566,7 +562,7 @@ mod tests {
         assert_eq!(p.edge, "right");
         assert!(p.visible);
         assert_eq!(p.x, 1920 - 24);
-        assert_eq!(p.y, 1040 - 67 - SNAP_SIDE_BOTTOM_GAP);
+        assert_eq!(p.y, 500);
     }
 
     #[test]
@@ -596,24 +592,24 @@ mod tests {
 
     #[test]
     fn test_preview_left_boundary_exact_threshold() {
-        // x=80 → left_dist=80，等于阈值 → 应触发
-        let p = preview_at(80, 500);
+        // x=16 → left_dist=16，等于阈值 → 应触发
+        let p = preview_at(16, 500);
         assert_eq!(p.edge, "left");
         assert!(p.visible);
     }
 
     #[test]
     fn test_preview_left_boundary_just_outside_threshold() {
-        // x=81 → left_dist=81 > 80 → 不触发（若 right 也远则 none）
-        let p = preview_at(81, 500);
+        // x=17 → left_dist=17 > 16 → 不触发（若 right 也远则 none）
+        let p = preview_at(17, 500);
         assert_eq!(p.edge, "none");
         assert!(!p.visible);
     }
 
     #[test]
     fn test_preview_prefers_closer_edge() {
-        // 距左 60px、距右 (1920-128-60)=1732 → 偏左
-        let p = preview_at(60, 500);
+        // 距左 12px、距右 (1920-128-12)=1780 → 偏左
+        let p = preview_at(12, 500);
         assert_eq!(p.edge, "left");
     }
 
