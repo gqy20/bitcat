@@ -127,6 +127,7 @@ pub fn run() {
             agent_watch_window::cmd_agent_watch_refresh,
             agent_watch_window::cmd_agent_watch_set_folded,
             agent_watch_window::cmd_agent_watch_port,
+            agent_watch_window::cmd_agent_watch_log,
             claude_hooks::cmd_install_claude_code_hooks,
             claude_hooks::cmd_open_claude_settings,
             codex_hooks::cmd_install_codex_hooks,
@@ -165,6 +166,17 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            let resource_dir = app
+                .path()
+                .resource_dir()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|e| format!("<unavailable: {e}>"));
+            let exe_dir = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|p| p.display().to_string()))
+                .unwrap_or_else(|| "<unavailable>".to_string());
+            info!(%resource_dir, %exe_dir, "tauri runtime paths");
+
             // ── .env 多级加载 ──
             // 优先级：exe 同目录 → CWD（dotenv）→ 项目根目录（兜底）→ 放弃
             let mut env_loaded = false;

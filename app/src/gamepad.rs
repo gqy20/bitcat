@@ -230,6 +230,9 @@ impl Default for SharedAgent {
 /// 前端调试日志桥接：将前端的 console 输出转发到 Rust 日志系统。
 #[tauri::command]
 pub async fn cmd_pet_log(msg: String) -> Result<(), String> {
+    if !ai_pad_core::logging::frontend_log_allowed("pet", std::time::Duration::from_millis(120)) {
+        return Ok(());
+    }
     let preview = log_preview(&msg, 80);
     info!(
         msg_chars = msg.chars().count(),

@@ -609,27 +609,11 @@ fn write_nudge_log(record: AgentNudgeLogRecord) {
 }
 
 pub fn append_jsonl<T: Serialize>(file_name: &str, value: &T) -> Result<(), String> {
-    let dir = log_dir().ok_or_else(|| "无法解析 home 目录".to_string())?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("创建日志目录失败: {e}"))?;
-    let path = dir.join(file_name);
-    let line = serde_json::to_string(value).map_err(|e| e.to_string())?;
-    use std::io::Write;
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .map_err(|e| format!("打开日志失败: {e}"))?;
-    writeln!(file, "{line}").map_err(|e| format!("写入日志失败: {e}"))
+    ai_pad_core::logging::append_jsonl(file_name, value).map(|_| ())
 }
 
 pub fn log_dir() -> Option<PathBuf> {
-    home_dir().map(|dir| dir.join(".ai-pad").join("logs"))
-}
-
-fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("USERPROFILE")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
+    ai_pad_core::logging::log_dir().ok()
 }
 
 pub fn now_ms() -> u64 {

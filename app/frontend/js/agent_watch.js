@@ -13,6 +13,12 @@
   let latest = null;
   let suppressNextHeaderClick = false;
 
+  function log(msg, error) {
+    const text = error ? `${msg}: ${error.message || error}` : msg;
+    if (invoke) invoke("cmd_agent_watch_log", { msg: text }).catch(() => {});
+    console.warn("[agent-watch]", text);
+  }
+
   function escapeHtml(value) {
     return String(value ?? "")
       .replace(/&/g, "&amp;")
@@ -34,7 +40,7 @@
     try {
       await invoke("cmd_agent_watch_set_folded", { folded });
     } catch (e) {
-      console.error("[agent-watch] resize failed", e);
+      log("resize failed", e);
     }
   }
 
@@ -233,7 +239,7 @@
     try {
       render(await invoke("cmd_get_agent_sessions"));
     } catch (e) {
-      console.error("[agent-watch] refresh failed", e);
+      log("refresh failed", e);
     }
   }
 
@@ -244,7 +250,7 @@
     try {
       render(await invoke("cmd_dismiss_agent_session", { sessionId: id }));
     } catch (e) {
-      console.error("[agent-watch] dismiss failed", e);
+      log("dismiss failed", e);
     }
   }
 
@@ -253,7 +259,7 @@
     try {
       await invoke("cmd_open_agent_workspace", { sessionId: id });
     } catch (e) {
-      console.error("[agent-watch] open workspace failed", e);
+      log("open workspace failed", e);
     }
   }
 
@@ -340,7 +346,7 @@
       try {
         await win.startDragging();
       } catch (e) {
-        console.error("[agent-watch] drag failed", e);
+        log("drag failed", e);
       }
     });
 

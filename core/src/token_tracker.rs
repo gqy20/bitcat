@@ -5,8 +5,8 @@
 //! 数据持久化到 ~/.ai-pad/logs/ 目录，供设置界面展示用量统计。
 
 use serde::{Deserialize, Serialize};
-use std::fs::{self, OpenOptions};
-use std::io::{BufRead, Write};
+use std::fs;
+use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use tracing::{debug, warn};
@@ -242,17 +242,12 @@ pub fn new_session_id() -> String {
 
 /// 返回 token 用量明细文件路径 `~/.ai-pad/logs/token_usage.jsonl`
 pub fn token_usage_path() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
-    Ok(home.join(".ai-pad").join("logs").join("token_usage.jsonl"))
+    Ok(crate::logging::log_dir()?.join("token_usage.jsonl"))
 }
 
 /// 返回 token 会话聚合文件路径 `~/.ai-pad/logs/token_sessions.json`
 pub fn token_sessions_path() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
-    Ok(home
-        .join(".ai-pad")
-        .join("logs")
-        .join("token_sessions.json"))
+    Ok(crate::logging::log_dir()?.join("token_sessions.json"))
 }
 
 /// 记录一条 token 用量：追加到 JSONL 明细 + 更新会话聚合文件。零 token 记录自动跳过。
@@ -294,23 +289,7 @@ pub fn record_token_usage(record: &TokenRecord) {
 
 /// 向 JSONL 文件追加一条 token 记录（线程安全，通过全局 Mutex 序列化写入）
 pub fn append_record(path: &Path, record: &TokenRecord) -> Result<(), String> {
-    let _guard = TOKEN_WRITE_LOCK
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-        .map_err(|e| format!("token 写入锁中毒: {e}"))?;
-
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("创建 token 日志目录失败: {e}"))?;
-    }
-
-    let line = serde_json::to_string(record).map_err(|e| format!("序列化 token 记录失败: {e}"))?;
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .map_err(|e| format!("打开 token 日志失败: {e}"))?;
-    writeln!(file, "{line}").map_err(|e| format!("写入 token 日志失败: {e}"))?;
-    Ok(())
+    crate::logging::append_jsonl_path(path, record)
 }
 
 /// 用一条记录更新会话聚合文件：存在则累加，不存在则新建，保留最近 200 个会话
@@ -337,13 +316,7 @@ pub fn load_sessions(path: &Path) -> Result<TokenSessions, String> {
 
 /// 将会话聚合数据序列化写入磁盘（pretty-print JSON）
 pub fn save_sessions(path: &Path, store: &TokenSessions) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("创建 token 会话目录失败: {e}"))?;
-    }
-
-    let json =
-        serde_json::to_string_pretty(store).map_err(|e| format!("序列化 token 会话失败: {e}"))?;
-    fs::write(path, json).map_err(|e| format!("写入 token 会话失败: {e}"))
+    crate::logging::write_json_atomic(path, store)
 }
 
 /// 按 session_id 查找并累加记录，不存在则新建；按时间降序排列，超出上限截断

@@ -6,13 +6,8 @@
 
 use crate::agent::{ToolKind, ToolPhase, ToolRuntimeEvent};
 use serde::{Deserialize, Serialize};
-use std::fs::{self, OpenOptions};
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
 use tracing::warn;
-
-static TOOL_EVENT_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 /// 写入 `~/.ai-pad/logs/tool_events.jsonl` 的工具事件记录。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,8 +48,7 @@ impl ToolEventRecord {
 
 /// 返回工具事件 JSONL 路径 `~/.ai-pad/logs/tool_events.jsonl`。
 pub fn tool_events_path() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
-    Ok(home.join(".ai-pad").join("logs").join("tool_events.jsonl"))
+    Ok(crate::logging::log_dir()?.join("tool_events.jsonl"))
 }
 
 /// 记录一条工具事件。失败只写 warn，不影响主对话。
@@ -74,23 +68,7 @@ pub fn record_tool_event(record: &ToolEventRecord) {
 
 /// 向 JSONL 文件追加一条工具事件记录。
 pub fn append_tool_event(path: &Path, record: &ToolEventRecord) -> Result<(), String> {
-    let _guard = TOOL_EVENT_WRITE_LOCK
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-        .map_err(|e| format!("tool event 写入锁中毒: {e}"))?;
-
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("创建工具事件日志目录失败: {e}"))?;
-    }
-
-    let line = serde_json::to_string(record).map_err(|e| format!("序列化工具事件失败: {e}"))?;
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .map_err(|e| format!("打开工具事件日志失败: {e}"))?;
-    writeln!(file, "{line}").map_err(|e| format!("写入工具事件日志失败: {e}"))?;
-    Ok(())
+    crate::logging::append_jsonl_path(path, record)
 }
 
 #[cfg(test)]

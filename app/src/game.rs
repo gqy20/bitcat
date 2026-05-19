@@ -539,6 +539,9 @@ fn event_source_preview(event: &BattlePetEventPayload) -> String {
 /// 前端调试日志桥接。
 #[tauri::command]
 pub fn cmd_game_log(msg: String) -> Result<(), String> {
+    if !ai_pad_core::logging::frontend_log_allowed("game", std::time::Duration::from_millis(120)) {
+        return Ok(());
+    }
     let preview = ai_pad_core::logging::log_preview(&msg, 120);
     info!(
         msg_chars = msg.chars().count(),

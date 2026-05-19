@@ -148,6 +148,9 @@ pub async fn cmd_execute_panel_action(id: String, app: AppHandle) -> Result<(), 
 /// 调试用：前端通过此命令把日志转发到后端 stderr
 #[tauri::command]
 pub async fn cmd_panel_log(msg: String) -> Result<(), String> {
+    if !ai_pad_core::logging::frontend_log_allowed("panel", std::time::Duration::from_millis(120)) {
+        return Ok(());
+    }
     let preview = ai_pad_core::logging::log_preview(&msg, 80);
     info!(
         msg_chars = msg.chars().count(),

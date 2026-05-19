@@ -9,6 +9,7 @@ use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder,
 };
+use tracing::warn;
 
 const WINDOW_LABEL: &str = "agent-watch";
 const WINDOW_W: f64 = 360.0;
@@ -232,4 +233,22 @@ pub async fn cmd_agent_watch_refresh(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn cmd_agent_watch_port() -> Result<u16, String> {
     Ok(DEFAULT_AGENT_MONITOR_PORT)
+}
+
+/// Frontend diagnostic bridge for the Agent Watch window.
+#[tauri::command]
+pub async fn cmd_agent_watch_log(msg: String) -> Result<(), String> {
+    if !ai_pad_core::logging::frontend_log_allowed(
+        "agent-watch",
+        std::time::Duration::from_millis(120),
+    ) {
+        return Ok(());
+    }
+    let preview = ai_pad_core::logging::log_preview(&msg, 120);
+    warn!(
+        msg_chars = msg.chars().count(),
+        msg_preview = %preview,
+        "agent-watch frontend log"
+    );
+    Ok(())
 }

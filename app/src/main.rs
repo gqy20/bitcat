@@ -36,8 +36,7 @@ fn main() {
     // 文件层：~/.ai-pad/logs/app.log.YYYY-MM-DD，按日期滚动。
     // stderr 层：带颜色输出，方便终端实时查看。
     // 两层共享同一个 EnvFilter，默认级别 ai_pad_app=info, ai_pad_core=debug。
-    let log_dir = std::env::var("USERPROFILE")
-        .map(|p| std::path::PathBuf::from(p).join(".ai-pad").join("logs"))
+    let log_dir = ai_pad_core::logging::log_dir()
         .unwrap_or_else(|_| std::path::PathBuf::from(".ai-pad-logs"));
     let _ = std::fs::create_dir_all(&log_dir);
     let file_appender = tracing_appender::rolling::daily(&log_dir, "app.log");
@@ -66,9 +65,44 @@ fn main() {
         .init();
 
     install_panic_hook(log_dir);
+    log_startup_diagnostics(debug);
 
     // ── 启动 Tauri ──
     ai_pad_app_lib::run();
+}
+
+fn log_startup_diagnostics(debug_console: bool) {
+    let exe = std::env::current_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|e| format!("<unavailable: {e}>"));
+    let cwd = std::env::current_dir()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|e| format!("<unavailable: {e}>"));
+    let log_dir = ai_pad_core::logging::log_dir()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|e| format!("<unavailable: {e}>"));
+    let profile = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
+    let cleanup = ai_pad_core::logging::log_dir().and_then(|dir| {
+        ai_pad_core::logging::cleanup_old_logs(&dir, std::time::Duration::from_secs(14 * 24 * 3600))
+    });
+    match cleanup {
+        Ok(removed) if removed > 0 => tracing::info!(removed, "old log cleanup completed"),
+        Ok(_) => {}
+        Err(e) => tracing::warn!(error = %e, "old log cleanup failed"),
+    }
+    tracing::info!(
+        version = env!("CARGO_PKG_VERSION"),
+        profile,
+        debug_console,
+        exe = %exe,
+        cwd = %cwd,
+        log_dir = %log_dir,
+        "ai-pad startup diagnostics"
+    );
 }
 
 fn install_panic_hook(log_dir: std::path::PathBuf) {
