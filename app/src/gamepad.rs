@@ -30,6 +30,7 @@ use ai_pad_core::pet_event::{
     PetNotificationKind,
 };
 use ai_pad_core::user_profile::UserProfile;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -875,12 +876,22 @@ pub fn chat_loop(app: &tauri::AppHandle) {
                         let agg_prompt = ai_pad_core::prompts::PromptsConfig::default()
                             .aggregation
                             .prompt;
-                        let agg_result = rt.block_on(ai_pad_core::memory::aggregate_profile(
-                            &entry_refs,
-                            &cur_profile,
-                            &cfg,
-                            &agg_prompt,
-                        ));
+                        let agg_result = match catch_unwind(AssertUnwindSafe(|| {
+                            rt.block_on(ai_pad_core::memory::aggregate_profile(
+                                &entry_refs,
+                                &cur_profile,
+                                &cfg,
+                                &agg_prompt,
+                            ))
+                        })) {
+                            Ok(result) => result,
+                            Err(_) => {
+                                warn!(
+                                    "[chat_loop] profile aggregation panicked; skipped this round"
+                                );
+                                continue;
+                            }
+                        };
                         match agg_result {
                             Ok(new_profile) => {
                                 if let Ok(mut pf) = core.profile.lock() {
@@ -1161,20 +1172,35 @@ pub fn run_ai_chat(
             }
 
             let summaries = tool_summaries.lock().map(|g| g.clone()).unwrap_or_default();
-            let reaction_result = rt.block_on(tokio::time::timeout(
-                std::time::Duration::from_secs(8),
-                extract_agent_reaction(&agent.config, msg, &reply, &summaries),
-            ));
+            info!(
+                tool_summary_count = summaries.len(),
+                "{prefix}AgentReaction extraction started"
+            );
+            let reaction_result = catch_unwind(AssertUnwindSafe(|| {
+                rt.block_on(tokio::time::timeout(
+                    std::time::Duration::from_secs(8),
+                    extract_agent_reaction(&agent.config, msg, &reply, &summaries),
+                ))
+            }));
             let reaction = match reaction_result {
-                Ok(Ok(reaction)) => reaction,
-                Ok(Err(e)) => fallback_agent_reaction(&reply, &e),
-                Err(_) => fallback_agent_reaction(&reply, "AgentReaction timed out"),
+                Ok(Ok(Ok(reaction))) => {
+                    info!(
+                        mood = ?reaction.mood,
+                        memory_candidates = reaction.memory_candidates.len(),
+                        "{prefix}AgentReaction extraction completed"
+                    );
+                    reaction
+                }
+                Ok(Ok(Err(e))) => fallback_agent_reaction(&reply, &e),
+                Ok(Err(_)) => fallback_agent_reaction(&reply, "AgentReaction timed out"),
+                Err(_) => fallback_agent_reaction(&reply, "AgentReaction panicked"),
             };
             let speech = if reaction.speech.is_empty() {
                 None
             } else {
                 Some(reaction.speech.clone())
             };
+            debug!(mood = ?reaction.mood, "{prefix}emitting pet reaction");
             emit_pet_event(
                 app,
                 PetEvent::React {
