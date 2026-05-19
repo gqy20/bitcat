@@ -578,7 +578,13 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
         let multi_monitor = analysis_results.len() > 1;
         let bubble_parts = bubble_parts_from_results(analysis_results, multi_monitor);
 
-        if bubble_parts.is_empty() {
+        let show_bubble = ai_pad_core::app_settings::AppSettings::load()
+            .appearance
+            .screenshot_show_bubble;
+
+        if !show_bubble {
+            debug!("[screenshot] 截屏分析弹窗已关闭，跳过气泡显示");
+        } else if bubble_parts.is_empty() {
             info!("[screenshot] 描述为空，显示兜底提示");
             let _ = crate::bubble::show_bubble(app, "喵~ 看不太清屏幕内容，可能需要检查 API 配置");
         } else {

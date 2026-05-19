@@ -204,6 +204,8 @@ pub struct AppearanceInput {
     pub screenshot_interval_sec: u64,
     #[serde(default)]
     pub pet_asset_url: Option<String>,
+    #[serde(default = "default_true")]
+    pub screenshot_show_bubble: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -768,6 +770,7 @@ pub async fn cmd_settings_save_appearance(
         tts_enabled: payload.tts_enabled,
         global_shortcut: payload.global_shortcut,
         screenshot_interval_sec: interval,
+        screenshot_show_bubble: payload.screenshot_show_bubble,
         pet_asset_url: payload.pet_asset_url.and_then(|value| {
             let trimmed = value.trim().trim_end_matches('/').to_string();
             if trimmed.is_empty() {

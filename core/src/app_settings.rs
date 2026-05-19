@@ -77,6 +77,9 @@ pub struct AppearanceSettings {
     /// 值越大越省 API，值越小响应越即时。最小值 5 秒，避免刷屏。
     #[serde(default = "default_screenshot_interval_sec")]
     pub screenshot_interval_sec: u64,
+    /// 截屏分析完成后是否弹出气泡显示结果，默认 true。
+    #[serde(default = "default_true")]
+    pub screenshot_show_bubble: bool,
     /// 外部宠物资产根 URL。为空时使用内置 sprite。
     /// 开发期可填 `/__fixtures__/pets/default-cat` 或 file/server URL。
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -132,6 +135,7 @@ impl Default for AppearanceSettings {
             tts_enabled: false,
             global_shortcut: default_shortcut(),
             screenshot_interval_sec: default_screenshot_interval_sec(),
+            screenshot_show_bubble: true,
             pet_asset_url: None,
             pet_position: None,
         }
@@ -246,6 +250,7 @@ mod tests {
                 tts_enabled: false,
                 global_shortcut: "F12".into(),
                 screenshot_interval_sec: 45,
+                screenshot_show_bubble: false,
                 pet_asset_url: Some("/__fixtures__/pets/default-cat".into()),
                 pet_position: Some(WindowPosition { x: 123, y: 456 }),
             },

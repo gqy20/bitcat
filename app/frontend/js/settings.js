@@ -482,11 +482,12 @@ function renderAppearance(a) {
   $("a-tts").checked = a.tts_enabled;
   $("a-shortcut").value = a.global_shortcut;
   $("a-ss-interval").value = a.screenshot_interval_sec ?? 30;
+  $("a-ss-bubble").checked = a.screenshot_show_bubble !== false;
   renderPetAssetPresetOptions();
   renderPetAssetChoice(a.pet_asset_url || "");
   updateOverviewAppearance(a);
 
-  ["a-top","a-collapsed","a-tts"].forEach(id => { $(id).onchange = () => markDirty("appearance"); });
+  ["a-top","a-collapsed","a-tts","a-ss-bubble"].forEach(id => { $(id).onchange = () => markDirty("appearance"); });
   ["a-shortcut","a-ss-interval","a-pet-asset"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
   $("a-pet-asset-preset").onchange = () => {
     applyPetAssetPreset($("a-pet-asset-preset").value);
@@ -503,6 +504,7 @@ function collectAppearance() {
     tts_enabled: $("a-tts").checked,
     global_shortcut: $("a-shortcut").value.trim() || "CommandOrControl+Alt+Space",
     screenshot_interval_sec: interval,
+    screenshot_show_bubble: $("a-ss-bubble").checked,
     pet_asset_url: collectPetAssetUrl(),
   };
 }
