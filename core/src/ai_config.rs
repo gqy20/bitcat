@@ -1,14 +1,17 @@
-//! AI 服务配置加载与优先级合并
+//! AI service configuration loading and precedence merging.
 //!
-//! 从多个来源读取 API key、base_url、model 等字段，按优先级合并：
-//! 环境变量 > app_settings.json 覆盖层 > ~/.claude/settings.json > 内置默认值。
-//! 这样设计是为了让用户可以通过多种方式配置，同时不回写 claude 自身的 settings。
+//! The effective AI connection fields are resolved independently from the
+//! settings UI overlay, the `.env` file next to the executable, Claude's
+//! read-only settings file, and system environment variables. The precedence is:
+//! app settings > exe `.env` > `~/.claude/settings.json` > system environment >
+//! built-in defaults.
 
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-/// 从 ~/.claude/settings.json 读取 AI 配置
+/// AI provider configuration used by the agent client.
 #[derive(Debug, Clone)]
 pub struct AiConfig {
     pub api_key: String,
@@ -17,30 +20,49 @@ pub struct AiConfig {
 }
 
 impl AiConfig {
-    /// 逐字段优先级：环境变量 > `app_settings.json` 覆盖层 > `~/.claude/settings.json` > 默认值。
+    /// Resolve each field with this precedence:
+    /// settings UI > exe `.env` > Claude settings > system environment > default.
     ///
-    /// 任一来源提供该字段即采用；`~/.claude/settings.json` 全程只读。
+    /// File-based sources are read-only. They are parsed directly instead of
+    /// being loaded into the process environment, so system variables cannot
+    /// accidentally outrank the configured app sources.
     pub fn load() -> Result<Self, String> {
         let overlay = crate::app_settings::AppSettings::load().ai;
+        let exe_env = load_exe_env().unwrap_or_default();
         let claude = load_claude_env().unwrap_or_default();
 
-        let api_key = non_empty_env("ANTHROPIC_API_KEY")
-            .or_else(|| non_empty_env("ANTHROPIC_AUTH_TOKEN"))
-            .or_else(|| overlay.api_key.clone().filter(|s| !s.is_empty()))
+        let api_key = overlay
+            .api_key
+            .clone()
+            .filter(|s| !s.is_empty())
+            .or_else(|| exe_env.ANTHROPIC_AUTH_TOKEN.clone())
+            .or_else(|| exe_env.ANTHROPIC_API_KEY.clone())
             .or_else(|| claude.ANTHROPIC_AUTH_TOKEN.clone())
             .or_else(|| claude.ANTHROPIC_API_KEY.clone())
+            .or_else(|| non_empty_env("ANTHROPIC_API_KEY"))
+            .or_else(|| non_empty_env("ANTHROPIC_AUTH_TOKEN"))
             .ok_or_else(|| {
-                String::from("未找到 API key（环境变量 / app_settings.json / ~/.claude/settings.json 均为空）")
+                String::from(
+                    "未找到 API key（设置页 / exe .env / ~/.claude/settings.json / 系统环境变量均为空）",
+                )
             })?;
 
-        let base_url = non_empty_env("ANTHROPIC_BASE_URL")
-            .or_else(|| overlay.base_url.clone().filter(|s| !s.is_empty()))
+        let base_url = overlay
+            .base_url
+            .clone()
+            .filter(|s| !s.is_empty())
+            .or_else(|| exe_env.ANTHROPIC_BASE_URL.clone())
             .or_else(|| claude.ANTHROPIC_BASE_URL.clone())
+            .or_else(|| non_empty_env("ANTHROPIC_BASE_URL"))
             .unwrap_or_else(|| String::from("https://api.anthropic.com"));
 
-        let model = non_empty_env("ANTHROPIC_MODEL")
-            .or_else(|| overlay.model.clone().filter(|s| !s.is_empty()))
+        let model = overlay
+            .model
+            .clone()
+            .filter(|s| !s.is_empty())
+            .or_else(|| exe_env.ANTHROPIC_MODEL.clone())
             .or_else(|| claude.ANTHROPIC_MODEL.clone())
+            .or_else(|| non_empty_env("ANTHROPIC_MODEL"))
             .unwrap_or_else(|| String::from("claude-sonnet-4-20250514"));
 
         Ok(Self {
@@ -50,36 +72,40 @@ impl AiConfig {
         })
     }
 
-    /// 根据模型名推断合适的 max_tokens
-    ///
-    /// 基于 Anthropic 官方发布的各模型最大输出 token 数。
-    /// 对于桌面宠物场景，取模型最大值的 1/8 作为上限足够，
-    /// 既保证回复质量又不浪费。
+    /// Resolve the max output token setting with the same source precedence.
     pub fn max_tokens(&self) -> u64 {
-        // 环境变量覆盖
-        if let Ok(v) = std::env::var("ANTHROPIC_MAX_TOKENS")
-            && let Ok(n) = v.parse()
+        if let Some(n) = crate::app_settings::AppSettings::load().ai.max_tokens {
+            return n;
+        }
+        if let Some(n) = load_exe_env()
+            .and_then(|env| env.ANTHROPIC_MAX_TOKENS)
+            .and_then(|v| v.parse().ok())
         {
             return n;
         }
-        // app_settings 覆盖层
-        if let Some(n) = crate::app_settings::AppSettings::load().ai.max_tokens {
+        if let Some(n) = load_claude_env()
+            .and_then(|env| env.ANTHROPIC_MAX_TOKENS)
+            .and_then(|v| v.parse().ok())
+        {
+            return n;
+        }
+        if let Ok(v) = std::env::var("ANTHROPIC_MAX_TOKENS")
+            && let Ok(n) = v.parse()
+        {
             return n;
         }
         model_max_tokens(&self.model)
     }
 }
 
-/// 模型最大输出 token 映射
+/// Model max output token mapping.
 ///
-/// 国产模型统一 256K；其他模型默认 256K。
-/// API 不会因为 max_tokens 设大了就多输出——模型生成完自动停止。
+/// The current app treats all models as 256K-capable. Providers still stop
+/// generation naturally, so this value is an upper bound rather than a target.
 fn model_max_tokens(model: &str) -> u64 {
     let _ = model;
     256_000
 }
-
-// ---- 内部解析结构 ----
 
 #[derive(Deserialize, Default, Clone)]
 struct SettingsFile {
@@ -98,14 +124,32 @@ struct EnvSection {
     ANTHROPIC_BASE_URL: Option<String>,
     #[serde(default, alias = "anthropic_model")]
     ANTHROPIC_MODEL: Option<String>,
+    #[serde(default, alias = "anthropic_max_tokens")]
+    ANTHROPIC_MAX_TOKENS: Option<String>,
 }
 
-/// 非空环境变量读取。空串视为未设置。
 fn non_empty_env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|v| !v.is_empty())
 }
 
-/// 读取 `~/.claude/settings.json` 的 env 段（只读）。返回 `None` 表示文件不存在或损坏。
+fn non_empty_dotenv(env: &HashMap<String, String>, name: &str) -> Option<String> {
+    env.get(name).cloned().filter(|v| !v.is_empty())
+}
+
+/// Read `.env` next to the executable without mutating process environment.
+fn load_exe_env() -> Option<EnvSection> {
+    let path = exe_env_path()?;
+    let env: HashMap<String, String> = dotenvy::from_path_iter(path).ok()?.flatten().collect();
+    Some(EnvSection {
+        ANTHROPIC_AUTH_TOKEN: non_empty_dotenv(&env, "ANTHROPIC_AUTH_TOKEN"),
+        ANTHROPIC_API_KEY: non_empty_dotenv(&env, "ANTHROPIC_API_KEY"),
+        ANTHROPIC_BASE_URL: non_empty_dotenv(&env, "ANTHROPIC_BASE_URL"),
+        ANTHROPIC_MODEL: non_empty_dotenv(&env, "ANTHROPIC_MODEL"),
+        ANTHROPIC_MAX_TOKENS: non_empty_dotenv(&env, "ANTHROPIC_MAX_TOKENS"),
+    })
+}
+
+/// Read the `env` section from `~/.claude/settings.json`.
 fn load_claude_env() -> Option<EnvSection> {
     let raw = fs::read_to_string(settings_path()).ok()?;
     let cfg: SettingsFile = serde_json::from_str(&raw).ok()?;
@@ -135,7 +179,12 @@ fn settings_path() -> PathBuf {
         .join(".claude/settings.json")
 }
 
-// ---- 测试 ----
+fn exe_env_path() -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()?
+        .parent()
+        .map(|dir| dir.join(".env"))
+}
 
 #[cfg(test)]
 mod tests {
@@ -143,16 +192,13 @@ mod tests {
 
     #[test]
     fn test_load_from_real_settings_json() {
-        // 这个测试依赖本机真实的 API key 环境（环境变量 / app_settings.json / ~/.claude/settings.json）
-        // CI runner 上不存在这些资源，优雅跳过而不是 panic 阻塞发布流水线。
-        // 开发者本地跑时仍会做真实断言，验证加载逻辑是否正常。
         match AiConfig::load() {
             Ok(cfg) => {
-                assert!(!cfg.api_key.is_empty(), "API key 不应为空");
-                assert!(!cfg.base_url.is_empty(), "base_url 不应为空");
+                assert!(!cfg.api_key.is_empty(), "API key should not be empty");
+                assert!(!cfg.base_url.is_empty(), "base_url should not be empty");
             }
             Err(e) => {
-                eprintln!("⚠ test_load_from_real_settings_json 跳过：未配置 API key 环境（{e}）");
+                eprintln!("skip real config test: no API key configured ({e})");
             }
         }
     }
@@ -164,7 +210,8 @@ mod tests {
             "env": {
                 "ANTHROPIC_AUTH_TOKEN": "sk-test",
                 "ANTHROPIC_BASE_URL": "https://proxy.example.com",
-                "ANTHROPIC_MODEL": "glm-5.1"
+                "ANTHROPIC_MODEL": "glm-5.1",
+                "ANTHROPIC_MAX_TOKENS": "1234"
             }
         }"#,
         )
@@ -176,6 +223,7 @@ mod tests {
             Some("https://proxy.example.com".into())
         );
         assert_eq!(cfg.env.ANTHROPIC_MODEL, Some("glm-5.1".into()));
+        assert_eq!(cfg.env.ANTHROPIC_MAX_TOKENS, Some("1234".into()));
 
         let cfg2: SettingsFile = serde_json::from_str(
             r#"{
@@ -241,8 +289,6 @@ mod tests {
         assert!(path.to_str().unwrap().ends_with(".claude/settings.json"));
     }
 
-    // ---- max_tokens 测试 ----
-
     #[test]
     fn test_max_tokens_always_256k() {
         assert_eq!(model_max_tokens("claude-sonnet-4-20250514"), 256_000);
@@ -256,8 +302,8 @@ mod tests {
     fn test_config_max_tokens_from_real_settings() {
         if let Ok(cfg) = AiConfig::load() {
             let mt = cfg.max_tokens();
-            assert_eq!(mt, 256_000);
-            eprintln!("模型: {}, max_tokens: {}", cfg.model, mt);
+            assert!(mt > 0);
+            eprintln!("model: {}, max_tokens: {}", cfg.model, mt);
         }
     }
 }

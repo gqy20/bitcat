@@ -51,6 +51,7 @@ dependencies = [
  "cargo-husky",
  "chrono",
  "dirs 5.0.1",
+ "dotenvy",
  "futures",
  "image",
  "insta",

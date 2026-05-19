@@ -178,42 +178,20 @@ pub fn run() {
                 .unwrap_or_else(|| "<unavailable>".to_string());
             info!(%resource_dir, %exe_dir, "tauri runtime paths");
 
-            // ── .env 多级加载 ──
-            // 优先级：exe 同目录 → CWD（dotenv）→ 项目根目录（兜底）→ 放弃
-            let mut env_loaded = false;
-            if let Some(exe_dir) = app
-                .path()
-                .resource_dir()
+            // ── .env 加载 ──
+            // 只加载 exe 同目录 .env，避免 CWD/项目根 .env 抢占 AI 配置优先级。
+            let env_path = std::env::current_exe()
                 .ok()
-                .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-            {
-                let env_path = exe_dir.join(".env");
+                .and_then(|p| p.parent().map(|p| p.join(".env")));
+            if let Some(env_path) = env_path {
                 if env_path.exists() {
-                    dotenvy::from_path(&env_path).ok();
-                    info!(path = ?env_path, "已加载 .env");
-                    env_loaded = true;
+                    dotenvy::from_path_override(&env_path).ok();
+                    info!(path = ?env_path, "已加载 exe 同目录 .env");
+                } else {
+                    warn!(path = ?env_path, "exe 同目录 .env 未找到");
                 }
-            }
-            if !env_loaded && dotenvy::dotenv().is_ok() {
-                info!("已加载 .env (CWD)");
-                env_loaded = true;
-            }
-            if !env_loaded {
-                if let Some(exe_dir) = std::env::current_exe()
-                    .ok()
-                    .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-                    .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-                {
-                    let fallback = exe_dir.join(".env");
-                    if fallback.exists() {
-                        dotenvy::from_path(&fallback).ok();
-                        info!(path = ?fallback, "已加载 .env (项目根目录)");
-                        env_loaded = true;
-                    }
-                }
-            }
-            if !env_loaded {
-                warn!(".env 未找到，将使用 ~/.claude/settings.json 或默认配置");
+            } else {
+                warn!("无法解析 exe 同目录 .env 路径");
             }
 
             // ── Steamworks 本地探针 ──
