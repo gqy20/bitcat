@@ -47,6 +47,25 @@ body.screenshot-capturing #pet-root::after {
   animation: screenshot-pulse 1.3s ease-out;
 }
 
+body.screenshot-capturing #sprite {
+  animation: screenshot-attention 1.3s ease-out !important;
+  filter: brightness(1.08) saturate(1.12) drop-shadow(0 0 5px rgba(92, 220, 255, 0.36)) !important;
+}
+
+body.pet-hover-active #sprite {
+  animation: hover-attention 0.9s ease-out !important;
+  filter: brightness(1.05) saturate(1.08) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.18)) !important;
+}
+
+body.pet-hover-active .shadow {
+  animation: hover-shadow 0.9s ease-out !important;
+}
+
+body.screenshot-capturing.pet-hover-active #sprite {
+  animation: screenshot-attention 1.3s ease-out !important;
+  filter: brightness(1.08) saturate(1.12) drop-shadow(0 0 5px rgba(92, 220, 255, 0.36)) !important;
+}
+
 /* idle 状态下的呼吸节奏（轻微缩放） */
 body.state-idle #sprite {
   animation: breath 2.4s ease-in-out infinite;
@@ -78,6 +97,26 @@ body.state-sleep #sprite {
 @keyframes breath-deep {
   0%, 100% { transform: scale(0.98); }
   50%      { transform: scale(1.03); }
+}
+
+@keyframes hover-attention {
+  0%, 100% { transform: translateY(0) scale(1); }
+  24%      { transform: translateY(-3px) scale(1.025); }
+  48%      { transform: translateY(1px) scale(0.995); }
+  72%      { transform: translateY(-1px) scale(1.01); }
+}
+
+@keyframes hover-shadow {
+  0%, 100% { transform: scaleX(1); opacity: 1; }
+  28%      { transform: scaleX(0.82); opacity: 0.68; }
+  56%      { transform: scaleX(1.08); opacity: 0.9; }
+}
+
+@keyframes screenshot-attention {
+  0%   { transform: scale(1); filter: brightness(1.0) saturate(1.0); }
+  18%  { transform: translateY(-2px) scale(1.025); filter: brightness(1.22) saturate(1.18); }
+  48%  { transform: translateY(0) scale(1.01); filter: brightness(1.12) saturate(1.12); }
+  100% { transform: scale(1); filter: brightness(1.0) saturate(1.0); }
 }
 
 /* 状态切换瞬间的淡入闪烁 */
@@ -145,6 +184,63 @@ body.state-walk .shadow {
   pointer-events: none;
   overflow: visible;
   z-index: 3;
+}
+
+.pet-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #1f5f96;
+  border: 1px solid rgba(125, 199, 255, 0.42);
+  box-shadow: 0 2px 8px rgba(14, 56, 92, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  font: 700 12px/17px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-align: center;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.resize-handle {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 20px;
+  height: 20px;
+  cursor: nwse-resize;
+  z-index: 6;
+  opacity: 0;
+  pointer-events: auto;
+}
+
+.resize-handle::before,
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  border-right: 3px solid rgba(255, 255, 255, 0.92);
+  border-bottom: 3px solid rgba(255, 255, 255, 0.92);
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.55));
+}
+
+.resize-handle::before {
+  width: 18px;
+  height: 18px;
+}
+
+.resize-handle::after {
+  width: 10px;
+  height: 10px;
+}
+
+body.pet-hover-active .resize-handle,
+body.pet-resizing .resize-handle,
+#pet-root:hover .resize-handle {
+  opacity: 1;
 }
 
 /* ========== 粒子效果 ========== */
@@ -219,6 +315,15 @@ body.collapsed #sprite {
 
 body.collapsed .shadow,
 body.collapsed .particles {
+  display: none;
+}
+
+body.collapsed .resize-handle {
+  display: none;
+}
+
+body:not(.collapsed) .pet-badge,
+body:not(.has-pet-badge) .pet-badge {
   display: none;
 }
 
@@ -443,7 +548,9 @@ body.collapsed .particles {
 /* ---- snap-mode：pet-snap 窗口激活时隐藏主精灵相关元素 ---- */
 body.snap-mode #sprite,
 body.snap-mode .shadow,
-body.snap-mode .particles { display: none; }
+body.snap-mode .particles,
+body.snap-mode .pet-badge,
+body.snap-mode .resize-handle { display: none; }
 body.snap-mode { width: var(--snap-w, 24px) !important; height: var(--snap-h, 67px) !important; }
 body.snap-mode.snap-top,
 body.snap-mode.snap-bottom { width: var(--snap-h, 67px) !important; height: var(--snap-w, 24px) !important; }

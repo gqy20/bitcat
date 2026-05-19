@@ -135,6 +135,16 @@ impl PetEvent {
         Self::PlayDance { name: name.into() }
     }
 
+    /// Notify the pet window that screen observation has started.
+    pub fn screenshot_observing() -> Self {
+        Self::Notify {
+            kind: PetNotificationKind::ScreenshotObserving,
+            body: Some("姝ｅ湪瑙傚療灞忓箷...".to_string()),
+            ttl_ms: Some(5_000),
+            refresh: true,
+        }
+    }
+
     /// 退出。
     pub fn exit() -> Self {
         Self::Exit

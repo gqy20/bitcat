@@ -48,6 +48,14 @@ fn mark_screenshot_finished() {
     *LAST_SCREENSHOT_FINISHED.lock().unwrap() = Some(Instant::now());
 }
 
+fn emit_screenshot_observing(app: &tauri::AppHandle) {
+    let bus: tauri::State<'_, crate::pet_event_bus::SharedPetEventBus> = app.state();
+    bus.emit(
+        app,
+        ai_pad_core::pet_event::PetEvent::screenshot_observing(),
+    );
+}
+
 fn screenshot_finished_recently(interval_sec: u64) -> bool {
     LAST_SCREENSHOT_FINISHED
         .lock()
@@ -514,6 +522,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
         }
 
         // 截图。多屏幕时每个显示器独立分析，避免横向拼接再压缩导致文字不可读。
+        emit_screenshot_observing(app);
         trace!("[screenshot] 开始捕获");
         let monitor_frames = match capture_target_frames(&config.target) {
             Ok(frames) => {
@@ -921,6 +930,7 @@ pub fn do_screenshot_now(app: &tauri::AppHandle) -> Result<String, String> {
 
     let config = ScreenshotConfig::default();
     let ai_config = ai_pad_core::ai_config::AiConfig::load()?;
+    emit_screenshot_observing(app);
 
     {
         let gate: tauri::State<crate::observation_gate::SharedObservationGate> = app.state();

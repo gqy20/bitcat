@@ -81,11 +81,67 @@ import { PerformerHost } from './performance/performer-host.js';
   let performerHost = null;
   let performerMoveState = { at: 0, x: null, y: null };
   let screenshotFeedbackTimer = null;
+  let hoverActivityTimer = null;
+  let hoverActionCooldownUntil = 0;
   let normalPetWidth = 128;
   let normalPetHeight = 128;
+  const PET_SIZE_STORAGE_KEY = 'ai-pad.petSize';
+  const PET_BADGE_REFRESH_MS = 2500;
+  const PET_MIN_SIZE = 72;
+  const PET_MAX_SIZE = 256;
 
   function playPetAction(name) {
     return !!(pet && pet.playAction && pet.playAction(name));
+  }
+
+  function playPetActionAny(names) {
+    for (var i = 0; i < names.length; i++) {
+      if (playPetAction(names[i])) return true;
+    }
+    return false;
+  }
+
+  function clampPetSize(width, height) {
+    var baseW = Math.max(1, (SpriteRenderer && SpriteRenderer.displayWidth) || 128);
+    var baseH = Math.max(1, (SpriteRenderer && SpriteRenderer.displayHeight) || 128);
+    var scale = Math.max(width / baseW, height / baseH);
+    var minScale = PET_MIN_SIZE / Math.max(baseW, baseH);
+    var maxScale = PET_MAX_SIZE / Math.max(baseW, baseH);
+    scale = Math.min(maxScale, Math.max(minScale, scale));
+    return {
+      w: Math.round(baseW * scale),
+      h: Math.round(baseH * scale),
+    };
+  }
+
+  function loadSavedPetSize(fallback) {
+    try {
+      var raw = window.localStorage && window.localStorage.getItem(PET_SIZE_STORAGE_KEY);
+      if (!raw) return fallback;
+      var saved = JSON.parse(raw);
+      var w = Number(saved && saved.w);
+      var h = Number(saved && saved.h);
+      if (!Number.isFinite(w) || !Number.isFinite(h)) return fallback;
+      return clampPetSize(w, h);
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  function savePetSize(width, height) {
+    try {
+      window.localStorage && window.localStorage.setItem(
+        PET_SIZE_STORAGE_KEY,
+        JSON.stringify({ w: Math.round(width), h: Math.round(height) })
+      );
+    } catch (_) {}
+  }
+
+  function viewportRenderScale() {
+    if (!SpriteRenderer || !canvas || !SpriteRenderer.frameWidth || !SpriteRenderer.frameHeight) {
+      return SpriteRenderer && SpriteRenderer.renderScale;
+    }
+    return Math.min(canvas.width / SpriteRenderer.frameWidth, canvas.height / SpriteRenderer.frameHeight);
   }
 
   // Tauri 2 正确的 API 路径：getCurrentWindow() 不是 getCurrent()
@@ -140,6 +196,7 @@ import { PerformerHost } from './performance/performer-host.js';
     ctx = canvas.getContext('2d');
     bodyEl = document.body;
     var normalSize = resolveNormalPetSize();
+    normalSize = loadSavedPetSize(normalSize);
     normalPetWidth = normalSize.w;
     normalPetHeight = normalSize.h;
     performerHost = new PerformerHost({
@@ -150,7 +207,7 @@ import { PerformerHost } from './performance/performer-host.js';
       applyOffset: applyPerformerOffset,
       resetPosition: resetPerformerPosition,
       renderSprite: function(action, opts, scale) {
-        SpriteRenderer.renderSprite(ctx, action, 0, pet.facingRight, scale || SpriteRenderer.renderScale, opts);
+        SpriteRenderer.renderSprite(ctx, action, 0, pet.facingRight, scale || viewportRenderScale(), opts);
       },
       setFacingRight: function(facingRight) {
         pet.facingRight = facingRight;
@@ -161,7 +218,7 @@ import { PerformerHost } from './performance/performer-host.js';
       restoreSemanticState: function() {
         pet.applySemanticState();
         syncStateClass(pet.state);
-        SpriteRenderer.renderSprite(ctx, pet.visualState(), pet.frame, pet.facingRight);
+        SpriteRenderer.renderSprite(ctx, pet.visualState(), pet.frame, pet.facingRight, viewportRenderScale());
         prevState = pet.state;
       },
       log: function(msg) {
@@ -203,6 +260,8 @@ import { PerformerHost } from './performance/performer-host.js';
     setupTauriEvents();
     setupContextMenu();
     setupDrag();
+    setupResizeHandle();
+    setupPetBadge();
   }
 
   function resolveNormalPetSize() {
@@ -337,6 +396,52 @@ import { PerformerHost } from './performance/performer-host.js';
   function setupDrag() {
     var root = document.getElementById('pet-root');
     if (!root) return;
+    var DRAG_THRESHOLD_PX = 6;
+    var OBSERVE_DBLCLICK_GRACE_MS = 240;
+    var activeGesture = null;
+    var observeClickTimer = null;
+
+    function logPet(msg) {
+      if (window.__TAURI__ && window.__TAURI__.core) {
+        window.__TAURI__.core.invoke('cmd_pet_log', { msg: msg }).catch(function() {});
+      }
+    }
+
+    function clearObserveClickTimer() {
+      if (!observeClickTimer) return;
+      clearTimeout(observeClickTimer);
+      observeClickTimer = null;
+    }
+
+    async function openChatFromPet(source) {
+      clearObserveClickTimer();
+      flashPetHotspot('input');
+      playPetAction('acknowledge');
+      logPet('pet click -> cmd_open_chat (' + source + ')');
+      if (!window.__TAURI__ || !window.__TAURI__.core) return;
+      try {
+        await window.__TAURI__.core.invoke('cmd_open_chat');
+      }
+      catch (err) {
+        playPetAction('blocked');
+        logPet('cmd_open_chat failed: ' + err);
+      }
+    }
+
+    async function triggerObserveNow() {
+      clearObserveClickTimer();
+      flashPetHotspot('observe');
+      playPetAction('observe');
+      logPet('observe dblclick -> cmd_screenshot_now');
+      if (!window.__TAURI__ || !window.__TAURI__.core) return;
+      try {
+        await window.__TAURI__.core.invoke('cmd_screenshot_now');
+      }
+      catch (err) {
+        playPetAction('blocked');
+        logPet('cmd_screenshot_now failed: ' + err);
+      }
+    }
 
     function eventToCanvasCoord(e) {
       // 用 offsetX/offsetY（相对于事件目标元素），再映射到 canvas 坐标系
@@ -376,28 +481,27 @@ import { PerformerHost } from './performance/performer-host.js';
 
       e.preventDefault();
       e.stopPropagation();
-      flashPetHotspot('observe');
-      playPetAction('observe');
-
-      if (window.__TAURI__ && window.__TAURI__.core) {
-        window.__TAURI__.core.invoke('cmd_pet_log', { msg: '✓ 左眼双击命中 → cmd_screenshot_now' }).catch(function() {});
-        try {
-          await window.__TAURI__.core.invoke('cmd_screenshot_now');
-          flashScreenshotFeedback();
-          playPetAction('acknowledge');
-        }
-        catch (err) {
-          playPetAction('blocked');
-          window.__TAURI__.core.invoke('cmd_pet_log', { msg: 'cmd_screenshot_now 失败: ' + err }).catch(function() {});
-        }
-      }
+      await triggerObserveNow();
     });
 
-    // 坐标分区：嘴巴区域 → 聊天，其余 → 拖拽
-    root.addEventListener('mousedown', async function(e) {
+    root.addEventListener('pointerenter', function(e) {
+      if (e.pointerType === 'touch') return;
+      triggerHoverActivity();
+    });
+    root.addEventListener('pointermove', function(e) {
+      if (e.pointerType === 'touch' || activeGesture) return;
+      triggerHoverActivity();
+    });
+    root.addEventListener('pointerleave', function() {
+      clearHoverActivity();
+    });
+
+    // 统一手势：单击打开对话，观察区双击截图，移动超过阈值则拖拽
+    root.addEventListener('pointerdown', function(e) {
       if (e.button !== 0) return;
       var win = getCurrentWin();
       if (!win) return;
+      clearHoverActivity();
 
       var coord = eventToCanvasCoord(e);
       var cx = coord.cx;
@@ -413,41 +517,70 @@ import { PerformerHost } from './performance/performer-host.js';
         logicSize: { w: logicW, h: logicH },
         scale: coord.scale.toFixed(2),
         logicCoord: { x: Math.round(cx), y: Math.round(cy) },
-        hotzone: observeHit ? 'OBSERVE' : (inputHit ? 'INPUT' : 'DRAG'),
+        hotzone: observeHit ? 'OBSERVE' : (inputHit ? 'INPUT' : 'BODY'),
       });
-      if (window.__TAURI__ && window.__TAURI__.core) {
-        window.__TAURI__.core.invoke('cmd_pet_log', { msg: 'mousedown 坐标诊断 ' + diag }).catch(function() {});
-      }
+      logPet('pointerdown gesture ' + diag);
 
-      if (observeHit) {
-        e.preventDefault();
-        flashPetHotspot('observe');
-        playPetAction('observe');
-        if (window.__TAURI__ && window.__TAURI__.core) {
-          window.__TAURI__.core.invoke('cmd_pet_log', { msg: '左眼热区按下，等待 dblclick' }).catch(function() {});
-        }
-      } else if (inputHit) {
-        flashPetHotspot('input');
-        playPetAction('acknowledge');
-        if (window.__TAURI__ && window.__TAURI__.core) {
-          window.__TAURI__.core.invoke('cmd_pet_log', { msg: '✓ 嘴巴热区命中 → cmd_open_chat' }).catch(function() {});
-        }
-        try { await window.__TAURI__.core.invoke('cmd_open_chat'); }
-        catch (err) {
-          playPetAction('blocked');
-          if (window.__TAURI__ && window.__TAURI__.core) {
-            window.__TAURI__.core.invoke('cmd_pet_log', { msg: 'cmd_open_chat 失败: ' + err }).catch(function() {});
-          }
-        }
-      } else {
+      activeGesture = {
+        id: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        win: win,
+        observeHit: observeHit,
+        inputHit: inputHit,
+        dragging: false,
+      };
+      try { root.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault();
+    });
+
+    root.addEventListener('pointermove', async function(e) {
+      if (!activeGesture || e.pointerId !== activeGesture.id || activeGesture.dragging) return;
+      var dx = e.clientX - activeGesture.startX;
+      var dy = e.clientY - activeGesture.startY;
+      if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+
+      clearObserveClickTimer();
+      activeGesture.dragging = true;
+      var gesture = activeGesture;
+      activeGesture = null;
+      try { root.releasePointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault();
+
+      if (gesture.win) {
         playPetAction('dragging');
-        if (window.__TAURI__ && window.__TAURI__.core) {
-          window.__TAURI__.core.invoke('cmd_pet_log', { msg: '→ 拖拽模式' }).catch(function() {});
-        }
-        try { await win.startDragging(); } catch (_) {}
-        startSnapPoll(win);
+        logPet('pet drag mode');
+        try { await gesture.win.startDragging(); } catch (_) {}
+        startSnapPoll(gesture.win);
       }
     });
+
+    root.addEventListener('pointerup', function(e) {
+      if (!activeGesture || e.pointerId !== activeGesture.id) return;
+      var gesture = activeGesture;
+      activeGesture = null;
+      try { root.releasePointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault();
+
+      if (gesture.observeHit) {
+        clearObserveClickTimer();
+        observeClickTimer = setTimeout(function() {
+          observeClickTimer = null;
+          openChatFromPet('observe-single-click');
+        }, OBSERVE_DBLCLICK_GRACE_MS);
+      } else {
+        openChatFromPet(gesture.inputHit ? 'input-hotspot' : 'body');
+      }
+    });
+
+    ['pointercancel', 'pointerleave'].forEach(function(type) {
+      root.addEventListener(type, function(e) {
+        if (!activeGesture || e.pointerId !== activeGesture.id) return;
+        activeGesture = null;
+        try { root.releasePointerCapture(e.pointerId); } catch (_) {}
+      });
+    });
+
   }
 
   /// 轮询检测拖拽结束，判断是否需要吸附
@@ -511,6 +644,74 @@ import { PerformerHost } from './performance/performer-host.js';
     try {
       await window.__TAURI__.core.invoke('cmd_unsnap_transform');
     } catch (e) { console.error('[pet] cmd_unsnap_transform 失败:', e); }
+  }
+
+  function setupResizeHandle() {
+    var handle = document.getElementById('resize-handle');
+    if (!handle || isSnapWindow) return;
+    var gesture = null;
+    var rafPending = false;
+    var nextSize = null;
+
+    function applyQueuedSize() {
+      rafPending = false;
+      if (!nextSize) return;
+      normalPetWidth = nextSize.w;
+      normalPetHeight = nextSize.h;
+      applyViewportSize(nextSize.w, nextSize.h, true);
+      nextSize = null;
+    }
+
+    handle.addEventListener('pointerdown', function(e) {
+      if (e.button !== 0 || collapsed) return;
+      e.preventDefault();
+      e.stopPropagation();
+      clearHoverActivity();
+      gesture = {
+        id: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        startW: normalPetWidth,
+        startH: normalPetHeight,
+      };
+      document.body.classList.add('pet-resizing');
+      try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+
+    handle.addEventListener('pointermove', function(e) {
+      if (!gesture || e.pointerId !== gesture.id) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var baseW = Math.max(1, (SpriteRenderer && SpriteRenderer.displayWidth) || 128);
+      var baseH = Math.max(1, (SpriteRenderer && SpriteRenderer.displayHeight) || 128);
+      var nextW = gesture.startW + (e.clientX - gesture.startX);
+      var nextH = gesture.startH + (e.clientY - gesture.startY);
+      var scale = Math.max(nextW / baseW, nextH / baseH);
+      var size = clampPetSize(baseW * scale, baseH * scale);
+      nextSize = size;
+      if (!rafPending) {
+        rafPending = true;
+        requestAnimationFrame(applyQueuedSize);
+      }
+    });
+
+    function finish(e) {
+      if (!gesture || e.pointerId !== gesture.id) return;
+      try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
+      gesture = null;
+      document.body.classList.remove('pet-resizing');
+      if (nextSize) applyQueuedSize();
+      savePetSize(normalPetWidth, normalPetHeight);
+      var win = getCurrentWin();
+      if (win) {
+        win.outerPosition()
+          .then(function(pos) { return cmdSavePetPosition(pos.x, pos.y); })
+          .catch(function() {});
+      }
+    }
+
+    handle.addEventListener('pointerup', finish);
+    handle.addEventListener('pointercancel', finish);
   }
 
   /// 弹簧缓动：轻微回弹，模拟"吸附"质感
@@ -642,7 +843,7 @@ import { PerformerHost } from './performance/performer-host.js';
           prevState = pet.state;
         }
 
-        SpriteRenderer.renderSprite(ctx, visualState, pet.frame, pet.facingRight);
+        SpriteRenderer.renderSprite(ctx, visualState, pet.frame, pet.facingRight, viewportRenderScale());
         Particles.tick(pet.state, dt);
       }
     } else {
@@ -768,6 +969,62 @@ import { PerformerHost } from './performance/performer-host.js';
     }, 1400);
   }
 
+  function triggerHoverActivity() {
+    if (!bodyEl || isSnapWindow) return;
+    bodyEl.classList.add('pet-hover-active');
+    clearTimeout(hoverActivityTimer);
+    hoverActivityTimer = setTimeout(function() {
+      bodyEl.classList.remove('pet-hover-active');
+      hoverActivityTimer = null;
+    }, 900);
+
+    var now = performance.now();
+    if (now < hoverActionCooldownUntil) return;
+    hoverActionCooldownUntil = now + 1800;
+    playPetActionAny(['nudge', 'acknowledge', 'happy']);
+  }
+
+  function clearHoverActivity() {
+    if (hoverActivityTimer) {
+      clearTimeout(hoverActivityTimer);
+      hoverActivityTimer = null;
+    }
+    if (bodyEl) bodyEl.classList.remove('pet-hover-active');
+  }
+
+  function attentionCountFromAgentSnapshot(snapshot) {
+    var sessions = (snapshot && snapshot.sessions) || [];
+    return sessions.filter(function(session) {
+      if (!session || (session.display && session.display.quiet)) return false;
+      var status = String(session.status || '').toLowerCase();
+      var tone = String((session.display && session.display.tone) || '').toLowerCase();
+      return !!session.needs_user || tone === 'needs_user' || status === 'waiting' || status === 'error';
+    }).length;
+  }
+
+  function setPetBadgeCount(count) {
+    var badge = document.getElementById('pet-badge');
+    if (!badge || !bodyEl) return;
+    var value = Math.max(0, Number(count) || 0);
+    badge.textContent = value > 99 ? '99+' : String(value);
+    badge.hidden = value <= 0;
+    bodyEl.classList.toggle('has-pet-badge', value > 0);
+  }
+
+  async function refreshPetBadge() {
+    if (!window.__TAURI__ || !window.__TAURI__.core) return;
+    try {
+      var snapshot = await window.__TAURI__.core.invoke('cmd_get_agent_sessions');
+      setPetBadgeCount(attentionCountFromAgentSnapshot(snapshot));
+    } catch (_) {}
+  }
+
+  function setupPetBadge() {
+    setPetBadgeCount(0);
+    refreshPetBadge();
+    setInterval(refreshPetBadge, PET_BADGE_REFRESH_MS);
+  }
+
   // ========== 右键菜单 ==========
 
   function contextMenuCanvasPoint(e) {
@@ -867,6 +1124,9 @@ import { PerformerHost } from './performance/performer-host.js';
       }
       if (performerHost) {
         performerHost.handlePetEvent(payload);
+      }
+      if (payload && payload.type === 'notify' && payload.kind === 'screenshot_observing') {
+        flashScreenshotFeedback();
       }
       pet.applyEvent(payload);
     });
