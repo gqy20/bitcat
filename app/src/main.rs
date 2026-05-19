@@ -1,15 +1,17 @@
 //! 应用程序入口点。
 //!
-//! 负责三件事：解析 `--debug` 标志决定是否分配控制台窗口、
-//! 初始化 tracing 日志（stderr 带颜色 + 文件按日滚动）、
-//! 调用 `ai_pad_app_lib::run()` 启动 Tauri 事件循环。
+//! 负责解析 `--debug` 标志决定是否分配控制台窗口、初始化 tracing
+//! 日志（stderr 带颜色 + 文件按日滚动）、安装 panic/native crash
+//! 诊断，并调用 `ai_pad_app_lib::run()` 启动 Tauri 事件循环。
 //!
 //! ## unsafe 安全不变性
 //!
 //! `AllocConsole` / `FreeConsole` 仅在 Windows 平台条件编译下调用，
 //! 属于 Win32 线程安全 API，不需要额外同步保护。
 
-/// 二进制入口。按顺序完成：控制台分配/释放 → 日志初始化 → Tauri 启动。
+mod native_crash;
+
+/// 二进制入口。按顺序完成：控制台分配/释放 → 日志初始化 → 崩溃诊断 → Tauri 启动。
 fn main() {
     use tracing_subscriber::fmt;
     use tracing_subscriber::prelude::*;
@@ -39,6 +41,8 @@ fn main() {
     let log_dir = ai_pad_core::logging::log_dir()
         .unwrap_or_else(|_| std::path::PathBuf::from(".ai-pad-logs"));
     let _ = std::fs::create_dir_all(&log_dir);
+    let native_crash_handler =
+        native_crash::install_native_crash_handler(log_dir.clone()).map_err(|e| e.to_string());
     let file_appender = tracing_appender::rolling::daily(&log_dir, "app.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
 
@@ -65,6 +69,10 @@ fn main() {
         .init();
 
     install_panic_hook(log_dir);
+    match native_crash_handler {
+        Ok(()) => tracing::info!("native crash handler installed"),
+        Err(e) => tracing::warn!(error = %e, "native crash handler install failed"),
+    }
     log_startup_diagnostics(debug);
 
     // ── 启动 Tauri ──

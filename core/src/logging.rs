@@ -129,6 +129,8 @@ fn is_managed_log_file(name: &str) -> bool {
         || name.ends_with(".jsonl")
         || name.contains(".jsonl.")
         || name == "panic.log"
+        || name == "native-crash.log"
+        || (name.starts_with("crash-") && name.ends_with(".dmp"))
 }
 
 fn rotate_if_needed(path: &Path, max_bytes: u64) -> Result<(), String> {
@@ -235,5 +237,12 @@ mod tests {
         write_json_atomic(&path, &serde_json::json!({"n": 2})).unwrap();
         let content = std::fs::read_to_string(path).unwrap();
         assert!(content.contains("2"));
+    }
+
+    #[test]
+    fn managed_log_files_include_native_crash_artifacts() {
+        assert!(is_managed_log_file("native-crash.log"));
+        assert!(is_managed_log_file("crash-1710000000-1234.dmp"));
+        assert!(!is_managed_log_file("notes.dmp"));
     }
 }
