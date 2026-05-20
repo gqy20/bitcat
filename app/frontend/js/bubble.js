@@ -44,6 +44,7 @@
   let autoSizeStage = 'compact'; // 'compact' | 'reading' | 'expanded'
   let autoResizeTimer = null;
   let lastAutoResizeAt = 0;
+  let bubbleMode = 'notice';     // 'notice' | 'stream' | 'compose'
 
   // ---- Resize 状态 ----
   let resizeMode = 'auto';      // 'auto' | 'manual'
@@ -60,11 +61,22 @@
     }
   }
 
-  function ensureVisible() {
+  function setBubbleMode(mode) {
+    bubbleMode = mode || 'notice';
+    document.body.classList.toggle('notice', bubbleMode === 'notice');
+    document.body.classList.toggle('stream', bubbleMode === 'stream');
+    document.body.classList.toggle('compose', bubbleMode === 'compose');
+  }
+
+  function ensureVisible(options) {
+    var opts = options || {};
+    var applyUserPref = Object.prototype.hasOwnProperty.call(opts, 'applyUserPref')
+      ? opts.applyUserPref
+      : bubbleMode === 'compose';
     document.body.classList.remove('hidden');
     void document.body.offsetWidth;
-    // 首次 show 时，如果有保存的偏好尺寸，先应用
-    if (resizeMode === 'auto' && userPrefSize && window.__TAURI__ && window.__TAURI__.window) {
+    // 只有主动聊天/输入态应用用户手动尺寸；普通提醒保持轻量 toast。
+    if (applyUserPref && resizeMode === 'auto' && userPrefSize && window.__TAURI__ && window.__TAURI__.window) {
       diag('resize: ensureVisible applying pref w=' + userPrefSize.w + ' h=' + userPrefSize.h +
            ' current=' + currentWinW + 'x' + currentWinH);
       resizeMode = 'manual';
@@ -166,6 +178,11 @@
     var hasText = !!opts.hasText;
     var isStreaming = !!opts.streaming;
     var inputOpen = !!opts.inputOpen;
+    var mode = opts.mode || 'notice';
+
+    if (mode === 'notice') {
+      return 'compact';
+    }
 
     if (inputOpen) {
       return neededH > READING_H + 24 ? 'expanded' : 'reading';
@@ -240,6 +257,7 @@
         hasText: !!lastRawText,
         streaming: streaming,
         inputOpen: inputOpen,
+        mode: bubbleMode,
       });
       neededH = Math.min(MAX_H, Math.max(MIN_H, heightForStage(autoSizeStage)));
     }
@@ -271,6 +289,63 @@
     }
   }
 
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function renderMarkdownText(text) {
+    return typeof marked !== 'undefined'
+      ? marked.parse(text) : escapeHtml(text);
+  }
+
+  function openAgentWatch() {
+    if (!window.__TAURI__ || !window.__TAURI__.core) return;
+    window.__TAURI__.core.invoke('cmd_agent_watch_refresh').catch(function(e) {
+      diag('agent watch open failed: ' + e);
+    });
+  }
+
+  function showAgentToast(payload) {
+    streaming = false;
+    stopPolling();
+    clearToolStatus();
+    resizeMode = 'auto';
+    autoSizeStage = 'compact';
+    setBubbleMode('notice');
+    if (inputRowEl) {
+      inputRowEl.style.display = 'none';
+      inputRowEl.classList.remove('visible', 'hiding');
+    }
+    if (inputEl) inputEl.value = '';
+    hideThinking();
+    resizeBubbleWindow(300, 104, true);
+    lastRawText = '';
+    if (bodyEl) {
+      var tone = payload && payload.tone ? String(payload.tone) : 'info';
+      var title = payload && payload.title ? payload.title : 'Agent 更新';
+      var context = payload && payload.context ? payload.context : '';
+      var detail = payload && payload.detail ? payload.detail : '打开看管查看详情';
+      bodyEl.innerHTML = `
+        <button class="agent-toast tone-${escapeHtml(tone)}" type="button" id="agentToastOpen">
+          <span class="agent-toast-mark" aria-hidden="true"></span>
+          <span class="agent-toast-copy">
+            <span class="agent-toast-title">${escapeHtml(title)}</span>
+            <span class="agent-toast-context">${escapeHtml(context)}</span>
+            <span class="agent-toast-detail">${escapeHtml(detail)}</span>
+          </span>
+        </button>`;
+      var openBtn = document.getElementById('agentToastOpen');
+      if (openBtn) openBtn.addEventListener('click', openAgentWatch);
+    }
+    ensureVisible();
+    clearHideTimer();
+    hideTimer = setTimeout(hide, 8000);
+  }
+
   function setText(text) {
     if (!bodyEl) return;
     var wasAtBottom = isNearBottom();
@@ -279,8 +354,7 @@
     // 隐藏思考指示器（有内容了）
     hideThinking();
 
-    var html = typeof marked !== 'undefined'
-      ? marked.parse(lastRawText) : lastRawText;
+    var html = renderMarkdownText(lastRawText);
 
     // 仅写正文，光标完全由 CSS + class 驱动，永不拼接到 HTML 字符串里
     bodyEl.innerHTML = html;
@@ -362,8 +436,9 @@
     inputRowEl.style.display = 'flex';
     inputRowEl.classList.remove('hiding');
     inputRowEl.classList.add('visible');
+    setBubbleMode('compose');
     clearHideTimer();
-    ensureVisible();
+    ensureVisible({ applyUserPref: true });
     requestAnimationFrame(function() {
       if (inputEl) {
         inputEl.focus();
@@ -403,6 +478,7 @@
 
   function showThinking() {
     if (!thinkingEl) return;
+    setBubbleMode('stream');
     thinkingEl.style.display = 'flex';
     if (bodyEl) bodyEl.innerHTML = ''; // 清空正文区（光标由 class 控制，不必碰）
     autoResize();
@@ -509,6 +585,7 @@
     toolStatusEl.dataset.kind = kind;
     toolStatusEl.dataset.phase = phase;
     toolStatusEl.style.display = 'block';
+    setBubbleMode('stream');
     hideThinking();
     ensureVisible();
     autoResize();
@@ -544,6 +621,7 @@
     stopPolling();
     clearToolStatus();
     streaming = true;       // 标记流式开始
+    setBubbleMode('stream');
     autoSizeStage = 'compact';
     userScrolledUp = false; // 新流式开始，重置锁定
     // 🔧 不立即激活光标：等真正拉到非空文本再切 streaming，
@@ -601,6 +679,20 @@
       setText(lastRawText);
       ensureVisible();
     }
+    startHideTimer();
+  }
+
+  function showNoticeText(text) {
+    streaming = false;
+    stopPolling();
+    clearToolStatus();
+    resizeMode = 'auto';
+    autoSizeStage = 'compact';
+    setBubbleMode('notice');
+    hideInput('notice');
+    resizeBubbleWindow(260, MIN_H, true);
+    setText(text);
+    ensureVisible();
     startHideTimer();
   }
 
@@ -855,9 +947,7 @@
     // 直接渲染 + 启动隐藏定时器，不走轮询（避免稳定检测误判 showInput）
     pollPending().then(function(txt) {
       if (txt && txt.length > 0) {
-        setText(txt);
-        ensureVisible();
-        startHideTimer();
+        showNoticeText(txt);
       } else {
         startPolling();
       }
@@ -870,13 +960,12 @@
   window.__bubble_showInput = showInput;
   window.__bubble_hideInput = hideInput;
   window.__bubble_getToolStatusText = getToolStatusText;
+  window.__bubble_showAgentToast = showAgentToast;
   // Rust 端通过 eval 直接触发此函数拉取 pending_text。
   window.__bubble_onShow = function() {
     pollPending().then(function(txt) {
       if (txt && txt.length > 0) {
-        setText(txt);
-        ensureVisible();
-        startHideTimer();
+        showNoticeText(txt);
       }
     });
   };

@@ -198,6 +198,73 @@ body.show .content {
   color: #991b1b;
 }
 
+.agent-toast {
+  width: 100%;
+  min-height: 68px;
+  display: grid;
+  grid-template-columns: 4px minmax(0, 1fr);
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-toast-mark {
+  align-self: stretch;
+  border-radius: 999px;
+  background: #f4b84a;
+}
+
+.agent-toast.tone-waiting_for_user .agent-toast-mark,
+.agent-toast.tone-task_error .agent-toast-mark {
+  background: #ffcf67;
+}
+
+.agent-toast.tone-task_done .agent-toast-mark {
+  background: #8ee6a8;
+}
+
+.agent-toast-copy {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+}
+
+.agent-toast-title,
+.agent-toast-context,
+.agent-toast-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-toast-title {
+  color: rgba(17, 24, 39, 0.96);
+  font-size: 14px;
+  line-height: 1.25;
+  font-weight: 760;
+}
+
+.agent-toast-context {
+  color: rgba(31, 41, 55, 0.66);
+  font-size: 11.5px;
+  line-height: 1.25;
+  font-weight: 680;
+}
+
+.agent-toast-detail {
+  color: rgba(31, 41, 55, 0.82);
+  font-size: 12px;
+  line-height: 1.3;
+  font-weight: 560;
+}
+
 /* ========== 滚动条三态 ========== */
 
 .content::-webkit-scrollbar { width: 6px; }
@@ -483,4 +550,8 @@ body.show .content {
 
 .resize-grip:hover {
   opacity: 0.8 !important;
+}
+
+body.notice .resize-grip {
+  display: none;
 }

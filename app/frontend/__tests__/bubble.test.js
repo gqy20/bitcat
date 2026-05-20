@@ -629,6 +629,11 @@ describe('bubble stepped auto sizing', () => {
     const hasText = !!options.hasText;
     const isStreaming = !!options.streaming;
     const inputOpen = !!options.inputOpen;
+    const mode = options.mode || 'notice';
+
+    if (mode === 'notice') {
+      return 'compact';
+    }
 
     if (inputOpen) {
       return neededH > READING_H + 24 ? 'expanded' : 'reading';
@@ -651,6 +656,7 @@ describe('bubble stepped auto sizing', () => {
       currentStage: 'compact',
       hasText: true,
       streaming: true,
+      mode: 'stream',
     })).toBe('reading');
   });
 
@@ -659,6 +665,7 @@ describe('bubble stepped auto sizing', () => {
       currentStage: 'expanded',
       hasText: true,
       streaming: true,
+      mode: 'stream',
     })).toBe('expanded');
   });
 
@@ -667,11 +674,20 @@ describe('bubble stepped auto sizing', () => {
       currentStage: 'reading',
       hasText: true,
       streaming: true,
+      mode: 'stream',
     })).toBe('expanded');
   });
 
   it('keeps the compose state roomy when input is open', () => {
-    expect(chooseAutoSizeStage(120, { inputOpen: true })).toBe('reading');
-    expect(chooseAutoSizeStage(260, { inputOpen: true })).toBe('expanded');
+    expect(chooseAutoSizeStage(120, { inputOpen: true, mode: 'compose' })).toBe('reading');
+    expect(chooseAutoSizeStage(260, { inputOpen: true, mode: 'compose' })).toBe('expanded');
+  });
+
+  it('keeps passive notices compact even with long content', () => {
+    expect(chooseAutoSizeStage(320, {
+      currentStage: 'compact',
+      hasText: true,
+      mode: 'notice',
+    })).toBe('compact');
   });
 });

@@ -4,7 +4,7 @@
 //! 的 `AgentSession` 快照，并通过宠物事件总线发出低频提醒。它不直接处理
 //! hook 安装，也不向 Claude Code 回写权限决策，第一版保持只读观察。
 
-use ai_pad_core::agent_nudge::{AgentNudge, AgentNudgeDecision, AgentNudgePolicy};
+use ai_pad_core::agent_nudge::{AgentNudge, AgentNudgeDecision, AgentNudgeKind, AgentNudgePolicy};
 use ai_pad_core::agent_session::{
     apply_session_event, sort_sessions, AgentSession, AgentSessionEvent, AgentSessionView,
     AgentSource,
@@ -479,7 +479,7 @@ fn evaluate_nudge(
                 });
                 return Ok(());
             }
-            emit_nudge(app, &nudge);
+            emit_nudge(app, &nudge, session);
             monitor
                 .nudge_policy
                 .lock()
@@ -530,22 +530,86 @@ fn low_priority_nudge_is_gated(app: &AppHandle, nudge: &AgentNudge) -> bool {
     gate.skip_reason().is_some()
 }
 
-fn emit_nudge(app: &AppHandle, nudge: &AgentNudge) {
+fn emit_nudge(app: &AppHandle, nudge: &AgentNudge, session: &AgentSession) {
+    let toast = agent_toast_payload(nudge, session);
     let bus: tauri::State<crate::pet_event_bus::SharedPetEventBus> = app.state();
     bus.emit(
         app,
         PetEvent::React {
             mood: nudge.mood,
-            speech: Some(nudge.message.clone()),
+            speech: Some(toast.title.clone()),
             ttl_ms: Some(nudge.ttl_ms),
         },
     );
-    if let Err(e) = crate::bubble::show_bubble(app, &nudge.message) {
-        warn!(error = %e, "agent nudge bubble failed");
+    if let Err(e) = crate::bubble::show_agent_toast(app, toast) {
+        warn!(error = %e, "agent toast failed");
     }
     if nudge.use_tts {
-        let message = nudge.message.clone();
+        let message = agent_toast_payload(nudge, session).title;
         std::thread::spawn(move || crate::tts::speak(&message));
+    }
+}
+
+fn agent_toast_payload(
+    nudge: &AgentNudge,
+    session: &AgentSession,
+) -> crate::bubble::AgentToastPayload {
+    let view = AgentSessionView::from_session(session, now_ms());
+    let project = view.display.project.trim();
+    let source = view.display.source_label.trim();
+    let context = [project, source]
+        .into_iter()
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ");
+    let action = view.display.action_label.trim();
+    let detail = match nudge.kind {
+        AgentNudgeKind::WaitingForUser => {
+            if action.is_empty() || action == "Task" {
+                "需要确认下一步".to_string()
+            } else {
+                format!("{action} 需要确认")
+            }
+        }
+        AgentNudgeKind::TaskDone => {
+            if action.is_empty() || action == "Task" {
+                "任务已完成".to_string()
+            } else {
+                format!("{action} 已完成")
+            }
+        }
+        AgentNudgeKind::TaskError => "任务需要查看".to_string(),
+        AgentNudgeKind::AwayWhileWorking => {
+            if action.is_empty() || action == "Task" {
+                "仍在运行".to_string()
+            } else {
+                format!("{action} 仍在运行")
+            }
+        }
+    };
+    let title = match nudge.kind {
+        AgentNudgeKind::WaitingForUser => format!(
+            "{} 正在等你",
+            if project.is_empty() { "Agent" } else { project }
+        ),
+        AgentNudgeKind::TaskDone => format!(
+            "{} 已完成",
+            if project.is_empty() { "Agent" } else { project }
+        ),
+        AgentNudgeKind::TaskError => format!(
+            "{} 需要查看",
+            if project.is_empty() { "Agent" } else { project }
+        ),
+        AgentNudgeKind::AwayWhileWorking => format!(
+            "{} 仍在运行",
+            if project.is_empty() { "Agent" } else { project }
+        ),
+    };
+    crate::bubble::AgentToastPayload {
+        title,
+        context,
+        detail,
+        tone: nudge.kind.as_str().to_string(),
     }
 }
 
@@ -796,6 +860,50 @@ mod tests {
         assert_eq!(event.status, AgentStatus::ToolRunning);
         assert_eq!(event.tool_name.as_deref(), Some("Bash"));
         assert!(event.tool_input_preview.unwrap().contains("cargo test"));
+    }
+
+    #[test]
+    fn agent_toast_keeps_nudge_copy_short() {
+        let session = AgentSession {
+            session_id: "wait".into(),
+            source: AgentSource::ClaudeCode,
+            workspace: "/mnt/chestnut/chestnut/01_downstrm/01_population/data".into(),
+            parent_session_id: None,
+            status: AgentStatus::Waiting,
+            tool_name: Some("Shell".into()),
+            tool_input_preview: Some(
+                "Monitor event: br91auk2l with lots of raw debug detail".into(),
+            ),
+            user_prompt_preview: Some("br91auk2l".into()),
+            last_response_preview: None,
+            background: false,
+            agent_id: None,
+            agent_type: None,
+            task_id: None,
+            output_file: None,
+            pid: None,
+            machine: Some("qy113".into()),
+            updated_at_ms: 10,
+            status_changed_at_ms: 10,
+            needs_user: true,
+        };
+        let nudge = AgentNudge {
+            session_id: "wait".into(),
+            kind: AgentNudgeKind::WaitingForUser,
+            message: "long legacy message".into(),
+            mood: ai_pad_core::pet_event::PetMood::Confused,
+            ttl_ms: 12_000,
+            use_tts: false,
+        };
+
+        let toast = agent_toast_payload(&nudge, &session);
+
+        assert_eq!(toast.title, "data 正在等你");
+        assert_eq!(toast.context, "data · Claude Code");
+        assert_eq!(toast.detail, "Shell 需要确认");
+        assert!(!toast.title.contains("/mnt/"));
+        assert!(!toast.detail.contains("Monitor event"));
+        assert!(!toast.detail.contains("br91auk2l"));
     }
 
     #[test]

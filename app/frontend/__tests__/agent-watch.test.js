@@ -38,40 +38,22 @@ describe('agent watch metadata', () => {
     dom?.window?.close();
   });
 
-  it('renders remote machine before project and agent source', () => {
-    const html = dom.window.__agentWatchTest.renderMeta({
+  it('builds one-line task metadata from machine, project, source, and kind', () => {
+    const parts = dom.window.__agentWatchTest.lineParts({
       machine: 'qy113',
       project: '2605',
       source: 'Claude Code',
       kind: 'Patch',
     }, { status: 'working' }, false);
+    const values = parts.map((part) => part.value);
 
-    expect(html.indexOf('qy113')).toBeLessThan(html.indexOf('2605'));
-    expect(html.indexOf('2605')).toBeLessThan(html.indexOf('Claude Code'));
-    expect(html).toContain('task-device');
-    expect(html).toContain('task-project');
-    expect(html).toContain('task-source');
+    expect(values).toEqual(['qy113', '2605', 'Claude', 'Patch']);
+    expect(parts.map((part) => part.className)).toContain('task-device');
+    expect(parts.map((part) => part.className)).toContain('task-project');
+    expect(parts.map((part) => part.className)).toContain('task-source');
   });
 
-  it('renders compact metadata as prioritized context instead of breadcrumbs', () => {
-    const html = dom.window.__agentWatchTest.renderCompactMeta({
-      machine: 'qy113',
-      project: 'TrumanWorld',
-      source: 'Claude Code',
-      kind: 'Shell',
-    }, { status: 'working' });
-
-    expect(html).toContain('task-context-primary');
-    expect(html).toContain('task-context-secondary');
-    expect(html).toContain('qy113');
-    expect(html).toContain('TrumanWorld');
-    expect(html).toContain('Claude');
-    expect(html).toContain('Shell');
-    expect(html).not.toContain('task-separator');
-    expect(html).not.toContain('qy...');
-  });
-
-  it('renders collapsed cards with readable primary context', () => {
+  it('renders cards as one-line rows without open buttons', () => {
     dom.window.__agentWatchTest.render({
       sessions: [{
         session_id: 's1',
@@ -91,53 +73,52 @@ describe('agent watch metadata', () => {
       }],
     });
 
-    dom.window.document.querySelector('.task-card [data-action="toggle"]').click();
     const card = dom.window.document.querySelector('.task-card');
 
-    expect(card.classList.contains('collapsed')).toBe(true);
-    expect(card.querySelector('.task-context-primary')?.textContent).toContain('qy113');
-    expect(card.querySelector('.task-context-primary')?.textContent).toContain('TrumanWorld');
+    expect(card.querySelector('.task-meta')?.textContent).toContain('qy113');
+    expect(card.querySelector('.task-meta')?.textContent).toContain('TrumanWorld');
+    expect(card.querySelector('[data-action="open"]')).toBeNull();
+    expect(card.querySelector('.task-summary')).toBeNull();
     expect(card.querySelector('.task-separator')).toBeNull();
   });
 
-  it('renders expanded cards without repeating command metadata', () => {
+  it('does not spell out completed state inside done rows', () => {
     dom.window.__agentWatchTest.render({
       sessions: [{
         session_id: 's2',
         source: 'codex',
-        machine: 'qy113',
-        workspace_name: 'TrumanWorld',
-        status: 'tool_running',
+        machine: '',
+        workspace_name: '8bit',
+        status: 'done',
         display: {
           action_label: 'Shell',
-          headline: "正在运行 sed -n '1,260p' frontend/components/scene-style.ts",
-          detail: "sed -n '1,260p' frontend/components/scene-style.ts",
-          project: 'TrumanWorld',
+          headline: '已完成',
+          detail: '任务已完成',
+          project: '8bit',
           source_label: 'Codex',
-          age_label: '13s',
-          tone: 'active',
+          age_label: '17s',
+          tone: 'done',
         },
       }],
     });
 
     const card = dom.window.document.querySelector('.task-card');
 
-    expect(card.classList.contains('collapsed')).toBe(false);
-    expect(card.querySelector('.task-title')?.textContent).toBe('正在运行 Shell');
-    expect(card.querySelector('.task-summary')?.textContent).toContain("sed -n '1,260p'");
-    expect(card.querySelector('.task-context-primary')?.textContent).toContain('qy113');
-    expect(card.querySelector('.task-context-primary')?.textContent).toContain('TrumanWorld');
-    expect(card.querySelector('.task-context-secondary')?.textContent).toContain('Codex');
-    expect(card.querySelector('.task-separator')).toBeNull();
+    expect(card.querySelector('.task-meta')?.textContent).toContain('8bit');
+    expect(card.querySelector('.task-meta')?.textContent).toContain('Shell');
+    expect(card.textContent).not.toContain('已完成');
   });
 
-  it('keeps expanded actions out of the summary layout column', () => {
+  it('keeps task rows compact and reserves only toggle action space', () => {
     const sheet = readFileSync(resolve(process.cwd(), 'css/agent_watch.css'), 'utf8');
 
     expect(sheet).toContain('.task-card:not(.collapsed) {');
-    expect(sheet).toContain('grid-template-columns: 4px minmax(0, 1fr);');
-    expect(sheet).toContain('.task-card:not(.collapsed) .task-actions');
-    expect(sheet).toContain('position: absolute;');
+    expect(sheet).toContain('grid-template-columns: 4px minmax(0, 1fr) 26px;');
+    expect(sheet).toContain('height: 46px;');
+    expect(sheet).toContain('max-height: 46px;');
+    expect(sheet).toContain('overflow: hidden;');
+    expect(sheet).toContain('padding: 0 2px 10px 0;');
+    expect(sheet).not.toContain('.task-open');
   });
 
   it('keeps specific task context in the view model', () => {

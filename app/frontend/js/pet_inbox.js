@@ -6,6 +6,7 @@
   const body = document.getElementById('inbox-body');
   const title = document.getElementById('inbox-title');
   const closeBtn = document.getElementById('inbox-close');
+  const headActions = document.querySelector('.inbox-head-actions');
 
   let snapshot = null;
   let hiddenScreenshots = 0;
@@ -42,11 +43,24 @@
     const source = display.source_label || session.source || 'Agent';
     const project = display.project || session.workspace_name || '';
     const kind = display.action_label || '';
+    const primary = heading;
+    const secondary = [project, source, kind].filter(Boolean).join(' · ');
     return {
       heading,
-      context: [source, project, kind].filter(Boolean).join(' / '),
+      primary,
+      secondary,
+      context: secondary,
       detail: display.detail || session.last_response_preview || '',
     };
+  }
+
+  function renderInboxItem(item, kind) {
+    const detail = item.detail || item.context || '';
+    return `<div class="inbox-item ${kind || ''}">
+      <strong>${escapeHtml(truncateText(item.primary || item.heading, 28))}</strong>
+      <span>${escapeHtml(truncateText(detail, 54))}</span>
+      ${item.secondary ? `<em>${escapeHtml(truncateText(item.secondary, 36))}</em>` : ''}
+    </div>`;
   }
 
   function render() {
@@ -58,13 +72,17 @@
       return;
     }
 
+    if (headActions) {
+      headActions.hidden = !hiddenScreenshots;
+    }
+
     let html = '';
     if (agentSessions.length) {
       html += `<section class="inbox-section agent">
         <div class="section-title"><span>Agent 看管</span><span class="count-pill">${agentSessions.length}</span></div>`;
-      html += agentSessions.slice(0, 2).map((session) => {
+      html += agentSessions.slice(0, 6).map((session) => {
         const item = describeAgentSession(session);
-        return `<div class="inbox-item"><strong>${escapeHtml(truncateText(item.heading, 34))}</strong><span>${escapeHtml(truncateText(item.context || item.detail, 46))}</span></div>`;
+        return renderInboxItem(item, 'agent');
       }).join('');
       html += '<div class="inbox-actions"><button class="inbox-action" type="button" data-action="open-agent-watch">打开看管</button></div></section>';
     }
@@ -73,13 +91,16 @@
       html += `<section class="inbox-section screenshot">
         <div class="section-title"><span>截图观察</span><span class="count-pill">${hiddenScreenshots}</span></div>`;
       if (recentScreenshots.length) {
-        html += recentScreenshots.slice(0, 2).map((item) =>
-          `<div class="inbox-item"><strong>${escapeHtml(item.day || '最近')}</strong><span>${escapeHtml(truncateText(item.description, 72))}</span></div>`
+        html += recentScreenshots.slice(0, 8).map((item) =>
+          renderInboxItem({
+            primary: item.day || '最近',
+            detail: item.description,
+          }, 'screenshot')
         ).join('');
       } else {
         html += '<div class="inbox-note">后台完成了截图分析，但气泡显示已关闭。</div>';
       }
-      html += '<div class="inbox-actions"><button class="inbox-action" type="button" data-action="observe-now">立即观察</button><button class="inbox-action" type="button" data-action="clear-screenshots">清除计数</button></div></section>';
+      html += '</section>';
     }
     body.innerHTML = html;
   }
@@ -112,11 +133,8 @@
     if (event.key === 'Escape') close();
   });
 
-  body.addEventListener('click', async (event) => {
-    const button = event.target.closest('[data-action]');
-    if (!button || !invoke) return;
-    event.preventDefault();
-    const action = button.dataset.action;
+  async function handleAction(action) {
+    if (!invoke) return;
     if (action === 'open-agent-watch') {
       await invoke('cmd_agent_watch_refresh').catch(() => {});
       await close();
@@ -128,6 +146,13 @@
       await invoke('cmd_screenshot_now').catch(() => {});
       await close();
     }
+  }
+
+  document.addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-action]');
+    if (!button || !invoke) return;
+    event.preventDefault();
+    await handleAction(button.dataset.action);
   });
 
   if (listen) {

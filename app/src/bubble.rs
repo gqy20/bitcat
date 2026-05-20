@@ -204,6 +204,14 @@ pub struct BubbleToolPayload {
     pub elapsed_ms: Option<u64>,
 }
 
+#[derive(serde::Serialize, Clone)]
+pub struct AgentToastPayload {
+    pub title: String,
+    pub context: String,
+    pub detail: String,
+    pub tone: String,
+}
+
 /// 显示气泡：按需创建窗口、定位到宠物上方，并写入待消费文本。
 ///
 /// 跳过条件：跳舞中或 `chat_active` 为 true 时仅更新 pending 文本不显示。
@@ -244,6 +252,12 @@ pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
         }
     };
 
+    let scale = window.scale_factor().unwrap_or(1.0).max(0.5);
+    let _ = window.set_size(PhysicalSize::new(
+        (BUBBLE_W * scale).round() as u32,
+        (BUBBLE_H * scale).round() as u32,
+    ));
+
     // 定位到 pet 上方
     position_above_pet(app, &window);
 
@@ -255,6 +269,34 @@ pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
     debug!("bubble onShow eval called");
     info!(text_len = text.chars().count(), "bubble shown");
 
+    Ok(())
+}
+
+pub fn show_agent_toast(app: &AppHandle, payload: AgentToastPayload) -> Result<(), String> {
+    let state: State<SharedBubble> = app.state();
+    if state.is_chat_active() {
+        debug!("agent toast skipped while chat is active");
+        return Ok(());
+    }
+
+    let window = match app.get_webview_window("bubble") {
+        Some(w) => w,
+        None => create_bubble_window(app).map_err(|e| e.to_string())?,
+    };
+
+    let scale = window.scale_factor().unwrap_or(1.0).max(0.5);
+    let _ = window.set_size(PhysicalSize::new(
+        (300.0 * scale).round() as u32,
+        (104.0 * scale).round() as u32,
+    ));
+    position_above_pet(app, &window);
+    let _ = window.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
+    let _ = window.show();
+
+    let json = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
+    let _ = window.eval(format!(
+        "if(window.__bubble_showAgentToast)window.__bubble_showAgentToast({json});"
+    ));
     Ok(())
 }
 
@@ -612,6 +654,20 @@ mod tests {
         assert!(json.contains("performance"));
         assert!(json.contains("planned"));
         assert!(json.contains("rig-call"));
+    }
+
+    #[test]
+    fn test_agent_toast_payload_serializes() {
+        let p = AgentToastPayload {
+            title: "data 正在等你".into(),
+            context: "Claude Code".into(),
+            detail: "需要确认下一步".into(),
+            tone: "needs_user".into(),
+        };
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(json.contains("needs_user"));
+        assert!(json.contains("Claude Code"));
+        assert!(json.contains("data"));
     }
 
     // ---- chat_active 状态 ----

@@ -86,6 +86,20 @@
     };
   }
 
+  function lineParts(view, session, isCollapsed) {
+    const parts = [];
+    if (view.machine) parts.push({ value: view.machine, className: "task-device" });
+    if (view.project) parts.push({ value: view.project, className: "task-project" });
+    if (view.source) parts.push({ value: compactSourceLabel(view.source), className: "task-source" });
+    if (!isNoisyActionLabel(view.kind, session)) {
+      parts.push({ value: view.kind, className: "task-kind" });
+    }
+    if (!isCollapsed && view.age) {
+      parts.push({ value: view.age, className: "task-age" });
+    }
+    return parts;
+  }
+
   function isNoisyActionLabel(label, session) {
     const value = String(label || "").trim();
     if (!value) return true;
@@ -111,68 +125,7 @@
     return source || "Agent";
   }
 
-  function renderMetaItem(item, index) {
-    const cls = item.className ? ` ${item.className}` : "";
-    const separator = index > 0 ? `<span class="task-separator" aria-hidden="true">/</span>` : "";
-    return `${separator}<span class="task-meta-item${cls}" title="${escapeAttr(item.value)}">${escapeHtml(item.value)}</span>`;
-  }
-
-  function renderMeta(view, session, isCollapsed) {
-    const items = [];
-    if (view.machine) items.push({ value: view.machine, className: "task-device" });
-    if (view.project) items.push({ value: view.project, className: "task-project" });
-    if (view.source) items.push({ value: view.source, className: "task-source" });
-    if (!isCollapsed || !isNoisyActionLabel(view.kind, session)) {
-      items.push({ value: view.kind, className: "task-kind" });
-    }
-    return items.map(renderMetaItem).join("");
-  }
-
-  function renderCompactMeta(view, session) {
-    const primary = [];
-    const secondary = [];
-    if (view.machine) primary.push({ value: view.machine, className: "task-device" });
-    if (view.project) primary.push({ value: view.project, className: "task-project" });
-    if (!primary.length && view.detail) primary.push({ value: view.detail, className: "task-project" });
-    if (view.source) secondary.push({ value: compactSourceLabel(view.source), className: "task-source" });
-    if (!isNoisyActionLabel(view.kind, session)) secondary.push({ value: view.kind, className: "task-kind" });
-    return `
-      <div class="task-context-primary">
-        ${primary.map((item) => renderPlainMetaItem(item)).join("")}
-      </div>
-      <div class="task-context-secondary">
-        ${secondary.map((item) => renderPlainMetaItem(item)).join("")}
-      </div>`;
-  }
-
-  function renderExpandedContext(view) {
-    const primary = [];
-    const secondary = [];
-    if (view.machine) primary.push({ value: view.machine, className: "task-device" });
-    if (view.project) primary.push({ value: view.project, className: "task-project" });
-    if (!primary.length && view.detail) primary.push({ value: view.detail, className: "task-project" });
-    if (view.source) secondary.push({ value: view.source, className: "task-source" });
-    return `
-      <div class="task-context-primary">
-        ${primary.map((item) => renderPlainMetaItem(item)).join("")}
-      </div>
-      <div class="task-context-secondary">
-        ${secondary.map((item) => renderPlainMetaItem(item)).join("")}
-      </div>`;
-  }
-
-  function expandedTitle(view, session) {
-    if (!isNoisyActionLabel(view.kind, session)) {
-      const status = String(session.status || view.tone || "").toLowerCase();
-      if (status === "done") return `已完成 ${view.kind}`;
-      if (status === "waiting") return `等待处理 ${view.kind}`;
-      if (status === "error") return `${view.kind} 需要处理`;
-      return `正在运行 ${view.kind}`;
-    }
-    return view.target;
-  }
-
-  function renderPlainMetaItem(item) {
+  function renderMetaItem(item) {
     const cls = item.className ? ` ${item.className}` : "";
     return `<span class="task-meta-item${cls}" title="${escapeAttr(item.value)}">${escapeHtml(item.value)}</span>`;
   }
@@ -188,10 +141,8 @@
     const visibleCount = sessions.filter((session) => !shouldHideSession(session)).length;
     watchCount.textContent = String(sessions.length);
     if (watchTitle) {
-      const done = sessions.filter((session) => session.status === "done" && !shouldHideSession(session)).length;
-      const waiting = sessions.filter((session) => session.needs_user || session.display?.tone === "needs_user").length;
-      const active = sessions.filter((session) => ["active", "error"].includes(session.display?.tone)).length;
-      watchTitle.textContent = done ? `${done} 个已完成` : waiting ? `${waiting} 个需要处理` : active ? `${active} 个进行中` : "Agent Watch";
+      const count = visibleCount || sessions.length;
+      watchTitle.textContent = count ? `Agent 看管 ${count}` : "Agent 看管";
     }
     updateExpandToggle(sessions);
     if (!sessions.length) {
@@ -206,24 +157,17 @@
       const isCollapsed = collapsed.has(id);
       const status = session.status || "idle";
       const view = viewOf(session);
-      const meta = isCollapsed ? renderCompactMeta(view, session) : renderExpandedContext(view);
-      const title = isCollapsed ? view.target : expandedTitle(view, session);
+      const items = lineParts(view, session, isCollapsed);
       return `
         <article class="task-card ${escapeAttr(status)} tone-${escapeAttr(view.tone)} ${view.quiet ? "quiet" : ""} ${isCollapsed ? "collapsed" : ""}" data-id="${escapeAttr(id)}">
           <span class="task-rail" aria-hidden="true"></span>
           <div class="task-main">
             <div class="task-meta">
               <span class="task-dot"></span>
-              ${meta}
-              ${!isCollapsed && view.age ? `<span class="task-age">${escapeHtml(view.age)}</span>` : ""}
+              ${items.map(renderMetaItem).join("")}
             </div>
-            <div class="task-headline">
-              <h2 class="task-title">${escapeHtml(title)}</h2>
-            </div>
-            <p class="task-summary">${escapeHtml(view.detail)}</p>
           </div>
           <div class="task-actions">
-            <button class="task-open" type="button" data-action="open" title="打开工作目录">打开</button>
             <button class="task-toggle" type="button" data-action="toggle" title="${isCollapsed ? "展开" : "折叠"}" aria-label="${isCollapsed ? "展开" : "折叠"}">${isCollapsed ? "+" : "-"}</button>
           </div>
         </article>`;
@@ -254,15 +198,6 @@
     }
   }
 
-  async function openWorkspace(id) {
-    if (!invoke) return;
-    try {
-      await invoke("cmd_open_agent_workspace", { sessionId: id });
-    } catch (e) {
-      log("open workspace failed", e);
-    }
-  }
-
   stack.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-action]");
     if (!button) return;
@@ -270,9 +205,7 @@
     const id = card?.dataset.id;
     if (!id) return;
     const action = button.dataset.action;
-    if (action === "open") {
-      openWorkspace(id);
-    } else if (action === "toggle") {
+    if (action === "toggle") {
       if (collapsed.has(id)) collapsed.delete(id);
       else collapsed.add(id);
       saveCollapsed();
@@ -398,11 +331,8 @@
   window.__agentWatchRefresh = refresh;
   window.__agentWatchTest = {
     agentSourceLabel,
-    renderMeta,
     renderMetaItem,
-    renderCompactMeta,
-    renderExpandedContext,
-    expandedTitle,
+    lineParts,
     render,
     viewOf,
   };
