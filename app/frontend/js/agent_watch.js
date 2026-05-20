@@ -6,9 +6,7 @@
   const watchTitle = document.getElementById("watch-title");
   const stack = document.getElementById("stack");
   const watchCount = document.getElementById("watch-count");
-  const watchActions = document.querySelector(".watch-actions");
-  const watchExpandToggle = document.getElementById("watch-expand-toggle");
-  const collapsed = new Set(JSON.parse(localStorage.getItem("agentWatchCollapsed") || "[]"));
+  const expanded = new Set(JSON.parse(localStorage.getItem("agentWatchExpanded") || "[]"));
   let folded = localStorage.getItem("agentWatchFolded") === "true";
   let latest = null;
   let suppressNextHeaderClick = false;
@@ -31,8 +29,8 @@
     return escapeHtml(value).replace(/'/g, "&#39;");
   }
 
-  function saveCollapsed() {
-    localStorage.setItem("agentWatchCollapsed", JSON.stringify([...collapsed]));
+  function saveExpanded() {
+    localStorage.setItem("agentWatchExpanded", JSON.stringify([...expanded]));
   }
 
   async function syncFoldedWindow() {
@@ -86,7 +84,7 @@
     };
   }
 
-  function lineParts(view, session, isCollapsed) {
+  function lineParts(view, session) {
     const parts = [];
     if (view.machine) parts.push({ value: view.machine, className: "task-device" });
     if (view.project) parts.push({ value: view.project, className: "task-project" });
@@ -94,7 +92,7 @@
     if (!isNoisyActionLabel(view.kind, session)) {
       parts.push({ value: view.kind, className: "task-kind" });
     }
-    if (!isCollapsed && view.age) {
+    if (view.age) {
       parts.push({ value: view.age, className: "task-age" });
     }
     return parts;
@@ -130,6 +128,13 @@
     return `<span class="task-meta-item${cls}" title="${escapeAttr(item.value)}">${escapeHtml(item.value)}</span>`;
   }
 
+  function fullDetail(view) {
+    const parts = [];
+    if (view.target) parts.push(view.target);
+    if (view.detail && view.detail !== view.target) parts.push(view.detail);
+    return parts.filter(Boolean).join("\n");
+  }
+
   function compactSourceLabel(source) {
     if (source === "Claude Code") return "Claude";
     return source;
@@ -144,7 +149,6 @@
       const count = visibleCount || sessions.length;
       watchTitle.textContent = count ? `Agent 看管 ${count}` : "Agent 看管";
     }
-    updateExpandToggle(sessions);
     if (!sessions.length) {
       stack.innerHTML = `<div class="empty">暂无 Claude Code 任务</div>`;
       setFolded(false);
@@ -154,21 +158,23 @@
       .filter((session) => !shouldHideSession(session));
     stack.innerHTML = renderableSessions.map((session) => {
       const id = session.session_id;
-      const isCollapsed = collapsed.has(id);
       const status = session.status || "idle";
       const view = viewOf(session);
-      const items = lineParts(view, session, isCollapsed);
+      const items = lineParts(view, session);
+      const detail = fullDetail(view);
+      const isExpanded = expanded.has(id) && detail;
       return `
-        <article class="task-card ${escapeAttr(status)} tone-${escapeAttr(view.tone)} ${view.quiet ? "quiet" : ""} ${isCollapsed ? "collapsed" : ""}" data-id="${escapeAttr(id)}">
+        <article class="task-card ${escapeAttr(status)} tone-${escapeAttr(view.tone)} ${view.quiet ? "quiet" : ""} ${isExpanded ? "expanded" : ""}" data-id="${escapeAttr(id)}" tabindex="0" role="button" aria-expanded="${isExpanded ? "true" : "false"}">
           <span class="task-rail" aria-hidden="true"></span>
           <div class="task-main">
             <div class="task-meta">
               <span class="task-dot"></span>
               ${items.map(renderMetaItem).join("")}
             </div>
+            ${isExpanded ? `<p class="task-detail">${escapeHtml(detail)}</p>` : ""}
           </div>
           <div class="task-actions">
-            <button class="task-toggle" type="button" data-action="toggle" title="${isCollapsed ? "展开" : "折叠"}" aria-label="${isCollapsed ? "展开" : "折叠"}">${isCollapsed ? "+" : "-"}</button>
+            <button class="task-dismiss" type="button" data-action="dismiss" title="移除这条任务" aria-label="移除这条任务">×</button>
           </div>
         </article>`;
     }).join("");
@@ -189,8 +195,6 @@
 
   async function dismiss(id) {
     if (!invoke) return;
-    collapsed.delete(id);
-    saveCollapsed();
     try {
       render(await invoke("cmd_dismiss_agent_session", { sessionId: id }));
     } catch (e) {
@@ -205,12 +209,32 @@
     const id = card?.dataset.id;
     if (!id) return;
     const action = button.dataset.action;
-    if (action === "toggle") {
-      if (collapsed.has(id)) collapsed.delete(id);
-      else collapsed.add(id);
-      saveCollapsed();
-      render(latest);
+    if (action === "dismiss") {
+      dismiss(id);
     }
+  });
+
+  function toggleTaskDetail(id) {
+    if (!id) return;
+    if (expanded.has(id)) expanded.delete(id);
+    else expanded.add(id);
+    saveExpanded();
+    render(latest);
+  }
+
+  stack.addEventListener("click", (event) => {
+    if (event.target.closest("button")) return;
+    const card = event.target.closest(".task-card");
+    if (!card) return;
+    toggleTaskDetail(card.dataset.id);
+  });
+
+  stack.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const card = event.target.closest(".task-card");
+    if (!card) return;
+    event.preventDefault();
+    toggleTaskDetail(card.dataset.id);
   });
 
   function toggleFolded() {
@@ -223,33 +247,6 @@
       invoke?.("cmd_agent_watch_mark_user_placed").catch(() => {});
       setFolded(false);
     }
-  }
-
-  function expandAllTasks() {
-    collapsed.clear();
-    saveCollapsed();
-    render(latest);
-  }
-
-  function collapseAllTasks() {
-    const sessions = latest?.sessions || [];
-    for (const session of sessions) {
-      if (session.session_id) collapsed.add(session.session_id);
-    }
-    saveCollapsed();
-    render(latest);
-  }
-
-  function hasCollapsedTask(sessions = latest?.sessions || []) {
-    return sessions.some((session) => session.session_id && collapsed.has(session.session_id));
-  }
-
-  function updateExpandToggle(sessions = latest?.sessions || []) {
-    if (!watchExpandToggle) return;
-    const shouldExpand = hasCollapsedTask(sessions);
-    watchExpandToggle.textContent = shouldExpand ? "+" : "-";
-    watchExpandToggle.title = shouldExpand ? "Expand all" : "Collapse all";
-    watchExpandToggle.setAttribute("aria-label", watchExpandToggle.title);
   }
 
   function currentWindow() {
@@ -292,17 +289,6 @@
         pointerDown = null;
       });
     }
-  }
-
-  if (watchActions) {
-    watchActions.addEventListener("click", (event) => {
-      event.stopPropagation();
-      const action = event.target.closest("[data-watch-action]")?.dataset.watchAction;
-      if (action === "toggle-all") {
-        if (hasCollapsedTask()) expandAllTasks();
-        else collapseAllTasks();
-      }
-    });
   }
 
   watchHeader.addEventListener("click", () => {

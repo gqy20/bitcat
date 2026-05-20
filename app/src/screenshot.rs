@@ -453,6 +453,7 @@ pub fn cmd_clear_hidden_screenshot_count(
 #[derive(serde::Serialize)]
 pub struct RecentScreenshotAnalysisSummary {
     pub day: String,
+    pub time_label: String,
     pub description: String,
     pub width: u32,
     pub height: u32,
@@ -465,9 +466,10 @@ pub fn cmd_get_recent_screenshot_analyses(
     let count = count.unwrap_or(3).clamp(1, 6);
     let base = ai_pad_core::screenshot::screenshot_base_dir()?;
     Ok(
-        ai_pad_core::screenshot::list_recent_analyses_multi_day(&base, count)
+        ai_pad_core::screenshot::list_recent_analyses_multi_day_named(&base, count)
             .into_iter()
-            .map(|(day, record)| RecentScreenshotAnalysisSummary {
+            .map(|(day, file_name, record)| RecentScreenshotAnalysisSummary {
+                time_label: screenshot_time_label(&file_name, &day),
                 day,
                 description: record.description().to_string(),
                 width: record.width,
@@ -475,6 +477,43 @@ pub fn cmd_get_recent_screenshot_analyses(
             })
             .collect(),
     )
+}
+
+fn screenshot_time_label(file_name: &str, day: &str) -> String {
+    let digits: String = file_name
+        .chars()
+        .take_while(|ch| ch.is_ascii_digit())
+        .collect();
+    if digits.len() >= 6 {
+        format!("{}:{}", &digits[0..2], &digits[2..4])
+    } else {
+        day.to_string()
+    }
+}
+
+#[cfg(test)]
+mod inbox_tests {
+    use super::*;
+
+    #[test]
+    fn screenshot_time_label_uses_analysis_file_prefix() {
+        assert_eq!(
+            screenshot_time_label("132405_analysis.json", "2026-05-20"),
+            "13:24"
+        );
+        assert_eq!(
+            screenshot_time_label("132405_primary_analysis.json", "2026-05-20"),
+            "13:24"
+        );
+    }
+
+    #[test]
+    fn screenshot_time_label_falls_back_to_day() {
+        assert_eq!(
+            screenshot_time_label("bad_analysis.json", "2026-05-20"),
+            "2026-05-20"
+        );
+    }
 }
 
 /// 截图观察线程主循环（在独立线程上运行）。

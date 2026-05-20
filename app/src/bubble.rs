@@ -286,8 +286,8 @@ pub fn show_agent_toast(app: &AppHandle, payload: AgentToastPayload) -> Result<(
 
     let scale = window.scale_factor().unwrap_or(1.0).max(0.5);
     let _ = window.set_size(PhysicalSize::new(
-        (300.0 * scale).round() as u32,
-        (104.0 * scale).round() as u32,
+        (260.0 * scale).round() as u32,
+        (72.0 * scale).round() as u32,
     ));
     position_above_pet(app, &window);
     let _ = window.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));

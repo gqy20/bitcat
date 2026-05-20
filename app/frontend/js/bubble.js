@@ -309,6 +309,39 @@
     });
   }
 
+  function isGenericToastDetail(value) {
+    var text = String(value || '').trim();
+    return !text ||
+      text === '任务已完成' ||
+      text === '打开看管查看详情' ||
+      text === '查看详情';
+  }
+
+  function compactAgentToastLine(payload) {
+    var title = payload && payload.title ? String(payload.title).trim() : '';
+    var detail = payload && payload.detail ? String(payload.detail).trim() : '';
+    var context = payload && payload.context ? String(payload.context).trim() : '';
+    var contextParts = context ? context.split(/\s*[·•路]\s*/).filter(Boolean) : [];
+    var subject = contextParts[0] || '';
+    var titleRest = title;
+    if (subject && titleRest.indexOf(subject) === 0) {
+      titleRest = titleRest.slice(subject.length).trim();
+    }
+    if (context && title) {
+      if (!isGenericToastDetail(detail)) {
+        return context + ' · ' + detail;
+      }
+      return titleRest ? context + ' · ' + titleRest : context;
+    }
+    if (title && !isGenericToastDetail(detail)) {
+      return title + ' · ' + detail;
+    }
+    if (title) return title;
+    if (detail) return detail;
+    if (context) return context;
+    return 'Agent 更新';
+  }
+
   function showAgentToast(payload) {
     streaming = false;
     stopPolling();
@@ -322,20 +355,16 @@
     }
     if (inputEl) inputEl.value = '';
     hideThinking();
-    resizeBubbleWindow(300, 104, true);
+    resizeBubbleWindow(260, 72, true);
     lastRawText = '';
     if (bodyEl) {
       var tone = payload && payload.tone ? String(payload.tone) : 'info';
-      var title = payload && payload.title ? payload.title : 'Agent 更新';
-      var context = payload && payload.context ? payload.context : '';
-      var detail = payload && payload.detail ? payload.detail : '打开看管查看详情';
+      var line = compactAgentToastLine(payload);
       bodyEl.innerHTML = `
         <button class="agent-toast tone-${escapeHtml(tone)}" type="button" id="agentToastOpen">
           <span class="agent-toast-mark" aria-hidden="true"></span>
           <span class="agent-toast-copy">
-            <span class="agent-toast-title">${escapeHtml(title)}</span>
-            <span class="agent-toast-context">${escapeHtml(context)}</span>
-            <span class="agent-toast-detail">${escapeHtml(detail)}</span>
+            <span class="agent-toast-line">${escapeHtml(line)}</span>
           </span>
         </button>`;
       var openBtn = document.getElementById('agentToastOpen');
@@ -961,6 +990,7 @@
   window.__bubble_hideInput = hideInput;
   window.__bubble_getToolStatusText = getToolStatusText;
   window.__bubble_showAgentToast = showAgentToast;
+  window.__bubble_compactAgentToastLine = compactAgentToastLine;
   // Rust 端通过 eval 直接触发此函数拉取 pending_text。
   window.__bubble_onShow = function() {
     pollPending().then(function(txt) {

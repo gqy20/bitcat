@@ -1,6 +1,10 @@
 // bubble.test.js — 气泡滚动行为测试（Vitest + jsdom）
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const bubbleScript = readFileSync(resolve(process.cwd(), 'js/bubble.js'), 'utf8');
 
 function createBubbleDOM() {
   document.body.innerHTML = `
@@ -689,5 +693,33 @@ describe('bubble stepped auto sizing', () => {
       hasText: true,
       mode: 'notice',
     })).toBe('compact');
+  });
+});
+
+describe('agent toast copy', () => {
+  it('collapses agent toast into one readable line', () => {
+    window.eval(bubbleScript);
+    const compactAgentToastLine = window.__bubble_compactAgentToastLine;
+
+    expect(compactAgentToastLine({
+      title: 'data 已完成',
+      context: 'data · Claude Code',
+      detail: '任务已完成',
+    })).toBe('data · Claude Code · 已完成');
+    expect(compactAgentToastLine({
+      title: 'data 正在等你',
+      context: 'data · Claude Code',
+      detail: 'Shell 需要确认',
+    })).toBe('data · Claude Code · Shell 需要确认');
+  });
+
+  it('keeps agent toast visually lightweight', () => {
+    const sheet = readFileSync(resolve(process.cwd(), 'css/bubble.css'), 'utf8');
+    const script = bubbleScript;
+
+    expect(script).toContain('resizeBubbleWindow(260, 72, true)');
+    expect(sheet).toContain('min-height: 38px;');
+    expect(sheet).toContain('font-size: 12.5px;');
+    expect(sheet).toContain('font-weight: 680;');
   });
 });

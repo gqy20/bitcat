@@ -92,8 +92,7 @@ body {
   text-align: center;
 }
 
-.watch-action,
-.task-toggle {
+.task-dismiss {
   display: grid;
   place-items: center;
   border: 1px solid var(--line);
@@ -108,26 +107,6 @@ body {
   display: flex;
   align-items: center;
   gap: 5px;
-}
-
-.watch-action {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border-radius: 999px;
-  color: var(--muted);
-  font-size: 15px;
-  font-weight: 760;
-  line-height: 1;
-  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
-}
-
-.watch-action:hover,
-.watch-action:focus-visible {
-  border-color: rgba(255, 255, 255, 0.22);
-  background: rgba(255, 255, 255, 0.09);
-  color: var(--text);
-  outline: none;
 }
 
 .task-stack {
@@ -179,10 +158,19 @@ body {
   padding: 7px 8px;
   position: relative;
   overflow: hidden;
+  cursor: pointer;
 }
 
 .task-card:not(.collapsed) {
   grid-template-columns: 4px minmax(0, 1fr) 26px;
+}
+
+.task-card.expanded {
+  height: auto;
+  min-height: 82px;
+  max-height: none;
+  align-items: start;
+  overflow: visible;
 }
 
 .task-card.tone-needs_user,
@@ -253,6 +241,24 @@ body {
   overflow: hidden;
   display: grid;
   align-items: center;
+}
+
+.task-card.expanded .task-main {
+  gap: 8px;
+}
+
+.task-detail {
+  margin: 0;
+  max-height: 150px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 520;
+  user-select: text;
 }
 
 .task-age {
@@ -368,18 +374,23 @@ body {
   opacity: 1;
 }
 
-.task-toggle {
+.task-dismiss {
   height: 26px;
-  padding: 0 6px;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.task-toggle {
   width: 26px;
+  padding: 0;
   color: var(--muted);
   font-size: 16px;
   font-weight: 760;
+  line-height: 1;
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.task-dismiss:hover,
+.task-dismiss:focus-visible {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text);
+  outline: none;
 }
 
 .empty {

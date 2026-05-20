@@ -6,22 +6,19 @@ import { resolve } from 'node:path';
 const scriptPath = resolve(process.cwd(), 'js/agent_watch.js');
 const script = readFileSync(scriptPath, 'utf8');
 
-function createDom() {
+function createDom(invoke) {
   const dom = new JSDOM(`<!doctype html>
     <section id="agent-watch">
       <header id="watch-header" tabindex="0">
         <h1 id="watch-title"></h1>
-        <div class="watch-actions">
-          <button id="watch-expand-toggle" data-watch-action="toggle-all"></button>
-        </div>
+        <div class="watch-actions"><span id="watch-count"></span></div>
       </header>
-      <span id="watch-count"></span>
       <div id="stack"></div>
     </section>`, {
     url: 'http://localhost/agent_watch.html',
     runScripts: 'outside-only',
   });
-  dom.window.__TAURI__ = {};
+  dom.window.__TAURI__ = invoke ? { core: { invoke } } : {};
   dom.window.setInterval = () => 0;
   dom.window.eval(script);
   return dom;
@@ -53,7 +50,7 @@ describe('agent watch metadata', () => {
     expect(parts.map((part) => part.className)).toContain('task-source');
   });
 
-  it('renders cards as one-line rows without open buttons', () => {
+  it('renders cards as one-line rows with one dismiss button', () => {
     dom.window.__agentWatchTest.render({
       sessions: [{
         session_id: 's1',
@@ -78,8 +75,75 @@ describe('agent watch metadata', () => {
     expect(card.querySelector('.task-meta')?.textContent).toContain('qy113');
     expect(card.querySelector('.task-meta')?.textContent).toContain('TrumanWorld');
     expect(card.querySelector('[data-action="open"]')).toBeNull();
+    expect(card.querySelector('[data-action="toggle"]')).toBeNull();
+    expect(card.querySelectorAll('[data-action="dismiss"]')).toHaveLength(1);
     expect(card.querySelector('.task-summary')).toBeNull();
     expect(card.querySelector('.task-separator')).toBeNull();
+  });
+
+  it('expands a task row to reveal full agent detail', () => {
+    dom.window.__agentWatchTest.render({
+      sessions: [{
+        session_id: 's-detail',
+        source: 'claude_code',
+        machine: 'qy113',
+        workspace_name: 'data',
+        status: 'waiting',
+        display: {
+          action_label: 'Shell',
+          headline: 'Needs your decision',
+          detail: 'Full command output and request context should be visible here.',
+          project: 'data',
+          source_label: 'Claude Code',
+          tone: 'needs_user',
+        },
+      }],
+    });
+
+    const card = dom.window.document.querySelector('.task-card');
+    expect(card.querySelector('.task-detail')).toBeNull();
+
+    card.querySelector('.task-main').click();
+
+    expect(card.classList.contains('expanded')).toBe(false);
+    const expandedCard = dom.window.document.querySelector('.task-card');
+    expect(expandedCard.classList.contains('expanded')).toBe(true);
+    expect(expandedCard.getAttribute('aria-expanded')).toBe('true');
+    expect(expandedCard.querySelector('.task-detail')?.textContent).toContain('Full command output');
+  });
+
+  it('dismisses a processed task through the row x button', async () => {
+    const calls = [];
+    dom?.window?.close();
+    dom = createDom(async (name, payload) => {
+      calls.push({ name, payload });
+      if (name === 'cmd_dismiss_agent_session') return { sessions: [] };
+      return {};
+    });
+    dom.window.__agentWatchTest.render({
+      sessions: [{
+        session_id: 's3',
+        source: 'codex',
+        workspace_name: '8bit',
+        status: 'done',
+        display: {
+          action_label: 'Shell',
+          project: '8bit',
+          source_label: 'Codex',
+          age_label: '17s',
+          tone: 'done',
+        },
+      }],
+    });
+
+    dom.window.document.querySelector('[data-action="dismiss"]').click();
+    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+
+    expect(calls).toContainEqual({
+      name: 'cmd_dismiss_agent_session',
+      payload: { sessionId: 's3' },
+    });
+    expect(dom.window.document.querySelector('.task-card')).toBeNull();
   });
 
   it('does not spell out completed state inside done rows', () => {
@@ -109,7 +173,7 @@ describe('agent watch metadata', () => {
     expect(card.textContent).not.toContain('已完成');
   });
 
-  it('keeps task rows compact and reserves only toggle action space', () => {
+  it('keeps task rows compact and reserves only dismiss action space', () => {
     const sheet = readFileSync(resolve(process.cwd(), 'css/agent_watch.css'), 'utf8');
 
     expect(sheet).toContain('.task-card:not(.collapsed) {');
@@ -119,6 +183,8 @@ describe('agent watch metadata', () => {
     expect(sheet).toContain('overflow: hidden;');
     expect(sheet).toContain('padding: 0 2px 10px 0;');
     expect(sheet).not.toContain('.task-open');
+    expect(sheet).not.toContain('.task-toggle');
+    expect(sheet).toContain('.task-dismiss');
   });
 
   it('keeps specific task context in the view model', () => {

@@ -93,7 +93,7 @@
       if (recentScreenshots.length) {
         html += recentScreenshots.slice(0, 8).map((item) =>
           renderInboxItem({
-            primary: item.day || '最近',
+            primary: item.time_label || item.day || '最近',
             detail: item.description,
           }, 'screenshot')
         ).join('');

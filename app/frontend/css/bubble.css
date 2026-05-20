@@ -200,10 +200,11 @@ body.show .content {
 
 .agent-toast {
   width: 100%;
-  min-height: 68px;
+  min-height: 38px;
   display: grid;
-  grid-template-columns: 4px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 3px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -214,7 +215,8 @@ body.show .content {
 }
 
 .agent-toast-mark {
-  align-self: stretch;
+  align-self: center;
+  height: 28px;
   border-radius: 999px;
   background: #f4b84a;
 }
@@ -232,37 +234,18 @@ body.show .content {
   min-width: 0;
   display: grid;
   align-content: center;
-  gap: 3px;
 }
 
-.agent-toast-title,
-.agent-toast-context,
-.agent-toast-detail {
+.agent-toast-line {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.agent-toast-title {
   color: rgba(17, 24, 39, 0.96);
-  font-size: 14px;
-  line-height: 1.25;
-  font-weight: 760;
-}
-
-.agent-toast-context {
-  color: rgba(31, 41, 55, 0.66);
-  font-size: 11.5px;
-  line-height: 1.25;
+  font-size: 12.5px;
+  line-height: 1.2;
   font-weight: 680;
-}
-
-.agent-toast-detail {
-  color: rgba(31, 41, 55, 0.82);
-  font-size: 12px;
-  line-height: 1.3;
-  font-weight: 560;
+  letter-spacing: 0;
 }
 
 /* ========== 滚动条三态 ========== */

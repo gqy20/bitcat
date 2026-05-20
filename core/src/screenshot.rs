@@ -324,6 +324,18 @@ pub fn save_analysis_json(
 
 /// 按文件名倒序读取最近 count 条分析记录（单目录）。
 pub fn list_recent_analyses(dir: &std::path::Path, count: u32) -> Vec<ScreenshotRecord> {
+    list_recent_analyses_named(dir, count)
+        .into_iter()
+        .map(|(_, r)| r)
+        .collect()
+}
+
+/// 按文件名倒序读取最近 `count` 条分析记录，并保留原始分析文件名。
+#[allow(dead_code)]
+pub fn list_recent_analyses_named(
+    dir: &std::path::Path,
+    count: u32,
+) -> Vec<(String, ScreenshotRecord)> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -340,11 +352,7 @@ pub fn list_recent_analyses(dir: &std::path::Path, count: u32) -> Vec<Screenshot
         }
     }
     records.sort_by(|a, b| b.0.cmp(&a.0));
-    records
-        .into_iter()
-        .take(count as usize)
-        .map(|(_, r)| r)
-        .collect()
+    records.into_iter().take(count as usize).collect()
 }
 
 /// 跨日期目录读取最近 count 条分析记录，优先取最新的日期。
@@ -353,6 +361,18 @@ pub fn list_recent_analyses_multi_day(
     base_dir: &std::path::Path,
     count: usize,
 ) -> Vec<(String, ScreenshotRecord)> {
+    list_recent_analyses_multi_day_named(base_dir, count)
+        .into_iter()
+        .map(|(day, _name, record)| (day, record))
+        .collect()
+}
+
+/// 跨日期目录读取最近 `count` 条分析记录，并保留日期和分析文件名。
+#[allow(dead_code)]
+pub fn list_recent_analyses_multi_day_named(
+    base_dir: &std::path::Path,
+    count: usize,
+) -> Vec<(String, String, ScreenshotRecord)> {
     let Ok(entries) = std::fs::read_dir(base_dir) else {
         return Vec::new();
     };
@@ -375,8 +395,8 @@ pub fn list_recent_analyses_multi_day(
         }
         let day_dir = base_dir.join(day);
         let needed = count - results.len();
-        for record in list_recent_analyses(&day_dir, needed as u32) {
-            results.push((day.clone(), record));
+        for (name, record) in list_recent_analyses_named(&day_dir, needed as u32) {
+            results.push((day.clone(), name, record));
         }
     }
     results
