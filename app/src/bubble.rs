@@ -1,8 +1,8 @@
 //! 气泡窗口模块：流式 AI 文本渲染 + 动态高度调整 + 实时跟随宠物。
 //!
 //! 核心协议是三段式流式推送：`start_streaming_bubble` → `append_bubble_chunk`×N →
-//! `finalize_bubble`。前端通过 `bubble-chunk` / `bubble-end` 事件接收文本，
-//! 并在 `bubble-end` 后启动自动隐藏定时器。
+//! `finalize_bubble`。前端通过轮询 `cmd_consume_bubble_text` 读取累积文本，
+//! 并用 `bubble-end` 事件结束流式状态和启动自动隐藏定时器。
 //!
 //! **动态高度**：气泡窗口默认 120px，前端根据文本量调整 CSS 高度后通过
 //! `cmd_reposition_bubble` 通知 Rust 端重新计算窗口尺寸和位置，最大 680px。
@@ -192,16 +192,6 @@ impl Default for SharedBubble {
 }
 
 #[derive(serde::Serialize, Clone)]
-struct BubblePayload {
-    text: String,
-}
-
-#[derive(serde::Serialize, Clone)]
-struct BubbleChunkPayload {
-    chunk: String,
-}
-
-#[derive(serde::Serialize, Clone)]
 pub struct BubbleToolPayload {
     pub tool_name: String,
     pub label: String,
@@ -214,7 +204,7 @@ pub struct BubbleToolPayload {
     pub elapsed_ms: Option<u64>,
 }
 
-/// 显示气泡：按需创建窗口、定位到宠物上方、写入待消费文本 + emit。
+/// 显示气泡：按需创建窗口、定位到宠物上方，并写入待消费文本。
 ///
 /// 跳过条件：跳舞中或 `chat_active` 为 true 时仅更新 pending 文本不显示。
 pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
@@ -260,17 +250,9 @@ pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
     let _ = window.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
     let _ = window.show();
     debug!("bubble window show called");
-    // eval 直接触发 JS 拉取 pending_text：emit_to 对 hide→show 窗口不可靠
+    // eval 直接触发 JS 拉取 pending_text；若前端尚未加载，init 时也会主动拉取。
     let _ = window.eval("if(window.__bubble_onShow)window.__bubble_onShow();");
     debug!("bubble onShow eval called");
-    // emit 兜底：窗口首次创建或未被 hide 过时可能仍有效
-    let _ = app.emit_to(
-        "bubble",
-        "bubble-update",
-        BubblePayload {
-            text: text.to_string(),
-        },
-    );
     info!(text_len = text.chars().count(), "bubble shown");
 
     Ok(())
@@ -338,7 +320,7 @@ pub fn start_streaming_bubble(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 流式追加：累加到 `pending_text`（给晚到的 listener 用）+ emit `bubble-chunk`。
+/// 流式追加：累加到 `pending_text`，前端轮询读取完整累积文本。
 pub fn append_bubble_chunk(app: &AppHandle, chunk: &str) -> Result<(), String> {
     let state: State<SharedBubble> = app.state();
     if let Ok(mut g) = state.pending_text.lock() {
@@ -348,13 +330,6 @@ pub fn append_bubble_chunk(app: &AppHandle, chunk: &str) -> Result<(), String> {
             *g = Some(chunk.to_string());
         }
     }
-    let _ = app.emit_to(
-        "bubble",
-        "bubble-chunk",
-        BubbleChunkPayload {
-            chunk: chunk.to_string(),
-        },
-    );
     Ok(())
 }
 
@@ -617,25 +592,6 @@ mod tests {
         // 260x120 keeps the default bubble compact while leaving room for 13px text.
         assert!(BUBBLE_W >= 240.0 && BUBBLE_W <= 320.0);
         assert!(BUBBLE_H >= 100.0 && BUBBLE_H <= 200.0);
-    }
-
-    #[test]
-    fn test_payload_serializes() {
-        let p = BubblePayload {
-            text: "你好".into(),
-        };
-        let json = serde_json::to_string(&p).unwrap();
-        assert!(json.contains("你好") || json.contains("\\u"));
-    }
-
-    #[test]
-    fn test_chunk_payload_serializes() {
-        let p = BubbleChunkPayload {
-            chunk: "片段".into(),
-        };
-        let json = serde_json::to_string(&p).unwrap();
-        assert!(json.contains("chunk"));
-        assert!(json.contains("片段") || json.contains("\\u"));
     }
 
     #[test]

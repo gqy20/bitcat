@@ -611,3 +611,67 @@ describe('bubble resize preference lifecycle', () => {
     expect(JSON.parse(state.storage.bubble_pref)).toEqual({ w: 320, h: 220 });
   });
 });
+
+describe('bubble stepped auto sizing', () => {
+  const MIN_H = 120;
+  const READING_H = 220;
+
+  function stageRank(stage) {
+    switch (stage) {
+      case 'expanded': return 2;
+      case 'reading': return 1;
+      default: return 0;
+    }
+  }
+
+  function chooseAutoSizeStage(neededH, options = {}) {
+    const currentStage = options.currentStage || 'compact';
+    const hasText = !!options.hasText;
+    const isStreaming = !!options.streaming;
+    const inputOpen = !!options.inputOpen;
+
+    if (inputOpen) {
+      return neededH > READING_H + 24 ? 'expanded' : 'reading';
+    }
+
+    if (isStreaming && hasText) {
+      const desiredDuringStream = neededH > READING_H + 24 ? 'expanded' : 'reading';
+      return stageRank(desiredDuringStream) > stageRank(currentStage)
+        ? desiredDuringStream
+        : currentStage;
+    }
+
+    if (neededH > READING_H + 24) return 'expanded';
+    if (neededH > MIN_H) return 'reading';
+    return 'compact';
+  }
+
+  it('starts streaming replies in a stable reading size once text arrives', () => {
+    expect(chooseAutoSizeStage(130, {
+      currentStage: 'compact',
+      hasText: true,
+      streaming: true,
+    })).toBe('reading');
+  });
+
+  it('does not shrink while a streaming reply is still arriving', () => {
+    expect(chooseAutoSizeStage(128, {
+      currentStage: 'expanded',
+      hasText: true,
+      streaming: true,
+    })).toBe('expanded');
+  });
+
+  it('expands long replies in one coarse step instead of per-chunk sizing', () => {
+    expect(chooseAutoSizeStage(260, {
+      currentStage: 'reading',
+      hasText: true,
+      streaming: true,
+    })).toBe('expanded');
+  });
+
+  it('keeps the compose state roomy when input is open', () => {
+    expect(chooseAutoSizeStage(120, { inputOpen: true })).toBe('reading');
+    expect(chooseAutoSizeStage(260, { inputOpen: true })).toBe('expanded');
+  });
+});

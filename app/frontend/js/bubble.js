@@ -1,9 +1,8 @@
 // bubble.js — 独立气泡窗口前端
 //
 // 策略: 前端通过定时轮询 cmd_consume_bubble_text 拉取后端累积的文本,
-// 完全不依赖 bubble-chunk 事件的到达时序。
+// 完全不依赖逐 chunk 事件的到达时序。
 // bubble-end 事件仅用于知道流式何时结束(停止轮询 + 启动隐藏定时)。
-// bubble-update 用于兼容非流式一次性写入路径。
 //
 // 滚动: Tauri 透明无框窗口中 native scroll 经常失效,
 //       用 wheel 事件手动 scrollTop 兜底 + 动态调整窗口高度。
@@ -14,19 +13,22 @@
   const HIDE_AFTER_MS = 15000;
   const PERFORMANCE_HIDE_AFTER_MS = 900;
   const POLL_INTERVAL_MS = 120;
+  const HIDE_ANIM_MS = 180;
   const MIN_H = 120;
+  const READING_H = 220;
+  const EXPANDED_H = 320;
   const MAX_H = 340;
   const MIN_W = 220;
   const MAX_W = 420;
   const ABS_MAX_H = 680;      // 用户手动拖拽时的绝对最大高度
   const PADDING_TOTAL = 50;   // body top(6) + bubble padding-top(14) + padding-bottom(14) + body bottom(12) + 余量(4)
   const INPUT_ROW_H = 42;     // input-row 额外高度（含 padding-top:8）
+  const AUTO_RESIZE_DEBOUNCE_MS = 140;
   let hideTimer = null;
   let performanceHideTimer = null;
   let contentEl = null;
   let bodyEl = null;           // #contentBody：唯一被 innerHTML 覆盖的节点
   let toolStatusEl = null;
-  let cursorEl = null;         // #typingCursor：常驻 DOM，仅通过 content 的 streaming class 控制
   let pollTimer = null;
   let currentWinH = MIN_H;
   let currentWinW = 260;
@@ -39,6 +41,9 @@
   let isComposing = false;    // IME 组合状态标记
   let userScrolledUp = false;  // 用户是否手动向上滚动了（锁定自动跟底）
   let streaming = false;        // 是否处于流式输出中（bubble-end 后为 false 拦截迟到的轮询）
+  let autoSizeStage = 'compact'; // 'compact' | 'reading' | 'expanded'
+  let autoResizeTimer = null;
+  let lastAutoResizeAt = 0;
 
   // ---- Resize 状态 ----
   let resizeMode = 'auto';      // 'auto' | 'manual'
@@ -139,6 +144,60 @@
       });
   }
 
+  function stageRank(stage) {
+    switch (stage) {
+      case 'expanded': return 2;
+      case 'reading': return 1;
+      default: return 0;
+    }
+  }
+
+  function heightForStage(stage) {
+    switch (stage) {
+      case 'expanded': return EXPANDED_H;
+      case 'reading': return READING_H;
+      default: return MIN_H;
+    }
+  }
+
+  function chooseAutoSizeStage(neededH, options) {
+    var opts = options || {};
+    var currentStage = opts.currentStage || 'compact';
+    var hasText = !!opts.hasText;
+    var isStreaming = !!opts.streaming;
+    var inputOpen = !!opts.inputOpen;
+
+    if (inputOpen) {
+      return neededH > READING_H + 24 ? 'expanded' : 'reading';
+    }
+
+    if (isStreaming && hasText) {
+      var desiredDuringStream = neededH > READING_H + 24 ? 'expanded' : 'reading';
+      return stageRank(desiredDuringStream) > stageRank(currentStage)
+        ? desiredDuringStream
+        : currentStage;
+    }
+
+    if (neededH > READING_H + 24) return 'expanded';
+    if (neededH > MIN_H) return 'reading';
+    return 'compact';
+  }
+
+  function scheduleResize(targetW, targetH, shouldReposition) {
+    if (autoResizeTimer) {
+      clearTimeout(autoResizeTimer);
+      autoResizeTimer = null;
+    }
+
+    var elapsed = Date.now() - lastAutoResizeAt;
+    var delay = elapsed >= AUTO_RESIZE_DEBOUNCE_MS ? 0 : AUTO_RESIZE_DEBOUNCE_MS - elapsed;
+    autoResizeTimer = setTimeout(function() {
+      autoResizeTimer = null;
+      lastAutoResizeAt = Date.now();
+      resizeBubbleWindow(targetW, targetH, shouldReposition);
+    }, delay);
+  }
+
   function currentScaleFactor(win) {
     if (!win || typeof win.scaleFactor !== 'function') return Promise.resolve(1);
     return win.scaleFactor().catch(function() { return 1; });
@@ -173,13 +232,23 @@
       var manualSize = clampManualSize(userPrefSize.w, userPrefSize.h);
       neededH = manualSize.h;
       targetW = manualSize.w;
+      autoSizeStage = 'manual';
+    } else {
+      var inputOpen = inputRowEl && inputRowEl.style.display !== 'none';
+      autoSizeStage = chooseAutoSizeStage(neededH, {
+        currentStage: autoSizeStage,
+        hasText: !!lastRawText,
+        streaming: streaming,
+        inputOpen: inputOpen,
+      });
+      neededH = Math.min(MAX_H, Math.max(MIN_H, heightForStage(autoSizeStage)));
     }
 
     var newH = Math.round(neededH);
     var sizeChanged = (newH !== currentWinH || targetW !== currentWinW);
 
     if (sizeChanged) {
-      resizeBubbleWindow(targetW, newH, true);
+      scheduleResize(targetW, newH, true);
     }
   }
 
@@ -235,6 +304,11 @@
     clearToolStatus();
     hideInput('hide-bubble');
     resizeMode = 'auto';
+    autoSizeStage = 'compact';
+    if (autoResizeTimer) {
+      clearTimeout(autoResizeTimer);
+      autoResizeTimer = null;
+    }
     diag('resize: hide ' + (userPrefSize ? 'keep manual pref' : 'reset window to default') + ', pref=' +
          (userPrefSize ? (userPrefSize.w + 'x' + userPrefSize.h) : 'none') +
          ' current=' + currentWinW + 'x' + currentWinH);
@@ -244,9 +318,11 @@
     document.body.classList.remove('show');
     document.body.classList.add('hidden');
     if (window.__TAURI__ && window.__TAURI__.core) {
-      window.__TAURI__.core.invoke('cmd_hide_bubble').catch(function(e) {
-        diag('hide bubble failed: ' + e);
-      });
+      setTimeout(function() {
+        window.__TAURI__.core.invoke('cmd_hide_bubble').catch(function(e) {
+          diag('hide bubble failed: ' + e);
+        });
+      }, HIDE_ANIM_MS);
     }
   }
 
@@ -468,6 +544,7 @@
     stopPolling();
     clearToolStatus();
     streaming = true;       // 标记流式开始
+    autoSizeStage = 'compact';
     userScrolledUp = false; // 新流式开始，重置锁定
     // 🔧 不立即激活光标：等真正拉到非空文本再切 streaming，
     //    避免 bubble-end 事件丢失时光标常驻
@@ -525,7 +602,6 @@
       ensureVisible();
     }
     startHideTimer();
-    showInput();
   }
 
   /// wheel 事件兜底：Tauri 透明窗口的 native scroll 不稳定，
@@ -566,7 +642,6 @@
     contentEl = document.getElementById('content');
     bodyEl = document.getElementById('contentBody');
     toolStatusEl = document.getElementById('toolStatus');
-    cursorEl = document.getElementById('typingCursor');
     inputRowEl = document.getElementById('inputRow');
     inputEl = document.getElementById('chatInput');
     sendBtnEl = document.getElementById('chatSend');
@@ -681,6 +756,7 @@
         resizeMode = 'auto';
         userResizeActive = false;
         userPrefSize = null;
+        autoSizeStage = 'compact';
         localStorage.removeItem('bubble_pref');
         diag('resize: double-click → reset to auto');
         autoResize();
@@ -765,19 +841,6 @@
         });
     });
 
-    listen('bubble-update', (event) => {
-      stopPolling();
-      streaming = false;     // 截图摘要非流式，标记结束
-      setStreamingClass(false);
-      clearToolStatus();
-      var payload = event.payload || {};
-      var text = typeof payload === 'string' ? payload : (payload.text || '');
-      diag('bubble-update received, text_len=' + (text || '').length);
-      setText(text);
-      ensureVisible();
-      startHideTimer();
-    });
-
     listen('bubble-tool-event', (event) => {
       setToolStatus(event.payload || {});
     });
@@ -807,7 +870,7 @@
   window.__bubble_showInput = showInput;
   window.__bubble_hideInput = hideInput;
   window.__bubble_getToolStatusText = getToolStatusText;
-  // emit_to 对 hide→show 窗口不可靠，Rust 端通过 eval 直接触发此函数拉取 pending_text
+  // Rust 端通过 eval 直接触发此函数拉取 pending_text。
   window.__bubble_onShow = function() {
     pollPending().then(function(txt) {
       if (txt && txt.length > 0) {
