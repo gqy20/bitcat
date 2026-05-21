@@ -120,6 +120,18 @@ describe('notification island', () => {
     expect(dom.window.document.getElementById('notification').classList.contains('hidden')).toBe(false);
   });
 
+  it('asks the host window to resize for expanded content', () => {
+    dom.window.__notificationShow({
+      title: 'Drink water',
+      body: 'Three minutes are up',
+      tone: 'warning',
+      ttl_ms: 12000,
+      actions: [{ id: 'complete', label: 'Done' }],
+    });
+
+    expect(invoke).toHaveBeenCalledWith('cmd_notification_resize', { height: expect.any(Number) });
+  });
+
   it('deduplicates the same notification id from event and eval delivery', () => {
     dom.window.__notificationShow({ id: 'agent-watch-s1-42', title: 'Done', tone: 'success', ttl_ms: 12000 });
     dom.window.__notificationShow({ id: 'agent-watch-s1-42', title: 'Done', tone: 'success', ttl_ms: 12000 });

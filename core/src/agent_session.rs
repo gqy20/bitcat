@@ -448,12 +448,7 @@ fn action_summary(session: &AgentSession) -> ActionSummary {
             .and_then(|value| compact_preview(value, 56));
         return ActionSummary {
             label: "Shell".to_string(),
-            headline: Some(
-                command
-                    .as_deref()
-                    .map(|value| format!("正在运行 {value}"))
-                    .unwrap_or_else(|| "正在运行命令".to_string()),
-            ),
+            headline: Some("正在运行".to_string()),
             detail: description.or(command),
         };
     }
@@ -818,7 +813,8 @@ mod tests {
         let view = AgentSessionView::from_session(&session, 6100);
         assert_eq!(view.display.tone, "active");
         assert_eq!(view.display.action_label, "Shell");
-        assert!(view.display.headline.contains("cargo nextest"));
+        assert_eq!(view.display.headline, "正在运行");
+        assert_eq!(view.display.detail, "cargo nextest run -p ai-pad-core");
     }
 
     #[test]

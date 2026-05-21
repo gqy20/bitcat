@@ -121,6 +121,32 @@ describe('agent watch metadata', () => {
     expect(expandedCard.querySelector('.task-expanded-actions')).toBeNull();
   });
 
+  it('renders running status and command as separate detail layers', () => {
+    dom.window.__agentWatchTest.render({
+      sessions: [{
+        session_id: 's-shell',
+        source: 'codex',
+        machine: 'qy113',
+        workspace_name: 'Whispering_Town',
+        status: 'tool_running',
+        display: {
+          action_label: 'Shell',
+          headline: '正在运行',
+          detail: 'npm mvp:play',
+          project: 'Whispering_Town',
+          source_label: 'Codex',
+          tone: 'active',
+          age_label: '3m',
+        },
+      }],
+    });
+
+    dom.window.document.querySelector('.task-card').click();
+
+    const detail = dom.window.document.querySelector('.task-detail')?.textContent || '';
+    expect(detail).toBe('正在运行\nnpm mvp:play');
+  });
+
   it('dismisses a processed task through an action button', async () => {
     const calls = [];
     dom?.window?.close();
@@ -220,6 +246,9 @@ describe('agent watch metadata', () => {
     expect(sheet).toContain('.watch-shell.folded .task-stack');
     expect(sheet).toContain('.task-card:hover .task-dismiss');
     expect(sheet).toContain('.task-meta:empty');
+    expect(sheet).toContain('scrollbar-width: none;');
+    expect(sheet).toContain('.task-detail::-webkit-scrollbar { display: none; }');
+    expect(sheet).toContain('background: transparent;');
     expect(sheet).not.toContain('.task-expanded-actions');
     expect(sheet).not.toContain('.task-open');
     expect(sheet).not.toContain('.task-toggle');

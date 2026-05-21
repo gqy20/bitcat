@@ -207,10 +207,24 @@
     const status = String(session.status || "").toLowerCase();
     const lines = [];
     if (status === "waiting" || status === "error") lines.push(statusLabel(status));
-    if (view.headline && view.headline !== view.title) lines.push(view.headline);
-    if (view.detail && view.detail !== view.headline) lines.push(view.detail);
+    pushUniqueLine(lines, view.headline, view.title);
+    pushUniqueLine(lines, view.detail, view.headline);
     if (!lines.length && isDoneStatus(status)) lines.push("任务已完成");
     return lines.filter(Boolean).join("\n");
+  }
+
+  function pushUniqueLine(lines, value, compareTo) {
+    const text = String(value || "").trim();
+    if (!text) return;
+    const compare = String(compareTo || "").trim();
+    if (compare && redundantDetailLine(text, compare)) return;
+    if (lines.some((line) => redundantDetailLine(text, line))) return;
+    lines.push(text);
+  }
+
+  function redundantDetailLine(value, existing) {
+    if (value === existing) return true;
+    return existing.endsWith(value) && /^(正在|将|已|需要|等待|工具|任务)/.test(existing);
   }
 
   function summaryText(sessions) {

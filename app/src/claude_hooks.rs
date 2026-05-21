@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use tauri_plugin_opener::OpenerExt;
 
 const AI_PAD_HOOK_MARKER: &str = "ai-pad-claude-code-watch";
+const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
 
 #[derive(Debug, Clone, Copy)]
 struct HookSpec {
@@ -85,8 +86,35 @@ fn read_settings_json(path: &PathBuf) -> Result<Value, String> {
     if !path.exists() {
         return Ok(json!({}));
     }
-    let raw = std::fs::read_to_string(path).map_err(|e| format!("读取 settings.json 失败: {e}"))?;
-    serde_json::from_str(&raw).map_err(|e| format!("解析 settings.json 失败，已停止写入: {e}"))
+    let bytes = std::fs::read(path).map_err(|e| format!("读取 settings.json 失败: {e}"))?;
+    let had_bom = bytes.starts_with(UTF8_BOM);
+    let json_bytes = if had_bom {
+        tracing::warn!(
+            path = %path.display(),
+            "settings.json 包含 UTF-8 BOM，将在本次 hook 修复写回时清理"
+        );
+        &bytes[UTF8_BOM.len()..]
+    } else {
+        bytes.as_slice()
+    };
+    let raw = std::str::from_utf8(json_bytes)
+        .map_err(|e| format!("settings.json 不是有效 UTF-8，已停止写入: {e}"))?;
+    serde_json::from_str(raw).map_err(|e| {
+        format!(
+            "解析 settings.json 失败，已停止写入: {e} (path={}, head_bytes={})",
+            path.display(),
+            head_bytes_hex(&bytes)
+        )
+    })
+}
+
+fn head_bytes_hex(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .take(8)
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<Vec<_>>()
+        .join("")
 }
 
 fn ensure_ai_pad_hooks(
@@ -522,5 +550,39 @@ mod tests {
         );
         assert!(settings["hooks"].get("TotallyUnknown").is_none());
         assert_eq!(report.removed, 2);
+    }
+
+    #[test]
+    fn read_settings_json_accepts_utf8_bom() {
+        let path = std::env::temp_dir().join(format!(
+            "ai-pad-claude-settings-bom-{}-{}.json",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::write(
+            &path,
+            b"\xEF\xBB\xBF{\"env\":{\"ANTHROPIC_MODEL\":\"test\"}}",
+        )
+        .unwrap();
+
+        let settings = read_settings_json(&path).unwrap();
+
+        assert_eq!(settings["env"]["ANTHROPIC_MODEL"], "test");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn read_settings_json_reports_head_bytes_for_invalid_json() {
+        let path = std::env::temp_dir().join(format!(
+            "ai-pad-claude-settings-invalid-{}-{}.json",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::write(&path, b"\xEF\xBB\xBFnot-json").unwrap();
+
+        let err = read_settings_json(&path).unwrap_err();
+
+        assert!(err.contains("head_bytes=efbbbf6e6f742d6a"));
+        let _ = std::fs::remove_file(path);
     }
 }

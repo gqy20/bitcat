@@ -139,6 +139,7 @@ pub fn run() {
             agent_watch_window::cmd_agent_watch_port,
             agent_watch_window::cmd_agent_watch_log,
             notification_window::cmd_notification_hide,
+            notification_window::cmd_notification_resize,
             notification_window::cmd_notification_action,
             claude_hooks::cmd_install_claude_code_hooks,
             claude_hooks::cmd_open_claude_settings,

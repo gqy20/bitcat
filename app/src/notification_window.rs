@@ -16,6 +16,7 @@ use tracing::{debug, warn};
 const WINDOW_LABEL: &str = "notification";
 const WINDOW_W: f64 = 240.0;
 const WINDOW_H: f64 = 75.0;
+const WINDOW_MAX_H: f64 = 132.0;
 
 /// Button shown on a transient notification.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -123,6 +124,22 @@ fn ensure_notification_window(app: &AppHandle) -> Result<WebviewWindow, tauri::E
     Ok(app
         .get_webview_window(WINDOW_LABEL)
         .expect("notification window should exist after precreate"))
+}
+
+/// Resize the notification window to fit expanded reminder content.
+#[tauri::command]
+pub async fn cmd_notification_resize(app: AppHandle, height: f64) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+        let scale = window.scale_factor().unwrap_or(1.0).max(0.5);
+        let h = height.clamp(WINDOW_H, WINDOW_MAX_H);
+        window
+            .set_size(PhysicalSize::new(
+                (WINDOW_W * scale).round() as u32,
+                (h * scale).round() as u32,
+            ))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 fn position_top_center(app: &AppHandle, window: &WebviewWindow) {

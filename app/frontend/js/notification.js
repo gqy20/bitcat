@@ -27,6 +27,12 @@
     hideTimer = setTimeout(() => hide("timeout"), Math.max(1800, Number(ttlMs) || 6000));
   }
 
+  function resizeWindow() {
+    if (!invoke) return;
+    const height = Math.ceil(Math.max(document.body.scrollHeight, root.scrollHeight, 75));
+    invoke("cmd_notification_resize", { height }).catch(() => {});
+  }
+
   function showNow(payload) {
     current = payload || {};
     titleEl.textContent = escapeText(current.title || "提醒");
@@ -35,6 +41,7 @@
     setTone(current.tone);
     root.classList.toggle("expanded", Boolean(current.body) || (current.actions || []).length > 0);
     root.classList.remove("hidden");
+    resizeWindow();
     scheduleHide(current.ttl_ms);
   }
 
@@ -73,6 +80,7 @@
     clearTimeout(clickTimer);
     root.classList.add("hidden");
     root.classList.remove("expanded");
+    invoke?.("cmd_notification_resize", { height: 75 }).catch(() => {});
     current = null;
     setTimeout(() => {
       if (queue.length) {
@@ -93,6 +101,7 @@
     if (!current) return;
     clearTimeout(clickTimer);
     root.classList.add("expanded");
+    resizeWindow();
     scheduleHide(Math.max(current.ttl_ms || 6000, 8000));
   });
 
