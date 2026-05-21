@@ -1,6 +1,6 @@
 # ai-pad / 8Bit Cat
 
-蓝牙手柄驱动的桌面工具：8 位像素桌宠 + AI 对话（流式）+ Agent Watch 任务看管 + 配置化弹出面板 + 语音输入 + 可选 TTS 朗读 + 截图视觉分析 + 贴边吸附 + 迷你游戏。
+蓝牙手柄驱动的桌面工具：8 位像素桌宠 + AI 对话（流式）+ 程序化提醒 + Agent Watch 任务看管 + 配置化弹出面板 + 语音输入 + 可选 TTS 朗读 + 截图视觉分析 + 贴边吸附 + 迷你游戏。
 
 基于 Tauri 2.0 + SDL2，单 exe，无 Node.js 依赖。共 **350+ 个测试**（Rust workspace + Vitest 前端），接入 cargo-husky（pre-commit fmt / pre-push clippy+test）。
 
@@ -162,6 +162,17 @@ Agent Watch 是桌宠侧的只读任务看管面板，用于观察 Claude Code /
 - 监控窗口与普通桌宠窗口解耦，游戏运行或桌宠表演不会阻塞会话事件记录。
 - 设置页提供远程 Mac/Linux 一键安装命令和只读 `/watch` 地址；地址发现已抽象为远程 endpoint，支持 LAN、Tailscale/tailnet、VPN 和其他可达地址，UI 默认脱敏显示，复制命令时使用完整地址并支持多地址重试。远程安装脚本会做一次自检上报，且远程看板和安装脚本可以分别关闭。
 
+## 程序化提醒
+
+Agent 可以调用提醒工具创建确定性的本地任务，例如“3 分钟后提醒我喝水”或“每小时提醒我休息”。提醒不依赖模型继续在线，到期后由本地调度器触发统一通知窗口。
+
+- 提醒存储在系统数据目录下的 `ai-pad/reminders/reminders.json`，Windows 通常是 `%APPDATA%/ai-pad/reminders/reminders.json`。
+- store 使用当前版本 JSON 数组格式；读失败会在设置页暴露，并写入结构化诊断，不静默迁移旧格式或半写入文件。
+- 写入使用临时文件 + 原子替换，避免程序退出或机器睡眠时留下空文件。
+- 到期提醒、完成、稍后、取消、删除都会写入 `~/.ai-pad/logs/reminder_events.jsonl`。
+- 设置页“提醒”Tab 可以刷新、完成、10 分钟后、取消或用垃圾桶删除记录；通知窗口里的动作也会回写 store 并刷新设置页。
+- `create_reminder` 创建失败时，工具结果会明确告诉 Agent 提醒没有创建成功，避免只在对话里口头承诺。
+
 ## Steamworks 探针
 
 应用启动时会非致命地尝试从 exe 同目录加载 `steam_api64.dll` 并调用 `SteamAPI_InitFlat`，用于验证 Steam 客户端、AppID 和 DLL 链路。缺少 DLL、未登录 Steam 或缺少 `steam_appid.txt` 只会写入 warn 日志，不影响普通非 Steam 构建运行；后续 Steam 成就、DLC 和商店能力会在这条诊断链路上扩展。
@@ -248,6 +259,7 @@ Agent Watch 是桌宠侧的只读任务看管面板，用于观察 Claude Code /
 │       ├── hotkey.rs       # Win32 SendInput 键鼠模拟 + force_foreground
 │       ├── pet.rs          # 桌宠状态机（Idle/Walk/Sleep/Talk/Happy/Confused/Dance）
 │       ├── memory.rs       # 两层记忆系统：短期滚动窗口 + 长期 JSONL 候选召回 + AI 聚合画像
+│       ├── reminder.rs     # 程序化提醒 store、原子写入、生命周期操作与 JSONL 事件日志
 │       ├── vision.rs       # Vision API 请求构建/响应解析
 │       ├── screenshot.rs   # 截图类型定义、dHash、resize/JPEG、存储 + 7天清理
 │       ├── screen_summary.rs # 屏幕活动摘要存储 + 最近 N 条截图注入 prompt
@@ -266,6 +278,8 @@ Agent Watch 是桌宠侧的只读任务看管面板，用于观察 Claude Code /
     │   ├── agent_monitor.rs # Agent Watch 会话状态与 hook 事件监控
     │   ├── commands.rs     # 共享状态 + Tauri command（snap_preview/crossfade/play_dance 等）
     │   ├── bubble.rs       # 独立气泡窗口, 流式 start/chunk/end 协议, bubble_follower 线程
+    │   ├── notification_window.rs # Agent Watch 与提醒共用的灵动岛式通知窗口
+    │   ├── reminder_scheduler.rs # 到期提醒轮询调度
     │   ├── voice.rs        # 语音输入窗口, 强制前台化, generation 防残留
     │   ├── panel.rs        # 弹出面板（YAML 布局, 方向键导航, 动作执行）
     │   ├── settings.rs     # 设置窗口后端命令（读/写 app_settings + yml 重载）
@@ -445,6 +459,9 @@ language: "zh-CN"         # 首选语言（空则自动判断）
 | `foreground` | 按标题聚焦窗口 |
 | `perform_dance` | AI 直接提交完整 DanceDef，保存并立即播放 |
 | `play_dance` | 播放已保存的舞蹈 |
+| `create_reminder` | 创建一次性或重复提醒，写入本地提醒 store |
+| `list_reminders` | 查看当前提醒任务 |
+| `complete_reminder` / `snooze_reminder` / `cancel_reminder` | 完成、稍后或取消提醒 |
 
 - 按 Start 键触发对话，流式回复、工具生命周期和最终 `AgentReaction` 会通过 tagged `PetEvent` 驱动桌宠状态
 - 对话记忆**两层存储**：短期滚动窗口（默认 20 条）+ 长期 JSONL grep-first 候选召回 + AI 聚合画像
@@ -452,6 +469,7 @@ language: "zh-CN"         # 首选语言（空则自动判断）
 - Agent 方法带 `#[instrument]` tracing span，完整记录工具调用链路
 - Token 用量写入 `~/.ai-pad/logs/token_usage.jsonl`，最近会话聚合写入 `~/.ai-pad/logs/token_sessions.json`
 - 工具运行时审计写入 `~/.ai-pad/logs/tool_events.jsonl`
+- 提醒生命周期写入 `~/.ai-pad/logs/reminder_events.jsonl`，包含创建失败、触发、完成、稍后、取消、删除和 store 读写异常
 
 ## 通信架构
 

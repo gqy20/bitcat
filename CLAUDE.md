@@ -149,6 +149,14 @@ app 层通过 `SharedPetEventBus` 统一发送 `pet-event`，集中处理去重�
 
 对话结束后用 rig `Extractor<AgentReaction>` 做结构化收尾：输出最终 `PetMood`、可选 speech 和 `memory_candidates`。失败或超时时 fallback 到 `Idle`，不阻塞主回复。
 
+### 程序化提醒
+
+AI Agent 通过 `create_reminder` / `list_reminders` / `complete_reminder` / `snooze_reminder` / `cancel_reminder` Tool 管理确定性的提醒任务。提醒持久化到系统数据目录下的 `ai-pad/reminders/reminders.json`（Windows 通常是 `%APPDATA%/ai-pad/reminders/reminders.json`），格式是当前版本的 JSON 数组；不要在主路径里静默兼容旧格式、BOM 或半写入文件，解析失败应明确暴露并写入诊断日志。
+
+提醒写入使用临时文件 + 原子替换，Windows 下通过 `MoveFileExW(MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)` 刷盘替换。调度器每 5 秒扫描到期提醒，通过统一通知窗口弹出；通知窗口和设置页的完成、稍后、取消、删除操作都会更新 store，并 emit `reminders-updated` 让设置页刷新。`create_reminder` 工具创建失败时必须告诉模型“提醒没有创建成功”，避免 AI 口头承诺但本地没有任务。
+
+提醒事件写入 `~/.ai-pad/logs/reminder_events.jsonl`，生命周期包括 `created` / `create_failed` / `fired` / `completed` / `snoozed` / `cancelled` / `deleted`，存储异常包括 `store_read_failed` / `store_write_failed`。事件记录应保留 `reminder_id`、`source`、`ui_source`、`store_path`、`error`、`file_size`、`head_bytes` 等诊断字段，便于复盘 Hook、通知和设置页之间的问题。
+
 ### 截图观察系统
 
 独立线程定时截图（默认 30s），流程：BitBlt 捕获 → 熄屏检测（`SM_MONITORISOFF` + 全黑帧采样）→ dHash 去重 → 缩放到 max_width → JPEG 编码 → Vision API（Anthropic Messages）分析 → 结果通过 bubble 显示并保存到 `~/.ai-pad/screenshots/`。支持多显示器水平拼接 + 调试多分辨率对比。配置在 `config/prompts.yml` 的 `screen_summary` 段。
@@ -253,8 +261,11 @@ app 层通过 `SharedPetEventBus` 统一发送 `pet-event`，集中处理去重�
 - `core/src/screenshot.rs` — 截图类型定义、dHash 感知哈希、resize/JPEG 编码、截图存储 + 清理
 - `core/src/vision.rs` — Vision API 请求构建/响应解析（Anthropic Messages 图片分析）
 - `core/src/memory.rs` — 短期/长期记忆、grep-first 检索、结构化 memory candidates 持久化与 review/delete
+- `core/src/reminder.rs` — 程序化提醒 store、原子写入、生命周期操作与 JSONL 事件日志
 - `core/src/prompts.rs` — 统一提示词配置加载（agent/vision/memory），prompts.yml 解析
 - `core/src/user_profile.rs` — 用户画像配置（name/role/preferences），user.yml 解析，优先于自动聚合画像
+- `app/src/reminder_scheduler.rs` — 到期提醒轮询调度，触发统一通知窗口
+- `app/src/notification_window.rs` — Agent Watch 与提醒共用的灵动岛式通知窗口和提醒动作回写
 - `app/src/voice.rs` — 语音输入窗口 + generation 防残留
 - `app/src/bubble.rs` — 独立气泡窗口 + 流式 chunk 协议
 - `app/src/pet_event_bus.rs` — 统一 pet-event 发送入口、事件去重/节流、最近事件诊断日志

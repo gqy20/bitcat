@@ -599,7 +599,7 @@ fn emit_nudge(app: &AppHandle, nudge: &AgentNudge, session: &AgentSession) {
             ttl_ms: Some(nudge.ttl_ms),
         },
     );
-    if nudge_uses_notification(nudge.kind) {
+    if nudge_uses_notification(nudge.kind, session) {
         let notification = agent_notification_payload(nudge, session, &toast);
         if let Err(e) = crate::notification_window::show_notification(app, notification) {
             warn!(error = %e, "agent notification failed");
@@ -614,11 +614,21 @@ fn emit_nudge(app: &AppHandle, nudge: &AgentNudge, session: &AgentSession) {
     }
 }
 
-fn nudge_uses_notification(kind: AgentNudgeKind) -> bool {
-    matches!(
-        kind,
-        AgentNudgeKind::WaitingForUser | AgentNudgeKind::TaskDone | AgentNudgeKind::TaskError
-    )
+fn nudge_uses_notification(kind: AgentNudgeKind, session: &AgentSession) -> bool {
+    match kind {
+        AgentNudgeKind::WaitingForUser | AgentNudgeKind::TaskDone => true,
+        AgentNudgeKind::TaskError => !is_tool_level_error(session),
+        AgentNudgeKind::AwayWhileWorking => false,
+    }
+}
+
+fn is_tool_level_error(session: &AgentSession) -> bool {
+    session.status == ai_pad_core::agent_session::AgentStatus::Error
+        && session
+            .tool_name
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|tool| !tool.is_empty())
 }
 
 fn agent_notification_payload(
@@ -1098,10 +1108,16 @@ mod tests {
         let toast = agent_toast_payload(&nudge, &session);
         let notification = agent_notification_payload(&nudge, &session, &toast);
 
-        assert!(nudge_uses_notification(AgentNudgeKind::WaitingForUser));
-        assert!(nudge_uses_notification(AgentNudgeKind::TaskDone));
-        assert!(nudge_uses_notification(AgentNudgeKind::TaskError));
-        assert!(!nudge_uses_notification(AgentNudgeKind::AwayWhileWorking));
+        assert!(nudge_uses_notification(
+            AgentNudgeKind::WaitingForUser,
+            &session
+        ));
+        assert!(nudge_uses_notification(AgentNudgeKind::TaskDone, &session));
+        assert!(nudge_uses_notification(AgentNudgeKind::TaskError, &session));
+        assert!(!nudge_uses_notification(
+            AgentNudgeKind::AwayWhileWorking,
+            &session
+        ));
         assert_eq!(notification.source, "agent_watch");
         assert_eq!(notification.tone, "warning");
         assert_eq!(notification.title, "8bit · Codex · Patch 需要查看");
@@ -1147,6 +1163,39 @@ mod tests {
 
         assert_eq!(notification.title, "pg_gpu · Codex · 已完成");
         assert!(notification.body.is_none());
+    }
+
+    #[test]
+    fn agent_tool_error_does_not_show_top_notification() {
+        let mut session = AgentSession {
+            session_id: "tool-error".into(),
+            source: AgentSource::ClaudeCode,
+            workspace: "D:\\C\\Desktop\\ai\\pg_gpu".into(),
+            parent_session_id: None,
+            status: AgentStatus::Error,
+            tool_name: Some("Read".into()),
+            tool_input_preview: Some("missing.txt".into()),
+            user_prompt_preview: None,
+            last_response_preview: None,
+            background: false,
+            agent_id: None,
+            agent_type: None,
+            task_id: None,
+            output_file: None,
+            pid: None,
+            machine: None,
+            updated_at_ms: 10,
+            status_changed_at_ms: 10,
+            needs_user: true,
+        };
+
+        assert!(!nudge_uses_notification(
+            AgentNudgeKind::TaskError,
+            &session
+        ));
+
+        session.tool_name = None;
+        assert!(nudge_uses_notification(AgentNudgeKind::TaskError, &session));
     }
 
     #[test]
