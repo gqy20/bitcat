@@ -119,4 +119,18 @@ describe('notification island', () => {
     expect(dom.window.document.getElementById('notificationTitle').textContent).toBe('Second');
     expect(dom.window.document.getElementById('notification').classList.contains('hidden')).toBe(false);
   });
+
+  it('deduplicates the same notification id from event and eval delivery', () => {
+    dom.window.__notificationShow({ id: 'agent-watch-s1-42', title: 'Done', tone: 'success', ttl_ms: 12000 });
+    dom.window.__notificationShow({ id: 'agent-watch-s1-42', title: 'Done', tone: 'success', ttl_ms: 12000 });
+
+    expect(dom.window.document.getElementById('notificationTitle').textContent).toBe('Done');
+
+    dom.window.document.getElementById('notification').click();
+    dom.window.__lastTimeout();
+    dom.window.__lastTimeout();
+
+    expect(dom.window.document.getElementById('notification').classList.contains('hidden')).toBe(true);
+    expect(dom.window.document.getElementById('notificationTitle').textContent).toBe('Done');
+  });
 });

@@ -221,6 +221,10 @@ body {
   min-height: 18px;
 }
 
+.task-meta:empty {
+  display: none;
+}
+
 .task-dot {
   width: 7px;
   height: 7px;

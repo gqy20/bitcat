@@ -38,7 +38,20 @@
     scheduleHide(current.ttl_ms);
   }
 
+  function notificationId(payload) {
+    const id = payload && payload.id;
+    return id == null ? "" : String(id);
+  }
+
+  function isDuplicateNotification(payload) {
+    const id = notificationId(payload);
+    if (!id) return false;
+    if (notificationId(current) === id) return true;
+    return queue.some((item) => notificationId(item) === id);
+  }
+
   function show(payload) {
+    if (isDuplicateNotification(payload)) return;
     if (current && !root.classList.contains("hidden")) {
       queue.push(payload || {});
       return;

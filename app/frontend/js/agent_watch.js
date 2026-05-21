@@ -32,10 +32,32 @@
   async function resizeWatch() {
     if (!invoke) return;
     try {
-      await invoke("cmd_agent_watch_set_folded", { folded });
+      if (folded) {
+        await invoke("cmd_agent_watch_set_folded", { folded: true });
+        return;
+      }
+      const height = measuredWatchHeight();
+      await invoke("cmd_agent_watch_resize", { height });
     } catch (e) {
       log("resize failed", e);
     }
+  }
+
+  function cssPixels(styles, name) {
+    const value = Number.parseFloat(styles.getPropertyValue(name));
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  function measuredWatchHeight() {
+    const shellStyles = window.getComputedStyle(shell);
+    const stackStyles = window.getComputedStyle(stack);
+    const shellPadding =
+      cssPixels(shellStyles, "padding-top") + cssPixels(shellStyles, "padding-bottom");
+    const stackVisible = stackStyles.display !== "none";
+    const stackHeight = stackVisible
+      ? cssPixels(stackStyles, "margin-top") + stack.scrollHeight
+      : 0;
+    return Math.ceil(shellPadding + watchHeader.offsetHeight + stackHeight);
   }
 
   function setFolded(next, syncWindow = true) {
@@ -110,6 +132,7 @@
   }
 
   function lineParts(view, session, expandedRow = false) {
+    if (expandedRow) return [];
     const parts = [];
     if (!isNoisyActionLabel(view.kind, session)) {
       parts.push({ value: view.kind, className: "task-kind" });
@@ -226,6 +249,9 @@
       const expandedClass = isExpanded ? "expanded" : "";
       const detail = detailText(view, session);
       const items = lineParts(view, session, isExpanded);
+      const meta = items.length
+        ? `<div class="task-meta">${items.map(renderMetaItem).join("")}</div>`
+        : "";
       const style = view.machine ? ` style="--device-hue: ${deviceHue(view.machine)}"` : "";
       return `
         <article class="task-card ${escapeAttr(status)} tone-${escapeAttr(view.tone)} ${view.quiet ? "quiet" : ""} ${expandedClass}"${style} data-id="${escapeAttr(id)}" data-status="${escapeAttr(status)}" tabindex="0" role="button" aria-expanded="${isExpanded ? "true" : "false"}" aria-label="${escapeAttr(detail || view.title)}">
@@ -233,7 +259,7 @@
             <div class="task-topline">
               ${renderTopline(view)}
             </div>
-            <div class="task-meta">${items.map(renderMetaItem).join("")}</div>
+            ${meta}
             ${isExpanded && detail ? `<p class="task-detail">${escapeHtml(detail)}</p>` : ""}
           </div>
           <button class="task-dismiss" type="button" data-action="dismiss" title="隐藏这条任务" aria-label="隐藏这条任务">×</button>

@@ -28,26 +28,26 @@ body {
 body {
   display: grid;
   place-items: start center;
-  padding: 8px;
+  padding: 5px;
   user-select: none;
 }
 
 .notification {
-  width: min(344px, calc(100vw - 16px));
-  min-height: 64px;
+  width: min(229px, calc(100vw - 10px));
+  min-height: 43px;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  padding: 12px 18px;
+  padding: 8px 12px;
   border: 2px solid var(--line);
-  border-radius: 32px;
+  border-radius: 21px;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03)),
     var(--surface);
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.04),
-    0 0 18px var(--tone-glow, rgba(255, 255, 255, 0.08)),
-    0 6px 16px rgba(0, 0, 0, 0.18),
+    0 0 12px var(--tone-glow, rgba(255, 255, 255, 0.08)),
+    0 4px 11px rgba(0, 0, 0, 0.18),
     0 1px 4px rgba(0, 0, 0, 0.14),
     inset 0 1px 0 rgba(255, 255, 255, 0.12);
   backdrop-filter: blur(22px) saturate(1.22);
@@ -68,7 +68,7 @@ body {
 
 .notification.expanded {
   align-items: start;
-  border-radius: 22px;
+  border-radius: 15px;
 }
 
 .notification.tone-info {
@@ -95,8 +95,8 @@ body {
   min-width: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  column-gap: 12px;
-  row-gap: 9px;
+  column-gap: 8px;
+  row-gap: 6px;
   align-items: center;
 }
 
@@ -104,7 +104,7 @@ body {
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 760;
   line-height: 1.2;
   text-overflow: ellipsis;
@@ -124,7 +124,7 @@ body {
   display: none;
   grid-column: 1 / -1;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 560;
   line-height: 1.36;
   overflow-wrap: anywhere;
@@ -136,7 +136,7 @@ body {
 
 .notification-actions {
   display: none;
-  gap: 8px;
+  gap: 5px;
   grid-column: 2;
   grid-row: 1;
   justify-content: end;
@@ -148,14 +148,14 @@ body {
 }
 
 .notification-action {
-  height: 24px;
-  padding: 0 9px;
+  height: 20px;
+  padding: 0 6px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 999px;
   color: rgba(255, 255, 255, 0.82);
   background: rgba(255, 255, 255, 0.055);
   font: inherit;
-  font-size: 11.5px;
+  font-size: 10.5px;
   font-weight: 600;
   line-height: 1;
 }

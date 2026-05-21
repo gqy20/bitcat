@@ -134,6 +134,7 @@ pub fn run() {
             agent_watch_window::cmd_agent_watch_hide,
             agent_watch_window::cmd_agent_watch_mark_user_placed,
             agent_watch_window::cmd_agent_watch_refresh,
+            agent_watch_window::cmd_agent_watch_resize,
             agent_watch_window::cmd_agent_watch_set_folded,
             agent_watch_window::cmd_agent_watch_port,
             agent_watch_window::cmd_agent_watch_log,

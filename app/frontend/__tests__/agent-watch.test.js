@@ -116,7 +116,7 @@ describe('agent watch metadata', () => {
     expect(expandedCard.classList.contains('expanded')).toBe(true);
     expect(expandedCard.getAttribute('aria-expanded')).toBe('true');
     expect(expandedCard.querySelector('.task-detail')?.textContent).toContain('将执行 cargo test');
-    expect(expandedCard.querySelector('.task-meta')?.textContent).not.toContain('将执行 cargo test');
+    expect(expandedCard.querySelector('.task-meta')).toBeNull();
     expect(expandedCard.querySelector('[data-action="open"]')).toBeNull();
     expect(expandedCard.querySelector('.task-expanded-actions')).toBeNull();
   });
@@ -219,6 +219,7 @@ describe('agent watch metadata', () => {
     expect(sheet).toContain('overflow-y: auto;');
     expect(sheet).toContain('.watch-shell.folded .task-stack');
     expect(sheet).toContain('.task-card:hover .task-dismiss');
+    expect(sheet).toContain('.task-meta:empty');
     expect(sheet).not.toContain('.task-expanded-actions');
     expect(sheet).not.toContain('.task-open');
     expect(sheet).not.toContain('.task-toggle');

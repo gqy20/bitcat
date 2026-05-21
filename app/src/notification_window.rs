@@ -14,8 +14,8 @@ use tauri::{
 use tracing::{debug, warn};
 
 const WINDOW_LABEL: &str = "notification";
-const WINDOW_W: f64 = 360.0;
-const WINDOW_H: f64 = 112.0;
+const WINDOW_W: f64 = 240.0;
+const WINDOW_H: f64 = 75.0;
 
 /// Button shown on a transient notification.
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -15,6 +15,7 @@ const WINDOW_LABEL: &str = "agent-watch";
 const WINDOW_W: f64 = 254.0;
 const WINDOW_H: f64 = 300.0;
 const FOLDED_WINDOW_H: f64 = 60.0;
+const MIN_UNFOLDED_WINDOW_H: f64 = 60.0;
 const EDGE_MARGIN: i32 = 12;
 static USER_PLACED: AtomicBool = AtomicBool::new(false);
 
@@ -199,6 +200,24 @@ pub async fn cmd_agent_watch_set_folded(app: AppHandle, folded: bool) -> Result<
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
         let scale = window.scale_factor().unwrap_or(1.0).max(0.5);
         let h = if folded { FOLDED_WINDOW_H } else { WINDOW_H };
+        set_size_preserving_anchor(
+            &window,
+            PhysicalSize::new(
+                (WINDOW_W * scale).round() as u32,
+                (h * scale).round() as u32,
+            ),
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// 按前端测量到的内容高度调整展开态 Agent Watch 窗口。
+#[tauri::command]
+pub async fn cmd_agent_watch_resize(app: AppHandle, height: f64) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+        let scale = window.scale_factor().unwrap_or(1.0).max(0.5);
+        let h = height.clamp(MIN_UNFOLDED_WINDOW_H, WINDOW_H);
         set_size_preserving_anchor(
             &window,
             PhysicalSize::new(
