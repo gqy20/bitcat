@@ -37,6 +37,7 @@
         <button class="nav-item" data-tab="actions" type="button"><span class="icon icon-actions"></span><span>按键与操作</span></button>
         <button class="nav-item" data-tab="appearance" type="button"><span class="icon icon-appearance"></span><span>外观与行为</span></button>
         <button class="nav-item" data-tab="agent-watch" type="button"><span class="icon icon-usage"></span><span>Agent 看管</span></button>
+        <button class="nav-item" data-tab="reminders" type="button"><span class="icon icon-usage"></span><span>提醒</span></button>
         <button class="nav-item" data-tab="prompts" type="button"><span class="icon icon-prompts"></span><span>提示词</span></button>
         <button class="nav-item" data-tab="usage" type="button"><span class="icon icon-usage"></span><span>用量与诊断</span></button>
         <button class="nav-item" data-tab="about" type="button"><span class="icon icon-about"></span><span>关于</span></button>
@@ -397,6 +398,25 @@
             </div>
             <div id="aw-diag" class="agent-watch-diag"></div>
             <div id="aw-sessions" class="agent-sessions"></div>
+          </div>
+        </section>
+
+        <section class="tab hidden" data-pane="reminders">
+          <div class="pane-head">
+            <div>
+              <h1>提醒</h1>
+              <p class="hint">管理 Agent 创建的程序化提醒；触发、完成、稍后和取消都会写入本地事件日志。</p>
+            </div>
+            <button id="reminder-refresh" class="btn small" type="button">刷新提醒</button>
+          </div>
+          <div class="section-panel">
+            <div class="section-head">
+              <div>
+                <h3>提醒任务</h3>
+                <span id="reminder-status">等待读取</span>
+              </div>
+            </div>
+            <div id="reminder-review" class="reminder-review"></div>
           </div>
         </section>
 

@@ -9,7 +9,8 @@ use chrono::{
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use tracing::info;
 
@@ -25,6 +26,16 @@ pub enum ReminderStatus {
     Active,
     Done,
     Cancelled,
+}
+
+impl ReminderStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Done => "done",
+            Self::Cancelled => "cancelled",
+        }
+    }
 }
 
 /// Supported deterministic schedule forms for reminders.
@@ -53,6 +64,19 @@ pub struct ReminderRecord {
     pub last_fired_at: Option<String>,
     #[serde(default)]
     pub fire_count: u32,
+}
+
+/// Reminder lifecycle event written to `~/.ai-pad/logs/reminder_events.jsonl`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReminderEventRecord {
+    pub at: String,
+    pub event: String,
+    pub reminder_id: String,
+    pub title: String,
+    pub status: ReminderStatus,
+    pub next_fire_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 /// Schedule kind accepted by the agent-facing create_reminder tool.
@@ -109,6 +133,11 @@ pub fn reminder_store_path() -> Result<PathBuf, String> {
     Ok(dir.join("reminders.json"))
 }
 
+/// Return the reminder event audit log path.
+pub fn reminder_events_path() -> Result<PathBuf, String> {
+    Ok(crate::logging::log_dir()?.join("reminder_events.jsonl"))
+}
+
 /// Load all reminders from the default store.
 pub fn load_reminders() -> Result<Vec<ReminderRecord>, String> {
     load_reminders_from_path(&reminder_store_path()?)
@@ -154,6 +183,7 @@ pub fn snooze_reminder(id: &str, minutes: u32) -> Result<ReminderRecord, String>
     reminder.updated_at = to_rfc3339(now);
     let updated = reminder.clone();
     save_reminders_to_path(&path, &reminders)?;
+    record_reminder_event("snoozed", &updated, Some(format!("{}m", minutes.max(1))));
     Ok(updated)
 }
 
@@ -178,6 +208,7 @@ fn complete_reminder_in_path(path: &Path, id: &str) -> Result<ReminderRecord, St
     reminder.updated_at = to_rfc3339(now);
     let updated = reminder.clone();
     save_reminders_to_path(&path, &reminders)?;
+    record_reminder_event("completed", &updated, None);
     Ok(updated)
 }
 
@@ -237,6 +268,7 @@ fn create_reminder_in_path(
     };
     reminders.push(reminder.clone());
     save_reminders_to_path(path, &reminders)?;
+    record_reminder_event("created", &reminder, None);
     info!(id = %reminder.id, title = %reminder.title, next_fire_at = %reminder.next_fire_at, "reminder created");
     Ok(reminder)
 }
@@ -251,6 +283,7 @@ fn cancel_reminder_in_path(path: &Path, id: &str) -> Result<ReminderRecord, Stri
     reminder.updated_at = to_rfc3339(now);
     let updated = reminder.clone();
     save_reminders_to_path(path, &reminders)?;
+    record_reminder_event("cancelled", &updated, None);
     Ok(updated)
 }
 
@@ -289,6 +322,9 @@ fn fire_due_reminders_in_path(
     }
     if !fired.is_empty() {
         save_reminders_to_path(path, &reminders)?;
+        for reminder in &fired {
+            record_reminder_event("fired", reminder, None);
+        }
     }
     Ok(fired)
 }
@@ -412,6 +448,50 @@ fn to_rfc3339(dt: DateTime<Local>) -> String {
     dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
+fn record_reminder_event(event: &str, reminder: &ReminderRecord, detail: Option<String>) {
+    if cfg!(test) {
+        return;
+    }
+    let path = match reminder_events_path() {
+        Ok(path) => path,
+        Err(e) => {
+            tracing::warn!(error = %e, "reminder event path unavailable");
+            return;
+        }
+    };
+    if let Err(e) = append_reminder_event(&path, event, reminder, detail) {
+        tracing::warn!(error = %e, path = ?path, "reminder event write failed");
+    }
+}
+
+fn append_reminder_event(
+    path: &Path,
+    event: &str,
+    reminder: &ReminderRecord,
+    detail: Option<String>,
+) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("create reminder log dir failed: {e}"))?;
+    }
+    let record = ReminderEventRecord {
+        at: Local::now().to_rfc3339(),
+        event: event.to_string(),
+        reminder_id: reminder.id.clone(),
+        title: reminder.title.clone(),
+        status: reminder.status,
+        next_fire_at: reminder.next_fire_at.clone(),
+        detail,
+    };
+    let line = serde_json::to_string(&record)
+        .map_err(|e| format!("serialize reminder event failed: {e}"))?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|e| format!("open reminder event log failed: {e}"))?;
+    writeln!(file, "{line}").map_err(|e| format!("write reminder event log failed: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -515,5 +595,30 @@ mod tests {
 
         let completed = complete_reminder_in_path(&path, &reminder.id).unwrap();
         assert_eq!(completed.status, ReminderStatus::Active);
+    }
+
+    #[test]
+    fn append_reminder_event_writes_jsonl() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("reminder_events.jsonl");
+        let reminder = ReminderRecord {
+            id: "rem_test".into(),
+            title: "Drink water".into(),
+            message: None,
+            schedule: ReminderSchedule::Interval { every_minutes: 60 },
+            next_fire_at: "2026-05-21T11:00:00+08:00".into(),
+            status: ReminderStatus::Active,
+            source: "agent".into(),
+            created_at: "2026-05-21T10:00:00+08:00".into(),
+            updated_at: "2026-05-21T10:00:00+08:00".into(),
+            last_fired_at: None,
+            fire_count: 0,
+        };
+
+        append_reminder_event(&path, "created", &reminder, None).unwrap();
+        let content = fs::read_to_string(&path).unwrap();
+        let record: ReminderEventRecord = serde_json::from_str(content.trim()).unwrap();
+        assert_eq!(record.event, "created");
+        assert_eq!(record.reminder_id, "rem_test");
     }
 }

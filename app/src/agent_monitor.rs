@@ -599,12 +599,61 @@ fn emit_nudge(app: &AppHandle, nudge: &AgentNudge, session: &AgentSession) {
             ttl_ms: Some(nudge.ttl_ms),
         },
     );
-    if let Err(e) = crate::bubble::show_agent_toast(app, toast) {
+    if nudge_uses_notification(nudge.kind) {
+        let notification = agent_notification_payload(nudge, session, &toast);
+        if let Err(e) = crate::notification_window::show_notification(app, notification) {
+            warn!(error = %e, "agent notification failed");
+            if let Err(fallback) = crate::bubble::show_agent_toast(app, toast) {
+                warn!(error = %fallback, "agent toast fallback failed");
+            }
+        }
+    } else if let Err(e) = crate::bubble::show_agent_toast(app, toast) {
         warn!(error = %e, "agent toast failed");
     }
     if nudge.use_tts {
         let message = agent_toast_payload(nudge, session).title;
         std::thread::spawn(move || crate::tts::speak(&message));
+    }
+}
+
+fn nudge_uses_notification(kind: AgentNudgeKind) -> bool {
+    matches!(
+        kind,
+        AgentNudgeKind::WaitingForUser | AgentNudgeKind::TaskDone | AgentNudgeKind::TaskError
+    )
+}
+
+fn agent_notification_payload(
+    nudge: &AgentNudge,
+    session: &AgentSession,
+    toast: &crate::bubble::AgentToastPayload,
+) -> crate::notification_window::NotificationPayload {
+    let body = [toast.context.trim(), toast.detail.trim()]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ");
+    crate::notification_window::NotificationPayload {
+        id: format!(
+            "agent-watch-{}-{}",
+            session.session_id, session.status_changed_at_ms
+        ),
+        title: toast.title.clone(),
+        body: if body.is_empty() { None } else { Some(body) },
+        tone: agent_notification_tone(nudge.kind).to_string(),
+        source: "agent_watch".to_string(),
+        reminder_id: None,
+        ttl_ms: nudge.ttl_ms,
+        actions: Vec::new(),
+    }
+}
+
+fn agent_notification_tone(kind: AgentNudgeKind) -> &'static str {
+    match kind {
+        AgentNudgeKind::WaitingForUser => "warning",
+        AgentNudgeKind::TaskDone => "success",
+        AgentNudgeKind::TaskError => "danger",
+        AgentNudgeKind::AwayWhileWorking => "info",
     }
 }
 
@@ -970,6 +1019,52 @@ mod tests {
         assert!(!toast.title.contains("/mnt/"));
         assert!(!toast.detail.contains("Monitor event"));
         assert!(!toast.detail.contains("br91auk2l"));
+    }
+
+    #[test]
+    fn agent_notification_uses_high_priority_nudge_copy() {
+        let session = AgentSession {
+            session_id: "wait".into(),
+            source: AgentSource::Codex,
+            workspace: "D:\\C\\Desktop\\ai\\8bit".into(),
+            parent_session_id: None,
+            status: AgentStatus::Waiting,
+            tool_name: Some("Patch".into()),
+            tool_input_preview: Some("raw patch content".into()),
+            user_prompt_preview: None,
+            last_response_preview: None,
+            background: false,
+            agent_id: None,
+            agent_type: None,
+            task_id: None,
+            output_file: None,
+            pid: None,
+            machine: Some("qy113".into()),
+            updated_at_ms: 10,
+            status_changed_at_ms: 10,
+            needs_user: true,
+        };
+        let nudge = AgentNudge {
+            session_id: "wait".into(),
+            kind: AgentNudgeKind::WaitingForUser,
+            message: "legacy message".into(),
+            mood: ai_pad_core::pet_event::PetMood::Confused,
+            ttl_ms: 12_000,
+            use_tts: false,
+        };
+        let toast = agent_toast_payload(&nudge, &session);
+        let notification = agent_notification_payload(&nudge, &session, &toast);
+
+        assert!(nudge_uses_notification(AgentNudgeKind::WaitingForUser));
+        assert!(nudge_uses_notification(AgentNudgeKind::TaskDone));
+        assert!(nudge_uses_notification(AgentNudgeKind::TaskError));
+        assert!(!nudge_uses_notification(AgentNudgeKind::AwayWhileWorking));
+        assert_eq!(notification.source, "agent_watch");
+        assert_eq!(notification.tone, "warning");
+        assert_eq!(notification.title, "8bit 正在等你");
+        assert!(notification.body.unwrap().contains("8bit"));
+        assert!(notification.actions.is_empty());
+        assert!(notification.reminder_id.is_none());
     }
 
     #[test]

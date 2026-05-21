@@ -16,6 +16,7 @@ use ai_pad_core::action::{ActionConfig, ActionDef, Defaults};
 use ai_pad_core::app_settings::{AgentWatchSettings, AiOverride, AppSettings, AppearanceSettings};
 use ai_pad_core::memory::{LongTermMemory, LongTermReviewEntry};
 use ai_pad_core::prompts::PromptsConfig;
+use ai_pad_core::reminder::{ListRemindersArgs, ReminderRecord, ReminderSchedule};
 use ai_pad_core::token_tracker::{
     load_sessions, read_usage_records, token_sessions_path, token_usage_path, TokenRecord,
     TokenSession, TokenTotals,
@@ -161,6 +162,28 @@ pub struct MemoryReviewView {
     pub total_entries: usize,
     pub entries: Vec<LongTermReviewEntry>,
     pub markdown: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReminderReviewView {
+    pub generated_at: String,
+    pub total_entries: usize,
+    pub active_count: usize,
+    pub events_path: String,
+    pub entries: Vec<ReminderView>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReminderView {
+    pub id: String,
+    pub title: String,
+    pub message: Option<String>,
+    pub status: String,
+    pub schedule_label: String,
+    pub next_fire_at: String,
+    pub last_fired_at: Option<String>,
+    pub fire_count: u32,
+    pub source: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -492,6 +515,37 @@ pub async fn cmd_get_memory_review(limit: Option<usize>) -> Result<MemoryReviewV
 }
 
 #[tauri::command]
+pub async fn cmd_get_reminders(
+    include_inactive: Option<bool>,
+) -> Result<ReminderReviewView, String> {
+    let reminders = ai_pad_core::reminder::list_reminders(&ListRemindersArgs {
+        include_inactive: include_inactive.unwrap_or(true),
+    })?;
+    Ok(reminder_review_view(reminders))
+}
+
+#[tauri::command]
+pub async fn cmd_cancel_reminder(id: String) -> Result<ReminderReviewView, String> {
+    ai_pad_core::reminder::cancel_reminder(&id)?;
+    cmd_get_reminders(Some(true)).await
+}
+
+#[tauri::command]
+pub async fn cmd_complete_reminder(id: String) -> Result<ReminderReviewView, String> {
+    ai_pad_core::reminder::complete_reminder(&id)?;
+    cmd_get_reminders(Some(true)).await
+}
+
+#[tauri::command]
+pub async fn cmd_snooze_reminder(
+    id: String,
+    minutes: Option<u32>,
+) -> Result<ReminderReviewView, String> {
+    ai_pad_core::reminder::snooze_reminder(&id, minutes.unwrap_or(10))?;
+    cmd_get_reminders(Some(true)).await
+}
+
+#[tauri::command]
 pub async fn cmd_get_resource_usage() -> Result<ResourceUsageView, String> {
     resource_usage_snapshot()
 }
@@ -519,6 +573,52 @@ fn memory_review_view(store: &LongTermMemory, limit: usize) -> MemoryReviewView 
         total_entries: store.entries.iter().filter(|entry| !entry.deleted).count(),
         entries: store.review_entries(limit),
         markdown: store.review_markdown(limit),
+    }
+}
+
+fn reminder_review_view(reminders: Vec<ReminderRecord>) -> ReminderReviewView {
+    let total_entries = reminders.len();
+    let active_count = reminders
+        .iter()
+        .filter(|r| r.status == ai_pad_core::reminder::ReminderStatus::Active)
+        .count();
+    let events_path = ai_pad_core::reminder::reminder_events_path()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|e| format!("<unavailable: {e}>"));
+    ReminderReviewView {
+        generated_at: chrono::Local::now().to_rfc3339(),
+        total_entries,
+        active_count,
+        events_path,
+        entries: reminders.into_iter().map(reminder_view).collect(),
+    }
+}
+
+fn reminder_view(reminder: ReminderRecord) -> ReminderView {
+    ReminderView {
+        id: reminder.id,
+        title: reminder.title,
+        message: reminder.message,
+        status: reminder.status.as_str().to_string(),
+        schedule_label: schedule_label(&reminder.schedule),
+        next_fire_at: reminder.next_fire_at,
+        last_fired_at: reminder.last_fired_at,
+        fire_count: reminder.fire_count,
+        source: reminder.source,
+    }
+}
+
+fn schedule_label(schedule: &ReminderSchedule) -> String {
+    match schedule {
+        ReminderSchedule::Once { at } => format!("一次 · {at}"),
+        ReminderSchedule::Interval { every_minutes } => {
+            if *every_minutes % 60 == 0 {
+                format!("每 {} 小时", every_minutes / 60)
+            } else {
+                format!("每 {every_minutes} 分钟")
+            }
+        }
+        ReminderSchedule::Daily { time } => format!("每天 · {time}"),
     }
 }
 

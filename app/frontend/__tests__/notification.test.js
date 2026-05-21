@@ -76,4 +76,48 @@ describe('notification island', () => {
     });
     expect(dom.window.document.getElementById('notification').classList.contains('hidden')).toBe(true);
   });
+
+  it('dismisses quickly when the notification body is clicked', () => {
+    dom.window.__notificationShow({
+      title: 'Agent completed',
+      tone: 'success',
+      ttl_ms: 12000,
+    });
+
+    dom.window.document.getElementById('notification').click();
+    dom.window.__lastTimeout();
+
+    expect(dom.window.document.getElementById('notification').classList.contains('hidden')).toBe(true);
+    expect(invoke).not.toHaveBeenCalledWith('cmd_notification_action', expect.anything());
+  });
+
+  it('double click expands and extends the notification instead of dismissing', () => {
+    dom.window.__notificationShow({
+      title: 'Agent completed',
+      body: '8bit · Codex',
+      tone: 'success',
+      ttl_ms: 12000,
+    });
+
+    const root = dom.window.document.getElementById('notification');
+    root.click();
+    root.dispatchEvent(new dom.window.MouseEvent('dblclick', { bubbles: true }));
+
+    expect(root.classList.contains('hidden')).toBe(false);
+    expect(root.classList.contains('expanded')).toBe(true);
+  });
+
+  it('queues notifications instead of replacing the visible one', () => {
+    dom.window.__notificationShow({ title: 'First', tone: 'warning', ttl_ms: 12000 });
+    dom.window.__notificationShow({ title: 'Second', tone: 'success', ttl_ms: 12000 });
+
+    expect(dom.window.document.getElementById('notificationTitle').textContent).toBe('First');
+
+    dom.window.document.getElementById('notification').click();
+    dom.window.__lastTimeout();
+    dom.window.__lastTimeout();
+
+    expect(dom.window.document.getElementById('notificationTitle').textContent).toBe('Second');
+    expect(dom.window.document.getElementById('notification').classList.contains('hidden')).toBe(false);
+  });
 });

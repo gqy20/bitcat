@@ -10,6 +10,8 @@
 
   let current = null;
   let hideTimer = null;
+  let clickTimer = null;
+  const queue = [];
 
   function escapeText(value) {
     return String(value ?? "");
@@ -25,7 +27,7 @@
     hideTimer = setTimeout(() => hide("timeout"), Math.max(1800, Number(ttlMs) || 6000));
   }
 
-  function show(payload) {
+  function showNow(payload) {
     current = payload || {};
     titleEl.textContent = escapeText(current.title || "提醒");
     bodyEl.textContent = escapeText(current.body || "");
@@ -34,6 +36,14 @@
     root.classList.toggle("expanded", Boolean(current.body) || (current.actions || []).length > 0);
     root.classList.remove("hidden");
     scheduleHide(current.ttl_ms);
+  }
+
+  function show(payload) {
+    if (current && !root.classList.contains("hidden")) {
+      queue.push(payload || {});
+      return;
+    }
+    showNow(payload);
   }
 
   function renderAction(action) {
@@ -47,15 +57,28 @@
 
   async function hide(reason) {
     clearTimeout(hideTimer);
+    clearTimeout(clickTimer);
     root.classList.add("hidden");
     root.classList.remove("expanded");
-    if (reason !== "local-only" && invoke) {
-      setTimeout(() => invoke("cmd_notification_hide").catch(() => {}), 180);
-    }
+    current = null;
+    setTimeout(() => {
+      if (queue.length) {
+        showNow(queue.shift());
+      } else if (reason !== "local-only" && invoke) {
+        invoke("cmd_notification_hide").catch(() => {});
+      }
+    }, 180);
   }
 
   root.addEventListener("click", () => {
     if (!current) return;
+    clearTimeout(clickTimer);
+    clickTimer = setTimeout(() => hide("dismiss"), 180);
+  });
+
+  root.addEventListener("dblclick", () => {
+    if (!current) return;
+    clearTimeout(clickTimer);
     root.classList.add("expanded");
     scheduleHide(Math.max(current.ttl_ms || 6000, 8000));
   });

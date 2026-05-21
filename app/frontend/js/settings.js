@@ -195,6 +195,7 @@ function switchTab(name) {
   });
   if (name === "usage") loadUsageDiagnostics();
   if (name === "memory") loadMemoryReview();
+  if (name === "reminders") loadReminders();
   if (name === "agent-watch") startAgentWatchRefresh();
   else stopAgentWatchRefresh();
 }
@@ -805,6 +806,19 @@ async function loadMemoryReview() {
   }
 }
 
+async function loadReminders() {
+  const status = $("reminder-status");
+  if (status) status.textContent = "读取中...";
+  try {
+    const review = await invoke("cmd_get_reminders", { includeInactive: true });
+    renderReminders(review);
+  } catch (e) {
+    log("加载提醒失败: " + e);
+    renderReminders(null);
+    if (status) status.textContent = "读取失败";
+  }
+}
+
 async function loadAgentSessions() {
   const status = $("aw-status");
   if (status) status.textContent = "读取中...";
@@ -1150,6 +1164,83 @@ function renderMemoryReview(review) {
   });
 }
 
+function renderReminders(review) {
+  const box = $("reminder-review");
+  const status = $("reminder-status");
+  if (!box) return;
+  const entries = review?.entries || [];
+  if (status) {
+    status.textContent = review
+      ? `${formatNumber(review.active_count || 0)} active / ${formatNumber(review.total_entries || 0)} total`
+      : "不可用";
+  }
+  if (!entries.length) {
+    box.innerHTML = `<div class="empty">暂无提醒。你可以让 Agent 创建，例如“每小时提醒我喝水”。</div>`;
+    return;
+  }
+  const eventsPath = review?.events_path
+    ? `<div class="reminder-log-path">日志 <code>${escapeHtml(review.events_path)}</code></div>`
+    : "";
+  box.innerHTML = `
+    <div class="memory-meta">
+      <span>${formatNumber(review.active_count || 0)} 个活跃提醒</span>
+      <span>更新于 ${escapeHtml(formatDateTime(review.generated_at))}</span>
+    </div>
+    ${eventsPath}
+    ${entries.map(entry => `
+      <div class="reminder-entry ${escapeAttr(entry.status)}">
+        <div class="memory-entry-head">
+          <div>
+            <strong>${escapeHtml(entry.title || "提醒")}</strong>
+            <p>${escapeHtml(entry.message || entry.schedule_label || "")}</p>
+          </div>
+          <span class="reminder-status-pill">${escapeHtml(reminderStatusLabel(entry.status))}</span>
+        </div>
+        <div class="memory-entry-meta">
+          <span>${escapeHtml(entry.schedule_label || "")}</span>
+          <span>下次 ${escapeHtml(formatDateTime(entry.next_fire_at))}</span>
+          <span>触发 ${formatNumber(entry.fire_count || 0)} 次</span>
+          ${entry.last_fired_at ? `<span>上次 ${escapeHtml(formatDateTime(entry.last_fired_at))}</span>` : ""}
+        </div>
+        <div class="reminder-actions">
+          <button class="btn small reminder-complete" type="button" data-id="${escapeAttr(entry.id)}">完成</button>
+          <button class="btn small ghost reminder-snooze" type="button" data-id="${escapeAttr(entry.id)}">10 分钟后</button>
+          <button class="btn small danger reminder-cancel" type="button" data-id="${escapeAttr(entry.id)}">取消</button>
+        </div>
+      </div>
+    `).join("")}
+  `;
+  box.querySelectorAll(".reminder-complete").forEach(btn => {
+    btn.addEventListener("click", () => reminderAction("cmd_complete_reminder", btn.dataset.id));
+  });
+  box.querySelectorAll(".reminder-snooze").forEach(btn => {
+    btn.addEventListener("click", () => reminderAction("cmd_snooze_reminder", btn.dataset.id, { minutes: 10 }));
+  });
+  box.querySelectorAll(".reminder-cancel").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (confirm("确定取消这个提醒？")) reminderAction("cmd_cancel_reminder", btn.dataset.id);
+    });
+  });
+}
+
+async function reminderAction(command, id, extra = {}) {
+  if (!id) return;
+  try {
+    const review = await invoke(command, { id, ...extra });
+    renderReminders(review);
+    toast("提醒已更新", "ok");
+  } catch (e) {
+    toast("提醒操作失败：" + String(e), "err");
+  }
+}
+
+function reminderStatusLabel(status) {
+  if (status === "active") return "活跃";
+  if (status === "done") return "完成";
+  if (status === "cancelled") return "已取消";
+  return status || "未知";
+}
+
 async function saveAll() {
   try {
     if (dirty.ai) {
@@ -1197,7 +1288,7 @@ async function saveAll() {
 }
 
 async function resetCurrent() {
-  if (["overview", "about", "usage", "memory"].includes(currentTab)) return;
+  if (["overview", "about", "usage", "memory", "reminders"].includes(currentTab)) return;
   if (!confirm(`确定将「${tabLabel(currentTab)}」重置为默认？`)) return;
   try {
     await invoke("cmd_settings_reset", { category: currentTab });
@@ -1210,7 +1301,7 @@ async function resetCurrent() {
 }
 
 function tabLabel(t) {
-  return ({ ai: "AI 与对话", user: "记忆与画像", actions: "按键与操作", prompts: "提示词", appearance: "外观与行为", "agent-watch": "Agent 看管", agent_watch: "Agent 看管" })[t] || t;
+  return ({ ai: "AI 与对话", user: "记忆与画像", actions: "按键与操作", prompts: "提示词", appearance: "外观与行为", "agent-watch": "Agent 看管", agent_watch: "Agent 看管", reminders: "提醒" })[t] || t;
 }
 
 async function loadSnapshot() {
@@ -1225,6 +1316,7 @@ async function loadSnapshot() {
     renderAbout(SNAPSHOT.about);
     loadUsageDiagnostics();
     loadMemoryReview();
+    loadReminders();
     ["ai", "user", "actions", "prompts", "appearance", "agent_watch"].forEach(clearDirty);
   } catch (e) {
     log("加载失败: " + e);
@@ -1258,8 +1350,10 @@ function bindGlobal() {
   $("overview-refresh").addEventListener("click", () => {
     loadUsageDiagnostics();
     loadMemoryReview();
+    loadReminders();
   });
   $("memory-refresh").addEventListener("click", loadMemoryReview);
+  $("reminder-refresh").addEventListener("click", loadReminders);
   $("aw-install").addEventListener("click", async () => {
     try {
       const msg = await invoke("cmd_install_claude_code_hooks");
