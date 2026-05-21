@@ -71,6 +71,14 @@ pub struct AppearanceSettings {
     pub default_collapsed: bool,
     #[serde(default)]
     pub tts_enabled: bool,
+    #[serde(default = "default_true")]
+    pub notification_sound_enabled: bool,
+    #[serde(default = "default_true")]
+    pub notification_sound_reminder: bool,
+    #[serde(default = "default_true")]
+    pub notification_sound_agent_watch: bool,
+    #[serde(default = "default_true")]
+    pub notification_sound_skip_agent_tts: bool,
     #[serde(default = "default_shortcut")]
     pub global_shortcut: String,
     /// 截屏 Vision 分析间隔（秒），默认 30。
@@ -133,6 +141,10 @@ impl Default for AppearanceSettings {
             always_on_top: true,
             default_collapsed: false,
             tts_enabled: false,
+            notification_sound_enabled: true,
+            notification_sound_reminder: true,
+            notification_sound_agent_watch: true,
+            notification_sound_skip_agent_tts: true,
             global_shortcut: default_shortcut(),
             screenshot_interval_sec: default_screenshot_interval_sec(),
             screenshot_show_bubble: true,
@@ -217,6 +229,10 @@ mod tests {
         assert!(a.always_on_top);
         assert!(!a.default_collapsed);
         assert!(!a.tts_enabled);
+        assert!(a.notification_sound_enabled);
+        assert!(a.notification_sound_reminder);
+        assert!(a.notification_sound_agent_watch);
+        assert!(a.notification_sound_skip_agent_tts);
         assert_eq!(a.global_shortcut, "CommandOrControl+Alt+Space");
         assert_eq!(a.screenshot_interval_sec, 30);
     }
@@ -248,6 +264,10 @@ mod tests {
                 always_on_top: false,
                 default_collapsed: true,
                 tts_enabled: false,
+                notification_sound_enabled: true,
+                notification_sound_reminder: false,
+                notification_sound_agent_watch: true,
+                notification_sound_skip_agent_tts: false,
                 global_shortcut: "F12".into(),
                 screenshot_interval_sec: 45,
                 screenshot_show_bubble: false,
@@ -300,6 +320,10 @@ mod tests {
         let json = r#"{"appearance": {"tts_enabled": false}}"#;
         let s: AppSettings = serde_json::from_str(json).unwrap();
         assert!(!s.appearance.tts_enabled);
+        assert!(s.appearance.notification_sound_enabled);
+        assert!(s.appearance.notification_sound_reminder);
+        assert!(s.appearance.notification_sound_agent_watch);
+        assert!(s.appearance.notification_sound_skip_agent_tts);
         assert!(s.appearance.always_on_top); // 默认值
         assert_eq!(s.appearance.global_shortcut, "CommandOrControl+Alt+Space");
     }

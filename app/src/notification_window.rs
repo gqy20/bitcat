@@ -5,13 +5,17 @@
 //! small IPC actions; event producers pass structured payloads in.
 //! The frontend renders the payload and decides when to fade out.
 
-use ai_pad_core::reminder::ReminderRecord;
+use ai_pad_core::{app_settings::AppSettings, reminder::ReminderRecord};
 use serde::{Deserialize, Serialize};
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder,
 };
 use tracing::{debug, warn};
+use windows::{
+    core::PCWSTR,
+    Win32::Media::Audio::{PlaySoundW, SND_ALIAS, SND_ASYNC, SND_NODEFAULT},
+};
 
 const WINDOW_LABEL: &str = "notification";
 const WINDOW_W: f64 = 240.0;
@@ -112,8 +116,55 @@ pub fn show_notification(app: &AppHandle, payload: NotificationPayload) -> Resul
     let _ = window.eval(format!(
         "if(window.__notificationShow)window.__notificationShow({json});"
     ));
+    play_notification_sound(&payload);
     debug!(id = %payload.id, source = %payload.source, "notification shown");
     Ok(())
+}
+
+fn play_notification_sound(payload: &NotificationPayload) {
+    let settings = AppSettings::load();
+    if !should_play_notification_sound(payload, &settings) {
+        return;
+    }
+
+    let sound: Vec<u16> = system_sound_alias(&payload.tone)
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let ok = unsafe {
+        PlaySoundW(
+            PCWSTR(sound.as_ptr()),
+            None,
+            SND_ALIAS | SND_ASYNC | SND_NODEFAULT,
+        )
+    };
+    if !ok.as_bool() {
+        warn!(tone = %payload.tone, source = %payload.source, "notification sound failed");
+    }
+}
+
+fn should_play_notification_sound(payload: &NotificationPayload, settings: &AppSettings) -> bool {
+    let appearance = &settings.appearance;
+    if !appearance.notification_sound_enabled {
+        return false;
+    }
+    match payload.source.as_str() {
+        "reminder" => appearance.notification_sound_reminder,
+        "agent_watch" => {
+            appearance.notification_sound_agent_watch
+                && !(appearance.notification_sound_skip_agent_tts && settings.agent_watch.use_tts)
+        }
+        _ => true,
+    }
+}
+
+fn system_sound_alias(tone: &str) -> &'static str {
+    match tone {
+        "success" => "SystemAsterisk",
+        "warning" => "SystemExclamation",
+        "danger" => "SystemHand",
+        _ => "SystemDefault",
+    }
 }
 
 fn ensure_notification_window(app: &AppHandle) -> Result<WebviewWindow, tauri::Error> {
@@ -199,4 +250,68 @@ pub async fn cmd_notification_action(
         let _ = app.emit("reminders-updated", ());
     }
     cmd_notification_hide(app).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn payload(source: &str, tone: &str) -> NotificationPayload {
+        NotificationPayload {
+            id: "n-1".to_string(),
+            title: "Notice".to_string(),
+            body: None,
+            tone: tone.to_string(),
+            source: source.to_string(),
+            reminder_id: None,
+            ttl_ms: 12_000,
+            actions: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn notification_sound_respects_source_settings() {
+        let mut settings = AppSettings::default();
+        assert!(should_play_notification_sound(
+            &payload("reminder", "warning"),
+            &settings
+        ));
+
+        settings.appearance.notification_sound_reminder = false;
+        assert!(!should_play_notification_sound(
+            &payload("reminder", "warning"),
+            &settings
+        ));
+
+        settings.appearance.notification_sound_reminder = true;
+        settings.appearance.notification_sound_enabled = false;
+        assert!(!should_play_notification_sound(
+            &payload("reminder", "warning"),
+            &settings
+        ));
+    }
+
+    #[test]
+    fn agent_watch_sound_can_skip_when_tts_is_enabled() {
+        let mut settings = AppSettings::default();
+        settings.agent_watch.use_tts = true;
+        assert!(!should_play_notification_sound(
+            &payload("agent_watch", "success"),
+            &settings
+        ));
+
+        settings.appearance.notification_sound_skip_agent_tts = false;
+        assert!(should_play_notification_sound(
+            &payload("agent_watch", "success"),
+            &settings
+        ));
+    }
+
+    #[test]
+    fn maps_notification_tone_to_system_sound() {
+        assert_eq!(system_sound_alias("success"), "SystemAsterisk");
+        assert_eq!(system_sound_alias("warning"), "SystemExclamation");
+        assert_eq!(system_sound_alias("danger"), "SystemHand");
+        assert_eq!(system_sound_alias("info"), "SystemDefault");
+    }
 }

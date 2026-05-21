@@ -223,6 +223,14 @@ pub struct AppearanceInput {
     pub always_on_top: bool,
     pub default_collapsed: bool,
     pub tts_enabled: bool,
+    #[serde(default = "default_true")]
+    pub notification_sound_enabled: bool,
+    #[serde(default = "default_true")]
+    pub notification_sound_reminder: bool,
+    #[serde(default = "default_true")]
+    pub notification_sound_agent_watch: bool,
+    #[serde(default = "default_true")]
+    pub notification_sound_skip_agent_tts: bool,
     pub global_shortcut: String,
     #[serde(default = "default_screenshot_interval_sec")]
     pub screenshot_interval_sec: u64,
@@ -885,6 +893,10 @@ pub async fn cmd_settings_save_appearance(
         always_on_top: payload.always_on_top,
         default_collapsed: payload.default_collapsed,
         tts_enabled: payload.tts_enabled,
+        notification_sound_enabled: payload.notification_sound_enabled,
+        notification_sound_reminder: payload.notification_sound_reminder,
+        notification_sound_agent_watch: payload.notification_sound_agent_watch,
+        notification_sound_skip_agent_tts: payload.notification_sound_skip_agent_tts,
         global_shortcut: payload.global_shortcut,
         screenshot_interval_sec: interval,
         screenshot_show_bubble: payload.screenshot_show_bubble,

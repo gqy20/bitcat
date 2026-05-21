@@ -80,6 +80,10 @@ async function mockInvoke(command) {
         always_on_top: false,
         default_collapsed: false,
         tts_enabled: true,
+        notification_sound_enabled: true,
+        notification_sound_reminder: true,
+        notification_sound_agent_watch: true,
+        notification_sound_skip_agent_tts: true,
         global_shortcut: "CommandOrControl+Alt+Space",
         screenshot_interval_sec: 30,
         pet_asset_url: "",
@@ -491,6 +495,10 @@ function renderAppearance(a) {
   $("a-top").checked = a.always_on_top;
   $("a-collapsed").checked = a.default_collapsed;
   $("a-tts").checked = a.tts_enabled;
+  $("a-notify-sound").checked = a.notification_sound_enabled !== false;
+  $("a-notify-sound-reminder").checked = a.notification_sound_reminder !== false;
+  $("a-notify-sound-agent").checked = a.notification_sound_agent_watch !== false;
+  $("a-notify-sound-skip-tts").checked = a.notification_sound_skip_agent_tts !== false;
   $("a-shortcut").value = a.global_shortcut;
   $("a-ss-interval").value = a.screenshot_interval_sec ?? 30;
   $("a-ss-bubble").checked = a.screenshot_show_bubble !== false;
@@ -498,7 +506,7 @@ function renderAppearance(a) {
   renderPetAssetChoice(a.pet_asset_url || "");
   updateOverviewAppearance(a);
 
-  ["a-top","a-collapsed","a-tts","a-ss-bubble"].forEach(id => { $(id).onchange = () => markDirty("appearance"); });
+  ["a-top","a-collapsed","a-tts","a-notify-sound","a-notify-sound-reminder","a-notify-sound-agent","a-notify-sound-skip-tts","a-ss-bubble"].forEach(id => { $(id).onchange = () => markDirty("appearance"); });
   ["a-shortcut","a-ss-interval","a-pet-asset"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
 }
 
@@ -509,6 +517,10 @@ function collectAppearance() {
     always_on_top: $("a-top").checked,
     default_collapsed: $("a-collapsed").checked,
     tts_enabled: $("a-tts").checked,
+    notification_sound_enabled: $("a-notify-sound").checked,
+    notification_sound_reminder: $("a-notify-sound-reminder").checked,
+    notification_sound_agent_watch: $("a-notify-sound-agent").checked,
+    notification_sound_skip_agent_tts: $("a-notify-sound-skip-tts").checked,
     global_shortcut: $("a-shortcut").value.trim() || "CommandOrControl+Alt+Space",
     screenshot_interval_sec: interval,
     screenshot_show_bubble: $("a-ss-bubble").checked,
