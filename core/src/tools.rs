@@ -14,6 +14,7 @@ use crate::agent_reaction::MemoryCandidate;
 use crate::dance::{DanceDef, DanceStep};
 use crate::logging::log_preview;
 use crate::memory::{LongTermMemory, LongTermMemoryQuery};
+pub use crate::reminder::{CancelReminderArgs, CreateReminderArgs, ListRemindersArgs};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -391,6 +392,49 @@ pub fn execute_remember(args: &RememberArgs) -> ToolResult {
     match store.save() {
         Ok(()) => result,
         Err(e) => ToolResult::err(format!("failed to save long-term memory: {e}")),
+    }
+}
+
+/// Create a persisted programmatic reminder.
+pub fn execute_create_reminder(args: &CreateReminderArgs) -> ToolResult {
+    match crate::reminder::create_reminder(args) {
+        Ok(reminder) => ToolResult::ok(format!(
+            "Created reminder {}: {} at {}",
+            reminder.id, reminder.title, reminder.next_fire_at
+        )),
+        Err(e) => ToolResult::err(format!("failed to create reminder: {e}")),
+    }
+}
+
+/// List persisted reminders.
+pub fn execute_list_reminders(args: &ListRemindersArgs) -> ToolResult {
+    match crate::reminder::list_reminders(args) {
+        Ok(reminders) if reminders.is_empty() => ToolResult::ok("No reminders found."),
+        Ok(reminders) => {
+            let lines = reminders
+                .iter()
+                .map(|r| {
+                    format!(
+                        "{} | {:?} | {} | next {}",
+                        r.id, r.status, r.title, r.next_fire_at
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            ToolResult::ok(lines)
+        }
+        Err(e) => ToolResult::err(format!("failed to list reminders: {e}")),
+    }
+}
+
+/// Cancel a persisted reminder.
+pub fn execute_cancel_reminder(args: &CancelReminderArgs) -> ToolResult {
+    match crate::reminder::cancel_reminder(&args.id) {
+        Ok(reminder) => ToolResult::ok(format!(
+            "Cancelled reminder {}: {}",
+            reminder.id, reminder.title
+        )),
+        Err(e) => ToolResult::err(format!("failed to cancel reminder: {e}")),
     }
 }
 

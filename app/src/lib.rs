@@ -28,10 +28,12 @@ pub mod game_input;
 pub mod gamepad;
 pub mod joystick;
 pub mod lifecycle;
+pub mod notification_window;
 pub mod observation_gate;
 pub mod panel;
 pub mod pet_event_bus;
 pub mod pet_inbox;
+pub mod reminder_scheduler;
 pub mod remote_endpoint;
 pub mod screenshot;
 pub mod settings;
@@ -135,6 +137,8 @@ pub fn run() {
             agent_watch_window::cmd_agent_watch_set_folded,
             agent_watch_window::cmd_agent_watch_port,
             agent_watch_window::cmd_agent_watch_log,
+            notification_window::cmd_notification_hide,
+            notification_window::cmd_notification_action,
             claude_hooks::cmd_install_claude_code_hooks,
             claude_hooks::cmd_open_claude_settings,
             codex_hooks::cmd_install_codex_hooks,
@@ -322,6 +326,11 @@ pub fn run() {
             }
 
             // ── 全局热键：面板切换 ──
+            if let Err(e) = notification_window::precreate_notification_window(app.handle()) {
+                warn!(error = %e, "precreate notification window failed");
+            }
+            reminder_scheduler::spawn_reminder_scheduler(app.handle().clone());
+
             let app_handle = app.handle().clone();
             let hotkey_str = "CommandOrControl+Alt+Space";
             info!(hotkey = %hotkey_str, "准备注册全局热键");

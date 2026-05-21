@@ -1,0 +1,144 @@
+:root {
+  color-scheme: dark;
+  --surface: rgba(32, 34, 39, 0.92);
+  --surface-strong: rgba(44, 46, 52, 0.96);
+  --line: rgba(255, 255, 255, 0.18);
+  --text: rgba(255, 255, 255, 0.94);
+  --muted: rgba(255, 255, 255, 0.68);
+  --warning: #ffc34d;
+  --info: #7dd3fc;
+  --success: #79e69f;
+  --danger: #ff8a7a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+body {
+  display: grid;
+  place-items: start center;
+  padding: 8px;
+  user-select: none;
+}
+
+.notification {
+  width: min(344px, calc(100vw - 16px));
+  min-height: 64px;
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 32px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03)),
+    var(--surface);
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(22px) saturate(1.22);
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition:
+    opacity 220ms ease,
+    transform 220ms ease,
+    border-color 220ms ease,
+    border-radius 220ms ease;
+}
+
+.notification.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px) scale(0.96);
+}
+
+.notification.expanded {
+  align-items: start;
+  border-radius: 22px;
+}
+
+.notification.tone-info { border-color: color-mix(in srgb, var(--info) 58%, var(--line)); }
+.notification.tone-success { border-color: color-mix(in srgb, var(--success) 58%, var(--line)); }
+.notification.tone-warning { border-color: color-mix(in srgb, var(--warning) 62%, var(--line)); }
+.notification.tone-danger { border-color: color-mix(in srgb, var(--danger) 62%, var(--line)); }
+
+.notification-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--warning);
+  box-shadow: 0 0 16px var(--warning);
+}
+
+.tone-info .notification-dot { background: var(--info); box-shadow: 0 0 16px var(--info); }
+.tone-success .notification-dot { background: var(--success); box-shadow: 0 0 16px var(--success); }
+.tone-danger .notification-dot { background: var(--danger); box-shadow: 0 0 16px var(--danger); }
+
+.notification-copy {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.notification-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 760;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0;
+}
+
+.notification-body {
+  display: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 560;
+  line-height: 1.36;
+  overflow-wrap: anywhere;
+}
+
+.notification.expanded .notification-body {
+  display: block;
+}
+
+.notification-actions {
+  display: none;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.notification.expanded .notification-actions {
+  display: flex;
+}
+
+.notification-action {
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.09);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.notification-action:hover {
+  background: rgba(255, 255, 255, 0.15);
+}

@@ -57,6 +57,7 @@ pub mod permission_hook;
 pub mod pet;
 pub mod pet_event;
 pub mod prompts;
+pub mod reminder;
 pub mod screen_summary;
 pub mod screenshot;
 #[cfg(test)]

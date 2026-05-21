@@ -24,9 +24,9 @@ use crate::token_tracker::{
 };
 use crate::tool_events::{ToolEventRecord, record_tool_event};
 use crate::tools::{
-    self, ClipboardArgs, ForegroundArgs, GetTimeArgs, HotkeyArgs, LaunchArgs, PerformDanceArgs,
-    PlayDanceArgs, ReadFileArgs, RecentScreenshotsArgs, RememberArgs, SearchMemoryArgs, ShellArgs,
-    ToolError,
+    self, CancelReminderArgs, ClipboardArgs, CreateReminderArgs, ForegroundArgs, GetTimeArgs,
+    HotkeyArgs, LaunchArgs, ListRemindersArgs, PerformDanceArgs, PlayDanceArgs, ReadFileArgs,
+    RecentScreenshotsArgs, RememberArgs, SearchMemoryArgs, ShellArgs, ToolError,
 };
 use futures::StreamExt;
 use rig::agent::Agent;
@@ -256,6 +256,9 @@ impl PetAgent {
             .tool(RecentScreenshotsTool)
             .tool(SearchMemoryTool)
             .tool(RememberTool)
+            .tool(CreateReminderTool)
+            .tool(ListRemindersTool)
+            .tool(CancelReminderTool)
             .tool(HotkeyTool)
             .tool(ClipboardTool)
             .tool(ForegroundTool)
@@ -514,6 +517,30 @@ define_tool_sync!(
 );
 
 define_tool_sync!(
+    CreateReminderTool,
+    "create_reminder",
+    "Create a deterministic reminder that will pop up later. Use interval for requests like every hour, once for a specific date/time, and daily for a local clock time.",
+    CreateReminderArgs,
+    tools::execute_create_reminder
+);
+
+define_tool_sync!(
+    ListRemindersTool,
+    "list_reminders",
+    "List active reminders, or include inactive reminders when requested.",
+    ListRemindersArgs,
+    tools::execute_list_reminders
+);
+
+define_tool_sync!(
+    CancelReminderTool,
+    "cancel_reminder",
+    "Cancel a reminder by id.",
+    CancelReminderArgs,
+    tools::execute_cancel_reminder
+);
+
+define_tool_sync!(
     HotkeyTool,
     "send_hotkey",
     "模拟键盘快捷键组合（如 Alt+Tab 切窗口、Ctrl+C 复制）",
@@ -631,6 +658,21 @@ mod tests {
         assert_eq!(remember.name, "remember");
         let remember_schema = serde_json::to_string(&remember.parameters).unwrap();
         assert!(remember_schema.contains("importance"));
+    }
+
+    #[tokio::test]
+    async fn test_reminder_tool_definitions() {
+        let create = CreateReminderTool.definition(String::new()).await;
+        assert_eq!(create.name, "create_reminder");
+        let create_schema = serde_json::to_string(&create.parameters).unwrap();
+        assert!(create_schema.contains("schedule_kind"));
+        assert!(create_schema.contains("interval_minutes"));
+
+        let list = ListRemindersTool.definition(String::new()).await;
+        assert_eq!(list.name, "list_reminders");
+
+        let cancel = CancelReminderTool.definition(String::new()).await;
+        assert_eq!(cancel.name, "cancel_reminder");
     }
 
     #[tokio::test]
