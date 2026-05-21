@@ -12,7 +12,7 @@ use tauri::{
 use tracing::warn;
 
 const WINDOW_LABEL: &str = "agent-watch";
-const WINDOW_W: f64 = 380.0;
+const WINDOW_W: f64 = 254.0;
 const WINDOW_H: f64 = 300.0;
 const FOLDED_WINDOW_H: f64 = 60.0;
 const EDGE_MARGIN: i32 = 12;

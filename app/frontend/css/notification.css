@@ -39,12 +39,14 @@ body {
   grid-template-columns: minmax(0, 1fr);
   align-items: center;
   padding: 12px 18px;
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: 32px;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03)),
     var(--surface);
   box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 0 18px var(--tone-glow, rgba(255, 255, 255, 0.08)),
     0 6px 16px rgba(0, 0, 0, 0.18),
     0 1px 4px rgba(0, 0, 0, 0.14),
     inset 0 1px 0 rgba(255, 255, 255, 0.12);
@@ -69,10 +71,25 @@ body {
   border-radius: 22px;
 }
 
-.notification.tone-info { border-color: color-mix(in srgb, var(--info) 58%, var(--line)); }
-.notification.tone-success { border-color: color-mix(in srgb, var(--success) 58%, var(--line)); }
-.notification.tone-warning { border-color: color-mix(in srgb, var(--warning) 62%, var(--line)); }
-.notification.tone-danger { border-color: color-mix(in srgb, var(--danger) 62%, var(--line)); }
+.notification.tone-info {
+  --tone-glow: color-mix(in srgb, var(--info) 26%, transparent);
+  border-color: color-mix(in srgb, var(--info) 68%, var(--line));
+}
+
+.notification.tone-success {
+  --tone-glow: color-mix(in srgb, var(--success) 26%, transparent);
+  border-color: color-mix(in srgb, var(--success) 68%, var(--line));
+}
+
+.notification.tone-warning {
+  --tone-glow: color-mix(in srgb, var(--warning) 28%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 70%, var(--line));
+}
+
+.notification.tone-danger {
+  --tone-glow: color-mix(in srgb, var(--danger) 30%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 72%, var(--line));
+}
 
 .notification-copy {
   min-width: 0;
@@ -93,6 +110,14 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   letter-spacing: 0;
+}
+
+.notification:not(.expanded) .notification-copy {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.notification:not(.expanded) .notification-title {
+  text-align: center;
 }
 
 .notification-body {

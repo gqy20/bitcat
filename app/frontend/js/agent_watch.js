@@ -156,6 +156,7 @@
 
   function compactSourceLabel(source) {
     if (source === "Claude Code") return "Claude";
+    if (source === "Codex") return "Codex";
     return source;
   }
 
