@@ -12,13 +12,17 @@
 | v2 宠物资源包系统（manifest + spritesheet + 设置页选择） | 已落地（2026-05-17）；默认 `piggy`，`cat/status/core/...` 可选 |
 | 语义宠物动画（非均匀帧时长 + 瞬态 repeat+fallback + idle variants） | 已有（2026-05-13 增强，2026-05-17 收敛到 v2 pack） |
 | AI 对话（Anthropic Claude via rig-core，流式输出） | 已有 |
-| 10 个内置工具（launch/shell/read_file/get_time/hotkey/clipboard/foreground/screenshots/perform_dance/play_dance） | 已有 |
+| 15 个内置工具（launch/shell/read_file/get_time/recent_screenshots/search_memory/remember/reminder/hotkey/clipboard/foreground/dance 等） | 已有 |
 | SDL2 手柄输入（8BitDo Micro） | 已有 |
 | 多窗口模型（pet / bubble / panel / voice） | 已有 |
 | 截图观察 + Vision API 分析 | 已有 |
 | 滚动窗口记忆系统 | 已有 |
 | YML 配置热加载 | 已有 |
 | 舞蹈系统（内置/用户目录 YAML + AI tool 触发播放） | 已落地 |
+| 程序化提醒（create/list/cancel 工具 + 到期调度 + 完成/稍后/取消/删除） | 已落地（2026-05-22）；统一顶部通知 + JSONL 生命周期日志 |
+| AI 提醒润色（无工具结构化 personalizer） | 已落地（默认关闭）；prompt 统一在 `config/prompts.yml` 的 `reminder_personalizer` 段 |
+| 顶部通知岛（reminder / agent_watch 共用，队列/动作/提示音） | 已落地（2026-05-22）；设置页可按来源配置提示音 |
+| Agent Watch 本地/远程只读看管 | Claude/Codex hook + Remote LAN ingest/viewer MVP 已落地；控制能力仍待做 |
 | 日志规范化（大文本截断、级别收敛、tracing 归一） | 已落地第一轮 |
 | Token 追踪（JSONL 明细、会话汇总、按日查询） | 已落地 |
 | 设置页 Token 统计（今日消耗、最近会话、链路占比） | 已落地 |
@@ -38,8 +42,10 @@
 | Pet Assets | v2 manifest + bundled fixture packs | `app/frontend/__fixtures__/pets/*/manifest.json`, `app/frontend/js/sprite-loader.js` | 宠物视觉不再依赖硬编码默认 sprite fallback；默认加载 `piggy` |
 | Frontend Tests | Vitest 3 + jsdom | `app/frontend/package.json`, `vitest.config.ts` | 测试 `bubble/pet/game/sprite` 等纯 JS 逻辑 |
 | AI Agent | `rig-core` 0.36 + Anthropic provider | `core/src/agent.rs`, `core/src/vision.rs` | 流式对话、Tool、Extractor、Vision 结构化输出 |
+| Reminder Personalizer | rig Extractor（no-tool） | `core/src/reminder_personalizer.rs`, `config/prompts.yml` | 到期提醒短文案可选 AI 润色，失败回退原始提醒 |
 | AI 配置 | 环境变量 / `app_settings.json` / `~/.claude/settings.json` | `core/src/ai_config.rs` | 默认兼容 Claude Code 风格配置，只读读取 `.claude` |
 | Tool Schema | `schemars` + `serde` | `core/src/tools.rs`, `core/src/agent.rs` | 参数类型 derive JSON Schema，减少手写 schema 漂移 |
+| Notification Window | Tauri 透明顶部窗口 + Vanilla JS | `app/src/notification_window.rs`, `app/frontend/notification.html` | 提醒和 Agent Watch 共用，支持动作、队列、去重和提示音 |
 | 手柄输入 | SDL2 0.38 bundled + static-link | `app/Cargo.toml`, `app/src/joystick.rs` | 8BitDo / DirectInput 轮询，Windows 构建静态 SDL2 |
 | Windows API | `windows-sys` | `core/src/hotkey.rs`, `app/src/screenshot.rs`, `app/src/main.rs` | SendInput、BitBlt、SAPI TTS、console、power/session 检测 |
 | 截图/Vision | Win32 BitBlt + `image` JPEG + rig Extractor | `app/src/screenshot.rs`, `core/src/vision.rs` | app 捕获像素，core 做压缩、dHash、Vision 结构化分析 |
@@ -78,7 +84,7 @@ Agent 管理线应优先复用现有栈：
 │  │          │  │ B5 文本记忆│  │          │  │          │   │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
 │                                                             │
-│  当前优先级：E1/E2 → A2 → B4(运行时+开销) → B5(grep-first) → C1 → A3 → D1│
+│  当前优先级：A2 Phase 2 → E2/E3 → Observation Hints → 资源包发布策略 → C1 → D1│
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -177,6 +183,19 @@ panel → cmd_start_game → app/src/game.rs 动态创建 game 窗口
 
 详细取舍：[architecture/design-tradeoffs.md](architecture/design-tradeoffs.md)
 
+### B6. 程序化提醒与顶部通知
+
+提醒主链路已落地：AI Agent 通过 `create_reminder` / `list_reminders` / `cancel_reminder` 管理确定性提醒，`core/src/reminder.rs` 负责 store、原子写入和生命周期事件，`app/src/reminder_scheduler.rs` 每 5 秒扫描到期提醒，`app/src/notification_window.rs` 用统一顶部通知窗口呈现提醒、完成、稍后、取消和删除动作。
+
+2026-05-22 增量：
+
+1. **顶部通知岛**：reminder 和 Agent Watch 共用同一个通知窗口，支持队列、去重、动作按钮和来源字段。
+2. **提示音**：设置页可按来源配置系统提示音，覆盖 `info / success / warning / danger` 等等级，失败时只记录日志，不影响通知展示。
+3. **AI 提醒润色**：到期提醒可选调用无工具结构化 `ReminderPersonalizer`，根据标题、备注、到期时间和用户上下文生成更自然的短提醒；默认关闭，失败时回退确定性原文，prompt 统一在 `config/prompts.yml` 的 `reminder_personalizer` 段。
+4. **可诊断性**：提醒生命周期写入 `~/.ai-pad/logs/reminder_events.jsonl`，字段保留 `reminder_id`、`source`、`ui_source`、`store_path` 和异常上下文。
+
+后续只保留打磨项：根据真实使用决定是否把 `complete_reminder` / `snooze_reminder` 也暴露给 Agent 工具；完善到期批量并发、费用门控和设置页的失败诊断。
+
 ---
 
 ## Track C: 渲染升级
@@ -238,7 +257,7 @@ panel → cmd_start_game → app/src/game.rs 动态创建 game 窗口
 
 第一阶段不直接控制 Agent，只做可靠观察。目标是本地识别当前有哪些 AI 编码工具在运行、它们在哪个项目目录、最近是否有 token/文件/命令活动、是否进入等待用户输入状态。
 
-当前 Claude Code 只读 hook MVP 已落地（2026-05-16）：`core` 侧已有 `AgentSession` / `ClaudeHookEvent` / `AgentNudgePolicy`，`app` 侧已有本地 TCP monitor、Claude hook installer、settings 集成、审计 JSONL 和独立 `agent-watch` 浮动任务栈。它可以作为 E1/E2 的第一版基础。失败生命周期要分级处理：`StopFailure` 这类会话级失败才异常提醒，`PostToolUseFailure` 是 Claude Code 自我修复中的常见中间态，只记录并继续 working；`PermissionDenied` 进入 waiting，而不是按异常打扰。`SubagentStopFailure` 不是当前 Claude Code 支持的 hook event，只作为旧版 ai-pad 配置的 Hook Doctor 清理对象。
+当前 Claude Code / Codex 只读 hook MVP 已落地（2026-05-16 起，2026-05-22 更新）：`core` 侧已有 `AgentSession` / `ClaudeHookEvent` / `AgentNudgePolicy`，`app` 侧已有本地 TCP monitor、Claude/Codex hook installer、settings 集成、审计 JSONL、独立 `agent-watch` 浮动任务栈和统一顶部通知。Remote Agent Watch LAN ingest/viewer MVP 已归档，用户侧说明在 `docs/guide/remote-agent-watch.md`。它可以作为 E1/E2 的第一版基础。失败生命周期要分级处理：`StopFailure` 这类会话级失败才异常提醒，`PostToolUseFailure` 是 Claude Code 自我修复中的常见中间态，只记录并继续 working；`PermissionDenied` 进入 waiting，而不是按异常打扰。`SubagentStopFailure` 不是当前 Claude Code 支持的 hook event，只作为旧版 ai-pad 配置的 Hook Doctor 清理对象。
 
 建议监听源：
 
@@ -254,8 +273,9 @@ panel → cmd_start_game → app/src/game.rs 动态创建 game 窗口
 agent_monitor_loop()
   ├── Claude hook TCP / 后续扫描进程 / 会话文件
   ├── 归一化为 AgentSession
-  ├── 推送 agent-session-update 到 settings / agent-watch 浮动窗
-  ├── 通过 PetEventBus 发低频提醒
+  ├── 推送 agent-session-update 到 settings / agent-watch 浮动窗 / remote viewer
+  ├── 通过统一顶部通知窗口发 waiting / done / error 提醒
+  ├── 通过 PetEventBus 发低频状态反馈
   └── 写入 ~/.ai-pad/logs/agent_watch_events.jsonl / agent_watch_sessions.jsonl / agent_watch_nudges.jsonl
 ```
 
@@ -289,7 +309,7 @@ oc-claw 的状态宠物可以作为参考，但 8Bit Cat 应把状态直接接�
 - 等待队列：优先显示需要用户确认、测试失败、merge conflict、权限询问的任务。
 - 历史记录：按项目和日期查看最近 Agent 做过什么。
 
-当前 UI 先落在独立 `agent-watch` 浮动任务栈和设置页“Agent 看管”区域，暂未把完整 Agent 管理页塞进主 panel。后续如果要进入手柄工作流，再把浮动窗能力收敛到 panel 页签，并补“已查看”标记，避免 done/waiting 提醒重复打扰。
+当前 UI 先落在独立 `agent-watch` 浮动任务栈、设置页“Agent 看管”区域和顶部通知窗口，暂未把完整 Agent 管理页塞进主 panel。后续如果要进入手柄工作流，再把浮动窗能力收敛到 panel 页签，并补“已查看”标记，避免 done/waiting 提醒重复打扰。
 
 手柄映射建议：
 
@@ -335,8 +355,8 @@ pet/bubble/panel ──→ E2 状态呈现与手柄操作
 
 推荐最短路径：
 
-1. 先做 E1：只读监听 Claude Code / Codex 活跃会话。
-2. 再做 E2：pet 状态 + panel 会话列表 + waiting 提醒。
+1. E1 已有本地/远程只读 MVP：继续补 JSONL watcher、PID 存活检测和真实 hook 端到端回归。
+2. E2 已有浮动任务栈和顶部通知：下一步收敛到 panel 页签，补已查看/静音/置顶等交互。
 3. 复用 B4：把会话控制动作纳入同一套审计和安全提示。
 4. 最后考虑 E3/E4：可控唤醒、多工作区、远程机 sidecar。
 
@@ -373,17 +393,21 @@ pet/bubble/panel ──→ E2 状态呈现与手柄操作
            │  B1 日志规范化第一轮                  │
            │  B2 Token 追踪 + 设置页统计            │
            │  B3 Extractor 主链路                  │
+           │  B4 工具运行时事件与审计               │
+           │  B5 grep-first 记忆主链路              │
+           │  B6 提醒 + 顶部通知 + 提示音            │
+           │  E1/E2 本地/远程 Agent Watch MVP       │
            │  测试入口/Makefile/xtask 稳定化        │
            └─────────────────────────────────────┘
                   ↓
 短期        ┌─────────────────────────────────────┐
-1-3天      │  E1/E2 Agent 会话监听 + 桌宠状态       │  ← 参考 oc-claw，但接入 pet/bubble/panel
-           │  A2 迷你游戏引擎 Phase 2              │  ← 复用 A1 的 YAML/Tool 模式
-           │  B4 工具运行时与开销优化              │  ← 先规范生命周期，再基于真实统计优化
+1-3天      │  A2 迷你游戏引擎 Phase 2              │  ← AI play_game/perform_game + Memory/Catch
+           │  E2 Agent Watch panel 收敛             │  ← 已有浮动窗/顶部通知，补手柄工作流
+           │  Observation Hints                     │  ← 让截图观察变成可复用提示资产
            └─────────────────────────────────────┘
                   ↓
 中期        ┌─────────────────────────────────────┐
-1-3天      │  B5 grep-first 文本记忆检索            │
+1-3天      │  宠物资源包发布策略                    │
            │  E3 Agent 控制动作与安全审计           │
            │  A3 内容扩展（更多游戏类型）           │
            └─────────────────────────────────────┘
@@ -438,10 +462,11 @@ A1+A2+E1/E2+C1 ──→ D1(Steam) MVP 差异化更完整
 | **B3** | Extractor 改造主链路 | 已完成 | 0 | Done |
 | **B3 cleanup** | 删除旧 raw helper / parser / 惰性配置 | 已完成，净删为主 | 0 | Done |
 | **Pet v2 assets** | 宠物 manifest loader、默认 `piggy`、`cat` 资源包命名、catalog preset | 已完成；后续只剩发布包体积分层和用户目录加载 | 0 | Done/P1 packaging |
-| **E1** | AI 编码工具会话监听 | ~350-650 行 | 0 | P1，参考 oc-claw |
-| **E2** | 桌宠化 Agent 状态管理 | ~250-500 行 | 0 | P1，复用 pet/bubble/panel |
+| **B6** | 程序化提醒 + 顶部通知 + 提示音 | create/list/cancel、scheduler、notification island、AI personalizer 已完成；剩余费用/批量/更多动作工具打磨 | 0 | Done/P2 follow-up |
+| **E1** | AI 编码工具会话监听 | 本地 Claude/Codex hook + Remote LAN ingest/viewer MVP 已完成；剩余 JSONL watcher、PID 存活和端到端回归 | 0 | Done/P1 follow-up |
+| **E2** | 桌宠化 Agent 状态管理 | 独立浮动任务栈 + 顶部通知已完成；剩余 panel 收敛、已查看去重和手柄入口 | 0 | Done/P1 follow-up |
 | **A2** | 迷你游戏引擎 | Phase 1 已完成；`start_game(GameDef)` / `cmd_start_game_with_def` 已可启动任意 GameDef；Phase 2 待接 AI 工具 + Memory/Catch + 持久化 | 0 | P1 |
-| **B4** | 工具运行时与开销优化 | ~250-450 行（B4.1-B4.3）+ ~50-150 行（B4.4） | 0 | P1，1-2 天；B4.5 实验项 |
+| **B4** | 工具运行时与开销优化 | 生命周期事件、bubble UI、审计日志和首轮 schema 压缩已完成；动态能力包暂缓 | 0 | Done/P2 follow-up |
 | **E3** | 远程/多工作区 Agent 管理 | ~400-800 行 | SSH 可选 | P2 |
 | **A3** | 内容扩展 | ~200-350 行/种 | 0 | P2，0.5-1 天/种 |
 | **B5** | grep-first 文本记忆 | JSONL/id/软删除/search_memory 主链路已完成；剩余上下文瘦身和候选压缩 | 0 | Done/P2 follow-up |
@@ -450,7 +475,20 @@ A1+A2+E1/E2+C1 ──→ D1(Steam) MVP 差异化更完整
 | **C3** | 3D 游戏生成 | ~700-1000 行 | cannon-es 等 | P3，3-6 天 |
 | **D1** | Steam 发布 | 集成工作 | Steamworks SDK | P4，2-5 天 |
 
-**当前可玩 Demo 的基础设施已超过原 MVP 预期；下一阶段最短路径是 B3 → A2，让“观察/摘要”和“AI 生成可玩内容”都进入结构化闭环。**
+**当前可玩 Demo 的基础设施已超过原 MVP 预期；下一阶段最短路径是 A2 Phase 2 → E2/E3 → Observation Hints，让“AI 生成可玩内容”“看管其他 Agent”和“观察经验沉淀”进入同一套可审计闭环。**
+
+### 当前打磨队列
+
+这些项已经有可用主链路，后续不按“大功能从零实现”估算，而按体验和可靠性收尾推进：
+
+| 领域 | 当前边界 | 打磨目标 |
+|------|----------|----------|
+| B6 提醒与顶部通知 | 已支持确定性提醒、顶部通知、提示音和可选 AI 润色 | 控制 AI 润色费用/频率；优化多个提醒同时到期；补失败诊断；评估 complete/snooze 是否开放给 Agent 工具 |
+| E1/E2 Agent Watch | 已支持本地/远程只读 hook、浮动任务栈和顶部通知 | 补 JSONL watcher、PID 存活检测、结构化 Write/Edit/Bash 预览、panel 收敛和已查看/静音/置顶 |
+| B4 工具运行时 | 生命周期事件、bubble UI 和审计日志已可用 | 用真实 token/工具日志决定 schema 预算和 dynamic tools，不做关键词意图识别 |
+| B5 记忆 | grep-first 长期记忆主链路已可用 | 减少默认预塞上下文；让 `search_memory` 按需召回后再由模型压缩判断 |
+| Pet v2 assets | 内置 v2 pack 已可切换 | 明确 bundle vs 外部包边界、用户目录加载、资源诊断和 Steam/DLC 分层 |
+| 音乐响应舞动 | 第一版音乐模式可用 | 增强舞感状态机、fake source 诊断、节奏/静音/高潮回落表现 |
 
 ---
 
@@ -467,8 +505,13 @@ A1+A2+E1/E2+C1 ──→ D1(Steam) MVP 差异化更完整
 │   ├── token_usage.jsonl    # Token 追踪行日志 (B2)
 │   ├── token_sessions.json  # 会话级汇总 (B2)
 │   ├── tool_events.jsonl    # 工具生命周期审计 (B4)
+│   ├── reminder_events.jsonl # 提醒生命周期与存储异常 (B6)
+│   ├── agent_watch_events.jsonl # Agent Watch 原始归一事件 (E1/E2)
 │   ├── agent_watch_sessions.jsonl # Claude Code / Codex 等会话状态 (E1/E2)
+│   ├── agent_watch_nudges.jsonl # Agent Watch 提醒决策 (E1/E2)
 │   └── agent_actions.jsonl  # 桌宠触发的 Agent 控制动作 (E3)
+├── reminders/
+│   └── reminders.json       # 程序化提醒 store (B6)
 ├── agents/
 │   ├── sessions.json        # 当前活跃 Agent 会话缓存 (E1/E2)
 │   └── connectors.yml       # 自定义工具/目录/hook 适配配置 (E1/E4)

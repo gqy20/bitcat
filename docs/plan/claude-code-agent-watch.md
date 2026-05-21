@@ -1,6 +1,6 @@
 # Claude Code 桌宠看管计划
 
-> 日期：2026-05-14 | 更新：2026-05-16 | 状态：Phase 1 已落地，Hook Doctor 已接入 | 范围：Claude Code + Codex 只读 hook，看管优先，不含 Cursor / OpenClaw
+> 日期：2026-05-14 | 更新：2026-05-22 | 状态：Phase 1 + 本地/远程只读看管 MVP 已落地，Phase 2 活跃 | 范围：Claude Code + Codex 只读 hook，看管优先，不含 Cursor / OpenClaw
 
 ## 背景
 
@@ -31,9 +31,11 @@
 
 ---
 
-## 当前实现审查（2026-05-16）
+## 当前实现审查（2026-05-22）
 
 Phase 1 的主体已经落地：`core/src/agent_session.rs`、`core/src/claude_code.rs`、`core/src/agent_nudge.rs` 提供了归一会话模型、Claude hook 解析和提醒策略；`app/src/agent_monitor.rs` 监听本地 TCP、写入 `agent_watch_events.jsonl` / `agent_watch_sessions.jsonl` / `agent_watch_nudges.jsonl` 并推送 `agent-session-update`；`app/src/claude_hooks.rs` 能合并 `~/.claude/settings.json` 并安装只读 PowerShell hook；设置页和独立 `agent-watch` 浮动任务栈也已接入。
+
+2026-05-22 增量：Agent Watch 已接入统一顶部通知窗口，`Waiting` / `Done` / `Error` 等关键提醒可以走灵动岛式通知并按来源播放提示音；本地离屏提醒的低优先级门控已经改为实际发送后再提交冷却，避免“被聊天/游戏/观察门控拦住但仍进入冷却”。Remote Agent Watch LAN ingest/viewer MVP 已移入归档计划，用户侧安装和排障说明转入 `docs/guide/remote-agent-watch.md`。
 
 与 Claude Code 官方 hook 文档对齐的部分：
 
@@ -45,11 +47,11 @@ Phase 1 的主体已经落地：`core/src/agent_session.rs`、`core/src/claude_c
 
 待加固点按优先级排序：
 
-1. **提醒评估应绑定当前事件 session，而不是 UI primary session**。当前 `agent_monitor` 更新事件后按 UI 优先级排序，只对 `primary` 调 `evaluate_nudge()`。如果列表里已有置顶的 `Waiting` / `Done` 会话，新进入 `Working` / `ToolRunning` 的 session 可能永远拿不到离屏提醒。修复方向：`apply_session_event` 后取本次事件对应 session 评估提醒，UI 的 `primary` 只用于展示。
-2. **低优先级门控不应提前消耗冷却**。当前 `AgentNudgePolicy` 在生成 `AwayWhileWorking` 时已经写入 `last_away_nudge_at_ms`，但 app 层随后可能因聊天、游戏、表演或 observation gate 把提醒记为 `gated`。这会导致用户没看到气泡，却进入 8 分钟冷却。修复方向：让策略返回候选提醒，由 app 在实际发送后再 commit 冷却；或为 gated 决策回滚/不更新冷却。
-3. **失败/中断 hook 需要分级**。会话级 `StopFailure` 才进入异常提醒；`PostToolUseFailure` 属于 Claude Code 自我修复过程中的常见中间态，应记录并回到 working；`PermissionDenied` 表示用户介入/拒绝权限，应进入 waiting 而不是异常。`SubagentStopFailure` 不是当前 Claude Code 支持的 hook event，只作为旧版错误配置的清理对象。
+1. **提醒评估已改为绑定当前事件 session**。`apply_session_event` 后会取本次事件对应 session 评估提醒，UI 的 `primary` 只用于展示排序。
+2. **低优先级门控已改为发送后提交冷却**。`AgentNudgePolicy` 返回候选提醒，app 层通过聊天、游戏、表演和 observation gate 后，实际发送成功才 `mark_sent()`。
+3. **失败/中断 hook 需要持续分级验证**。会话级 `StopFailure` 才进入异常提醒；`PostToolUseFailure` 属于 Claude Code 自我修复过程中的常见中间态，应记录并回到 working；`PermissionDenied` 表示用户介入/拒绝权限，应进入 waiting 而不是异常。`SubagentStopFailure` 不是当前 Claude Code 支持的 hook event，只作为旧版错误配置的清理对象。
 4. **Windows hook command 可更稳**。当前 settings 写入 shell-form `command` 字符串，路径用单引号包裹。官方文档也支持 exec-form `command` + `args`，更适合 Windows 路径、空格和特殊字符。修复方向：评估 Claude Code 当前版本对 `args` 的支持，若可用则改成 exec-form。
-5. **计划文档的 Phase 2 项仍未完成**。JSONL watcher、PID 存活检测、结构化 Write/Edit/Bash 预览、前台窗口/空闲输入检测、panel 已查看去重，仍应保留在 Phase 2。
+5. **Phase 2 项仍未完成**。JSONL watcher、PID 存活检测、结构化 Write/Edit/Bash 预览、前台窗口/空闲输入检测、panel 已查看去重，仍应保留在 Phase 2。
 
 已验证：
 
