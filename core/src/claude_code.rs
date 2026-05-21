@@ -431,10 +431,10 @@ fn nested_string(map: &serde_json::Map<String, Value>, path: &[&str]) -> Option<
 fn preview_json(value: &Value) -> Option<String> {
     match value {
         Value::Null => None,
-        Value::String(text) => preview_text(&sanitize_preview_text(text), PREVIEW_CHARS),
+        Value::String(text) => preview_text(sanitize_preview_text(text), PREVIEW_CHARS),
         other => serde_json::to_string(other)
             .ok()
-            .and_then(|text| preview_text(&sanitize_preview_text(&text), PREVIEW_CHARS)),
+            .and_then(|text| preview_text(sanitize_preview_text(&text), PREVIEW_CHARS)),
     }
 }
 
@@ -493,7 +493,7 @@ fn preview_value(value: &Value) -> Option<Value> {
     match value {
         Value::Null => None,
         Value::String(text) => {
-            preview_text(&sanitize_preview_text(text), PREVIEW_CHARS).map(Value::String)
+            preview_text(sanitize_preview_text(text), PREVIEW_CHARS).map(Value::String)
         }
         Value::Bool(_) | Value::Number(_) => Some(value.clone()),
         Value::Array(items) => {
@@ -506,7 +506,7 @@ fn preview_value(value: &Value) -> Option<Value> {
         }
         Value::Object(_) => serde_json::to_string(value)
             .ok()
-            .and_then(|text| preview_text(&sanitize_preview_text(&text), PREVIEW_CHARS))
+            .and_then(|text| preview_text(sanitize_preview_text(&text), PREVIEW_CHARS))
             .map(Value::String),
     }
 }

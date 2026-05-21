@@ -9,10 +9,10 @@ use std::path::PathBuf;
 
 #[cfg(target_os = "windows")]
 mod imp {
-    use super::PathBuf;
     use std::fs::{self, OpenOptions};
     use std::io::Write;
     use std::os::windows::io::AsRawHandle;
+    use std::path::{Path, PathBuf};
     use std::sync::OnceLock;
     use std::time::{SystemTime, UNIX_EPOCH};
     use windows_sys::Win32::Foundation::TRUE;
@@ -65,7 +65,7 @@ mod imp {
     }
 
     fn write_minidump(
-        path: &PathBuf,
+        path: &Path,
         info: *const EXCEPTION_POINTERS,
         thread_id: u32,
     ) -> Result<(), String> {
@@ -76,7 +76,7 @@ mod imp {
             .open(path)
             .map_err(|e| format!("create minidump failed: {e}"))?;
 
-        let mut exception_info = MINIDUMP_EXCEPTION_INFORMATION {
+        let exception_info = MINIDUMP_EXCEPTION_INFORMATION {
             ThreadId: thread_id,
             ExceptionPointers: info as *mut EXCEPTION_POINTERS,
             ClientPointers: TRUE,
@@ -92,7 +92,7 @@ mod imp {
                 GetCurrentProcessId(),
                 file.as_raw_handle(),
                 dump_type,
-                &mut exception_info,
+                &exception_info,
                 std::ptr::null(),
                 std::ptr::null(),
             )
@@ -107,12 +107,12 @@ mod imp {
     }
 
     fn append_crash_log(
-        dir: &PathBuf,
+        dir: &Path,
         now_secs: u64,
         process_id: u32,
         thread_id: u32,
         info: *const EXCEPTION_POINTERS,
-        dump_path: &PathBuf,
+        dump_path: &Path,
         dump_result: Result<(), String>,
     ) -> Result<(), String> {
         let (exception_code, exception_address) = exception_details(info);

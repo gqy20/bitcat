@@ -200,7 +200,7 @@ pub fn complete_reminder(id: &str) -> Result<ReminderRecord, String> {
 }
 
 fn complete_reminder_in_path(path: &Path, id: &str) -> Result<ReminderRecord, String> {
-    let mut reminders = load_reminders_from_path(&path)?;
+    let mut reminders = load_reminders_from_path(path)?;
     let now = Local::now();
     let Some(reminder) = reminders.iter_mut().find(|r| r.id == id) else {
         return Err(format!("reminder not found: {id}"));
@@ -210,7 +210,7 @@ fn complete_reminder_in_path(path: &Path, id: &str) -> Result<ReminderRecord, St
     }
     reminder.updated_at = to_rfc3339(now);
     let updated = reminder.clone();
-    save_reminders_to_path(&path, &reminders)?;
+    save_reminders_to_path(path, &reminders)?;
     record_reminder_event("completed", &updated, None);
     Ok(updated)
 }
