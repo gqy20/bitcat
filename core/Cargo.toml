@@ -13,7 +13,7 @@ chrono = { version = "0.4", features = ["default"] }
 rig-core = "0.36"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "time"] }
 futures = "0.3"
-windows-sys = { version = "0.61.2", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_Foundation"] }
+windows-sys = { version = "0.61.2", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_Foundation", "Win32_Storage_FileSystem"] }
 tracing = "0.1"
 thiserror = "2"
 rand = "0.9"

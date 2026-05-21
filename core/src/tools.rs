@@ -402,7 +402,9 @@ pub fn execute_create_reminder(args: &CreateReminderArgs) -> ToolResult {
             "Created reminder {}: {} at {}",
             reminder.id, reminder.title, reminder.next_fire_at
         )),
-        Err(e) => ToolResult::err(format!("failed to create reminder: {e}")),
+        Err(e) => ToolResult::err(format!(
+            "Reminder was NOT created. Tell the user it failed and include this reason: {e}"
+        )),
     }
 }
 

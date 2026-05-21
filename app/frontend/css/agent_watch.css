@@ -147,6 +147,15 @@ body {
 }
 
 .task-card:hover,
+.task-card:focus-within,
+.task-card.expanded,
+.task-card.tone-needs_user,
+.task-card.tone-error {
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 7px;
+}
+
+.task-card:hover,
 .task-card:focus-visible,
 .task-card.expanded {
   border-color: var(--line-strong);
@@ -350,6 +359,9 @@ body {
 .task-card.expanded .task-dismiss,
 .task-card.tone-needs_user .task-dismiss,
 .task-card.tone-error .task-dismiss {
+  position: static;
+  grid-column: 2;
+  grid-row: 1;
   opacity: 1;
 }
 

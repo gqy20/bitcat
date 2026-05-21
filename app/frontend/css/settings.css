@@ -1592,6 +1592,17 @@ input[type="checkbox"]:checked::after {
   background: rgba(255, 138, 122, 0.08);
 }
 
+.icon-btn.danger {
+  border-color: rgba(255, 138, 122, 0.2);
+  color: #ffb4aa;
+  background: rgba(255, 138, 122, 0.06);
+}
+
+.icon-btn.danger:hover {
+  border-color: rgba(255, 138, 122, 0.34);
+  background: rgba(255, 138, 122, 0.12);
+}
+
 .action-item {
   margin-bottom: 8px;
   padding: 12px 14px;

@@ -169,6 +169,7 @@ pub struct ReminderReviewView {
     pub generated_at: String,
     pub total_entries: usize,
     pub active_count: usize,
+    pub store_path: String,
     pub events_path: String,
     pub entries: Vec<ReminderView>,
 }
@@ -526,13 +527,19 @@ pub async fn cmd_get_reminders(
 
 #[tauri::command]
 pub async fn cmd_cancel_reminder(id: String) -> Result<ReminderReviewView, String> {
-    ai_pad_core::reminder::cancel_reminder(&id)?;
+    ai_pad_core::reminder::cancel_reminder_with_source(&id, "settings")?;
+    cmd_get_reminders(Some(true)).await
+}
+
+#[tauri::command]
+pub async fn cmd_delete_reminder(id: String) -> Result<ReminderReviewView, String> {
+    ai_pad_core::reminder::delete_reminder_with_source(&id, "settings")?;
     cmd_get_reminders(Some(true)).await
 }
 
 #[tauri::command]
 pub async fn cmd_complete_reminder(id: String) -> Result<ReminderReviewView, String> {
-    ai_pad_core::reminder::complete_reminder(&id)?;
+    ai_pad_core::reminder::complete_reminder_with_source(&id, "settings")?;
     cmd_get_reminders(Some(true)).await
 }
 
@@ -541,7 +548,7 @@ pub async fn cmd_snooze_reminder(
     id: String,
     minutes: Option<u32>,
 ) -> Result<ReminderReviewView, String> {
-    ai_pad_core::reminder::snooze_reminder(&id, minutes.unwrap_or(10))?;
+    ai_pad_core::reminder::snooze_reminder_with_source(&id, minutes.unwrap_or(10), "settings")?;
     cmd_get_reminders(Some(true)).await
 }
 
@@ -585,10 +592,14 @@ fn reminder_review_view(reminders: Vec<ReminderRecord>) -> ReminderReviewView {
     let events_path = ai_pad_core::reminder::reminder_events_path()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|e| format!("<unavailable: {e}>"));
+    let store_path = ai_pad_core::reminder::reminder_store_path()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|e| format!("<unavailable: {e}>"));
     ReminderReviewView {
         generated_at: chrono::Local::now().to_rfc3339(),
         total_entries,
         active_count,
+        store_path,
         events_path,
         entries: reminders.into_iter().map(reminder_view).collect(),
     }

@@ -151,6 +151,7 @@ pub fn run() {
             settings::cmd_get_resource_usage,
             settings::cmd_delete_memory_entry,
             settings::cmd_cancel_reminder,
+            settings::cmd_delete_reminder,
             settings::cmd_complete_reminder,
             settings::cmd_snooze_reminder,
             settings::cmd_settings_save_ai,

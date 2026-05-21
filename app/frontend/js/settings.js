@@ -815,7 +815,7 @@ async function loadReminders() {
   } catch (e) {
     log("加载提醒失败: " + e);
     renderReminders(null);
-    if (status) status.textContent = "读取失败";
+    if (status) status.textContent = `读取失败：${String(e)}`;
   }
 }
 
@@ -1181,11 +1181,15 @@ function renderReminders(review) {
   const eventsPath = review?.events_path
     ? `<div class="reminder-log-path">日志 <code>${escapeHtml(review.events_path)}</code></div>`
     : "";
+  const storePath = review?.store_path
+    ? `<div class="reminder-log-path">数据 <code>${escapeHtml(review.store_path)}</code></div>`
+    : "";
   box.innerHTML = `
     <div class="memory-meta">
       <span>${formatNumber(review.active_count || 0)} 个活跃提醒</span>
       <span>更新于 ${escapeHtml(formatDateTime(review.generated_at))}</span>
     </div>
+    ${storePath}
     ${eventsPath}
     ${entries.map(entry => `
       <div class="reminder-entry ${escapeAttr(entry.status)}">
@@ -1206,6 +1210,7 @@ function renderReminders(review) {
           <button class="btn small reminder-complete" type="button" data-id="${escapeAttr(entry.id)}">完成</button>
           <button class="btn small ghost reminder-snooze" type="button" data-id="${escapeAttr(entry.id)}">10 分钟后</button>
           <button class="btn small danger reminder-cancel" type="button" data-id="${escapeAttr(entry.id)}">取消</button>
+          <button class="icon-btn danger reminder-delete" type="button" data-id="${escapeAttr(entry.id)}" aria-label="删除提醒" title="删除提醒">🗑</button>
         </div>
       </div>
     `).join("")}
@@ -1219,6 +1224,11 @@ function renderReminders(review) {
   box.querySelectorAll(".reminder-cancel").forEach(btn => {
     btn.addEventListener("click", () => {
       if (confirm("确定取消这个提醒？")) reminderAction("cmd_cancel_reminder", btn.dataset.id);
+    });
+  });
+  box.querySelectorAll(".reminder-delete").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (confirm("确定彻底删除这个提醒？")) reminderAction("cmd_delete_reminder", btn.dataset.id);
     });
   });
 }
@@ -1374,6 +1384,9 @@ function bindGlobal() {
   if (eventApi?.listen) {
     eventApi.listen("agent-session-update", (event) => {
       if (currentTab === "agent-watch") renderAgentSessions(event.payload);
+    });
+    eventApi.listen("reminders-updated", () => {
+      if (currentTab === "reminders") loadReminders();
     });
   }
   bindAgentWatchCopyActions();

@@ -18,7 +18,7 @@ use crate::pet_event_bus::SharedPetEventBus;
 use crate::tts;
 use crate::voice;
 use ai_pad_core::action::{ActionConfig, ActionDef};
-use ai_pad_core::agent::{AgentStreamEvent, PetAgent};
+use ai_pad_core::agent::{AgentStreamEvent, PetAgent, ToolPhase};
 use ai_pad_core::agent_reaction::{extract_agent_reaction, fallback_agent_reaction};
 use ai_pad_core::bridge::{handle_button_press, PetCommand};
 use ai_pad_core::device::button_name;
@@ -1102,6 +1102,12 @@ pub fn run_ai_chat(
                     event.elapsed_ms,
                     preview
                 ));
+            }
+            if event.tool_name == "create_reminder"
+                && event.phase == ToolPhase::Finished
+                && event.success == Some(true)
+            {
+                let _ = app_for_chunks.emit("reminders-updated", ());
             }
             let _ = bubble::emit_tool_event(
                 &app_for_chunks,
