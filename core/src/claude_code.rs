@@ -128,14 +128,19 @@ impl ClaudeHookEvent {
         .unwrap_or("")
         .to_string();
 
+        let show_tool_context = matches!(
+            status,
+            AgentStatus::ToolRunning | AgentStatus::Waiting | AgentStatus::Error
+        );
+
         Ok(AgentSessionEvent {
             session_id: background_session_id(session_id, &background),
             source,
             workspace,
             parent_session_id: background.parent_session_id,
             status,
-            tool_name,
-            tool_input_preview,
+            tool_name: show_tool_context.then_some(tool_name).flatten(),
+            tool_input_preview: show_tool_context.then_some(tool_input_preview).flatten(),
             user_prompt_preview: self
                 .prompt
                 .as_deref()
@@ -230,7 +235,7 @@ pub fn map_hook_status(name: &str) -> AgentStatus {
         "sessionend" => AgentStatus::Idle,
         "notification" => AgentStatus::Waiting,
         "permissiondenied" => AgentStatus::Waiting,
-        "posttoolusefailure" => AgentStatus::Working,
+        "posttoolusefailure" => AgentStatus::Error,
         "error" => AgentStatus::Error,
         "interrupted" => AgentStatus::Interrupted,
         _ => AgentStatus::Working,
@@ -426,10 +431,10 @@ fn nested_string(map: &serde_json::Map<String, Value>, path: &[&str]) -> Option<
 fn preview_json(value: &Value) -> Option<String> {
     match value {
         Value::Null => None,
-        Value::String(text) => preview_text(text, PREVIEW_CHARS),
+        Value::String(text) => preview_text(&sanitize_preview_text(text), PREVIEW_CHARS),
         other => serde_json::to_string(other)
             .ok()
-            .and_then(|text| preview_text(text, PREVIEW_CHARS)),
+            .and_then(|text| preview_text(&sanitize_preview_text(&text), PREVIEW_CHARS)),
     }
 }
 
@@ -487,7 +492,9 @@ fn preview_tool_input(tool_name: Option<&str>, value: &Value) -> Option<String> 
 fn preview_value(value: &Value) -> Option<Value> {
     match value {
         Value::Null => None,
-        Value::String(text) => preview_text(text, PREVIEW_CHARS).map(Value::String),
+        Value::String(text) => {
+            preview_text(&sanitize_preview_text(text), PREVIEW_CHARS).map(Value::String)
+        }
         Value::Bool(_) | Value::Number(_) => Some(value.clone()),
         Value::Array(items) => {
             let values = items
@@ -499,9 +506,93 @@ fn preview_value(value: &Value) -> Option<Value> {
         }
         Value::Object(_) => serde_json::to_string(value)
             .ok()
-            .and_then(|text| preview_text(text, PREVIEW_CHARS))
+            .and_then(|text| preview_text(&sanitize_preview_text(&text), PREVIEW_CHARS))
             .map(Value::String),
     }
+}
+
+fn sanitize_preview_text(text: &str) -> String {
+    let mut output = Vec::new();
+    let mut redact_next = false;
+
+    for part in text.split_whitespace() {
+        if redact_next {
+            output.push("[redacted]".to_string());
+            redact_next = false;
+            continue;
+        }
+
+        let lower = part.to_ascii_lowercase();
+        if lower == "bearer" || lower == "basic" {
+            output.push(part.to_string());
+            redact_next = true;
+            continue;
+        }
+
+        if let Some(masked) = mask_assignment(part) {
+            output.push(masked);
+        } else {
+            output.push(part.to_string());
+        }
+    }
+
+    let mut sanitized = output.join(" ");
+    for marker in [
+        "authorization:",
+        "api_key:",
+        "token:",
+        "password:",
+        "secret:",
+    ] {
+        sanitized = mask_inline_after(&sanitized, marker);
+    }
+    sanitized
+}
+
+fn mask_assignment(part: &str) -> Option<String> {
+    let split_at = part.find('=')?;
+    let key = &part[..split_at];
+    if !is_sensitive_key(key) {
+        return None;
+    }
+    let quote_prefix = part
+        .get(split_at + 1..split_at + 2)
+        .filter(|value| *value == "\"" || *value == "'")
+        .unwrap_or("");
+    Some(format!("{key}={quote_prefix}[redacted]"))
+}
+
+fn is_sensitive_key(key: &str) -> bool {
+    let normalized = key
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+    normalized.contains("apikey")
+        || normalized.contains("token")
+        || normalized.contains("secret")
+        || normalized.contains("password")
+        || normalized.ends_with("key")
+}
+
+fn mask_inline_after(text: &str, marker: &str) -> String {
+    let lower = text.to_ascii_lowercase();
+    let Some(pos) = lower.find(marker) else {
+        return text.to_string();
+    };
+    let marker_end = pos + marker.len();
+    let rest_slice = &text[marker_end..];
+    let rest = rest_slice.trim_start();
+    let whitespace_len = rest_slice.len().saturating_sub(rest.len());
+    let value_len = rest
+        .find(|ch: char| ch.is_whitespace() || ch == ',' || ch == '"' || ch == '\'')
+        .unwrap_or(rest.len());
+    let value_start = marker_end + whitespace_len;
+    let value_end = value_start + value_len;
+    if value_start >= value_end {
+        return text.to_string();
+    }
+    format!("{}[redacted]{}", &text[..value_start], &text[value_end..])
 }
 
 #[cfg(test)]
@@ -521,7 +612,7 @@ mod tests {
         assert_eq!(map_hook_status("SubagentStop"), AgentStatus::Working);
         assert_eq!(map_hook_status("SubagentStopFailure"), AgentStatus::Working);
         assert_eq!(map_hook_status("PermissionDenied"), AgentStatus::Waiting);
-        assert_eq!(map_hook_status("PostToolUseFailure"), AgentStatus::Working);
+        assert_eq!(map_hook_status("PostToolUseFailure"), AgentStatus::Error);
         assert_eq!(map_hook_status("Notification"), AgentStatus::Waiting);
         assert_eq!(map_hook_status("SessionEnd"), AgentStatus::Idle);
     }
@@ -545,6 +636,45 @@ mod tests {
         assert_eq!(event.tool_name.as_deref(), Some("Bash"));
         assert_eq!(event.pid, Some(123));
         assert!(event.tool_input_preview.unwrap().contains("cargo test"));
+    }
+
+    #[test]
+    fn post_tool_use_clears_visible_tool_context() {
+        let raw = r#"{
+            "session_id": "s1",
+            "hook_event_name": "PostToolUse",
+            "cwd": "D:\\repo",
+            "tool_name": "Bash",
+            "tool_input": {"command": "cargo test"}
+        }"#;
+        let event = ClaudeHookEvent::from_json(raw)
+            .unwrap()
+            .into_session_event(42)
+            .unwrap();
+        assert_eq!(event.status, AgentStatus::Working);
+        assert!(event.tool_name.is_none());
+        assert!(event.tool_input_preview.is_none());
+    }
+
+    #[test]
+    fn tool_preview_redacts_common_secret_shapes() {
+        let raw = r#"{
+            "session_id": "s1",
+            "hook_event_name": "PreToolUse",
+            "cwd": "D:\\repo",
+            "tool_name": "Bash",
+            "tool_input": {
+                "command": "export WEREAD_API_KEY=\"wrk-secret\" && curl -H \"Authorization: Bearer abc123\" https://example.test?token=secret"
+            }
+        }"#;
+        let event = ClaudeHookEvent::from_json(raw)
+            .unwrap()
+            .into_session_event(42)
+            .unwrap();
+        let preview = event.tool_input_preview.unwrap();
+        assert!(preview.contains("[redacted]"));
+        assert!(!preview.contains("wrk-secret"));
+        assert!(!preview.contains("abc123"));
     }
 
     #[test]

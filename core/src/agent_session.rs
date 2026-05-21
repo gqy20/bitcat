@@ -150,11 +150,17 @@ impl AgentSession {
         if event.parent_session_id.is_some() {
             self.parent_session_id = event.parent_session_id;
         }
+        let should_clear_tool =
+            event.status != AgentStatus::ToolRunning && event.tool_name.is_none();
         if event.tool_name.is_some() {
             self.tool_name = event.tool_name;
         }
         if event.tool_input_preview.is_some() {
             self.tool_input_preview = event.tool_input_preview;
+        }
+        if should_clear_tool {
+            self.tool_name = None;
+            self.tool_input_preview = None;
         }
         if event.user_prompt_preview.is_some() {
             self.user_prompt_preview = event.user_prompt_preview;
@@ -775,6 +781,20 @@ mod tests {
         let session = sessions.get("a").unwrap();
         assert_eq!(session.status_changed_at_ms, 2000);
         assert!(session.needs_user);
+    }
+
+    #[test]
+    fn apply_event_clears_stale_tool_when_tool_finishes() {
+        let mut sessions = HashMap::new();
+        let mut running = event("a", AgentStatus::ToolRunning, 1000);
+        running.tool_name = Some("Bash".into());
+        running.tool_input_preview = Some(r#"{"command":"cargo test"}"#.into());
+        apply_session_event(&mut sessions, running);
+        apply_session_event(&mut sessions, event("a", AgentStatus::Working, 2000));
+        let session = sessions.get("a").unwrap();
+        assert_eq!(session.status, AgentStatus::Working);
+        assert!(session.tool_name.is_none());
+        assert!(session.tool_input_preview.is_none());
     }
 
     #[test]

@@ -355,7 +355,7 @@
     }
     if (inputEl) inputEl.value = '';
     hideThinking();
-    resizeBubbleWindow(260, 72, true);
+    resizeBubbleWindow(300, 64, true);
     lastRawText = '';
     if (bodyEl) {
       var tone = payload && payload.tone ? String(payload.tone) : 'info';

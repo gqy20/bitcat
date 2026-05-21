@@ -19,6 +19,7 @@ function createDom(invoke) {
     runScripts: 'outside-only',
   });
   dom.window.__TAURI__ = invoke ? { core: { invoke } } : {};
+  dom.window.localStorage.clear();
   dom.window.setInterval = () => 0;
   dom.window.eval(script);
   return dom;
@@ -35,22 +36,23 @@ describe('agent watch metadata', () => {
     dom?.window?.close();
   });
 
-  it('builds one-line task metadata from machine, project, source, and kind', () => {
+  it('builds compact row metadata from machine, source, kind, and status text', () => {
     const parts = dom.window.__agentWatchTest.lineParts({
       machine: 'qy113',
       project: '2605',
       source: 'Claude Code',
       kind: 'Patch',
-    }, { status: 'working' }, false);
+      statusText: '正在修改文件',
+    }, { status: 'working' });
     const values = parts.map((part) => part.value);
 
-    expect(values).toEqual(['qy113', '2605', 'Claude', 'Patch']);
+    expect(values).toEqual(['qy113', 'Claude', 'Patch', '正在修改文件']);
     expect(parts.map((part) => part.className)).toContain('task-device');
-    expect(parts.map((part) => part.className)).toContain('task-project');
     expect(parts.map((part) => part.className)).toContain('task-source');
+    expect(parts.map((part) => part.className)).toContain('task-status-text');
   });
 
-  it('renders cards as one-line rows with one dismiss button', () => {
+  it('renders notification rows with title, meta, age, and hover dismiss affordance', () => {
     dom.window.__agentWatchTest.render({
       sessions: [{
         session_id: 's1',
@@ -60,11 +62,12 @@ describe('agent watch metadata', () => {
         status: 'working',
         display: {
           action_label: 'Shell',
-          headline: '运行测试',
+          headline: 'Running tests',
           detail: 'cargo test',
           project: 'TrumanWorld',
           source_label: 'Codex',
           tone: 'active',
+          age_label: '2s',
         },
         age_sec: 2,
       }],
@@ -72,16 +75,16 @@ describe('agent watch metadata', () => {
 
     const card = dom.window.document.querySelector('.task-card');
 
+    expect(dom.window.document.getElementById('watch-title')?.textContent).toBe('Agent Watch 1');
+    expect(card.querySelector('.task-title')?.textContent).toBe('TrumanWorld');
     expect(card.querySelector('.task-meta')?.textContent).toContain('qy113');
-    expect(card.querySelector('.task-meta')?.textContent).toContain('TrumanWorld');
-    expect(card.querySelector('[data-action="open"]')).toBeNull();
-    expect(card.querySelector('[data-action="toggle"]')).toBeNull();
+    expect(card.querySelector('.task-meta')?.textContent).toContain('Codex');
+    expect(card.querySelector('.task-age')?.textContent).toBe('2s');
     expect(card.querySelectorAll('[data-action="dismiss"]')).toHaveLength(1);
-    expect(card.querySelector('.task-summary')).toBeNull();
-    expect(card.querySelector('.task-separator')).toBeNull();
+    expect(card.querySelector('.task-detail')).toBeNull();
   });
 
-  it('expands a task row to reveal full agent detail', () => {
+  it('expands a task row to reveal detail and contextual actions', () => {
     dom.window.__agentWatchTest.render({
       sessions: [{
         session_id: 's-detail',
@@ -91,8 +94,8 @@ describe('agent watch metadata', () => {
         status: 'waiting',
         display: {
           action_label: 'Shell',
-          headline: 'Needs your decision',
-          detail: 'Full command output and request context should be visible here.',
+          headline: '等待确认',
+          detail: '将执行 cargo test',
           project: 'data',
           source_label: 'Claude Code',
           tone: 'needs_user',
@@ -103,16 +106,18 @@ describe('agent watch metadata', () => {
     const card = dom.window.document.querySelector('.task-card');
     expect(card.querySelector('.task-detail')).toBeNull();
 
-    card.querySelector('.task-main').click();
+    card.click();
 
-    expect(card.classList.contains('expanded')).toBe(false);
     const expandedCard = dom.window.document.querySelector('.task-card');
     expect(expandedCard.classList.contains('expanded')).toBe(true);
     expect(expandedCard.getAttribute('aria-expanded')).toBe('true');
-    expect(expandedCard.querySelector('.task-detail')?.textContent).toContain('Full command output');
+    expect(expandedCard.querySelector('.task-detail')?.textContent).toContain('将执行 cargo test');
+    expect(expandedCard.querySelector('.task-meta')?.textContent).not.toContain('将执行 cargo test');
+    expect(expandedCard.querySelector('[data-action="open"]')).toBeNull();
+    expect(expandedCard.querySelector('.task-expanded-actions')).toBeNull();
   });
 
-  it('dismisses a processed task through the row x button', async () => {
+  it('dismisses a processed task through an action button', async () => {
     const calls = [];
     dom?.window?.close();
     dom = createDom(async (name, payload) => {
@@ -146,7 +151,34 @@ describe('agent watch metadata', () => {
     expect(dom.window.document.querySelector('.task-card')).toBeNull();
   });
 
-  it('does not spell out completed state inside done rows', () => {
+  it('clicking the header folds the task list without dismissing sessions', async () => {
+    const calls = [];
+    dom?.window?.close();
+    dom = createDom(async (name, payload) => {
+      calls.push({ name, payload });
+      return {};
+    });
+    dom.window.__agentWatchTest.render({
+      sessions: [{
+        session_id: 's-header',
+        source: 'codex',
+        workspace_name: '8bit',
+        status: 'working',
+        display: { action_label: 'Patch', project: '8bit', source_label: 'Codex' },
+      }],
+    });
+
+    dom.window.document.getElementById('watch-header').click();
+    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+
+    expect(calls).toContainEqual({
+      name: 'cmd_agent_watch_set_folded',
+      payload: { folded: true },
+    });
+    expect(calls.some((call) => call.name === 'cmd_dismiss_agent_session')).toBe(false);
+  });
+
+  it('does not spell out completed detail inside collapsed done rows', () => {
     dom.window.__agentWatchTest.render({
       sessions: [{
         session_id: 's2',
@@ -156,8 +188,8 @@ describe('agent watch metadata', () => {
         status: 'done',
         display: {
           action_label: 'Shell',
-          headline: '已完成',
-          detail: '任务已完成',
+          headline: 'Done',
+          detail: 'Task finished',
           project: '8bit',
           source_label: 'Codex',
           age_label: '17s',
@@ -168,23 +200,24 @@ describe('agent watch metadata', () => {
 
     const card = dom.window.document.querySelector('.task-card');
 
-    expect(card.querySelector('.task-meta')?.textContent).toContain('8bit');
+    expect(card.querySelector('.task-title')?.textContent).toBe('8bit');
     expect(card.querySelector('.task-meta')?.textContent).toContain('Shell');
-    expect(card.textContent).not.toContain('已完成');
+    expect(card.textContent).not.toContain('Done');
+    expect(card.textContent).not.toContain('Task finished');
   });
 
-  it('keeps task rows compact and reserves only dismiss action space', () => {
+  it('keeps the CSS shaped like an island header with notification rows', () => {
     const sheet = readFileSync(resolve(process.cwd(), 'css/agent_watch.css'), 'utf8');
 
-    expect(sheet).toContain('.task-card:not(.collapsed) {');
-    expect(sheet).toContain('grid-template-columns: 4px minmax(0, 1fr) 26px;');
-    expect(sheet).toContain('height: 46px;');
-    expect(sheet).toContain('max-height: 46px;');
-    expect(sheet).toContain('overflow: hidden;');
-    expect(sheet).toContain('padding: 0 2px 10px 0;');
+    expect(sheet).toContain('.watch-header {');
+    expect(sheet).toContain('border-radius: 18px;');
+    expect(sheet).toContain('.task-card.expanded');
+    expect(sheet).toContain('overflow-y: auto;');
+    expect(sheet).toContain('.watch-shell.folded .task-stack');
+    expect(sheet).toContain('.task-card:hover .task-dismiss');
+    expect(sheet).not.toContain('.task-expanded-actions');
     expect(sheet).not.toContain('.task-open');
     expect(sheet).not.toContain('.task-toggle');
-    expect(sheet).toContain('.task-dismiss');
   });
 
   it('keeps specific task context in the view model', () => {
@@ -192,10 +225,11 @@ describe('agent watch metadata', () => {
       source: 'codex',
       machine: 'qy113',
       workspace_name: '8bit',
+      status: 'working',
       status_label: 'Working',
       display: {
         action_label: 'Shell',
-        headline: '运行远程安装自检',
+        headline: 'Run remote install self-check',
         detail: 'scripts/remote-install.sh',
         project: '8bit',
       },
@@ -207,5 +241,6 @@ describe('agent watch metadata', () => {
     expect(view.source).toBe('Codex');
     expect(view.kind).toBe('Shell');
     expect(view.detail).toBe('scripts/remote-install.sh');
+    expect(view.statusText).toBe('scripts/remote-install.sh');
   });
 });

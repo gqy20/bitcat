@@ -717,9 +717,16 @@ describe('agent toast copy', () => {
     const sheet = readFileSync(resolve(process.cwd(), 'css/bubble.css'), 'utf8');
     const script = bubbleScript;
 
-    expect(script).toContain('resizeBubbleWindow(260, 72, true)');
-    expect(sheet).toContain('min-height: 38px;');
-    expect(sheet).toContain('font-size: 12.5px;');
+    expect(script).toContain('resizeBubbleWindow(300, 64, true)');
+    expect(sheet).toContain('body.notice .collapse-btn');
+    expect(sheet).toContain('body.notice .bubble-arrow');
+    expect(sheet).toContain('body.notice.hidden .bubble');
+    expect(sheet).toContain('body.notice.show .bubble');
+    expect(sheet).toContain('body.notice:has(.agent-toast.tone-task_done) .bubble');
+    expect(sheet).toContain('grid-template-columns: minmax(0, 1fr);');
+    expect(sheet).toContain('@keyframes notice-soft-in');
+    expect(sheet).toContain('min-height: 44px;');
+    expect(sheet).toContain('font-size: 13.5px;');
     expect(sheet).toContain('font-weight: 680;');
   });
 });

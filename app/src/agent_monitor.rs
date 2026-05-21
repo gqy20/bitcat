@@ -14,7 +14,8 @@ use ai_pad_core::claude_code::ClaudeHookEvent;
 use ai_pad_core::pet_event::PetEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
@@ -35,6 +36,7 @@ pub struct SharedAgentMonitor {
     nudge_policy: Mutex<AgentNudgePolicy>,
     event_count: Mutex<u64>,
     last_event_at_ms: Mutex<Option<u64>>,
+    recent_events: Mutex<RecentAgentEvents>,
 }
 
 impl Default for SharedAgentMonitor {
@@ -44,7 +46,37 @@ impl Default for SharedAgentMonitor {
             nudge_policy: Mutex::new(AgentNudgePolicy::new()),
             event_count: Mutex::new(0),
             last_event_at_ms: Mutex::new(None),
+            recent_events: Mutex::new(RecentAgentEvents::default()),
         }
+    }
+}
+
+#[derive(Default)]
+struct RecentAgentEvents {
+    order: VecDeque<(String, u64)>,
+    seen: HashSet<String>,
+}
+
+impl RecentAgentEvents {
+    fn should_accept(&mut self, fingerprint: String, now_ms: u64) -> bool {
+        const WINDOW_MS: u64 = 1_500;
+        const MAX_RECENT: usize = 256;
+
+        while let Some((old, at_ms)) = self.order.front() {
+            if now_ms.saturating_sub(*at_ms) <= WINDOW_MS && self.order.len() <= MAX_RECENT {
+                break;
+            }
+            let old = old.clone();
+            self.order.pop_front();
+            self.seen.remove(&old);
+        }
+
+        if self.seen.contains(&fingerprint) {
+            return false;
+        }
+        self.seen.insert(fingerprint.clone());
+        self.order.push_back((fingerprint, now_ms));
+        true
     }
 }
 
@@ -387,6 +419,17 @@ pub fn handle_hook_payload(app: &AppHandle, raw: &str) -> Result<(), String> {
     let now_ms = now_ms();
     let event = parse_agent_hook_payload(raw, now_ms)?;
     let monitor: tauri::State<SharedAgentMonitor> = app.state();
+    let fingerprint = agent_event_fingerprint(&event);
+    {
+        let mut recent = monitor
+            .recent_events
+            .lock()
+            .map_err(|e| format!("agent recent events lock poisoned: {e}"))?;
+        if !recent.should_accept(fingerprint.clone(), now_ms) {
+            debug!(session_id = %event.session_id, status = %event.status.as_str(), "duplicate agent hook ignored");
+            return Ok(());
+        }
+    }
     let seq = monitor.next_event_seq(now_ms)?;
     if let Err(e) = append_jsonl(
         "agent_watch_events.jsonl",
@@ -424,14 +467,29 @@ pub fn handle_hook_payload(app: &AppHandle, raw: &str) -> Result<(), String> {
 
 #[derive(Debug, Deserialize)]
 struct AgentHookEnvelope {
+    #[serde(default)]
+    schema: Option<String>,
     source: String,
     #[serde(default)]
     machine: Option<String>,
     payload: Value,
 }
 
+fn agent_event_fingerprint(event: &AgentSessionEvent) -> String {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    event.source.hash(&mut hasher);
+    event.session_id.hash(&mut hasher);
+    event.status.hash(&mut hasher);
+    event.tool_name.hash(&mut hasher);
+    event.tool_input_preview.hash(&mut hasher);
+    event.user_prompt_preview.hash(&mut hasher);
+    event.last_response_preview.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
 fn parse_agent_hook_payload(raw: &str, now_ms: u64) -> Result<AgentSessionEvent, String> {
     if let Ok(envelope) = serde_json::from_str::<AgentHookEnvelope>(raw) {
+        let _schema = envelope.schema.as_deref();
         let source = match envelope.source.trim().to_ascii_lowercase().as_str() {
             "codex" => AgentSource::Codex,
             "claude" | "claude-code" | "claude_code" => AgentSource::ClaudeCode,
@@ -860,6 +918,14 @@ mod tests {
         assert_eq!(event.status, AgentStatus::ToolRunning);
         assert_eq!(event.tool_name.as_deref(), Some("Bash"));
         assert!(event.tool_input_preview.unwrap().contains("cargo test"));
+    }
+
+    #[test]
+    fn recent_agent_events_deduplicates_short_window() {
+        let mut recent = RecentAgentEvents::default();
+        assert!(recent.should_accept("same".into(), 1_000));
+        assert!(!recent.should_accept("same".into(), 1_500));
+        assert!(recent.should_accept("same".into(), 3_000));
     }
 
     #[test]

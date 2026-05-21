@@ -12,10 +12,9 @@ use tauri::{
 use tracing::warn;
 
 const WINDOW_LABEL: &str = "agent-watch";
-const WINDOW_W: f64 = 360.0;
-const WINDOW_H: f64 = 260.0;
-const FOLDED_WINDOW_W: f64 = 64.0;
-const FOLDED_WINDOW_H: f64 = 64.0;
+const WINDOW_W: f64 = 380.0;
+const WINDOW_H: f64 = 300.0;
+const FOLDED_WINDOW_H: f64 = 60.0;
 const EDGE_MARGIN: i32 = 12;
 static USER_PLACED: AtomicBool = AtomicBool::new(false);
 
@@ -78,7 +77,7 @@ fn ensure_agent_watch_window(app: &AppHandle) -> Result<WebviewWindow, tauri::Er
     )
     .title("8Bit Agent Watch")
     .inner_size(WINDOW_W, WINDOW_H)
-    .min_inner_size(FOLDED_WINDOW_W, FOLDED_WINDOW_H)
+    .min_inner_size(WINDOW_W, FOLDED_WINDOW_H)
     .max_inner_size(WINDOW_W, WINDOW_H)
     .decorations(false)
     .transparent(true)
@@ -199,14 +198,13 @@ pub async fn cmd_agent_watch_hide(app: AppHandle) -> Result<(), String> {
 pub async fn cmd_agent_watch_set_folded(app: AppHandle, folded: bool) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
         let scale = window.scale_factor().unwrap_or(1.0).max(0.5);
-        let (w, h) = if folded {
-            (FOLDED_WINDOW_W, FOLDED_WINDOW_H)
-        } else {
-            (WINDOW_W, WINDOW_H)
-        };
+        let h = if folded { FOLDED_WINDOW_H } else { WINDOW_H };
         set_size_preserving_anchor(
             &window,
-            PhysicalSize::new((w * scale).round() as u32, (h * scale).round() as u32),
+            PhysicalSize::new(
+                (WINDOW_W * scale).round() as u32,
+                (h * scale).round() as u32,
+            ),
         )
         .map_err(|e| e.to_string())?;
     }

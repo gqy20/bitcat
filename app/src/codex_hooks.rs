@@ -274,13 +274,48 @@ fn hook_script(port: u16) -> String {
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $ErrorActionPreference = "Stop"
 
+$payload = $null
+$logDir = Join-Path $HOME ".ai-pad\logs"
+$logFile = Join-Path $logDir "agent_hook_bridge.jsonl"
+
+function Get-Field($obj, [string[]]$names) {{
+  foreach ($name in $names) {{
+    if ($null -ne $obj -and $obj.PSObject.Properties.Name -contains $name) {{
+      return [string]$obj.$name
+    }}
+  }}
+  return $null
+}}
+
+function Write-AiPadHookLog([string]$status, [string]$detail) {{
+  try {{
+    New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+    if ((Test-Path $logFile) -and ((Get-Item $logFile).Length -gt 1048576)) {{
+      Move-Item -Force $logFile "$logFile.1"
+    }}
+    $entry = [ordered]@{{
+      ts = (Get-Date).ToUniversalTime().ToString("o")
+      source = "codex"
+      status = $status
+      detail = $detail
+      hook = Get-Field $payload @("hook_event_name", "hookEventName", "event")
+      session_id = Get-Field $payload @("session_id", "sessionId")
+      tool = Get-Field $payload @("tool_name", "toolName")
+      bytes = if ($null -eq $raw) {{ 0 }} else {{ $raw.Length }}
+    }} | ConvertTo-Json -Depth 8 -Compress
+    Add-Content -LiteralPath $logFile -Value $entry -Encoding UTF8
+  }} catch {{}}
+}}
+
 $raw = [Console]::In.ReadToEnd()
 if ([string]::IsNullOrWhiteSpace($raw)) {{ exit 0 }}
 
 try {{
   $payload = $raw | ConvertFrom-Json
   $envelope = [ordered]@{{
+    schema = "ai-pad.agent-hook.v1"
     source = "codex"
+    machine = $env:COMPUTERNAME
     payload = $payload
   }} | ConvertTo-Json -Depth 100 -Compress
 
@@ -293,7 +328,9 @@ try {{
   $client.Client.Shutdown([System.Net.Sockets.SocketShutdown]::Send)
   $stream.Dispose()
   $client.Dispose()
+  Write-AiPadHookLog "sent" "127.0.0.1:{port}"
 }} catch {{
+  Write-AiPadHookLog "failed" $_.Exception.GetType().Name
   # Keep Codex hooks non-blocking for the user.
   exit 0
 }}

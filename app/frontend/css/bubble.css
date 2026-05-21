@@ -83,6 +83,52 @@ html, body {
   transform: translate(-50%, -62%) rotate(45deg);
 }
 
+body.notice .collapse-btn,
+body.notice .bubble-arrow {
+  display: none;
+}
+
+body.notice .bubble {
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  padding: 0 14px;
+  border-radius: 24px;
+  display: grid;
+  align-items: center;
+  border-color: rgba(244, 184, 74, 0.46);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.16),
+    0 0 0 1px rgba(244, 184, 74, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
+}
+
+body.notice:has(.agent-toast.tone-waiting_for_user) .bubble,
+body.notice:has(.agent-toast.tone-task_error) .bubble {
+  border-color: rgba(255, 207, 103, 0.58);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.16),
+    0 0 0 1px rgba(255, 207, 103, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
+}
+
+body.notice:has(.agent-toast.tone-task_done) .bubble {
+  border-color: rgba(142, 230, 168, 0.58);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.16),
+    0 0 0 1px rgba(142, 230, 168, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
+}
+
+body.notice .content {
+  min-width: 0;
+  padding-right: 0;
+  overflow: hidden;
+  display: grid;
+  align-items: center;
+}
+
 /* 三角箭头（DOM 元素，继承毛玻璃） */
 .bubble-arrow {
   position: absolute;
@@ -121,6 +167,31 @@ body.hidden .bubble {
 body.show .bubble {
   opacity: 1;
   transform: translateY(0);
+}
+
+body.notice.hidden .bubble {
+  opacity: 0;
+  transform: translateY(6px) scale(0.98);
+  transition:
+    opacity 0.26s ease,
+    transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+body.notice.show .bubble {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition:
+    opacity 0.28s ease,
+    transform 0.34s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+body.notice.show .content {
+  animation: notice-soft-in 0.32s ease-out both;
+}
+
+@keyframes notice-soft-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* 内容次级入场（延迟 50ms，层次感） */
@@ -200,11 +271,10 @@ body.show .content {
 
 .agent-toast {
   width: 100%;
-  min-height: 38px;
+  min-height: 44px;
   display: grid;
-  grid-template-columns: 3px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -215,19 +285,7 @@ body.show .content {
 }
 
 .agent-toast-mark {
-  align-self: center;
-  height: 28px;
-  border-radius: 999px;
-  background: #f4b84a;
-}
-
-.agent-toast.tone-waiting_for_user .agent-toast-mark,
-.agent-toast.tone-task_error .agent-toast-mark {
-  background: #ffcf67;
-}
-
-.agent-toast.tone-task_done .agent-toast-mark {
-  background: #8ee6a8;
+  display: none;
 }
 
 .agent-toast-copy {
@@ -242,7 +300,7 @@ body.show .content {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: rgba(17, 24, 39, 0.96);
-  font-size: 12.5px;
+  font-size: 13.5px;
   line-height: 1.2;
   font-weight: 680;
   letter-spacing: 0;

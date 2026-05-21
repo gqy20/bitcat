@@ -105,8 +105,11 @@ PORT="${PORT}"
 SOURCE="\${AI_PAD_SOURCE:-claude_code}"
 STATE_DIR="${HOOK_DIR}/state"
 STATE_FILE="\${STATE_DIR}/monitor-state"
+LOG_DIR="${HOOK_DIR}/logs"
+LOG_FILE="\${LOG_DIR}/agent-hook-bridge.jsonl"
 PROBE_INTERVAL_SEC="\${AI_PAD_PROBE_INTERVAL_SEC:-45}"
 CONNECT_TIMEOUT_SEC="\${AI_PAD_CONNECT_TIMEOUT_SEC:-1}"
+LOG_MAX_BYTES="\${AI_PAD_HOOK_LOG_MAX_BYTES:-1048576}"
 
 raw=\$(cat || true)
 if [ -z "\$raw" ]; then exit 0; fi
@@ -130,6 +133,63 @@ write_state() {
     printf 'host=%s\n' "\$host"
     printf 'checked_at=%s\n' "\$(now_epoch)"
   } > "\$STATE_FILE"
+}
+
+json_escape() {
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json, sys; print(json.dumps(sys.stdin.read())[1:-1])'
+  else
+    sed 's/\\/\\\\/g; s/"/\\"/g'
+  fi
+}
+
+payload_field() {
+  key="\$1"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c '
+import json, sys
+key = sys.argv[1]
+try:
+    payload = json.load(sys.stdin)
+    value = payload.get(key)
+    print("" if value is None else str(value))
+except Exception:
+    pass
+' "\$key" 2>/dev/null <<FIELD_EOF
+\$raw
+FIELD_EOF
+  fi
+}
+
+log_event() {
+  status="\$1"
+  detail="\${2:-}"
+  mkdir -p "\$LOG_DIR" 2>/dev/null || return 0
+  if [ -f "\$LOG_FILE" ]; then
+    size=\$(wc -c < "\$LOG_FILE" 2>/dev/null || printf '0')
+    case "\$size" in ''|*[!0-9]*) size=0 ;; esac
+    if [ "\$size" -gt "\$LOG_MAX_BYTES" ]; then
+      mv -f "\$LOG_FILE" "\$LOG_FILE.1" 2>/dev/null || true
+    fi
+  fi
+  ts=\$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date)
+  hook=\$(payload_field hook_event_name)
+  [ -n "\$hook" ] || hook=\$(payload_field hookEventName)
+  session_id=\$(payload_field session_id)
+  [ -n "\$session_id" ] || session_id=\$(payload_field sessionId)
+  tool=\$(payload_field tool_name)
+  [ -n "\$tool" ] || tool=\$(payload_field toolName)
+  bytes=\$(printf '%s' "\$raw" | wc -c | tr -d ' ')
+  printf '{"ts":"%s","source":"%s","machine":"%s","status":"%s","detail":"%s","hook":"%s","session_id":"%s","tool":"%s","bytes":%s}\n' \
+    "\$(printf '%s' "\$ts" | json_escape)" \
+    "\$(printf '%s' "\$SOURCE" | json_escape)" \
+    "\$(printf '%s' "\$MACHINE" | json_escape)" \
+    "\$(printf '%s' "\$status" | json_escape)" \
+    "\$(printf '%s' "\$detail" | json_escape)" \
+    "\$(printf '%s' "\$hook" | json_escape)" \
+    "\$(printf '%s' "\$session_id" | json_escape)" \
+    "\$(printf '%s' "\$tool" | json_escape)" \
+    "\$bytes" >> "\$LOG_FILE" 2>/dev/null || true
 }
 
 can_attempt_network() {
@@ -170,6 +230,7 @@ if command -v python3 >/dev/null 2>&1; then
 import json, os, sys
 payload = json.loads(sys.stdin.read())
 print(json.dumps({
+  "schema": "ai-pad.agent-hook.v1",
   "source": os.environ.get("SOURCE", "claude_code"),
   "machine": os.environ.get("MACHINE", "remote"),
   "payload": payload,
@@ -180,16 +241,18 @@ else
 fi
 
 if [ -z "\$envelope" ]; then
-  envelope=\$(printf '{"source":"%s","machine":"%s","payload":%s}' "\$SOURCE" "\$MACHINE" "\$raw")
+  envelope=\$(printf '{"schema":"ai-pad.agent-hook.v1","source":"%s","machine":"%s","payload":%s}' "\$SOURCE" "\$MACHINE" "\$raw")
 fi
 
 for host in \$(printf '%s' "\$HOSTS" | tr ',' ' '); do
   if send_to_host "\$host"; then
     write_state up "\$host"
+    log_event sent "\$host:\$PORT"
     exit 0
   fi
 done
 write_state down ""
+log_event failed "all-targets-unreachable"
 exit 0
 EOF
   chmod +x "$SENDER"
@@ -398,6 +461,7 @@ source = os.environ.get("AI_PAD_SOURCE", "codex")
 machine = os.environ.get("MACHINE", "remote")
 cwd = os.environ.get("CWD", "")
 print(json.dumps({
+  "schema": "ai-pad.agent-hook.v1",
   "source": source,
   "machine": machine,
   "payload": {
@@ -410,7 +474,7 @@ print(json.dumps({
 PY
 )"
   else
-    envelope="$(printf '{"source":"%s","machine":"%s","payload":{"session_id":"ai-pad-remote-self-test-%s","hook_event_name":"UserPromptSubmit","cwd":"%s","prompt":"8Bit Cat remote hook self-test"}}' "$test_source" "$MACHINE" "$MACHINE" "$cwd")"
+    envelope="$(printf '{"schema":"ai-pad.agent-hook.v1","source":"%s","machine":"%s","payload":{"session_id":"ai-pad-remote-self-test-%s","hook_event_name":"UserPromptSubmit","cwd":"%s","prompt":"8Bit Cat remote hook self-test"}}' "$test_source" "$MACHINE" "$MACHINE" "$cwd")"
   fi
   [ -n "$envelope" ] || {
     echo "remote self-test: skipped, could not build payload" >&2

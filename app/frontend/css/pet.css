@@ -447,15 +447,18 @@ body:not(.has-pet-badge) .pet-badge {
 #snap-bar.direction-bottom {
   width: var(--snap-h, 67px);
   height: var(--snap-w, 24px);
+  display: grid;
+  place-items: center;
 }
 
 #snap-bar.direction-top > *,
 #snap-bar.direction-bottom > * {
   left: 4px;
   right: 4px;
-  top: auto;
-  bottom: auto;
+  top: 50%;
   width: auto;
+  bottom: auto;
+  transform: translateY(-50%);
 }
 
 #snap-bar.direction-top .snap-layer-outer,
@@ -475,7 +478,10 @@ body:not(.has-pet-badge) .pet-badge {
 
 #snap-bar.direction-top .snap-layer-outer,
 #snap-bar.direction-top .snap-layer-mid,
-#snap-bar.direction-top .snap-core { top: 0; }
+#snap-bar.direction-top .snap-core {
+  top: 50%;
+  bottom: auto;
+}
 #snap-bar.direction-top .snap-layer-outer {
   background: linear-gradient(180deg,
     rgba(99, 102, 241, 0.35) 0%,
@@ -489,15 +495,21 @@ body:not(.has-pet-badge) .pet-badge {
     rgba(139, 92, 246, 0) 100%);
 }
 #snap-bar.direction-top .snap-dot {
-  top: calc(var(--bar-width) + 4px);
+  top: 50%;
   left: 50%;
-  margin-left: -1.5px;
-  margin-top: 0;
+  right: auto;
+  width: 3px;
+  height: 3px;
+  margin: 0;
+  transform: translate(-50%, -50%);
 }
 
 #snap-bar.direction-bottom .snap-layer-outer,
 #snap-bar.direction-bottom .snap-layer-mid,
-#snap-bar.direction-bottom .snap-core { bottom: 0; }
+#snap-bar.direction-bottom .snap-core {
+  top: 50%;
+  bottom: auto;
+}
 #snap-bar.direction-bottom .snap-layer-outer {
   background: linear-gradient(0deg,
     rgba(99, 102, 241, 0.35) 0%,
@@ -511,10 +523,13 @@ body:not(.has-pet-badge) .pet-badge {
     rgba(139, 92, 246, 0) 100%);
 }
 #snap-bar.direction-bottom .snap-dot {
-  bottom: calc(var(--bar-width) + 4px);
+  top: 50%;
   left: 50%;
-  margin-left: -1.5px;
-  margin-top: 0;
+  right: auto;
+  width: 3px;
+  height: 3px;
+  margin: 0;
+  transform: translate(-50%, -50%);
 }
 
 /* ---- hover：核心展宽 + 指示点浮现 + 整体提亮 ---- */
@@ -535,6 +550,11 @@ body:not(.has-pet-badge) .pet-badge {
 #snap-bar.hovered .snap-dot {
   opacity: 1;
   animation-play-state: running;
+}
+#snap-bar.hovered.direction-top .snap-dot,
+#snap-bar.hovered.direction-bottom .snap-dot {
+  animation: none;
+  transform: translate(-50%, -50%);
 }
 
 /* ---- 呼吸动画 ---- */
