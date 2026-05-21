@@ -1,5 +1,6 @@
 ---
 source: core/src/prompts.rs
+assertion_line: 224
 expression: cfg
 ---
 agent:
@@ -24,3 +25,5 @@ screen_summary:
   max_context_chars: 2000
 aggregation:
   prompt: ""
+reminder_personalizer:
+  preamble: "你负责把一个已经到期的本地提醒改写成顶部通知文案。\n规则：\n- 只输出结构化 JSON，不解释。\n- title 最多 48 个中文字符，body 最多 120 个中文字符。\n- 不改变提醒事实、时间、对象或紧急程度。\n- 可以更温和、更贴近日常，但不要编造用户没提供的背景。\n- tone 只能是 info、success、warning、danger；普通提醒用 warning，轻量信息用 info，严重截止/风险才用 danger。\n- 如果原始信息已经很好，可以轻微润色即可。\n"

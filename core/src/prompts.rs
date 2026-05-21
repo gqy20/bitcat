@@ -66,6 +66,27 @@ fn default_aggregation_prompt() -> String {
     embedded_default::<PromptsConfig>().aggregation.prompt
 }
 
+/// 提醒到期后的 AI 文案润色提示词配置。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ReminderPersonalizerPromptConfig {
+    #[serde(default = "default_reminder_personalizer_preamble")]
+    pub preamble: String,
+}
+
+fn default_reminder_personalizer_preamble() -> String {
+    embedded_default::<PromptsConfig>()
+        .reminder_personalizer
+        .preamble
+}
+
+impl Default for ReminderPersonalizerPromptConfig {
+    fn default() -> Self {
+        Self {
+            preamble: default_reminder_personalizer_preamble(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct PromptsConfig {
     #[serde(default)]
@@ -80,6 +101,8 @@ pub struct PromptsConfig {
     pub screen_summary: ScreenSummaryConfig,
     #[serde(default)]
     pub aggregation: AggregationConfig,
+    #[serde(default)]
+    pub reminder_personalizer: ReminderPersonalizerPromptConfig,
 }
 
 fn default_agent_preamble() -> String {
@@ -244,6 +267,17 @@ agent:
         assert_eq!(d.vision.prompt, b.vision.prompt);
         assert_eq!(d.vision.prompt_multi, b.vision.prompt_multi);
         assert_eq!(d.memory.max_entries, b.memory.max_entries);
+        assert_eq!(
+            d.reminder_personalizer.preamble,
+            b.reminder_personalizer.preamble
+        );
+    }
+
+    #[test]
+    fn test_default_includes_reminder_personalizer_prompt() {
+        let cfg = PromptsConfig::default();
+        assert!(cfg.reminder_personalizer.preamble.contains("顶部通知文案"));
+        assert!(cfg.reminder_personalizer.preamble.contains("tone"));
     }
 
     #[test]

@@ -5,7 +5,10 @@
 //! small IPC actions; event producers pass structured payloads in.
 //! The frontend renders the payload and decides when to fade out.
 
-use ai_pad_core::{app_settings::AppSettings, reminder::ReminderRecord};
+use ai_pad_core::{
+    app_settings::AppSettings, reminder::ReminderRecord,
+    reminder_personalizer::ReminderNotificationCopy,
+};
 use serde::{Deserialize, Serialize};
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
@@ -20,7 +23,7 @@ use windows::{
 const WINDOW_LABEL: &str = "notification";
 const WINDOW_W: f64 = 240.0;
 const WINDOW_H: f64 = 75.0;
-const WINDOW_MAX_H: f64 = 132.0;
+const WINDOW_MAX_H: f64 = 152.0;
 
 /// Button shown on a transient notification.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,11 +79,36 @@ pub fn show_reminder_notification(
     app: &AppHandle,
     reminder: &ReminderRecord,
 ) -> Result<(), String> {
+    show_reminder_notification_with_copy(app, reminder, None)
+}
+
+/// Show a reminder with optional AI-personalized notification copy.
+pub fn show_reminder_notification_with_copy(
+    app: &AppHandle,
+    reminder: &ReminderRecord,
+    copy: Option<ReminderNotificationCopy>,
+) -> Result<(), String> {
+    let (title, body, tone) = match copy {
+        Some(copy) => (
+            copy.title,
+            if copy.body.is_empty() {
+                None
+            } else {
+                Some(copy.body)
+            },
+            copy.tone.as_str().to_string(),
+        ),
+        None => (
+            reminder.title.clone(),
+            reminder.message.clone(),
+            "warning".to_string(),
+        ),
+    };
     let payload = NotificationPayload {
         id: format!("reminder-{}-{}", reminder.id, reminder.fire_count),
-        title: reminder.title.clone(),
-        body: reminder.message.clone(),
-        tone: "warning".to_string(),
+        title,
+        body,
+        tone,
         source: "reminder".to_string(),
         reminder_id: Some(reminder.id.clone()),
         ttl_ms: 12_000,

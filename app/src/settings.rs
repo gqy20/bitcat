@@ -231,6 +231,10 @@ pub struct AppearanceInput {
     pub notification_sound_agent_watch: bool,
     #[serde(default = "default_true")]
     pub notification_sound_skip_agent_tts: bool,
+    #[serde(default)]
+    pub reminder_ai_personalization_enabled: bool,
+    #[serde(default = "default_reminder_ai_timeout_ms")]
+    pub reminder_ai_timeout_ms: u64,
     pub global_shortcut: String,
     #[serde(default = "default_screenshot_interval_sec")]
     pub screenshot_interval_sec: u64,
@@ -259,6 +263,9 @@ pub struct AgentWatchInput {
 
 fn default_screenshot_interval_sec() -> u64 {
     30
+}
+fn default_reminder_ai_timeout_ms() -> u64 {
+    3_000
 }
 fn default_first_nudge_after_sec() -> u64 {
     30
@@ -897,6 +904,8 @@ pub async fn cmd_settings_save_appearance(
         notification_sound_reminder: payload.notification_sound_reminder,
         notification_sound_agent_watch: payload.notification_sound_agent_watch,
         notification_sound_skip_agent_tts: payload.notification_sound_skip_agent_tts,
+        reminder_ai_personalization_enabled: payload.reminder_ai_personalization_enabled,
+        reminder_ai_timeout_ms: payload.reminder_ai_timeout_ms.clamp(500, 10_000),
         global_shortcut: payload.global_shortcut,
         screenshot_interval_sec: interval,
         screenshot_show_bubble: payload.screenshot_show_bubble,

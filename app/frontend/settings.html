@@ -282,6 +282,20 @@
               </div>
               <input id="a-notify-sound-skip-tts" type="checkbox" />
             </div>
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="a-reminder-ai">AI 润色提醒</label>
+                <span>提醒到期时用轻量模型生成更自然的顶部通知文案；失败会显示原始提醒。</span>
+              </div>
+              <input id="a-reminder-ai" type="checkbox" />
+            </div>
+            <div class="setting-row">
+              <div class="setting-copy">
+                <label for="a-reminder-ai-timeout">提醒润色超时</label>
+                <span>500-10000 毫秒；超时后立即回退原始提醒。</span>
+              </div>
+              <input id="a-reminder-ai-timeout" type="number" min="500" max="10000" step="500" placeholder="3000" />
+            </div>
             <div class="setting-row">
               <div class="setting-copy">
                 <label for="a-shortcut">全局快捷键</label>
@@ -476,6 +490,13 @@
                 <span>多显示器摘要规则</span>
               </div>
               <textarea id="p-vision-multi" rows="3" spellcheck="false"></textarea>
+            </div>
+            <div class="editor-panel">
+              <div class="editor-head">
+                <label for="p-reminder-personalizer">提醒润色提示词</label>
+                <span>到期提醒顶部通知文案规则</span>
+              </div>
+              <textarea id="p-reminder-personalizer" rows="6" spellcheck="false"></textarea>
             </div>
           </div>
           <details class="quiet-details advanced-settings">

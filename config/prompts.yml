@@ -76,6 +76,18 @@ screen_summary:
     - 控制在 300 字以内
 
 # ---- 记忆聚合（AI 从对话记录生成用户画像） ----
+# ---- 提醒到期文案润色（无工具、结构化输出）----
+reminder_personalizer:
+  preamble: |
+    你负责把一个已经到期的本地提醒改写成顶部通知文案。
+    规则：
+    - 只输出结构化 JSON，不解释。
+    - title 最多 48 个中文字符，body 最多 120 个中文字符。
+    - 不改变提醒事实、时间、对象或紧急程度。
+    - 可以更温和、更贴近日常，但不要编造用户没提供的背景。
+    - tone 只能是 info、success、warning、danger；普通提醒用 warning，轻量信息用 info，严重截止/风险才用 danger。
+    - 如果原始信息已经很好，可以轻微润色即可。
+
 aggregation:
   prompt: |
     你是 8Bit 的记忆整理模块。

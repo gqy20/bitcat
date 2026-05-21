@@ -75,6 +75,7 @@ async function mockInvoke(command) {
         vision: { prompt: "", prompt_multi: "" },
         memory: { max_entries: 20, max_context_chars: 6000 },
         screen_summary: { interval_min: 5 },
+        reminder_personalizer: { preamble: "" },
       },
       appearance: {
         always_on_top: false,
@@ -84,6 +85,8 @@ async function mockInvoke(command) {
         notification_sound_reminder: true,
         notification_sound_agent_watch: true,
         notification_sound_skip_agent_tts: true,
+        reminder_ai_personalization_enabled: false,
+        reminder_ai_timeout_ms: 3000,
         global_shortcut: "CommandOrControl+Alt+Space",
         screenshot_interval_sec: 30,
         pet_asset_url: "",
@@ -471,11 +474,12 @@ function renderPrompts(p) {
   $("p-agent").value = p.agent.preamble;
   $("p-vision").value = p.vision.prompt;
   $("p-vision-multi").value = p.vision.prompt_multi;
+  $("p-reminder-personalizer").value = p.reminder_personalizer?.preamble || "";
   $("p-mem-max").value = p.memory.max_entries;
   $("p-mem-ctx").value = p.memory.max_context_chars;
   $("p-ss-interval").value = p.screen_summary.interval_min;
 
-  ["p-agent","p-vision","p-vision-multi","p-mem-max","p-mem-ctx","p-ss-interval"].forEach(id => {
+  ["p-agent","p-vision","p-vision-multi","p-reminder-personalizer","p-mem-max","p-mem-ctx","p-ss-interval"].forEach(id => {
     $(id).oninput = () => markDirty("prompts");
   });
 }
@@ -485,6 +489,8 @@ function collectPrompts() {
   p.agent.preamble = $("p-agent").value;
   p.vision.prompt = $("p-vision").value;
   p.vision.prompt_multi = $("p-vision-multi").value;
+  p.reminder_personalizer = p.reminder_personalizer || {};
+  p.reminder_personalizer.preamble = $("p-reminder-personalizer").value;
   p.memory.max_entries = parseInt($("p-mem-max").value) || p.memory.max_entries;
   p.memory.max_context_chars = parseInt($("p-mem-ctx").value) || p.memory.max_context_chars;
   p.screen_summary.interval_min = parseInt($("p-ss-interval").value) || p.screen_summary.interval_min;
@@ -499,6 +505,8 @@ function renderAppearance(a) {
   $("a-notify-sound-reminder").checked = a.notification_sound_reminder !== false;
   $("a-notify-sound-agent").checked = a.notification_sound_agent_watch !== false;
   $("a-notify-sound-skip-tts").checked = a.notification_sound_skip_agent_tts !== false;
+  $("a-reminder-ai").checked = !!a.reminder_ai_personalization_enabled;
+  $("a-reminder-ai-timeout").value = a.reminder_ai_timeout_ms ?? 3000;
   $("a-shortcut").value = a.global_shortcut;
   $("a-ss-interval").value = a.screenshot_interval_sec ?? 30;
   $("a-ss-bubble").checked = a.screenshot_show_bubble !== false;
@@ -506,13 +514,15 @@ function renderAppearance(a) {
   renderPetAssetChoice(a.pet_asset_url || "");
   updateOverviewAppearance(a);
 
-  ["a-top","a-collapsed","a-tts","a-notify-sound","a-notify-sound-reminder","a-notify-sound-agent","a-notify-sound-skip-tts","a-ss-bubble"].forEach(id => { $(id).onchange = () => markDirty("appearance"); });
-  ["a-shortcut","a-ss-interval","a-pet-asset"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
+  ["a-top","a-collapsed","a-tts","a-notify-sound","a-notify-sound-reminder","a-notify-sound-agent","a-notify-sound-skip-tts","a-reminder-ai","a-ss-bubble"].forEach(id => { $(id).onchange = () => markDirty("appearance"); });
+  ["a-shortcut","a-ss-interval","a-reminder-ai-timeout","a-pet-asset"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
 }
 
 function collectAppearance() {
   const rawInterval = parseInt($("a-ss-interval").value, 10);
   const interval = Number.isFinite(rawInterval) ? Math.min(3600, Math.max(5, rawInterval)) : 30;
+  const rawReminderAiTimeout = parseInt($("a-reminder-ai-timeout").value, 10);
+  const reminderAiTimeout = Number.isFinite(rawReminderAiTimeout) ? Math.min(10000, Math.max(500, rawReminderAiTimeout)) : 3000;
   return {
     always_on_top: $("a-top").checked,
     default_collapsed: $("a-collapsed").checked,
@@ -521,6 +531,8 @@ function collectAppearance() {
     notification_sound_reminder: $("a-notify-sound-reminder").checked,
     notification_sound_agent_watch: $("a-notify-sound-agent").checked,
     notification_sound_skip_agent_tts: $("a-notify-sound-skip-tts").checked,
+    reminder_ai_personalization_enabled: $("a-reminder-ai").checked,
+    reminder_ai_timeout_ms: reminderAiTimeout,
     global_shortcut: $("a-shortcut").value.trim() || "CommandOrControl+Alt+Space",
     screenshot_interval_sec: interval,
     screenshot_show_bubble: $("a-ss-bubble").checked,

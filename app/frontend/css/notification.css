@@ -69,6 +69,7 @@ body {
 .notification.expanded {
   align-items: start;
   border-radius: 15px;
+  padding-bottom: 12px;
 }
 
 .notification.tone-info {

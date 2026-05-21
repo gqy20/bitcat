@@ -79,6 +79,10 @@ pub struct AppearanceSettings {
     pub notification_sound_agent_watch: bool,
     #[serde(default = "default_true")]
     pub notification_sound_skip_agent_tts: bool,
+    #[serde(default)]
+    pub reminder_ai_personalization_enabled: bool,
+    #[serde(default = "default_reminder_ai_timeout_ms")]
+    pub reminder_ai_timeout_ms: u64,
     #[serde(default = "default_shortcut")]
     pub global_shortcut: String,
     /// 截屏 Vision 分析间隔（秒），默认 30。
@@ -111,6 +115,9 @@ fn default_shortcut() -> String {
 }
 fn default_screenshot_interval_sec() -> u64 {
     30
+}
+fn default_reminder_ai_timeout_ms() -> u64 {
+    3_000
 }
 fn default_first_nudge_after_sec() -> u64 {
     30
@@ -145,6 +152,8 @@ impl Default for AppearanceSettings {
             notification_sound_reminder: true,
             notification_sound_agent_watch: true,
             notification_sound_skip_agent_tts: true,
+            reminder_ai_personalization_enabled: false,
+            reminder_ai_timeout_ms: default_reminder_ai_timeout_ms(),
             global_shortcut: default_shortcut(),
             screenshot_interval_sec: default_screenshot_interval_sec(),
             screenshot_show_bubble: true,
@@ -233,6 +242,8 @@ mod tests {
         assert!(a.notification_sound_reminder);
         assert!(a.notification_sound_agent_watch);
         assert!(a.notification_sound_skip_agent_tts);
+        assert!(!a.reminder_ai_personalization_enabled);
+        assert_eq!(a.reminder_ai_timeout_ms, 3_000);
         assert_eq!(a.global_shortcut, "CommandOrControl+Alt+Space");
         assert_eq!(a.screenshot_interval_sec, 30);
     }
@@ -268,6 +279,8 @@ mod tests {
                 notification_sound_reminder: false,
                 notification_sound_agent_watch: true,
                 notification_sound_skip_agent_tts: false,
+                reminder_ai_personalization_enabled: true,
+                reminder_ai_timeout_ms: 2_500,
                 global_shortcut: "F12".into(),
                 screenshot_interval_sec: 45,
                 screenshot_show_bubble: false,
@@ -324,6 +337,8 @@ mod tests {
         assert!(s.appearance.notification_sound_reminder);
         assert!(s.appearance.notification_sound_agent_watch);
         assert!(s.appearance.notification_sound_skip_agent_tts);
+        assert!(!s.appearance.reminder_ai_personalization_enabled);
+        assert_eq!(s.appearance.reminder_ai_timeout_ms, 3_000);
         assert!(s.appearance.always_on_top); // 默认值
         assert_eq!(s.appearance.global_shortcut, "CommandOrControl+Alt+Space");
     }

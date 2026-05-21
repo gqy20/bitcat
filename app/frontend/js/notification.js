@@ -29,7 +29,9 @@
 
   function resizeWindow() {
     if (!invoke) return;
-    const height = Math.ceil(Math.max(document.body.scrollHeight, root.scrollHeight, 75));
+    const expanded = root.classList.contains("expanded");
+    const measured = Math.ceil(Math.max(document.body.scrollHeight, root.scrollHeight, 75));
+    const height = expanded ? Math.max(measured, 122) : 75;
     invoke("cmd_notification_resize", { height }).catch(() => {});
   }
 
