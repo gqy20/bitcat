@@ -101,6 +101,9 @@ pub struct CreateReminderArgs {
     /// Absolute local time for once reminders. Accepts RFC3339 or "YYYY-MM-DD HH:MM".
     #[serde(default)]
     pub at: Option<String>,
+    /// Relative delay in minutes for one-shot reminders like "in 3 minutes".
+    #[serde(default)]
+    pub delay_minutes: Option<u32>,
     /// Interval in minutes for interval reminders.
     #[serde(default)]
     pub interval_minutes: Option<u32>,
@@ -249,7 +252,7 @@ fn create_reminder_in_path(
         .as_ref()
         .map(|m| clean_optional(m, MAX_MESSAGE_CHARS))
         .filter(|m| !m.is_empty());
-    let schedule = build_schedule(args)?;
+    let schedule = build_schedule(args, now)?;
     let next_fire_at = compute_next_fire_at(&schedule, now)?;
     let timestamp = to_rfc3339(now);
     let mut reminders = load_reminders_from_path(path)?;
@@ -329,14 +332,24 @@ fn fire_due_reminders_in_path(
     Ok(fired)
 }
 
-fn build_schedule(args: &CreateReminderArgs) -> Result<ReminderSchedule, String> {
+fn build_schedule(
+    args: &CreateReminderArgs,
+    now: DateTime<Local>,
+) -> Result<ReminderSchedule, String> {
     match args.schedule_kind {
         CreateReminderKind::Once => {
-            let at = args
-                .at
-                .as_deref()
-                .ok_or_else(|| "once reminder requires at".to_string())?;
-            let parsed = parse_local_datetime(at)?;
+            let parsed = if let Some(at) = args.at.as_deref() {
+                parse_local_datetime(at)?
+            } else if let Some(minutes) = args.delay_minutes {
+                if !(MIN_INTERVAL_MINUTES..=MAX_INTERVAL_MINUTES).contains(&minutes) {
+                    return Err(format!(
+                        "delay_minutes must be between {MIN_INTERVAL_MINUTES} and {MAX_INTERVAL_MINUTES}"
+                    ));
+                }
+                now + ChronoDuration::minutes(minutes as i64)
+            } else {
+                return Err("once reminder requires at or delay_minutes".to_string());
+            };
             Ok(ReminderSchedule::Once {
                 at: to_rfc3339(parsed),
             })
@@ -512,6 +525,7 @@ mod tests {
                 message: Some("Stand up and drink water".into()),
                 schedule_kind: CreateReminderKind::Interval,
                 at: None,
+                delay_minutes: None,
                 interval_minutes: Some(60),
                 daily_time: None,
             },
@@ -526,6 +540,29 @@ mod tests {
     }
 
     #[test]
+    fn create_once_reminder_accepts_relative_delay() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("reminders.json");
+        let reminder = create_reminder_in_path(
+            &path,
+            &CreateReminderArgs {
+                title: "Drink water".into(),
+                message: None,
+                schedule_kind: CreateReminderKind::Once,
+                at: None,
+                delay_minutes: Some(3),
+                interval_minutes: None,
+                daily_time: None,
+            },
+            fixed_now(),
+        )
+        .unwrap();
+
+        assert!(matches!(reminder.schedule, ReminderSchedule::Once { .. }));
+        assert!(reminder.next_fire_at.contains("10:03:00"));
+    }
+
+    #[test]
     fn fire_due_interval_reminder_reschedules() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("reminders.json");
@@ -536,6 +573,7 @@ mod tests {
                 message: None,
                 schedule_kind: CreateReminderKind::Interval,
                 at: None,
+                delay_minutes: None,
                 interval_minutes: Some(60),
                 daily_time: None,
             },
@@ -564,6 +602,7 @@ mod tests {
                 message: None,
                 schedule_kind: CreateReminderKind::Once,
                 at: Some("2026-05-21 12:00".into()),
+                delay_minutes: None,
                 interval_minutes: None,
                 daily_time: None,
             },
@@ -586,6 +625,7 @@ mod tests {
                 message: None,
                 schedule_kind: CreateReminderKind::Interval,
                 at: None,
+                delay_minutes: None,
                 interval_minutes: Some(60),
                 daily_time: None,
             },

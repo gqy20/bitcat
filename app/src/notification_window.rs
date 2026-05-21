@@ -139,7 +139,7 @@ fn position_top_center(app: &AppHandle, window: &WebviewWindow) {
     let size = monitor.size();
     let width = (WINDOW_W * scale).round() as i32;
     let x = pos.x + ((size.width as i32 - width) / 2).max(12);
-    let y = pos.y + (22.0 * scale).round() as i32;
+    let y = pos.y + (7.0 * scale).round() as i32;
     let _ = window.set_position(PhysicalPosition::new(x, y));
 }
 

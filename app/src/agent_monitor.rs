@@ -607,8 +607,6 @@ fn emit_nudge(app: &AppHandle, nudge: &AgentNudge, session: &AgentSession) {
                 warn!(error = %fallback, "agent toast fallback failed");
             }
         }
-    } else if let Err(e) = crate::bubble::show_agent_toast(app, toast) {
-        warn!(error = %e, "agent toast failed");
     }
     if nudge.use_tts {
         let message = agent_toast_payload(nudge, session).title;
@@ -628,7 +626,10 @@ fn agent_notification_payload(
     session: &AgentSession,
     toast: &crate::bubble::AgentToastPayload,
 ) -> crate::notification_window::NotificationPayload {
-    let body = [toast.context.trim(), toast.detail.trim()]
+    let source = AgentSessionView::from_session(session, now_ms())
+        .display
+        .source_label;
+    let body = [source.trim(), toast.detail.trim()]
         .into_iter()
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
@@ -1062,7 +1063,9 @@ mod tests {
         assert_eq!(notification.source, "agent_watch");
         assert_eq!(notification.tone, "warning");
         assert_eq!(notification.title, "8bit 正在等你");
-        assert!(notification.body.unwrap().contains("8bit"));
+        let body = notification.body.unwrap();
+        assert!(body.contains("Codex"));
+        assert!(!body.contains("8bit"));
         assert!(notification.actions.is_empty());
         assert!(notification.reminder_id.is_none());
     }

@@ -46,7 +46,8 @@ body {
     linear-gradient(135deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03)),
     var(--surface);
   box-shadow:
-    0 18px 48px rgba(0, 0, 0, 0.34),
+    0 6px 16px rgba(0, 0, 0, 0.18),
+    0 1px 4px rgba(0, 0, 0, 0.14),
     inset 0 1px 0 rgba(255, 255, 255, 0.12);
   backdrop-filter: blur(22px) saturate(1.22);
   opacity: 1;
@@ -79,17 +80,20 @@ body {
   height: 9px;
   border-radius: 50%;
   background: var(--warning);
-  box-shadow: 0 0 16px var(--warning);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--warning) 72%, transparent);
 }
 
-.tone-info .notification-dot { background: var(--info); box-shadow: 0 0 16px var(--info); }
-.tone-success .notification-dot { background: var(--success); box-shadow: 0 0 16px var(--success); }
-.tone-danger .notification-dot { background: var(--danger); box-shadow: 0 0 16px var(--danger); }
+.tone-info .notification-dot { background: var(--info); box-shadow: 0 0 8px color-mix(in srgb, var(--info) 72%, transparent); }
+.tone-success .notification-dot { background: var(--success); box-shadow: 0 0 8px color-mix(in srgb, var(--success) 72%, transparent); }
+.tone-danger .notification-dot { background: var(--danger); box-shadow: 0 0 8px color-mix(in srgb, var(--danger) 72%, transparent); }
 
 .notification-copy {
   min-width: 0;
   display: grid;
-  gap: 5px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 12px;
+  row-gap: 9px;
+  align-items: center;
 }
 
 .notification-title {
@@ -106,6 +110,7 @@ body {
 
 .notification-body {
   display: none;
+  grid-column: 1 / -1;
   color: var(--muted);
   font-size: 12px;
   font-weight: 560;
@@ -120,7 +125,10 @@ body {
 .notification-actions {
   display: none;
   gap: 8px;
-  padding-top: 2px;
+  grid-column: 2;
+  grid-row: 1;
+  justify-content: end;
+  padding-top: 0;
 }
 
 .notification.expanded .notification-actions {
@@ -128,17 +136,19 @@ body {
 }
 
 .notification-action {
-  height: 28px;
-  padding: 0 11px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 999px;
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.055);
   font: inherit;
-  font-size: 12px;
-  font-weight: 650;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
 }
 
 .notification-action:hover {
-  background: rgba(255, 255, 255, 0.15);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.1);
 }

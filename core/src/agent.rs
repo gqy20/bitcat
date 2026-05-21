@@ -519,7 +519,7 @@ define_tool_sync!(
 define_tool_sync!(
     CreateReminderTool,
     "create_reminder",
-    "Create a deterministic reminder that will pop up later. Use interval for requests like every hour, once for a specific date/time, and daily for a local clock time.",
+    "Create a deterministic reminder that will pop up later. Use once with delay_minutes for one-shot requests like 'in 3 minutes' or '3 minutes later'; use interval only for repeated requests like 'every 3 minutes'; use daily for a local clock time.",
     CreateReminderArgs,
     tools::execute_create_reminder
 );
@@ -666,6 +666,7 @@ mod tests {
         assert_eq!(create.name, "create_reminder");
         let create_schema = serde_json::to_string(&create.parameters).unwrap();
         assert!(create_schema.contains("schedule_kind"));
+        assert!(create_schema.contains("delay_minutes"));
         assert!(create_schema.contains("interval_minutes"));
 
         let list = ListRemindersTool.definition(String::new()).await;
