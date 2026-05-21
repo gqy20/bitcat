@@ -36,7 +36,7 @@ describe('agent watch metadata', () => {
     dom?.window?.close();
   });
 
-  it('builds compact row metadata from machine, source, kind, and status text', () => {
+  it('builds compact row metadata from kind and status text', () => {
     const parts = dom.window.__agentWatchTest.lineParts({
       machine: 'qy113',
       project: '2605',
@@ -46,10 +46,13 @@ describe('agent watch metadata', () => {
     }, { status: 'working' });
     const values = parts.map((part) => part.value);
 
-    expect(values).toEqual(['qy113', 'Claude', 'Patch', '正在修改文件']);
-    expect(parts.map((part) => part.className)).toContain('task-device');
-    expect(parts.map((part) => part.className)).toContain('task-source');
+    expect(values).toEqual(['Patch', '正在修改文件']);
     expect(parts.map((part) => part.className)).toContain('task-status-text');
+  });
+
+  it('assigns stable hues for device badges', () => {
+    expect(dom.window.__agentWatchTest.deviceHue('qy113')).toBe(dom.window.__agentWatchTest.deviceHue('qy113'));
+    expect(dom.window.__agentWatchTest.deviceHue('qy113')).not.toBe(dom.window.__agentWatchTest.deviceHue('android'));
   });
 
   it('renders notification rows with title, meta, age, and hover dismiss affordance', () => {
@@ -77,8 +80,9 @@ describe('agent watch metadata', () => {
 
     expect(dom.window.document.getElementById('watch-title')?.textContent).toBe('Agent Watch 1');
     expect(card.querySelector('.task-title')?.textContent).toBe('TrumanWorld');
-    expect(card.querySelector('.task-meta')?.textContent).toContain('qy113');
-    expect(card.querySelector('.task-meta')?.textContent).toContain('Codex');
+    expect(card.querySelector('.task-topline')?.textContent).toContain('qy113');
+    expect(card.querySelector('.task-topline')?.textContent).toContain('Codex');
+    expect(card.getAttribute('style')).toContain('--device-hue');
     expect(card.querySelector('.task-age')?.textContent).toBe('2s');
     expect(card.querySelectorAll('[data-action="dismiss"]')).toHaveLength(1);
     expect(card.querySelector('.task-detail')).toBeNull();

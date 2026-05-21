@@ -36,10 +36,9 @@ body {
   width: min(344px, calc(100vw - 16px));
   min-height: 64px;
   display: grid;
-  grid-template-columns: 10px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  padding: 12px 14px;
+  padding: 12px 18px;
   border: 1px solid var(--line);
   border-radius: 32px;
   background:
@@ -74,18 +73,6 @@ body {
 .notification.tone-success { border-color: color-mix(in srgb, var(--success) 58%, var(--line)); }
 .notification.tone-warning { border-color: color-mix(in srgb, var(--warning) 62%, var(--line)); }
 .notification.tone-danger { border-color: color-mix(in srgb, var(--danger) 62%, var(--line)); }
-
-.notification-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--warning);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--warning) 72%, transparent);
-}
-
-.tone-info .notification-dot { background: var(--info); box-shadow: 0 0 8px color-mix(in srgb, var(--info) 72%, transparent); }
-.tone-success .notification-dot { background: var(--success); box-shadow: 0 0 8px color-mix(in srgb, var(--success) 72%, transparent); }
-.tone-danger .notification-dot { background: var(--danger); box-shadow: 0 0 8px color-mix(in srgb, var(--danger) 72%, transparent); }
 
 .notification-copy {
   min-width: 0;

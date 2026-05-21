@@ -111,8 +111,6 @@
 
   function lineParts(view, session, expandedRow = false) {
     const parts = [];
-    if (view.machine) parts.push({ value: view.machine, className: "task-device" });
-    if (view.source) parts.push({ value: compactSourceLabel(view.source), className: "task-source" });
     if (!isNoisyActionLabel(view.kind, session)) {
       parts.push({ value: view.kind, className: "task-kind" });
     }
@@ -120,6 +118,15 @@
       parts.push({ value: view.statusText, className: "task-status-text" });
     }
     return parts;
+  }
+
+  function deviceHue(machine) {
+    const value = String(machine || "").trim();
+    let hash = 0;
+    for (let i = 0; i < value.length; i += 1) {
+      hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0;
+    }
+    return 190 + (Math.abs(hash) % 135);
   }
 
   function isNoisyActionLabel(label, session) {
@@ -155,6 +162,21 @@
   function renderMetaItem(item) {
     const cls = item.className ? ` ${item.className}` : "";
     return `<span class="task-meta-item${cls}" title="${escapeAttr(item.value)}">${escapeHtml(item.value)}</span>`;
+  }
+
+  function renderTopline(view) {
+    const machine = view.machine
+      ? `<span class="task-device" title="${escapeAttr(view.machine)}">${escapeHtml(view.machine)}</span>`
+      : "";
+    const source = view.source
+      ? `<span class="task-source" title="${escapeAttr(view.source)}">${escapeHtml(compactSourceLabel(view.source))}</span>`
+      : "";
+    return `
+      <span class="task-dot" aria-hidden="true"></span>
+      <strong class="task-title" title="${escapeAttr(view.title)}">${escapeHtml(view.title)}</strong>
+      ${machine}
+      ${source}
+      ${view.age ? `<span class="task-age">${escapeHtml(view.age)}</span>` : ""}`;
   }
 
   function detailText(view, session) {
@@ -203,13 +225,12 @@
       const expandedClass = isExpanded ? "expanded" : "";
       const detail = detailText(view, session);
       const items = lineParts(view, session, isExpanded);
+      const style = view.machine ? ` style="--device-hue: ${deviceHue(view.machine)}"` : "";
       return `
-        <article class="task-card ${escapeAttr(status)} tone-${escapeAttr(view.tone)} ${view.quiet ? "quiet" : ""} ${expandedClass}" data-id="${escapeAttr(id)}" data-status="${escapeAttr(status)}" tabindex="0" role="button" aria-expanded="${isExpanded ? "true" : "false"}" aria-label="${escapeAttr(detail || view.title)}">
+        <article class="task-card ${escapeAttr(status)} tone-${escapeAttr(view.tone)} ${view.quiet ? "quiet" : ""} ${expandedClass}"${style} data-id="${escapeAttr(id)}" data-status="${escapeAttr(status)}" tabindex="0" role="button" aria-expanded="${isExpanded ? "true" : "false"}" aria-label="${escapeAttr(detail || view.title)}">
           <div class="task-main">
             <div class="task-topline">
-              <span class="task-dot" aria-hidden="true"></span>
-              <strong class="task-title" title="${escapeAttr(view.title)}">${escapeHtml(view.title)}</strong>
-              ${view.age ? `<span class="task-age">${escapeHtml(view.age)}</span>` : ""}
+              ${renderTopline(view)}
             </div>
             <div class="task-meta">${items.map(renderMetaItem).join("")}</div>
             ${isExpanded && detail ? `<p class="task-detail">${escapeHtml(detail)}</p>` : ""}
@@ -336,6 +357,7 @@
     agentSourceLabel,
     renderMetaItem,
     lineParts,
+    deviceHue,
     render,
     viewOf,
     detailText,

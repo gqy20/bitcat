@@ -626,27 +626,69 @@ fn agent_notification_payload(
     session: &AgentSession,
     toast: &crate::bubble::AgentToastPayload,
 ) -> crate::notification_window::NotificationPayload {
-    let source = AgentSessionView::from_session(session, now_ms())
-        .display
-        .source_label;
-    let body = [source.trim(), toast.detail.trim()]
-        .into_iter()
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join(" · ");
+    let title = agent_notification_title(nudge, session);
+    let body = agent_notification_body(&title, toast);
     crate::notification_window::NotificationPayload {
         id: format!(
             "agent-watch-{}-{}",
             session.session_id, session.status_changed_at_ms
         ),
-        title: toast.title.clone(),
-        body: if body.is_empty() { None } else { Some(body) },
+        title,
+        body,
         tone: agent_notification_tone(nudge.kind).to_string(),
         source: "agent_watch".to_string(),
         reminder_id: None,
         ttl_ms: nudge.ttl_ms,
         actions: Vec::new(),
     }
+}
+
+fn agent_notification_title(nudge: &AgentNudge, session: &AgentSession) -> String {
+    let view = AgentSessionView::from_session(session, now_ms());
+    let project = view.display.project.trim();
+    let source = view.display.source_label.trim();
+    let action = view.display.action_label.trim();
+    let status = match nudge.kind {
+        AgentNudgeKind::WaitingForUser => "需要查看",
+        AgentNudgeKind::TaskDone => "已完成",
+        AgentNudgeKind::TaskError => "任务出错",
+        AgentNudgeKind::AwayWhileWorking => "仍在运行",
+    };
+    let status = if action.is_empty() || action == "Task" {
+        status.to_string()
+    } else {
+        format!("{action} {status}")
+    };
+    [
+        if project.is_empty() { "Agent" } else { project },
+        source,
+        status.as_str(),
+    ]
+    .into_iter()
+    .filter(|part| !part.is_empty())
+    .collect::<Vec<_>>()
+    .join(" · ")
+}
+
+fn agent_notification_body(
+    title: &str,
+    toast: &crate::bubble::AgentToastPayload,
+) -> Option<String> {
+    let detail = toast.detail.trim();
+    if detail.is_empty() || title.contains(detail) || status_detail_is_redundant(detail) {
+        None
+    } else {
+        Some(detail.to_string())
+    }
+}
+
+fn status_detail_is_redundant(detail: &str) -> bool {
+    matches!(
+        detail,
+        "任务已完成" | "任务需要查看" | "仍在运行" | "需要确认下一步"
+    ) || detail.ends_with(" 已完成")
+        || detail.ends_with(" 仍在运行")
+        || detail.ends_with(" 需要确认")
 }
 
 fn agent_notification_tone(kind: AgentNudgeKind) -> &'static str {
@@ -1062,12 +1104,49 @@ mod tests {
         assert!(!nudge_uses_notification(AgentNudgeKind::AwayWhileWorking));
         assert_eq!(notification.source, "agent_watch");
         assert_eq!(notification.tone, "warning");
-        assert_eq!(notification.title, "8bit 正在等你");
-        let body = notification.body.unwrap();
-        assert!(body.contains("Codex"));
-        assert!(!body.contains("8bit"));
+        assert_eq!(notification.title, "8bit · Codex · Patch 需要查看");
+        assert!(notification.body.is_none());
+        assert!(!notification.body.as_deref().unwrap_or("").contains("8bit"));
         assert!(notification.actions.is_empty());
         assert!(notification.reminder_id.is_none());
+    }
+
+    #[test]
+    fn agent_done_notification_collapses_redundant_status_body() {
+        let session = AgentSession {
+            session_id: "done".into(),
+            source: AgentSource::Codex,
+            workspace: "D:\\C\\Desktop\\ai\\pg_gpu".into(),
+            parent_session_id: None,
+            status: AgentStatus::Done,
+            tool_name: None,
+            tool_input_preview: None,
+            user_prompt_preview: None,
+            last_response_preview: None,
+            background: false,
+            agent_id: None,
+            agent_type: None,
+            task_id: None,
+            output_file: None,
+            pid: None,
+            machine: None,
+            updated_at_ms: 10,
+            status_changed_at_ms: 10,
+            needs_user: false,
+        };
+        let nudge = AgentNudge {
+            session_id: "done".into(),
+            kind: AgentNudgeKind::TaskDone,
+            message: "legacy message".into(),
+            mood: ai_pad_core::pet_event::PetMood::Happy,
+            ttl_ms: 8_000,
+            use_tts: false,
+        };
+        let toast = agent_toast_payload(&nudge, &session);
+        let notification = agent_notification_payload(&nudge, &session, &toast);
+
+        assert_eq!(notification.title, "pg_gpu · Codex · 已完成");
+        assert!(notification.body.is_none());
     }
 
     #[test]

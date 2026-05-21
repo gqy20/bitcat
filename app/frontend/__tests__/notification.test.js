@@ -8,7 +8,6 @@ const script = readFileSync(resolve(process.cwd(), 'js/notification.js'), 'utf8'
 function createDom(invoke = vi.fn().mockResolvedValue(undefined)) {
   const dom = new JSDOM(`<!doctype html>
     <main id="notification" class="notification hidden">
-      <div class="notification-dot"></div>
       <section class="notification-copy">
         <div class="notification-title" id="notificationTitle"></div>
         <div class="notification-body" id="notificationBody"></div>
