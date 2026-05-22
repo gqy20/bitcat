@@ -204,6 +204,8 @@ fn tool_result_is_failure(preview: Option<&str>, success: Option<bool>) -> bool 
             text.contains("Toolset error")
                 || text.contains("ToolCallError")
                 || text.contains("JsonError")
+                || text.contains("\"success\":false")
+                || text.contains("\"success\": false")
         })
 }
 
@@ -847,6 +849,10 @@ mod tests {
         assert!(tool_result_is_failure(
             Some("{\"success\":false}"),
             Some(false)
+        ));
+        assert!(tool_result_is_failure(
+            Some("{\"output\":\"Reminder was NOT created\",\"success\":false}"),
+            None
         ));
         assert!(!tool_result_is_failure(
             Some("{\"success\":true}"),

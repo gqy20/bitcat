@@ -212,6 +212,22 @@ fn truncate_chars(s: &str, max_chars: usize) -> String {
     }
 }
 
+fn normalize_memory_summary(text: &str) -> String {
+    text.chars()
+        .filter(|ch| !ch.is_whitespace() && !ch.is_ascii_punctuation())
+        .flat_map(|ch| ch.to_lowercase())
+        .collect()
+}
+
+fn optional_string(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
 // ---- Layer 2: 长期记忆（原始对话记录，按需检索） ----
 
 /// 单条长期记忆条目——完整保存值得长期保留的对话内容。
@@ -232,6 +248,14 @@ pub struct LongTermEntry {
     pub tags: Vec<String>,
     #[serde(default)]
     pub importance: Option<u8>,
+    #[serde(default)]
+    pub confidence: Option<u8>,
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub ttl_hint: Option<String>,
+    #[serde(default)]
+    pub reason: Option<String>,
     #[serde(default)]
     pub source: Option<String>,
     #[serde(default)]
@@ -267,6 +291,10 @@ pub struct LongTermReviewEntry {
     pub title: String,
     pub tags: Vec<String>,
     pub importance: Option<u8>,
+    pub confidence: Option<u8>,
+    pub kind: Option<String>,
+    pub ttl_hint: Option<String>,
+    pub reason: Option<String>,
     pub source: Option<String>,
     pub aggregated: bool,
     pub user_msg: String,
@@ -321,6 +349,10 @@ impl LongTermMemory {
             summary: None,
             tags: Vec::new(),
             importance: None,
+            confidence: None,
+            kind: None,
+            ttl_hint: None,
+            reason: None,
             source: Some("conversation".to_string()),
             aggregated: false,
             deleted: false,
@@ -336,18 +368,38 @@ impl LongTermMemory {
         ai_reply: &str,
         max_entries: usize,
     ) {
+        let candidate_key = normalize_memory_summary(&candidate.text);
+        if !candidate_key.is_empty()
+            && self.entries.iter().any(|entry| {
+                !entry.deleted
+                    && entry
+                        .summary
+                        .as_deref()
+                        .map(normalize_memory_summary)
+                        .as_deref()
+                        == Some(candidate_key.as_str())
+            })
+        {
+            return;
+        }
+
         let now = chrono::Local::now();
         let timestamp = now.format("%m-%d %H:%M").to_string();
-        let reply_truncated: String = ai_reply.chars().take(240).collect();
+        let user_truncated = truncate_chars(user_msg, 240);
+        let reply_truncated = truncate_chars(ai_reply, 240);
         self.entries.push(LongTermEntry {
             id: next_memory_id(self.entries.len()),
             created_at: now.to_rfc3339(),
             timestamp,
-            user_msg: user_msg.to_string(),
+            user_msg: user_truncated,
             ai_reply: reply_truncated,
             summary: Some(candidate.text.clone()),
             tags: candidate.tags.clone(),
             importance: Some(candidate.importance),
+            confidence: Some(candidate.confidence),
+            kind: optional_string(&candidate.kind),
+            ttl_hint: optional_string(&candidate.ttl_hint),
+            reason: optional_string(&candidate.reason),
             source: Some("agent_reaction".to_string()),
             aggregated: false,
             deleted: false,
@@ -439,12 +491,19 @@ impl LongTermMemory {
                 entry.id, entry.title, entry.timestamp
             ));
             out.push_str(&format!(
-                "- source: {}\n- importance: {}\n- tags: {}\n- aggregated: {}\n- deleted: {}\n\n",
+                "- source: {}\n- importance: {}\n- confidence: {}\n- kind: {}\n- ttl: {}\n- reason: {}\n- tags: {}\n- aggregated: {}\n- deleted: {}\n\n",
                 entry.source.as_deref().unwrap_or("unknown"),
                 entry
                     .importance
                     .map(|v| v.to_string())
                     .unwrap_or_else(|| "unknown".to_string()),
+                entry
+                    .confidence
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "unknown".to_string()),
+                entry.kind.as_deref().unwrap_or("unknown"),
+                entry.ttl_hint.as_deref().unwrap_or("unknown"),
+                entry.reason.as_deref().unwrap_or("none"),
                 if entry.tags.is_empty() {
                     "none".to_string()
                 } else {
@@ -479,6 +538,10 @@ impl LongTermMemory {
                     .unwrap_or_else(|| truncate_chars(&entry.user_msg, 80)),
                 tags: entry.tags.clone(),
                 importance: entry.importance,
+                confidence: entry.confidence,
+                kind: entry.kind.clone(),
+                ttl_hint: entry.ttl_hint.clone(),
+                reason: entry.reason.clone(),
                 source: entry.source.clone(),
                 aggregated: entry.aggregated,
                 user_msg: truncate_chars(&entry.user_msg, 180),
@@ -596,9 +659,13 @@ fn query_matches_entry(entry: &LongTermEntry, query: &str) -> bool {
     }
 
     let haystack = format!(
-        "{} {} {} {}",
+        "{} {} {} {} {} {} {} {}",
         entry.summary.as_deref().unwrap_or(""),
         entry.tags.join(" "),
+        entry.kind.as_deref().unwrap_or(""),
+        entry.ttl_hint.as_deref().unwrap_or(""),
+        entry.reason.as_deref().unwrap_or(""),
+        entry.source.as_deref().unwrap_or(""),
         entry.user_msg,
         entry.ai_reply
     )
@@ -637,7 +704,7 @@ fn memory_candidate_line(entry: &LongTermEntry) -> String {
     };
     let summary = entry.summary.as_deref().unwrap_or(entry.user_msg.as_str());
     format!(
-        "id={} created_at={} source={} importance={} tags=[{}]\nsummary={}\ncontext={} | {}\n",
+        "id={} created_at={} source={} importance={} confidence={} kind={} ttl={} tags=[{}]\nsummary={}\nreason={}\ncontext={} | {}\n",
         entry.id,
         entry.created_at,
         entry.source.as_deref().unwrap_or("unknown"),
@@ -645,8 +712,15 @@ fn memory_candidate_line(entry: &LongTermEntry) -> String {
             .importance
             .map(|value| value.to_string())
             .unwrap_or_else(|| "unknown".to_string()),
+        entry
+            .confidence
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "unknown".to_string()),
+        entry.kind.as_deref().unwrap_or("unknown"),
+        entry.ttl_hint.as_deref().unwrap_or("unknown"),
         tags,
         summary,
+        entry.reason.as_deref().unwrap_or("none"),
         entry.user_msg,
         entry.ai_reply
     )
@@ -892,11 +966,11 @@ mod tests {
         let mut store = LongTermMemory {
             entries: Vec::new(),
         };
-        let candidate = MemoryCandidate {
-            text: "用户偏好 grep-first 长期记忆".into(),
-            importance: 5,
-            tags: vec!["memory".into(), "preference".into()],
-        };
+        let candidate = MemoryCandidate::explicit(
+            "用户偏好 grep-first 长期记忆".into(),
+            5,
+            vec!["memory".into(), "preference".into()],
+        );
 
         store.record_candidate(&candidate, "记住我的偏好", "好的", 10);
 
@@ -906,6 +980,13 @@ mod tests {
             Some("用户偏好 grep-first 长期记忆")
         );
         assert_eq!(store.entries[0].importance, Some(5));
+        assert_eq!(store.entries[0].confidence, Some(5));
+        assert_eq!(store.entries[0].kind.as_deref(), Some("other"));
+        assert_eq!(store.entries[0].ttl_hint.as_deref(), Some("stable"));
+        assert_eq!(
+            store.entries[0].reason.as_deref(),
+            Some("explicitly requested memory")
+        );
         assert_eq!(store.entries[0].tags, vec!["memory", "preference"]);
         assert_eq!(store.entries[0].source.as_deref(), Some("agent_reaction"));
     }
@@ -915,11 +996,11 @@ mod tests {
         let mut store = LongTermMemory {
             entries: Vec::new(),
         };
-        let candidate = MemoryCandidate {
-            text: "用户正在开发 8Bit Cat 桌宠项目".into(),
-            importance: 4,
-            tags: vec!["project".into()],
-        };
+        let candidate = MemoryCandidate::explicit(
+            "用户正在开发 8Bit Cat 桌宠项目".into(),
+            4,
+            vec!["project".into()],
+        );
         store.record_candidate(&candidate, "我们继续项目", "没问题", 10);
 
         let ctx = store.retrieve("8Bit Cat", 500);
@@ -934,21 +1015,17 @@ mod tests {
             entries: Vec::new(),
         };
         store.record_candidate(
-            &MemoryCandidate {
-                text: "用户偏好 grep-first 记忆检索".into(),
-                importance: 5,
-                tags: vec!["memory".into(), "preference".into()],
-            },
+            &MemoryCandidate::explicit(
+                "用户偏好 grep-first 记忆检索".into(),
+                5,
+                vec!["memory".into(), "preference".into()],
+            ),
             "记住我的偏好",
             "好的",
             10,
         );
         store.record_candidate(
-            &MemoryCandidate {
-                text: "用户正在调试桌宠动画".into(),
-                importance: 3,
-                tags: vec!["animation".into()],
-            },
+            &MemoryCandidate::explicit("用户正在调试桌宠动画".into(), 3, vec!["animation".into()]),
             "动画还有问题",
             "我看看",
             10,
@@ -974,11 +1051,11 @@ mod tests {
             entries: Vec::new(),
         };
         store.record_candidate(
-            &MemoryCandidate {
-                text: "用户正在实现 mood + memory".into(),
-                importance: 4,
-                tags: vec!["project".into()],
-            },
+            &MemoryCandidate::explicit(
+                "用户正在实现 mood + memory".into(),
+                4,
+                vec!["project".into()],
+            ),
             "开始实现",
             "收到",
             10,
@@ -989,6 +1066,8 @@ mod tests {
         assert!(markdown.contains("# Long-term Memory"));
         assert!(markdown.contains("用户正在实现 mood + memory"));
         assert!(markdown.contains("source: agent_reaction"));
+        assert!(markdown.contains("confidence: 5"));
+        assert!(markdown.contains("ttl: stable"));
         assert!(markdown.contains("tags: project"));
     }
 
@@ -1377,6 +1456,10 @@ mod tests {
             summary: None,
             tags: Vec::new(),
             importance: None,
+            confidence: None,
+            kind: None,
+            ttl_hint: None,
+            reason: None,
             source: Some("test".into()),
             aggregated: false,
             deleted: false,
@@ -1431,6 +1514,10 @@ mod tests {
             summary: None,
             tags: Vec::new(),
             importance: None,
+            confidence: None,
+            kind: None,
+            ttl_hint: None,
+            reason: None,
             source: Some("test".into()),
             aggregated: false,
             deleted: false,
@@ -1479,6 +1566,10 @@ mod tests {
             summary: None,
             tags: Vec::new(),
             importance: None,
+            confidence: None,
+            kind: None,
+            ttl_hint: None,
+            reason: None,
             source: Some("test".into()),
             aggregated: false,
             deleted: false,

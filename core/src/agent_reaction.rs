@@ -1,8 +1,8 @@
-//! Agent 对话收尾反应抽取。
+//! Agent conversation wrap-up extraction.
 //!
-//! 本模块用 rig `Extractor<T>` 将一轮自由文本对话压缩为结构化反应：宠物情绪、
-//! 可显示的简短话语，以及值得长期保存的记忆候选。模型负责语义判断，Rust
-//! 负责字段校验、长度截断和失败兜底，避免回到关键词分类器。
+//! This module uses rig `Extractor<T>` to compress one free-form chat turn into a
+//! structured pet reaction: final mood, optional short speech, and durable memory candidates.
+//! The model owns semantic judgment; Rust only validates fields, truncates lengths, and falls back deterministically.
 
 use crate::ai_config::AiConfig;
 use crate::pet_event::PetMood;
@@ -18,39 +18,55 @@ use tracing::{debug, warn};
 const MAX_SPEECH_CHARS: usize = 160;
 const MAX_MEMORY_CANDIDATES: usize = 5;
 const MAX_MEMORY_TEXT_CHARS: usize = 180;
+const MAX_MEMORY_REASON_CHARS: usize = 160;
+const MAX_MEMORY_KIND_CHARS: usize = 32;
+const MAX_MEMORY_TTL_CHARS: usize = 24;
 const MAX_TAGS: usize = 6;
 const MAX_TAG_CHARS: usize = 24;
+const MIN_MEMORY_CONFIDENCE: u8 = 3;
 
-/// 一轮对话结束后的结构化反应。
+/// Structured response generated after one chat turn finishes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AgentReaction {
-    /// 宠物最终情绪。
+    /// Final pet mood to display after the turn.
     pub mood: PetMood,
-    /// 可选的一句简短收尾文本；为空时使用主回复。
+    /// Optional short closing line; the main reply is used as fallback when empty.
     #[serde(default)]
     pub speech: String,
-    /// 值得长期保存的记忆候选。
+    /// Durable memory candidates judged by the model.
     #[serde(default)]
     pub memory_candidates: Vec<MemoryCandidate>,
-    /// 可选的后续建议，当前只保留结构，不直接展示。
+    /// Optional follow-up suggestions, retained for future UI use.
     #[serde(default)]
     pub followups: Vec<String>,
 }
 
-/// 长期记忆候选。
+/// One candidate long-term memory item.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct MemoryCandidate {
-    /// 一条自包含、可 grep 的事实或偏好。
+    /// Self-contained, grep-friendly fact or preference.
     pub text: String,
-    /// 重要度 1..=5；低于 3 的候选会被丢弃。
+    /// Importance from 1..=5; candidates below 3 are dropped.
     pub importance: u8,
-    /// 简短英文或中文标签。
+    /// Confidence that this is worth saving long-term, from 1..=5.
+    #[serde(default = "default_memory_confidence")]
+    pub confidence: u8,
+    /// Candidate type, such as preference/profile/project/constraint/relationship/other.
+    #[serde(default)]
+    pub kind: String,
+    /// Lifetime hint: stable/evolving/temporary. Temporary candidates are dropped.
+    #[serde(default)]
+    pub ttl_hint: String,
+    /// Short reason explaining why the model thinks this is durable memory.
+    #[serde(default)]
+    pub reason: String,
+    /// Short English or Chinese tags.
     #[serde(default)]
     pub tags: Vec<String>,
 }
 
 impl AgentReaction {
-    /// 无法抽取时的确定性兜底，不做关键词判断。
+    /// Deterministic fallback when extraction fails; it never guesses from keywords.
     pub fn fallback(reply: &str) -> Self {
         Self {
             mood: PetMood::Idle,
@@ -60,7 +76,7 @@ impl AgentReaction {
         }
     }
 
-    /// 校验并收敛模型输出，保证后续 UI 和记忆写入边界稳定。
+    /// Validate and normalize model output before UI or memory persistence consumes it.
     pub fn sanitized(mut self, fallback_speech: &str) -> Self {
         if self.speech.trim().is_empty() {
             self.speech = fallback_speech.to_string();
@@ -85,12 +101,33 @@ impl AgentReaction {
 }
 
 impl MemoryCandidate {
+    /// Build a high-confidence candidate for explicit `remember` tool requests and tests.
+    pub fn explicit(text: String, importance: u8, tags: Vec<String>) -> Self {
+        Self {
+            text,
+            importance,
+            confidence: 5,
+            kind: "other".to_string(),
+            ttl_hint: "stable".to_string(),
+            reason: "explicitly requested memory".to_string(),
+            tags,
+        }
+    }
+
     fn sanitize(mut self) -> Option<Self> {
         self.text = truncate_chars(self.text.trim(), MAX_MEMORY_TEXT_CHARS);
-        if self.text.is_empty() || self.importance < 3 {
+        self.importance = self.importance.min(5);
+        self.confidence = self.confidence.min(5);
+        self.kind = normalize_label(&self.kind, MAX_MEMORY_KIND_CHARS);
+        self.ttl_hint = normalize_label(&self.ttl_hint, MAX_MEMORY_TTL_CHARS);
+        self.reason = truncate_chars(self.reason.trim(), MAX_MEMORY_REASON_CHARS);
+        if self.text.is_empty()
+            || self.importance < 3
+            || self.confidence < MIN_MEMORY_CONFIDENCE
+            || self.ttl_hint == "temporary"
+        {
             return None;
         }
-        self.importance = self.importance.min(5);
         self.tags = self
             .tags
             .into_iter()
@@ -102,7 +139,11 @@ impl MemoryCandidate {
     }
 }
 
-/// 使用 rig Extractor 抽取结构化对话反应。
+fn default_memory_confidence() -> u8 {
+    3
+}
+
+/// Extract structured reaction data with rig `Extractor`.
 pub async fn extract_agent_reaction(
     ai_config: &AiConfig,
     user_msg: &str,
@@ -112,13 +153,13 @@ pub async fn extract_agent_reaction(
     let http_client = rig::http_client::ReqwestClient::builder()
         .no_proxy()
         .build()
-        .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
+        .map_err(|e| format!("failed to create HTTP client: {e}"))?;
     let client = anthropic::Client::builder()
         .api_key(&ai_config.api_key)
         .base_url(&ai_config.base_url)
         .http_client(http_client)
         .build()
-        .map_err(|e| format!("创建 Anthropic reaction Client 失败: {e}"))?;
+        .map_err(|e| format!("failed to create Anthropic reaction client: {e}"))?;
 
     let extractor = client
         .extractor::<AgentReaction>(ai_config.model.as_str())
@@ -128,25 +169,26 @@ pub async fn extract_agent_reaction(
         .build();
 
     let tool_text = if tool_events.is_empty() {
-        "无工具调用".to_string()
+        "No tool calls.".to_string()
     } else {
         tool_events.join("\n")
     };
-    let input =
-        format!("用户消息:\n{user_msg}\n\nAI最终回复:\n{ai_reply}\n\n本轮工具事件:\n{tool_text}");
+    let input = format!(
+        "User message:\n{user_msg}\n\nFinal assistant reply:\n{ai_reply}\n\nTool events this turn:\n{tool_text}"
+    );
 
     let start = std::time::Instant::now();
     let response = extractor
         .extract_with_usage(input)
         .await
-        .map_err(|e| format!("抽取 AgentReaction 失败: {e}"))?;
+        .map_err(|e| format!("failed to extract AgentReaction: {e}"))?;
     let elapsed = start.elapsed();
     let reaction = response.data.sanitized(ai_reply);
     debug!(
         mood = ?reaction.mood,
         memory_candidates = reaction.memory_candidates.len(),
         elapsed_ms = elapsed.as_millis(),
-        "AgentReaction 抽取完成"
+        "AgentReaction extraction completed"
     );
     record_token_usage(
         &TokenRecord::new(
@@ -162,9 +204,12 @@ pub async fn extract_agent_reaction(
     Ok(reaction)
 }
 
-/// 抽取失败时记录并返回兜底结构。
+/// Log extraction failure and return a deterministic idle fallback.
 pub fn fallback_agent_reaction(reply: &str, error: &str) -> AgentReaction {
-    warn!(error, "AgentReaction 抽取失败，使用 idle 兜底");
+    warn!(
+        error,
+        "AgentReaction extraction failed, using idle fallback"
+    );
     AgentReaction::fallback(reply)
 }
 
@@ -173,6 +218,16 @@ fn normalize_tag(tag: &str) -> String {
         .chars()
         .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
         .take(MAX_TAG_CHARS)
+        .collect::<String>()
+        .to_lowercase()
+}
+
+fn normalize_label(label: &str, max_chars: usize) -> String {
+    label
+        .trim()
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+        .take(max_chars)
         .collect::<String>()
         .to_lowercase()
 }
@@ -187,17 +242,22 @@ fn truncate_chars(s: &str, max: usize) -> String {
 }
 
 const REACTION_PREAMBLE: &str = r#"
-你负责把一轮桌宠 AI 对话收尾压缩为严格结构化 JSON。
+You compress one desktop-pet AI conversation turn into strict structured JSON.
 
-判断原则：
-- mood 表示宠物最后该表现出的情绪，而不是复述文本内容。
-- 如果回复是普通说明或任务完成，优先 idle/focused；用户表达开心、庆祝或舞蹈成功可用 happy/excited。
-- 如果工具失败、权限被阻止或 AI 明确无法完成，可用 confused。
-- caring 用于安慰、鼓励、陪伴类回复；sleepy 只在睡眠/休息语境使用。
-- memory_candidates 只保存长期有价值、之后可 grep 的事实、偏好、项目背景或用户明确要求记住的信息。
-- 不保存一次性寒暄、普通问答步骤、临时错误、已经明显过期的信息。
-- 每条 memory text 必须自包含，不要写“这个/上面/刚才”。
-- importance 范围 1..5；只有 3 以上才会被保存。
+Judgment rules:
+- `mood` is the final pet mood, not a summary of the text.
+- For normal explanations or completed tasks, prefer `idle` or `focused`; use `happy`/`excited` only for clear celebration or delight.
+- For tool failures, blocked permissions, or explicit inability to complete the request, use `confused`.
+- Use `caring` for comfort, encouragement, or companionship; use `sleepy` only in sleep/rest contexts.
+- `memory_candidates` must contain only durable facts, preferences, project background, stable constraints, relationship context, or information the user explicitly asked to remember.
+- Each memory candidate must include `confidence`, `kind`, `ttl_hint`, and `reason`.
+- `kind` must be one of `preference`, `profile`, `project`, `constraint`, `relationship`, or `other`.
+- `ttl_hint` must be one of `stable`, `evolving`, or `temporary`.
+- The decision criterion is whether the information will help in future turns, not whether it happened in this turn.
+- If uncertain, lower `confidence`; if it is only a one-off task, set `ttl_hint` to `temporary`.
+- Do not save one-off greetings, ordinary Q&A steps, temporary errors, one-off reminders, completed reminders, single tool results, or clearly expired information.
+- Each memory `text` must be self-contained; avoid "this", "above", or "just now".
+- `importance` is 1..5; only candidates above 3 are persisted.
 "#;
 
 #[cfg(test)]
@@ -210,18 +270,14 @@ mod tests {
             mood: PetMood::Happy,
             speech: String::new(),
             memory_candidates: vec![
-                MemoryCandidate {
-                    text: " 用户偏好 grep-first 记忆检索 ".into(),
-                    importance: 5,
-                    tags: vec!["Memory!".into(), "Preference".into()],
-                },
-                MemoryCandidate {
-                    text: "too weak".into(),
-                    importance: 1,
-                    tags: vec![],
-                },
+                MemoryCandidate::explicit(
+                    " user prefers grep-first memory retrieval ".into(),
+                    5,
+                    vec!["Memory!".into(), "Preference".into()],
+                ),
+                MemoryCandidate::explicit("too weak".into(), 1, vec![]),
             ],
-            followups: vec![" 下一步可以继续 ".into()],
+            followups: vec![" next step ".into()],
         }
         .sanitized("fallback speech");
 
@@ -229,18 +285,53 @@ mod tests {
         assert_eq!(reaction.memory_candidates.len(), 1);
         assert_eq!(
             reaction.memory_candidates[0].text,
-            "用户偏好 grep-first 记忆检索"
+            "user prefers grep-first memory retrieval"
         );
         assert_eq!(
             reaction.memory_candidates[0].tags,
             vec!["memory", "preference"]
         );
-        assert_eq!(reaction.followups, vec!["下一步可以继续"]);
+        assert_eq!(reaction.memory_candidates[0].confidence, 5);
+        assert_eq!(reaction.memory_candidates[0].kind, "other");
+        assert_eq!(reaction.memory_candidates[0].ttl_hint, "stable");
+        assert_eq!(reaction.followups, vec!["next step"]);
+    }
+
+    #[test]
+    fn drops_low_confidence_and_temporary_memory_candidates() {
+        let reaction = AgentReaction {
+            mood: PetMood::Focused,
+            speech: String::new(),
+            memory_candidates: vec![
+                MemoryCandidate {
+                    text: "User asked for a one-off reminder".into(),
+                    importance: 4,
+                    confidence: 5,
+                    kind: "other".into(),
+                    ttl_hint: "temporary".into(),
+                    reason: "one-off task".into(),
+                    tags: vec!["reminder".into()],
+                },
+                MemoryCandidate {
+                    text: "User may like dashboards".into(),
+                    importance: 4,
+                    confidence: 2,
+                    kind: "preference".into(),
+                    ttl_hint: "evolving".into(),
+                    reason: "uncertain inference".into(),
+                    tags: vec!["preference".into()],
+                },
+            ],
+            followups: vec![],
+        }
+        .sanitized("fallback speech");
+
+        assert!(reaction.memory_candidates.is_empty());
     }
 
     #[test]
     fn fallback_never_guesses_mood_from_keywords() {
-        let reaction = AgentReaction::fallback("哈哈，但是失败了");
+        let reaction = AgentReaction::fallback("Haha, but it failed");
         assert_eq!(reaction.mood, PetMood::Idle);
         assert!(reaction.memory_candidates.is_empty());
     }

@@ -361,11 +361,11 @@ pub fn execute_remember_into(
         return ToolResult::err("remember requires non-empty text");
     }
 
-    let candidate = MemoryCandidate {
-        text: truncate_chars(text, 500),
-        importance: args.importance.unwrap_or(4).clamp(1, 5),
-        tags: normalize_memory_tags(&args.tags),
-    };
+    let candidate = MemoryCandidate::explicit(
+        truncate_chars(text, 500),
+        args.importance.unwrap_or(4).clamp(1, 5),
+        normalize_memory_tags(&args.tags),
+    );
     store.record_candidate(
         &candidate,
         "remember tool request",
@@ -798,11 +798,11 @@ mod tests {
             entries: Vec::new(),
         };
         store.record_candidate(
-            &MemoryCandidate {
-                text: "User prefers grep-first memory retrieval".into(),
-                importance: 5,
-                tags: vec!["memory".into(), "preference".into()],
-            },
+            &MemoryCandidate::explicit(
+                "User prefers grep-first memory retrieval".into(),
+                5,
+                vec!["memory".into(), "preference".into()],
+            ),
             "remember this",
             "ok",
             10,

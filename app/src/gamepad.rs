@@ -1103,16 +1103,18 @@ pub fn run_ai_chat(
             if let Some(pet_event) = tool_event_to_pet_event(&event) {
                 emit_pet_event(&app_for_chunks, pet_event);
             }
-            if let Ok(mut summaries) = tool_summaries_for_stream.lock() {
-                let preview = event.result_preview.as_deref().unwrap_or("");
-                summaries.push(format!(
-                    "{}:{} success={:?} elapsed={:?} {}",
-                    event.tool_name,
-                    event.phase.as_str(),
-                    event.success,
-                    event.elapsed_ms,
-                    preview
-                ));
+            if event.phase != ToolPhase::Planned {
+                if let Ok(mut summaries) = tool_summaries_for_stream.lock() {
+                    let preview = event.result_preview.as_deref().unwrap_or("");
+                    summaries.push(format!(
+                        "{}:{} success={:?} elapsed={:?} {}",
+                        event.tool_name,
+                        event.phase.as_str(),
+                        event.success,
+                        event.elapsed_ms,
+                        preview
+                    ));
+                }
             }
             if event.tool_name == "create_reminder"
                 && event.phase == ToolPhase::Finished
@@ -1197,10 +1199,13 @@ pub fn run_ai_chat(
                 "{prefix}AgentReaction extraction started"
             );
             let reaction_result = catch_unwind(AssertUnwindSafe(|| {
-                rt.block_on(tokio::time::timeout(
-                    std::time::Duration::from_secs(8),
-                    extract_agent_reaction(&agent.config, msg, &reply, &summaries),
-                ))
+                rt.block_on(async {
+                    tokio::time::timeout(
+                        std::time::Duration::from_secs(8),
+                        extract_agent_reaction(&agent.config, msg, &reply, &summaries),
+                    )
+                    .await
+                })
             }));
             let reaction = match reaction_result {
                 Ok(Ok(Ok(reaction))) => {
@@ -1232,8 +1237,9 @@ pub fn run_ai_chat(
 
             if !reaction.memory_candidates.is_empty() {
                 if let Ok(mut long_term) = core.long_term.lock() {
+                    let max_entries = prompts_cfg.memory_v2.long_term_max_entries;
                     for candidate in &reaction.memory_candidates {
-                        long_term.record_candidate(candidate, msg, &reply, 200);
+                        long_term.record_candidate(candidate, msg, &reply, max_entries);
                     }
                     if let Err(e) = long_term.save() {
                         warn!(error = %e, "保存长期记忆候选失败");
