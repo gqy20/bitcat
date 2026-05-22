@@ -23,6 +23,7 @@
   const ABS_MAX_H = 680;      // 用户手动拖拽时的绝对最大高度
   const PADDING_TOTAL = 50;   // body top(6) + bubble padding-top(14) + padding-bottom(14) + body bottom(12) + 余量(4)
   const INPUT_ROW_H = 42;     // input-row 额外高度（含 padding-top:8）
+  const CHAT_CONTROLS_H = 34;  // chat-controls 额外高度（含 margin-top）
   const AUTO_RESIZE_DEBOUNCE_MS = 140;
   let hideTimer = null;
   let performanceHideTimer = null;
@@ -38,9 +39,14 @@
   let sendBtnEl = null;
   let resizeGripEl = null;      // resize 手柄元素
   let collapseBtnEl = null;
+  let chatControlsEl = null;
+  let replyChipEl = null;
+  let stopBtnEl = null;
+  let controlNoteEl = null;
   let isComposing = false;    // IME 组合状态标记
   let userScrolledUp = false;  // 用户是否手动向上滚动了（锁定自动跟底）
   let streaming = false;        // 是否处于流式输出中（bubble-end 后为 false 拦截迟到的轮询）
+  let cancelled = false;
   let autoSizeStage = 'compact'; // 'compact' | 'reading' | 'expanded'
   let autoResizeTimer = null;
   let lastAutoResizeAt = 0;
@@ -110,6 +116,20 @@
     hideTimer = setTimeout(hide, HIDE_AFTER_MS);
   }
 
+  function setChatControls(state) {
+    if (!chatControlsEl) return;
+    var mode = state || 'hidden';
+    var visible = mode !== 'hidden';
+    chatControlsEl.style.display = visible ? 'flex' : 'none';
+    if (stopBtnEl) stopBtnEl.style.display = mode === 'streaming' ? 'inline-flex' : 'none';
+    if (replyChipEl) replyChipEl.style.display = (mode === 'reply' || mode === 'stopped') ? 'inline-flex' : 'none';
+    if (controlNoteEl) controlNoteEl.style.display = mode === 'stopped' ? 'inline-flex' : 'none';
+  }
+
+  function hideChatControls() {
+    setChatControls('hidden');
+  }
+
   function startPerformanceHideTimer() {
     clearHideTimer();
     performanceHideTimer = setTimeout(hide, PERFORMANCE_HIDE_AFTER_MS);
@@ -156,14 +176,6 @@
       });
   }
 
-  function stageRank(stage) {
-    switch (stage) {
-      case 'expanded': return 2;
-      case 'reading': return 1;
-      default: return 0;
-    }
-  }
-
   function heightForStage(stage) {
     switch (stage) {
       case 'expanded': return EXPANDED_H;
@@ -184,15 +196,12 @@
       return 'compact';
     }
 
-    if (inputOpen) {
-      return neededH > READING_H + 24 ? 'expanded' : 'reading';
+    if (isStreaming && hasText) {
+      return 'reading';
     }
 
-    if (isStreaming && hasText) {
-      var desiredDuringStream = neededH > READING_H + 24 ? 'expanded' : 'reading';
-      return stageRank(desiredDuringStream) > stageRank(currentStage)
-        ? desiredDuringStream
-        : currentStage;
+    if (inputOpen) {
+      return neededH > READING_H + 24 ? 'expanded' : 'reading';
     }
 
     if (neededH > READING_H + 24) return 'expanded';
@@ -241,7 +250,8 @@
     if (!contentEl) return;
     var contentH = contentEl.scrollHeight;
     var inputExtra = (inputRowEl && inputRowEl.style.display !== 'none') ? INPUT_ROW_H : 0;
-    var neededH = Math.min(MAX_H, Math.max(MIN_H, contentH + PADDING_TOTAL + inputExtra));
+    var controlsExtra = (chatControlsEl && chatControlsEl.style.display !== 'none') ? CHAT_CONTROLS_H : 0;
+    var neededH = Math.min(MAX_H, Math.max(MIN_H, contentH + PADDING_TOTAL + inputExtra + controlsExtra));
 
     // MANUAL 模式：以用户偏好为下界，绝对最大高度也放宽
     var targetW = 260;
@@ -346,6 +356,7 @@
     streaming = false;
     stopPolling();
     clearToolStatus();
+    hideChatControls();
     resizeMode = 'auto';
     autoSizeStage = 'compact';
     setBubbleMode('notice');
@@ -405,6 +416,7 @@
   function hide() {
     stopPolling();
     clearToolStatus();
+    hideChatControls();
     hideInput('hide-bubble');
     resizeMode = 'auto';
     autoSizeStage = 'compact';
@@ -463,6 +475,7 @@
     notifyChatEnter('showInput');
 
     inputRowEl.style.display = 'flex';
+    hideChatControls();
     inputRowEl.classList.remove('hiding');
     inputRowEl.classList.add('visible');
     setBubbleMode('compose');
@@ -508,6 +521,7 @@
   function showThinking() {
     if (!thinkingEl) return;
     setBubbleMode('stream');
+    hideChatControls();
     thinkingEl.style.display = 'flex';
     if (bodyEl) bodyEl.innerHTML = ''; // 清空正文区（光标由 class 控制，不必碰）
     autoResize();
@@ -549,6 +563,22 @@
         diag('submitChat ✗ cmd_submit_chat 失败: ' + (e && e.toString ? e.toString() : e));
         console.error('[chat] submit failed:', e);
       });
+  }
+
+  function cancelChat() {
+    if (!window.__TAURI__ || !window.__TAURI__.core) return;
+    cancelled = true;
+    streaming = false;
+    stopPolling();
+    hideThinking();
+    clearToolStatus();
+    setStreamingClass(false);
+    setChatControls('stopped');
+    autoResize();
+    clearHideTimer();
+    window.__TAURI__.core.invoke('cmd_cancel_chat').catch(function(e) {
+      diag('cmd_cancel_chat failed: ' + e);
+    });
   }
 
   /// 平滑收起输入框（CSS 过渡动画 → 再 display:none）
@@ -650,7 +680,9 @@
     stopPolling();
     clearToolStatus();
     streaming = true;       // 标记流式开始
+    cancelled = false;
     setBubbleMode('stream');
+    setChatControls('streaming');
     autoSizeStage = 'compact';
     userScrolledUp = false; // 新流式开始，重置锁定
     // 🔧 不立即激活光标：等真正拉到非空文本再切 streaming，
@@ -695,6 +727,9 @@
   }
 
   function finishStreaming(finalText) {
+    if (cancelled) {
+      return;
+    }
     streaming = false;
     stopPolling();
     userScrolledUp = false;
@@ -708,6 +743,10 @@
       setText(lastRawText);
       ensureVisible();
     }
+    if (lastRawText) {
+      setChatControls('reply');
+      autoResize();
+    }
     startHideTimer();
   }
 
@@ -718,6 +757,7 @@
     resizeMode = 'auto';
     autoSizeStage = 'compact';
     setBubbleMode('notice');
+    hideChatControls();
     hideInput('notice');
     resizeBubbleWindow(260, MIN_H, true);
     setText(text);
@@ -769,6 +809,10 @@
     thinkingEl = document.getElementById('thinking');
     resizeGripEl = document.getElementById('resizeGrip');
     collapseBtnEl = document.getElementById('collapseBtn');
+    chatControlsEl = document.getElementById('chatControls');
+    replyChipEl = document.getElementById('replyChip');
+    stopBtnEl = document.getElementById('stopBtn');
+    controlNoteEl = document.getElementById('controlNote');
 
     // marked.js 配置：窄栏必须 breaks:true
     if (typeof marked !== 'undefined') {
@@ -842,6 +886,20 @@
       sendBtnEl.addEventListener('click', function() {
         diag('sendBtn click');
         submitChat();
+      });
+    }
+    if (replyChipEl) {
+      replyChipEl.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        showInput();
+      });
+    }
+    if (stopBtnEl) {
+      stopBtnEl.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        cancelChat();
       });
     }
     if (collapseBtnEl) {
@@ -964,6 +1022,17 @@
 
     listen('bubble-tool-event', (event) => {
       setToolStatus(event.payload || {});
+    });
+
+    listen('bubble-cancelled', () => {
+      cancelled = true;
+      streaming = false;
+      stopPolling();
+      hideThinking();
+      clearToolStatus();
+      setStreamingClass(false);
+      setChatControls('stopped');
+      autoResize();
     });
 
     // 双击宠物 / cmd_open_chat → 展开输入框

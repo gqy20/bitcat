@@ -706,18 +706,26 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             .appearance
             .screenshot_show_bubble;
 
-        if !show_bubble {
-            debug!("[screenshot] 截屏分析弹窗已关闭，跳过气泡显示");
-            increment_hidden_screenshot_count(app);
-        } else if bubble_parts.is_empty() {
+        if bubble_parts.is_empty() {
             info!("[screenshot] 描述为空，显示兜底提示");
-            let _ = crate::bubble::show_bubble(app, "喵~ 看不太清屏幕内容，可能需要检查 API 配置");
+            increment_hidden_screenshot_count(app);
+            if show_bubble {
+                let _ = crate::bubble::show_bubble(app, "观察完成，但看不太清内容，已放入待查看");
+            }
         } else {
             let text = bubble_parts.join("\n");
-            debug!(chars = text.chars().count(), "show screenshot bubble");
-            match crate::bubble::show_bubble(app, &text) {
-                Ok(()) => debug!("screenshot bubble shown"),
-                Err(e) => warn!(error = %e, "screenshot bubble failed"),
+            increment_hidden_screenshot_count(app);
+            if !show_bubble {
+                debug!("[screenshot] 截屏分析弹窗已关闭，分析已收入待查看");
+            } else {
+                debug!(
+                    chars = text.chars().count(),
+                    "screenshot analysis stored in inbox"
+                );
+                match crate::bubble::show_bubble(app, "观察完成，已放入待查看") {
+                    Ok(()) => debug!("screenshot completion notice shown"),
+                    Err(e) => warn!(error = %e, "screenshot completion notice failed"),
+                }
             }
         }
 

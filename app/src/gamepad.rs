@@ -31,7 +31,7 @@ use ai_pad_core::pet_event::{
 };
 use ai_pad_core::user_profile::UserProfile;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tracing::{debug, error, info, instrument, trace, warn};
@@ -104,6 +104,47 @@ impl Default for SharedPendingChat {
     }
 }
 
+/// 当前 AI 对话的软取消状态。
+///
+/// 每次新对话开始都会递增 generation；前端点"停止"时取消当前 generation。
+/// 底层模型流如果不能立刻中断，app 层也会丢弃后续 chunk，并跳过记忆写入。
+pub struct SharedChatCancel {
+    current_generation: AtomicU64,
+    cancelled_until_generation: AtomicU64,
+}
+
+impl SharedChatCancel {
+    pub fn new() -> Self {
+        Self {
+            current_generation: AtomicU64::new(0),
+            cancelled_until_generation: AtomicU64::new(0),
+        }
+    }
+
+    pub fn begin_chat(&self) -> u64 {
+        self.current_generation.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    pub fn cancel_current(&self) -> u64 {
+        let generation = self.current_generation.load(Ordering::SeqCst);
+        if generation > 0 {
+            self.cancelled_until_generation
+                .store(generation, Ordering::SeqCst);
+        }
+        generation
+    }
+
+    pub fn is_cancelled(&self, generation: u64) -> bool {
+        generation > 0 && generation <= self.cancelled_until_generation.load(Ordering::SeqCst)
+    }
+}
+
+impl Default for SharedChatCancel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// 前端触发的"提交聊天消息"命令，通过 ActionBus 写入 [`SharedPendingChat`]。
 #[tauri::command]
 pub async fn cmd_submit_chat(app: AppHandle, text: String) -> Result<(), String> {
@@ -118,6 +159,18 @@ pub async fn cmd_submit_chat(app: AppHandle, text: String) -> Result<(), String>
             cmd: "cmd_submit_chat".into(),
         },
     );
+    Ok(())
+}
+
+/// 前端触发的"停止生成"命令：软取消当前 AI 对话并通知 bubble 进入停止态。
+#[tauri::command]
+pub async fn cmd_cancel_chat(app: AppHandle) -> Result<(), String> {
+    let cancel: State<'_, SharedChatCancel> = app.state();
+    let generation = cancel.cancel_current();
+    info!(generation, "[chat] cancel requested");
+    let bubble_state: State<'_, bubble::SharedBubble> = app.state();
+    bubble_state.set_chat_active(false);
+    let _ = app.emit_to("bubble", "bubble-cancelled", ());
     Ok(())
 }
 
@@ -986,6 +1039,8 @@ pub fn run_ai_chat(
 
     // RAII 锁：整个 chat 期间阻止截屏线程进入 Vision 分析；panic 或 early return 时自动释放
     let _chat_guard = ChatActiveGuard::new(app, log_prefix);
+    let cancel_state: tauri::State<'_, SharedChatCancel> = app.state();
+    let chat_generation = cancel_state.begin_chat();
 
     if let Err(e) = bubble::start_streaming_bubble(app) {
         warn!(error = %e, "{log_prefix}气泡启动错误");
@@ -1077,6 +1132,7 @@ pub fn run_ai_chat(
 
     // ---- 流式 IO：不持锁 ----
     let app_for_chunks = app.clone();
+    let cancel_for_stream: tauri::State<'_, SharedChatCancel> = app.state();
     let prefix = log_prefix.to_string();
     let prefix_for_log = prefix.clone();
     let tool_summaries = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
@@ -1084,6 +1140,9 @@ pub fn run_ai_chat(
     emit_pet_event(app, PetEvent::ai_thinking());
     let stream_result = rt.block_on(agent.chat_stream(&enriched_msg, move |event| match event {
         AgentStreamEvent::Text { text } => {
+            if cancel_for_stream.is_cancelled(chat_generation) {
+                return;
+            }
             trace!(
                 chunk_chars = text.chars().count(),
                 "{prefix_for_log}{tag}AI chunk"
@@ -1091,10 +1150,16 @@ pub fn run_ai_chat(
             let _ = bubble::append_bubble_chunk(&app_for_chunks, &text);
         }
         AgentStreamEvent::Status { status } => {
+            if cancel_for_stream.is_cancelled(chat_generation) {
+                return;
+            }
             debug!(status = ?status, "{prefix_for_log}{tag}AI stream status");
             emit_pet_event(&app_for_chunks, agent_status_to_pet_event(status));
         }
         AgentStreamEvent::Tool { event } => {
+            if cancel_for_stream.is_cancelled(chat_generation) {
+                return;
+            }
             debug!(
                 tool = %event.tool_name,
                 phase = ?event.phase,
@@ -1138,6 +1203,7 @@ pub fn run_ai_chat(
             );
         }
     }));
+    let chat_cancelled = cancel_state.is_cancelled(chat_generation);
     let _ = bubble::finalize_bubble(app);
     emit_pet_event(
         app,
@@ -1163,6 +1229,11 @@ pub fn run_ai_chat(
             kind: Some(PetNotificationKind::ToolRunning),
         },
     );
+
+    if chat_cancelled {
+        info!(generation = chat_generation, "{prefix}AI chat cancelled");
+        return;
+    }
 
     match stream_result {
         Ok(reply) => {

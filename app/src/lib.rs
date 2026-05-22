@@ -44,7 +44,7 @@ pub mod tray;
 pub mod tts;
 pub mod voice;
 
-use gamepad::{SharedAgent, SharedChatCore, SharedPendingChat};
+use gamepad::{SharedAgent, SharedChatCancel, SharedChatCore, SharedPendingChat};
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tracing::{debug, info, warn};
@@ -67,6 +67,7 @@ pub fn run() {
         .manage(pet_event_bus::SharedPetEventBus::new())
         .manage(agent_monitor::SharedAgentMonitor::default())
         .manage(SharedPendingChat::new())
+        .manage(SharedChatCancel::new())
         .manage(SharedChatCore::new())
         .manage(SharedAgent::new())
         .on_menu_event(tray::handle_pet_context_menu_event)
@@ -118,6 +119,7 @@ pub fn run() {
             pet_inbox::cmd_show_pet_inbox,
             pet_inbox::cmd_hide_pet_inbox,
             gamepad::cmd_submit_chat,
+            gamepad::cmd_cancel_chat,
             gamepad::cmd_open_chat,
             gamepad::cmd_enter_chat,
             gamepad::cmd_exit_chat,
