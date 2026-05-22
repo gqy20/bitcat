@@ -15,7 +15,7 @@ memory:
   max_reply_chars: 200
 memory_v2:
   long_term_max_entries: 200
-  retrieve_budget_chars: 800
+  retrieve_budget_chars: 5000
   aggregation_interval_min: 24
 screen_summary:
   interval_min: 15

@@ -105,6 +105,11 @@ pub enum CreateReminderKind {
 }
 
 /// Agent-facing arguments for creating a reminder.
+///
+/// The schema is intentionally explicit because LLMs often confuse one-shot
+/// clock-time reminders with daily recurring reminders. `daily_time` is only
+/// for repeated daily schedules; a single "10 点提醒我" request must use
+/// `schedule_kind = once` with `at = "YYYY-MM-DD 10:00"`.
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct CreateReminderArgs {
     /// Short reminder title, for example "Drink water".
@@ -112,18 +117,18 @@ pub struct CreateReminderArgs {
     /// Optional detail shown when the reminder fires.
     #[serde(default)]
     pub message: Option<String>,
-    /// Schedule type: once, interval, or daily.
+    /// Schedule type: once, interval, or daily. Use once unless the user clearly asks for a repeating reminder.
     pub schedule_kind: CreateReminderKind,
-    /// Absolute local time for once reminders. Accepts RFC3339 or "YYYY-MM-DD HH:MM".
+    /// Absolute local time for one-shot clock-time reminders. Accepts RFC3339 or "YYYY-MM-DD HH:MM".
     #[serde(default)]
     pub at: Option<String>,
-    /// Relative delay in minutes for one-shot reminders like "in 3 minutes".
+    /// Relative delay in minutes for one-shot reminders like "in 3 minutes". JSON number, not a string.
     #[serde(default)]
     pub delay_minutes: Option<u32>,
-    /// Interval in minutes for interval reminders.
+    /// Interval in minutes for repeated interval reminders like "every 30 minutes". JSON number, not a string.
     #[serde(default)]
     pub interval_minutes: Option<u32>,
-    /// Local clock time for daily reminders, such as "09:00".
+    /// Local clock time for daily repeated reminders only, such as "09:00". Do not use for one-shot reminders.
     #[serde(default)]
     pub daily_time: Option<String>,
 }

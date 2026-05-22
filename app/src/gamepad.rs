@@ -18,7 +18,7 @@ use crate::pet_event_bus::SharedPetEventBus;
 use crate::tts;
 use crate::voice;
 use ai_pad_core::action::{ActionConfig, ActionDef};
-use ai_pad_core::agent::{AgentStreamEvent, PetAgent, ToolPhase};
+use ai_pad_core::agent::{parse_tool_failure_stop, AgentStreamEvent, PetAgent, ToolPhase};
 use ai_pad_core::agent_reaction::{extract_agent_reaction, fallback_agent_reaction};
 use ai_pad_core::bridge::{handle_button_press, PetCommand};
 use ai_pad_core::device::button_name;
@@ -361,8 +361,6 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
     let ac = action_config.as_ref().map(|c| c.actions.len()).unwrap_or(0);
     info!(action_count = ac, "已加载 {ac} 个动作绑定");
 
-    let memory_config = ai_pad_core::prompts::PromptsConfig::load().memory;
-
     let mut alt_tab = HeldModifier::new(0x12);
     let mut ctrl_tab = HeldModifier::new(0x11);
     let mut held_voice = HeldCombo::new();
@@ -600,7 +598,7 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                                     msg_preview = %preview,
                                     "gamepad chat requested"
                                 );
-                                run_ai_chat(&rt, ag, app, msg, "", &core, &memory_config);
+                                run_ai_chat(&rt, ag, app, msg, "", &core);
                             }
                         }
 
@@ -713,7 +711,7 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                             let agent_state: State<SharedAgent> = app.state();
                             if let Some(ag) = agent_state.get_or_init() {
                                 let core: State<SharedChatCore> = app.state();
-                                run_ai_chat(&rt, ag, app, &text, "[voice]", &core, &memory_config);
+                                run_ai_chat(&rt, ag, app, &text, "[voice]", &core);
                             } else {
                                 warn!("[voice] AI Agent 未初始化");
                             }
@@ -788,9 +786,6 @@ pub fn chat_loop(app: &tauri::AppHandle) {
         }
     };
 
-    let memory_config = ai_pad_core::prompts::PromptsConfig::load().memory;
-    let prompts_cfg = ai_pad_core::prompts::PromptsConfig::load();
-
     loop {
         // --- 1. 消费 bubble 聊天输入 ---
         if crate::shutdown::is_requested() {
@@ -811,7 +806,7 @@ pub fn chat_loop(app: &tauri::AppHandle) {
                     msg_preview = %preview,
                     "[chat] bubble input received"
                 );
-                run_ai_chat(&rt, ag, app, &msg, "[chat]", &core, &memory_config);
+                run_ai_chat(&rt, ag, app, &msg, "[chat]", &core);
             } else {
                 let preview = log_preview(&msg, 60);
                 warn!(
@@ -824,6 +819,7 @@ pub fn chat_loop(app: &tauri::AppHandle) {
 
         // --- 2. 定时聚合长期记忆 → 用户画像 ---
         {
+            let prompts_cfg = ai_pad_core::prompts::PromptsConfig::load();
             let core: State<SharedChatCore> = app.state();
             let agg_interval = std::time::Duration::from_secs(
                 (prompts_cfg.memory_v2.aggregation_interval_min as u64) * 60,
@@ -978,7 +974,6 @@ pub fn run_ai_chat(
     msg: &str,
     log_prefix: &str,
     core: &SharedChatCore,
-    memory_config: &ai_pad_core::memory::MemoryConfig,
 ) {
     let tag = if log_prefix.is_empty() { "" } else { " " };
     let msg_preview = log_preview(msg, 60);
@@ -996,6 +991,10 @@ pub fn run_ai_chat(
         warn!(error = %e, "{log_prefix}气泡启动错误");
         return;
     }
+
+    let prompts_cfg = ai_pad_core::prompts::PromptsConfig::load();
+    let memory_config = &prompts_cfg.memory;
+    let long_term_budget_chars = prompts_cfg.memory_v2.retrieve_budget_chars;
 
     // ---- 构建上下文：各字段单独短锁 ----
     let ctx = match core.memory.lock() {
@@ -1026,7 +1025,7 @@ pub fn run_ai_chat(
         String::new()
     };
     let long_term_ctx = match core.long_term.lock() {
-        Ok(g) => g.retrieve(msg, 800),
+        Ok(g) => g.retrieve(msg, long_term_budget_chars),
         Err(e) => {
             warn!(error = %e, "long_term 锁中毒，跳过上下文");
             return;
@@ -1036,7 +1035,19 @@ pub fn run_ai_chat(
     let summary_config = ai_pad_core::prompts::PromptsConfig::load().screen_summary;
     let summary_ctx = summary_store.build_context(&summary_config);
     let recent_ctx = ai_pad_core::screenshot::build_recent_analyses_context(10, 1500);
+    let context_policy = [
+        "[上下文优先级]",
+        "如果上下文互相冲突，按以下顺序判断：",
+        "1. 用户当前这句话和工具实时结果最优先。",
+        "2. 本轮/最近对话记录优先于长期记忆候选。",
+        "3. 显式用户画像优先于自动聚合画像。",
+        "4. 长期记忆候选可能过期；涉及提醒、任务状态、文件状态时应优先调用工具核对。",
+        "不要把旧记忆里的失败、能力限制或历史承诺当作当前事实。",
+        "[/上下文优先级]\n",
+    ]
+    .join("\n");
     let context_parts: Vec<&str> = [
+        &context_policy,
         &user_profile_ctx,
         &profile_ctx,
         &long_term_ctx,
@@ -1233,11 +1244,30 @@ pub fn run_ai_chat(
             }
         }
         Err(e) => {
+            let user_reply = if let Some((tool_name, detail)) = parse_tool_failure_stop(&e) {
+                if tool_name == "create_reminder" {
+                    format!("喵呜，提醒没有创建成功：{detail}")
+                } else {
+                    format!("工具 {tool_name} 没有完成：{detail}")
+                }
+            } else {
+                format!("AI 对话失败: {e}")
+            };
+            let _ = bubble::append_bubble_chunk(app, &user_reply);
+            let _ = bubble::finalize_bubble(app);
+            if let Ok(mut memory) = core.memory.lock() {
+                memory.record_conversation(msg, &user_reply, memory_config);
+                if let Err(save_err) = memory.save() {
+                    warn!(error = %save_err, "保存失败对话记忆失败");
+                }
+            } else {
+                warn!("memory 锁中毒，跳过失败对话记忆写入");
+            }
             emit_pet_event(
                 app,
                 PetEvent::Notify {
                     kind: PetNotificationKind::ToolFailed,
-                    body: Some(format!("AI 对话失败: {e}")),
+                    body: Some(user_reply.clone()),
                     ttl_ms: Some(15_000),
                     refresh: true,
                 },

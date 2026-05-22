@@ -49,6 +49,7 @@ use tracing::{debug, info, instrument, trace};
 /// perform_dance → 再总结 ≈ 4 turn，带搜索记忆/读文件的链路可达 10+。
 /// 16 留足余量又不会让异常循环无限跑（每轮至少数秒，满轮约等于几分钟超时兜底）。
 const MAX_AGENT_TURNS: usize = 16;
+const MAX_CONSECUTIVE_TOOL_FAILURES: usize = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -115,6 +116,17 @@ pub enum AgentStreamEvent {
 pub enum AgentStreamStatus {
     AiWriting,
     ToolPreparing,
+}
+
+const TOOL_FAILURE_STOP_PREFIX: &str = "tool_failure_stop:";
+
+fn tool_failure_stop_message(tool_name: &str, body: &str) -> String {
+    format!("{TOOL_FAILURE_STOP_PREFIX}{tool_name}:{body}")
+}
+
+pub fn parse_tool_failure_stop(error: &str) -> Option<(&str, &str)> {
+    let rest = error.strip_prefix(TOOL_FAILURE_STOP_PREFIX)?;
+    rest.split_once(':')
 }
 
 fn tool_label(tool_name: &str) -> String {
@@ -186,6 +198,15 @@ fn tool_result_preview(result: &RigToolResult) -> Option<String> {
         .next()
 }
 
+fn tool_result_is_failure(preview: Option<&str>, success: Option<bool>) -> bool {
+    success == Some(false)
+        || preview.is_some_and(|text| {
+            text.contains("Toolset error")
+                || text.contains("ToolCallError")
+                || text.contains("JsonError")
+        })
+}
+
 fn result_tool_event(
     mut planned: ToolRuntimeEvent,
     result: &RigToolResult,
@@ -200,10 +221,11 @@ fn result_tool_event(
         .as_deref()
         .and_then(|text| serde_json::from_str::<tools::ToolResult>(text).ok())
         .map(|result| result.success);
+    let failed = tool_result_is_failure(preview.as_deref(), success);
 
     planned.phase = if blocked {
         ToolPhase::Blocked
-    } else if success == Some(false) {
+    } else if failed {
         ToolPhase::Failed
     } else {
         ToolPhase::Finished
@@ -215,9 +237,50 @@ fn result_tool_event(
         .or(Some(result.id.clone()));
     planned.internal_call_id = internal_call_id;
     planned.result_preview = preview;
-    planned.success = if blocked { Some(false) } else { success };
+    planned.success = if blocked || failed {
+        Some(false)
+    } else {
+        success
+    };
     planned.elapsed_ms = elapsed_ms;
     planned
+}
+
+fn repeated_tool_failure_message(tool_name: &str, failures: usize) -> String {
+    match tool_name {
+        "create_reminder" => format!(
+            "提醒没有创建成功：create_reminder 连续失败 {failures} 次。请不要继续重试工具，告诉主人提醒没有创建成功，并说明最后一次工具错误；如果时间不明确，请主人换成更明确的时间。"
+        ),
+        _ => format!(
+            "{tool_name} 连续失败 {failures} 次。请不要继续重试工具，告诉主人这次操作没有完成，并说明最后一次错误。"
+        ),
+    }
+}
+
+fn should_stop_after_tool_failure(
+    event: &ToolRuntimeEvent,
+    last_failed_tool: &mut Option<String>,
+    consecutive_failures: &mut usize,
+) -> Option<String> {
+    if event.phase != ToolPhase::Failed {
+        *last_failed_tool = None;
+        *consecutive_failures = 0;
+        return None;
+    }
+
+    if last_failed_tool.as_deref() == Some(event.tool_name.as_str()) {
+        *consecutive_failures += 1;
+    } else {
+        *last_failed_tool = Some(event.tool_name.clone());
+        *consecutive_failures = 1;
+    }
+
+    (*consecutive_failures >= MAX_CONSECUTIVE_TOOL_FAILURES).then(|| {
+        tool_failure_stop_message(
+            &event.tool_name,
+            &repeated_tool_failure_message(&event.tool_name, *consecutive_failures),
+        )
+    })
 }
 
 /// 桌宠 AI Agent，封装 rig-core Agent 和运行时配置。
@@ -234,6 +297,7 @@ impl PetAgent {
     pub fn new() -> Result<Self, String> {
         let config = AiConfig::load()?;
         let prompts = PromptsConfig::load();
+        let preamble = build_agent_preamble(&prompts.agent.preamble);
 
         let client = anthropic::Client::builder()
             .api_key(&config.api_key)
@@ -246,7 +310,7 @@ impl PetAgent {
         let max_tokens = config.max_tokens();
 
         let agent = rig::agent::AgentBuilder::new(model)
-            .preamble(&prompts.agent.preamble)
+            .preamble(&preamble)
             .max_tokens(max_tokens)
             .hook(PermissionHook)
             .tool(LaunchTool)
@@ -297,6 +361,8 @@ impl PetAgent {
         let mut tool_call_count = 0u32;
         let mut final_response_count = 0u32;
         let mut writing_active = false;
+        let mut last_failed_tool: Option<String> = None;
+        let mut consecutive_tool_failures = 0usize;
         let mut tool_events =
             std::collections::HashMap::<String, (ToolRuntimeEvent, std::time::Instant)>::new();
         while let Some(item) = stream.next().await {
@@ -380,7 +446,15 @@ impl PetAgent {
                             "tool call result"
                         );
                         record_tool_event(&ToolEventRecord::from_event(session_id.clone(), &event));
+                        let stop_message = should_stop_after_tool_failure(
+                            &event,
+                            &mut last_failed_tool,
+                            &mut consecutive_tool_failures,
+                        );
                         on_event(AgentStreamEvent::Tool { event });
+                        if let Some(message) = stop_message {
+                            return Err(message);
+                        }
                     } else {
                         debug!(internal_call_id, "tool result without planned event");
                     }
@@ -408,20 +482,181 @@ fn tool_schema<T: JsonSchema>() -> Value {
     serde_json::to_value(schema).expect("tool args schema should serialize")
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ToolSpec {
+    name: &'static str,
+    description: &'static str,
+    summary: &'static str,
+    guidance: &'static [&'static str],
+}
+
+impl ToolSpec {
+    fn to_prompt_line(self) -> String {
+        if self.guidance.is_empty() {
+            format!("- {}：{}", self.name, self.summary)
+        } else {
+            format!(
+                "- {}：{}；{}",
+                self.name,
+                self.summary,
+                self.guidance.join("；")
+            )
+        }
+    }
+}
+
+const LAUNCH_TOOL: ToolSpec = ToolSpec {
+    name: "launch_program",
+    description: "启动一个程序或应用",
+    summary: "启动程序或应用",
+    guidance: &[],
+};
+const SHELL_TOOL: ToolSpec = ToolSpec {
+    name: "shell",
+    description: "执行 PowerShell 命令并返回输出（30s 超时，输出截断至 8000 字符）",
+    summary: "执行 PowerShell 命令并返回输出",
+    guidance: &["只在用户明确需要系统命令或文件/进程检查时使用"],
+};
+const READ_FILE_TOOL: ToolSpec = ToolSpec {
+    name: "read_file",
+    description: "读取文件内容，支持文本文件（超过 8000 字符自动截断）",
+    summary: "读取文本文件内容",
+    guidance: &[],
+};
+const GET_TIME_TOOL: ToolSpec = ToolSpec {
+    name: "get_time",
+    description: "获取当前日期和时间",
+    summary: "获取当前日期和时间",
+    guidance: &["处理相对时间、今天/明天/整点提醒前先确认当前时间"],
+};
+const RECENT_SCREENSHOTS_TOOL: ToolSpec = ToolSpec {
+    name: "recent_screenshots",
+    description: "查询最近的截图视觉分析记录，了解用户最近在屏幕上做什么",
+    summary: "查询最近截图视觉分析记录",
+    guidance: &["用户问最近屏幕、刚才在做什么、观察到什么时使用"],
+};
+const SEARCH_MEMORY_TOOL: ToolSpec = ToolSpec {
+    name: "search_memory",
+    description: "Search grep-first long-term memory with text, tags, source, and importance filters.",
+    summary: "检索长期记忆",
+    guidance: &["用户问偏好、历史承诺、以前聊过什么时使用"],
+};
+const REMEMBER_TOOL: ToolSpec = ToolSpec {
+    name: "remember",
+    description: "Store an explicit durable long-term memory note with optional importance and tags.",
+    summary: "保存明确的长期记忆",
+    guidance: &["只保存用户明确要求记住或确有长期价值的信息"],
+};
+const CREATE_REMINDER_DESC: &str = "Create a deterministic local reminder that will pop up later. Field rules are strict: \
+for one-shot relative requests like 'in 3 minutes' or '3 minutes later', use schedule_kind='once' and delay_minutes as a number; \
+for one-shot clock-time requests like 'today at 10:00', '10点提醒我', or 'tonight 22:10', use schedule_kind='once' and at as local 'YYYY-MM-DD HH:MM'; \
+for repeated requests like 'every 30 minutes', use schedule_kind='interval' and interval_minutes as a number; \
+for daily repeated requests like 'every day at 09:00', use schedule_kind='daily' and daily_time as 'HH:MM'. \
+Do not use daily for a single clock-time reminder. Do not put numbers in string fields except inside formatted time strings. If creation fails, tell the user it was not created instead of claiming success.";
+const CREATE_REMINDER_TOOL: ToolSpec = ToolSpec {
+    name: "create_reminder",
+    description: CREATE_REMINDER_DESC,
+    summary: "创建真实本地提醒",
+    guidance: &[
+        "几分钟/几小时后提醒我：schedule_kind=once，delay_minutes 用数字",
+        "今天/明天/十点/晚上十点提醒我：schedule_kind=once，at=\"YYYY-MM-DD HH:MM\"",
+        "每天十点提醒我：schedule_kind=daily，daily_time=\"HH:MM\"",
+        "每隔 N 分钟提醒我：schedule_kind=interval，interval_minutes 用数字",
+        "创建失败必须告诉用户没有创建成功，不要口头承诺",
+    ],
+};
+const LIST_REMINDERS_TOOL: ToolSpec = ToolSpec {
+    name: "list_reminders",
+    description: "List active reminders, or include inactive reminders when requested.",
+    summary: "列出提醒",
+    guidance: &["用户问提醒是否设好、有哪些提醒时使用"],
+};
+const CANCEL_REMINDER_TOOL: ToolSpec = ToolSpec {
+    name: "cancel_reminder",
+    description: "Cancel a reminder by id.",
+    summary: "取消提醒",
+    guidance: &["需要提醒 id，必要时先 list_reminders"],
+};
+const HOTKEY_TOOL: ToolSpec = ToolSpec {
+    name: "send_hotkey",
+    description: "模拟键盘快捷键组合（如 Alt+Tab 切窗口、Ctrl+C 复制）",
+    summary: "发送系统快捷键",
+    guidance: &[],
+};
+const CLIPBOARD_TOOL: ToolSpec = ToolSpec {
+    name: "read_clipboard",
+    description: "读取系统剪贴板中的文本内容",
+    summary: "读取系统剪贴板文本",
+    guidance: &[],
+};
+const FOREGROUND_TOOL: ToolSpec = ToolSpec {
+    name: "force_foreground",
+    description: "将指定窗口强制提到前台（需要窗口句柄 hwnd）",
+    summary: "将指定窗口提到前台",
+    guidance: &["需要窗口 hwnd"],
+};
+const PERFORM_DANCE_TOOL: ToolSpec = ToolSpec {
+    name: "perform_dance",
+    description: "编排并立即播放舞蹈。用户要跳舞/表演/庆祝时用。给完整 steps；动作限 jump/spin/wave/shake/idle，建议 3-8 步、每步 150-900ms。",
+    summary: "编排并立即播放新舞蹈",
+    guidance: &["用户要跳舞/表演/庆祝时优先使用，给完整 steps"],
+};
+const PLAY_DANCE_TOOL: ToolSpec = ToolSpec {
+    name: "play_dance",
+    description: "播放已保存舞蹈。即兴新舞用 perform_dance。",
+    summary: "播放已保存舞蹈",
+    guidance: &["即兴新舞用 perform_dance"],
+};
+
+const TOOL_SPECS: &[ToolSpec] = &[
+    LAUNCH_TOOL,
+    SHELL_TOOL,
+    READ_FILE_TOOL,
+    GET_TIME_TOOL,
+    RECENT_SCREENSHOTS_TOOL,
+    SEARCH_MEMORY_TOOL,
+    REMEMBER_TOOL,
+    CREATE_REMINDER_TOOL,
+    LIST_REMINDERS_TOOL,
+    CANCEL_REMINDER_TOOL,
+    HOTKEY_TOOL,
+    CLIPBOARD_TOOL,
+    FOREGROUND_TOOL,
+    PERFORM_DANCE_TOOL,
+    PLAY_DANCE_TOOL,
+];
+
+fn build_tool_guide_prompt() -> String {
+    let mut prompt = String::from("[工具使用指南]\n");
+    prompt.push_str(
+        "你可以调用以下工具。需要执行动作时优先使用工具；工具失败时必须如实说明，不要假装成功。\n",
+    );
+    for spec in TOOL_SPECS {
+        prompt.push_str(&spec.to_prompt_line());
+        prompt.push('\n');
+    }
+    prompt.push_str("[/工具使用指南]");
+    prompt
+}
+
+fn build_agent_preamble(base: &str) -> String {
+    format!("{}\n\n{}", base.trim_end(), build_tool_guide_prompt())
+}
+
 /// 定义一个同步执行的 Tool（execute 函数返回 `ToolResult`）
 macro_rules! define_tool_sync {
-    ($name:ident, $tool_name:literal, $desc:literal, $args_ty:ty, $exec_fn:expr) => {
+    ($name:ident, $spec:expr, $args_ty:ty, $exec_fn:expr) => {
         struct $name;
         impl Tool for $name {
-            const NAME: &'static str = $tool_name;
+            const NAME: &'static str = $spec.name;
             type Error = ToolError;
             type Args = $args_ty;
             type Output = tools::ToolResult;
 
             async fn definition(&self, _prompt: String) -> ToolDefinition {
                 ToolDefinition {
-                    name: $tool_name.into(),
-                    description: $desc.into(),
+                    name: Self::NAME.into(),
+                    description: $spec.description.into(),
                     parameters: tool_schema::<$args_ty>(),
                 }
             }
@@ -435,18 +670,18 @@ macro_rules! define_tool_sync {
 
 /// 定义一个异步执行的 Tool（execute 函数返回 `Result<ToolResult, ToolError>`）
 macro_rules! define_tool_async {
-    ($name:ident, $tool_name:literal, $desc:literal, $args_ty:ty, $exec_fn:expr) => {
+    ($name:ident, $spec:expr, $args_ty:ty, $exec_fn:expr) => {
         struct $name;
         impl Tool for $name {
-            const NAME: &'static str = $tool_name;
+            const NAME: &'static str = $spec.name;
             type Error = ToolError;
             type Args = $args_ty;
             type Output = tools::ToolResult;
 
             async fn definition(&self, _prompt: String) -> ToolDefinition {
                 ToolDefinition {
-                    name: $tool_name.into(),
-                    description: $desc.into(),
+                    name: Self::NAME.into(),
+                    description: $spec.description.into(),
                     parameters: tool_schema::<$args_ty>(),
                 }
             }
@@ -460,122 +695,92 @@ macro_rules! define_tool_async {
 
 // ---- 8 个工具定义 ----
 
-define_tool_sync!(
-    LaunchTool,
-    "launch_program",
-    "启动一个程序或应用",
-    LaunchArgs,
-    tools::execute_launch
-);
+define_tool_sync!(LaunchTool, LAUNCH_TOOL, LaunchArgs, tools::execute_launch);
 
-define_tool_async!(
-    ShellTool,
-    "shell",
-    "执行 PowerShell 命令并返回输出（30s 超时，输出截断至 8000 字符）",
-    ShellArgs,
-    tools::execute_shell
-);
+define_tool_async!(ShellTool, SHELL_TOOL, ShellArgs, tools::execute_shell);
 
 define_tool_sync!(
     ReadFileTool,
-    "read_file",
-    "读取文件内容，支持文本文件（超过 8000 字符自动截断）",
+    READ_FILE_TOOL,
     ReadFileArgs,
     tools::execute_read_file
 );
 
 define_tool_sync!(
     GetTimeTool,
-    "get_time",
-    "获取当前日期和时间",
+    GET_TIME_TOOL,
     GetTimeArgs,
     tools::execute_get_time
 );
 
 define_tool_sync!(
     RecentScreenshotsTool,
-    "recent_screenshots",
-    "查询最近的截图视觉分析记录，了解用户最近在屏幕上做什么",
+    RECENT_SCREENSHOTS_TOOL,
     RecentScreenshotsArgs,
     |args| tools::execute_recent_screenshots(args, None)
 );
 
 define_tool_sync!(
     SearchMemoryTool,
-    "search_memory",
-    "Search grep-first long-term memory with text, tags, source, and importance filters.",
+    SEARCH_MEMORY_TOOL,
     SearchMemoryArgs,
     tools::execute_search_memory_live
 );
 
 define_tool_sync!(
     RememberTool,
-    "remember",
-    "Store an explicit durable long-term memory note with optional importance and tags.",
+    REMEMBER_TOOL,
     RememberArgs,
     tools::execute_remember
 );
 
 define_tool_sync!(
     CreateReminderTool,
-    "create_reminder",
-    "Create a deterministic reminder that will pop up later. Use once with delay_minutes for one-shot requests like 'in 3 minutes' or '3 minutes later'; use interval only for repeated requests like 'every 3 minutes'; use daily for a local clock time.",
+    CREATE_REMINDER_TOOL,
     CreateReminderArgs,
     tools::execute_create_reminder
 );
 
 define_tool_sync!(
     ListRemindersTool,
-    "list_reminders",
-    "List active reminders, or include inactive reminders when requested.",
+    LIST_REMINDERS_TOOL,
     ListRemindersArgs,
     tools::execute_list_reminders
 );
 
 define_tool_sync!(
     CancelReminderTool,
-    "cancel_reminder",
-    "Cancel a reminder by id.",
+    CANCEL_REMINDER_TOOL,
     CancelReminderArgs,
     tools::execute_cancel_reminder
 );
 
-define_tool_sync!(
-    HotkeyTool,
-    "send_hotkey",
-    "模拟键盘快捷键组合（如 Alt+Tab 切窗口、Ctrl+C 复制）",
-    HotkeyArgs,
-    tools::execute_hotkey
-);
+define_tool_sync!(HotkeyTool, HOTKEY_TOOL, HotkeyArgs, tools::execute_hotkey);
 
 define_tool_sync!(
     ClipboardTool,
-    "read_clipboard",
-    "读取系统剪贴板中的文本内容",
+    CLIPBOARD_TOOL,
     ClipboardArgs,
     tools::execute_clipboard
 );
 
 define_tool_sync!(
     ForegroundTool,
-    "force_foreground",
-    "将指定窗口强制提到前台（需要窗口句柄 hwnd）",
+    FOREGROUND_TOOL,
     ForegroundArgs,
     tools::execute_foreground
 );
 
 define_tool_sync!(
     PerformDanceTool,
-    "perform_dance",
-    "编排并立即播放舞蹈。用户要跳舞/表演/庆祝时用。给完整 steps；动作限 jump/spin/wave/shake/idle，建议 3-8 步、每步 150-900ms。",
+    PERFORM_DANCE_TOOL,
     PerformDanceArgs,
     tools::execute_perform_dance
 );
 
 define_tool_sync!(
     PlayDanceTool,
-    "play_dance",
-    "播放已保存舞蹈。即兴新舞用 perform_dance。",
+    PLAY_DANCE_TOOL,
     PlayDanceArgs,
     tools::execute_play_dance
 );
@@ -592,6 +797,25 @@ mod tests {
         assert!(!cfg.agent.preamble.is_empty());
         assert!(cfg.agent.preamble.contains("8Bit"));
         assert!(cfg.agent.preamble.contains("猫"));
+    }
+
+    #[test]
+    fn test_tool_guide_prompt_includes_reminder_rules() {
+        let guide = build_tool_guide_prompt();
+        assert!(guide.contains("[工具使用指南]"));
+        assert!(guide.contains("create_reminder"));
+        assert!(guide.contains("delay_minutes 用数字"));
+        assert!(guide.contains("at=\"YYYY-MM-DD HH:MM\""));
+        assert!(guide.contains("daily_time=\"HH:MM\""));
+        assert!(guide.contains("创建失败必须告诉用户没有创建成功"));
+    }
+
+    #[test]
+    fn test_agent_preamble_appends_tool_guide() {
+        let preamble = build_agent_preamble("base prompt");
+        assert!(preamble.starts_with("base prompt"));
+        assert!(preamble.contains("[工具使用指南]"));
+        assert!(preamble.contains("perform_dance"));
     }
 
     #[test]
@@ -612,6 +836,22 @@ mod tests {
         assert_eq!(event.result_preview, None);
         assert_eq!(event.success, None);
         assert_eq!(event.elapsed_ms, None);
+    }
+
+    #[test]
+    fn test_toolset_error_counts_as_failure() {
+        assert!(tool_result_is_failure(
+            Some("Toolset error: ToolCallError: JsonError: invalid type"),
+            None
+        ));
+        assert!(tool_result_is_failure(
+            Some("{\"success\":false}"),
+            Some(false)
+        ));
+        assert!(!tool_result_is_failure(
+            Some("{\"success\":true}"),
+            Some(true)
+        ));
     }
 
     #[tokio::test]
@@ -665,6 +905,12 @@ mod tests {
         let create = CreateReminderTool.definition(String::new()).await;
         assert_eq!(create.name, "create_reminder");
         let create_schema = serde_json::to_string(&create.parameters).unwrap();
+        assert!(create.description.contains("YYYY-MM-DD HH:MM"));
+        assert!(
+            create
+                .description
+                .contains("Do not use daily for a single clock-time reminder")
+        );
         assert!(create_schema.contains("schedule_kind"));
         assert!(create_schema.contains("delay_minutes"));
         assert!(create_schema.contains("interval_minutes"));

@@ -54,7 +54,7 @@ memory:
 # ---- 记忆 V2（长期记忆 + 聚合画像） ----
 memory_v2:
   long_term_max_entries: 200   # 长期记忆最多保存条目数
-  retrieve_budget_chars: 800   # 检索注入的字符预算
+  retrieve_budget_chars: 5000  # 检索注入的字符预算
   aggregation_interval_min: 24 # 聚合间隔（小时），0 表示不自动聚合
 
 # ---- 屏幕活动摘要（定时 AI 聚合截图分析结果） ----
