@@ -995,7 +995,7 @@ function renderTokenStats(stats) {
   $("usage-io").innerHTML = pairedMetric("输入", today.input_tokens, "输出", today.output_tokens);
   $("usage-cache").innerHTML = pairedMetric("读", today.cache_read_tokens, "写", today.cache_write_tokens);
   $("usage-records").innerHTML = metricValue(today.record_count, "条");
-  $("ov-usage-total").textContent = formatNumber(today.total_tokens);
+  $("ov-usage-total").textContent = compactNumber(today.total_tokens);
 
   renderUsageBreakdown(today);
   renderUsageSessions(stats?.recent_sessions || []);
@@ -1195,7 +1195,7 @@ function renderReminders(review) {
   const entries = review?.entries || [];
   if (status) {
     status.textContent = review
-      ? `${formatNumber(review.active_count || 0)} active / ${formatNumber(review.total_entries || 0)} total`
+      ? `${formatNumber(review.active_count || 0)} 个活跃 / ${formatNumber(review.total_entries || 0)} 个总计`
       : "不可用";
   }
   if (!entries.length) {
@@ -1203,10 +1203,10 @@ function renderReminders(review) {
     return;
   }
   const eventsPath = review?.events_path
-    ? `<div class="reminder-log-path">日志 <code>${escapeHtml(review.events_path)}</code></div>`
+    ? `<div class="reminder-log-path">日志 <code title="${escapeAttr(review.events_path)}">${escapeHtml(review.events_path)}</code></div>`
     : "";
   const storePath = review?.store_path
-    ? `<div class="reminder-log-path">数据 <code>${escapeHtml(review.store_path)}</code></div>`
+    ? `<div class="reminder-log-path">数据 <code title="${escapeAttr(review.store_path)}">${escapeHtml(review.store_path)}</code></div>`
     : "";
   box.innerHTML = `
     <div class="memory-meta">
@@ -1225,7 +1225,7 @@ function renderReminders(review) {
           <span class="reminder-status-pill">${escapeHtml(reminderStatusLabel(entry.status))}</span>
         </div>
         <div class="memory-entry-meta">
-          <span>${escapeHtml(entry.schedule_label || "")}</span>
+          <span>${escapeHtml(formatReminderSchedule(entry))}</span>
           <span>下次 ${escapeHtml(formatDateTime(entry.next_fire_at))}</span>
           <span>触发 ${formatNumber(entry.fire_count || 0)} 次</span>
           ${entry.last_fired_at ? `<span>上次 ${escapeHtml(formatDateTime(entry.last_fired_at))}</span>` : ""}
@@ -1273,6 +1273,18 @@ function reminderStatusLabel(status) {
   if (status === "done") return "完成";
   if (status === "cancelled") return "已取消";
   return status || "未知";
+}
+
+function formatReminderSchedule(entry) {
+  const raw = entry?.schedule_label || "";
+  if (!raw) return "未设置计划";
+  if (raw.startsWith("一次") && entry?.next_fire_at) {
+    return `一次 · ${formatDateTime(entry.next_fire_at)}`;
+  }
+  return raw.replace(
+    /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/g,
+    match => formatDateTime(match)
+  );
 }
 
 async function saveAll() {
@@ -1443,8 +1455,8 @@ function formatNumber(value) {
 
 function compactNumber(value) {
   const num = Number(value || 0);
-  if (Math.abs(num) >= 1_000_000) return `${formatFixed(num / 1_000_000, 1)}m`;
-  if (Math.abs(num) >= 10_000) return `${formatFixed(num / 1000, 1)}k`;
+  if (Math.abs(num) >= 1_000_000) return `${formatFixed(num / 1_000_000, 1)}M`;
+  if (Math.abs(num) >= 10_000) return `${formatFixed(num / 1000, 1)}K`;
   return formatNumber(num);
 }
 
@@ -1515,6 +1527,8 @@ function formatPetDecision(value) {
 
 function compactPayload(payload) {
   if (!payload || payload === null) return "";
+  const summary = formatPetPayload(payload);
+  if (summary) return summary;
   const copy = { ...payload };
   if (typeof copy.body === "string" && copy.body.length > 80) {
     copy.body = copy.body.slice(0, 80) + "...";
@@ -1526,6 +1540,78 @@ function compactPayload(payload) {
     copy.speech = copy.speech.slice(0, 80) + "...";
   }
   return JSON.stringify(copy);
+}
+
+function formatPetPayload(payload) {
+  const type = payload.type || "";
+  if (type === "notify") {
+    const kind = formatPetKind(payload.kind);
+    const parts = [`通知：${kind}`];
+    if (payload.body) parts.push(shortText(repairMojibake(payload.body), 48));
+    if (payload.ttl_ms) parts.push(`${formatDuration(payload.ttl_ms)} 后恢复`);
+    if (payload.refresh) parts.push("刷新现有状态");
+    return parts.join(" · ");
+  }
+  if (type === "react") {
+    const parts = [`反应：${formatPetMood(payload.mood)}`];
+    if (payload.speech) parts.push(shortText(repairMojibake(payload.speech), 48));
+    if (payload.ttl_ms) parts.push(`${formatDuration(payload.ttl_ms)} 后恢复`);
+    return parts.join(" · ");
+  }
+  if (type === "set_mode") return `模式：${formatPetMode(payload.mode)}`;
+  if (type === "show_bubble") return `气泡：${shortText(repairMojibake(payload.text || ""), 72)}`;
+  if (type === "play_dance") return `舞蹈：${payload.name || "-"}`;
+  if (type === "walk_to") return `移动到 x=${Number(payload.x || 0).toFixed(0)}`;
+  if (type === "clear_notification") return payload.kind ? `清理通知：${formatPetKind(payload.kind)}` : "清理全部通知";
+  if (type === "exit") return "退出宠物";
+  return "";
+}
+
+function formatPetKind(value) {
+  const map = {
+    ai_thinking: "AI 思考",
+    ai_writing: "AI 回复",
+    tool_preparing: "工具准备",
+    tool_running: "工具运行",
+    tool_blocked: "工具被阻止",
+    tool_failed: "工具失败",
+    listening: "正在听写",
+    screenshot_observing: "截图观察",
+  };
+  return map[value] || value || "-";
+}
+
+function formatPetMood(value) {
+  const map = {
+    idle: "待机",
+    happy: "开心",
+    confused: "困惑",
+    focused: "专注",
+    caring: "关心",
+    excited: "兴奋",
+    sleepy: "困倦",
+  };
+  return map[value] || value || "-";
+}
+
+function formatPetMode(value) {
+  const map = {
+    idle: "待机",
+    sleep: "睡眠",
+    game_play: "游戏",
+  };
+  return map[value] || value || "-";
+}
+
+function shortText(value, limit) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit)}...`;
+}
+
+function repairMojibake(value) {
+  if (value === "姝ｅ湪瑙傚療灞忓箷...") return "正在观察屏幕...";
+  return value;
 }
 
 document.addEventListener("DOMContentLoaded", () => {

@@ -139,7 +139,7 @@ impl PetEvent {
     pub fn screenshot_observing() -> Self {
         Self::Notify {
             kind: PetNotificationKind::ScreenshotObserving,
-            body: Some("姝ｅ湪瑙傚療灞忓箷...".to_string()),
+            body: Some("正在观察屏幕...".to_string()),
             ttl_ms: Some(5_000),
             refresh: true,
         }

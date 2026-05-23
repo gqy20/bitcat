@@ -38,7 +38,7 @@ pub struct MemoryEntry {
 
 /// 短期对话记忆存储，维护固定大小的滚动窗口。
 ///
-/// 超出 `max_entries` 时自动淘汰最旧条目，保证注入 prompt 的上下文不会无限膨胀。
+/// 超出 `max_entries` 时自动淘汰最旧条目；`max_entries == 0` 表示不限制保存条数。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryStore {
     pub entries: Vec<MemoryEntry>,
@@ -47,6 +47,9 @@ pub struct MemoryStore {
 /// 记忆系统配置，来自 `config/prompts.yml` 的 `memory` 段。
 ///
 /// 控制滚动窗口大小、上下文字符预算、单条消息截断阈值。
+///
+/// `max_entries == 0` 表示短期对话文件不按条数淘汰，仍由 `max_context_chars`
+/// 控制每次注入 prompt 的文本量。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct MemoryConfig {
     #[serde(default = "default_max_entries")]
@@ -60,10 +63,10 @@ pub struct MemoryConfig {
 }
 
 fn default_max_entries() -> usize {
-    20
+    0
 }
 fn default_max_context_chars() -> usize {
-    1500
+    20_000
 }
 fn default_max_user_chars() -> usize {
     100
@@ -148,8 +151,10 @@ impl MemoryStore {
             ai_reply: truncate_chars(ai_reply, config.max_reply_chars),
         });
 
-        while self.entries.len() > config.max_entries {
-            self.entries.remove(0);
+        if config.max_entries > 0 {
+            while self.entries.len() > config.max_entries {
+                self.entries.remove(0);
+            }
         }
     }
 
@@ -159,13 +164,22 @@ impl MemoryStore {
             return String::new();
         }
 
-        // 从最新到最旧收集行，计算预算后反转回时间顺序
+        // 优先保留最新记录；选中后再反转回时间顺序，保证可读性。
         let mut lines: Vec<String> = Vec::new();
+        let wrapper_chars = "[最近对话记录]\n[/最近对话记录]\n".chars().count();
+        let mut used_chars = wrapper_chars;
         for entry in self.entries.iter().rev() {
-            lines.push(format!(
+            let line = format!(
                 "[{}] {} | {}",
                 entry.timestamp, entry.user_msg, entry.ai_reply
-            ));
+            );
+            let line_chars = line.chars().count() + 1;
+            let projected = used_chars + line_chars;
+            if projected > config.max_context_chars {
+                break;
+            }
+            lines.push(line);
+            used_chars = projected;
         }
         lines.reverse();
 
@@ -173,9 +187,6 @@ impl MemoryStore {
         let mut result = String::from(header);
 
         for line in &lines {
-            if result.chars().count() + line.chars().count() + 1 > config.max_context_chars {
-                break;
-            }
             result.push_str(line);
             result.push('\n');
         }
@@ -947,6 +958,23 @@ mod tests {
     }
 
     #[test]
+    fn test_record_unlimited_when_max_entries_zero() {
+        let mut store = MemoryStore {
+            entries: Vec::new(),
+        };
+        let cfg = MemoryConfig {
+            max_entries: 0,
+            ..Default::default()
+        };
+        for i in 0..5 {
+            store.record_conversation(&format!("msg{i}"), &format!("reply{i}"), &cfg);
+        }
+        assert_eq!(store.entries.len(), 5);
+        assert_eq!(store.entries[0].user_msg, "msg0");
+        assert_eq!(store.entries[4].user_msg, "msg4");
+    }
+
+    #[test]
     fn test_record_truncates_fields() {
         let mut store = MemoryStore {
             entries: Vec::new(),
@@ -1167,10 +1195,34 @@ mod tests {
     }
 
     #[test]
+    fn test_build_context_keeps_latest_entries_within_budget() {
+        let mut store = MemoryStore {
+            entries: Vec::new(),
+        };
+        for i in 0..6 {
+            store.entries.push(MemoryEntry {
+                timestamp: format!("14:0{i}"),
+                user_msg: format!("msg{i}"),
+                ai_reply: "short reply".into(),
+            });
+        }
+        let cfg = MemoryConfig {
+            max_context_chars: 100,
+            ..Default::default()
+        };
+
+        let ctx = store.build_context(&cfg);
+
+        assert!(!ctx.contains("msg0"));
+        assert!(ctx.contains("msg5"));
+        assert!(ctx.find("msg4") < ctx.find("msg5"));
+    }
+
+    #[test]
     fn test_default_config() {
         let cfg = MemoryConfig::default();
-        assert_eq!(cfg.max_entries, 20);
-        assert_eq!(cfg.max_context_chars, 1500);
+        assert_eq!(cfg.max_entries, 0);
+        assert_eq!(cfg.max_context_chars, 20_000);
         assert_eq!(cfg.max_user_chars, 100);
         assert_eq!(cfg.max_reply_chars, 200);
     }

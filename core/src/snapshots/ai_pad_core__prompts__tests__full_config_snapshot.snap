@@ -1,6 +1,5 @@
 ---
 source: core/src/prompts.rs
-assertion_line: 224
 expression: cfg
 ---
 agent:
@@ -9,13 +8,13 @@ vision:
   prompt: 自定义视觉提示词
   prompt_multi: 多屏提示
 memory:
-  max_entries: 20
-  max_context_chars: 1500
+  max_entries: 0
+  max_context_chars: 20000
   max_user_chars: 100
   max_reply_chars: 200
 memory_v2:
   long_term_max_entries: 200
-  retrieve_budget_chars: 5000
+  retrieve_budget_chars: 10000
   aggregation_interval_min: 24
 screen_summary:
   interval_min: 15

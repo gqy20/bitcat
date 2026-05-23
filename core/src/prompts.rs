@@ -43,7 +43,7 @@ fn default_long_term_max() -> usize {
     200
 }
 fn default_retrieve_budget() -> usize {
-    5000
+    10_000
 }
 fn default_aggregation_interval() -> u32 {
     24
@@ -241,7 +241,7 @@ agent:
         let cfg: PromptsConfig = serde_yaml::from_str("{}").unwrap();
         assert!(cfg.agent.preamble.contains("8Bit"));
         assert!(cfg.vision.prompt.contains("8Bit"));
-        assert_eq!(cfg.memory.max_entries, 20);
+        assert_eq!(cfg.memory.max_entries, 0);
         assert_eq!(cfg.screen_summary.interval_min, 15);
         assert!(!cfg.screen_summary.prompt.is_empty());
     }
@@ -254,8 +254,8 @@ agent:
 "#;
         let cfg: PromptsConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(cfg.agent.preamble, "只有 agent");
-        assert_eq!(cfg.memory.max_entries, 20);
-        assert_eq!(cfg.memory.max_context_chars, 1500);
+        assert_eq!(cfg.memory.max_entries, 0);
+        assert_eq!(cfg.memory.max_context_chars, 20_000);
     }
 
     #[test]
