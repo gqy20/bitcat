@@ -1,10 +1,11 @@
 (function () {
   const invoke = window.__TAURI__?.core?.invoke;
+  const listen = window.__TAURI__?.event?.listen;
   const video = document.getElementById("camera-video");
   const canvas = document.getElementById("camera-canvas");
   let stream = null;
-  let timer = null;
-  let running = false;
+  let streamReady = false;
+  let captureRunning = false;
 
   function log(message) {
     try {
@@ -13,15 +14,12 @@
   }
 
   function stopStream() {
-    if (timer) {
-      clearTimeout(timer);
-      timer = null;
-    }
     if (stream) {
       for (const track of stream.getTracks()) track.stop();
       stream = null;
     }
-    running = false;
+    streamReady = false;
+    log("camera stream stopped");
   }
 
   async function loadSettings() {
@@ -41,6 +39,13 @@
     });
     video.srcObject = stream;
     await video.play();
+    streamReady = true;
+    log("camera stream started");
+    try {
+      await invoke("cmd_camera_ready");
+    } catch (error) {
+      log(`camera ready hide failed: ${error?.message || error}`);
+    }
     return stream;
   }
 
@@ -57,48 +62,49 @@
   }
 
   async function captureOnce() {
-    await ensureStream();
-    await waitForVideoReady();
-    const width = video.videoWidth || 640;
-    const height = video.videoHeight || 480;
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d", { willReadFrequently: false });
-    ctx.drawImage(video, 0, 0, width, height);
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.78);
-    await invoke("cmd_camera_frame", { dataUrl, width, height });
-  }
-
-  async function loop() {
-    if (!running) return;
-    let interval = 300;
+    if (captureRunning) {
+      log("camera capture skipped because previous capture is running");
+      return;
+    }
+    captureRunning = true;
     try {
       const appearance = await loadSettings();
       if (!appearance.camera_observation_enabled) {
         stopStream();
         return;
       }
-      interval = Math.min(3600, Math.max(60, appearance.camera_observation_interval_sec || 300));
-      await captureOnce();
+      await ensureStream();
+      await waitForVideoReady();
+      const width = video.videoWidth || 640;
+      const height = video.videoHeight || 480;
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d", { willReadFrequently: false });
+      ctx.drawImage(video, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.78);
+      log(`camera frame captured ${width}x${height}`);
+      await invoke("cmd_camera_frame", { dataUrl, width, height });
     } catch (error) {
       log(`camera observation failed: ${error?.message || error}`);
     } finally {
-      if (running) {
-        timer = setTimeout(loop, interval * 1000);
-      }
+      captureRunning = false;
     }
   }
 
   async function start() {
-    if (running) return;
-    running = true;
-    await loop();
+    await ensureStream();
+    log("camera observation stream armed");
   }
 
-  window.addEventListener("camera-observation-refresh", async () => {
+  async function refreshFromSettings() {
     try {
       const appearance = await loadSettings();
       if (appearance.camera_observation_enabled) {
+        if (streamReady) {
+          try {
+            await invoke("cmd_camera_ready");
+          } catch {}
+        }
         await start();
       } else {
         stopStream();
@@ -106,14 +112,27 @@
     } catch (error) {
       log(`camera refresh failed: ${error?.message || error}`);
     }
-  });
+  }
+
+  if (listen) {
+    listen("camera-observation-refresh", refreshFromSettings)
+      .then(() => log("camera refresh listener registered"))
+      .catch((error) => log(`camera refresh listener failed: ${error?.message || error}`));
+    listen("camera-observation-capture", captureOnce)
+      .then(() => log("camera capture listener registered"))
+      .catch((error) => log(`camera capture listener failed: ${error?.message || error}`));
+  } else {
+    log("tauri event API unavailable; using local refresh only");
+    window.addEventListener("camera-observation-refresh", refreshFromSettings);
+    window.addEventListener("camera-observation-capture", captureOnce);
+  }
 
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
-      window.dispatchEvent(new Event("camera-observation-refresh"));
+      refreshFromSettings();
     }
   });
 
   window.addEventListener("beforeunload", stopStream);
-  window.dispatchEvent(new Event("camera-observation-refresh"));
+  refreshFromSettings();
 })();

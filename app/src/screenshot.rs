@@ -637,6 +637,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
         }
 
         // 截图。多屏幕时每个显示器独立分析，避免横向拼接再压缩导致文字不可读。
+        crate::camera::request_camera_capture(app);
         emit_screenshot_observing(app);
         trace!("[screenshot] 开始捕获");
         let monitor_frames = match capture_target_frames(&config.target) {
@@ -1074,6 +1075,8 @@ pub fn do_screenshot_now(app: &tauri::AppHandle) -> Result<String, String> {
         );
         return Ok(description);
     }
+
+    crate::camera::request_camera_capture(app);
 
     let monitor_frames = capture_target_frames(&config.target)?;
     let mut visible_monitors = Vec::new();

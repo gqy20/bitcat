@@ -266,7 +266,7 @@ fn default_screenshot_interval_sec() -> u64 {
     30
 }
 fn default_camera_observation_interval_sec() -> u64 {
-    300
+    default_screenshot_interval_sec()
 }
 fn default_reminder_ai_timeout_ms() -> u64 {
     3_000
@@ -896,7 +896,6 @@ pub async fn cmd_settings_save_appearance(
 ) -> Result<(), String> {
     let mut s = AppSettings::load();
     let interval = payload.screenshot_interval_sec.clamp(5, 3600);
-    let camera_interval = payload.camera_observation_interval_sec.clamp(60, 3600);
     s.appearance = AppearanceSettings {
         always_on_top: payload.always_on_top,
         default_collapsed: payload.default_collapsed,
@@ -911,7 +910,7 @@ pub async fn cmd_settings_save_appearance(
         screenshot_interval_sec: interval,
         screenshot_show_bubble: payload.screenshot_show_bubble,
         camera_observation_enabled: payload.camera_observation_enabled,
-        camera_observation_interval_sec: camera_interval,
+        camera_observation_interval_sec: interval,
         camera_save_frames: payload.camera_save_frames,
         pet_asset_url: payload.pet_asset_url.and_then(|value| {
             let trimmed = value.trim().trim_end_matches('/').to_string();

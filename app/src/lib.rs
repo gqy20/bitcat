@@ -106,6 +106,7 @@ pub fn run() {
             bubble::cmd_reposition_bubble,
             camera::cmd_camera_frame,
             camera::cmd_camera_log,
+            camera::cmd_camera_ready,
             voice::cmd_voice_update_text,
             voice::cmd_voice_get_text,
             snap::cmd_recreate_pet_window,

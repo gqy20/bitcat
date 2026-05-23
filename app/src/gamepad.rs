@@ -1090,6 +1090,18 @@ pub fn run_ai_chat(
     let summary_config = ai_pad_core::prompts::PromptsConfig::load().screen_summary;
     let summary_ctx = summary_store.build_context(&summary_config);
     let recent_ctx = ai_pad_core::screenshot::build_recent_analyses_context(10, 1500);
+    let camera_ctx = ai_pad_core::camera_observation::build_recent_camera_context(6, 1200);
+    let observation_policy = if !recent_ctx.is_empty() && !camera_ctx.is_empty() {
+        [
+            "[综合观察说明]",
+            "最近截图观察描述屏幕内容；最近摄像头观察描述用户是否在位、是否看向屏幕等弱信号。",
+            "二者时间相近但可能有少量延迟；回答时请把它们作为同一观察周期的互补证据，避免过度推断情绪、健康或身份。",
+            "[/综合观察说明]\n",
+        ]
+        .join("\n")
+    } else {
+        String::new()
+    };
     let context_policy = [
         "[上下文优先级]",
         "如果上下文互相冲突，按以下顺序判断：",
@@ -1108,6 +1120,8 @@ pub fn run_ai_chat(
         &long_term_ctx,
         &ctx,
         &recent_ctx,
+        &camera_ctx,
+        &observation_policy,
         &summary_ctx,
     ]
     .into_iter()
@@ -1125,6 +1139,7 @@ pub fn run_ai_chat(
         long_term_ctx_chars = long_term_ctx.chars().count(),
         memory_ctx_chars = ctx.chars().count(),
         recent_ctx_chars = recent_ctx.chars().count(),
+        camera_ctx_chars = camera_ctx.chars().count(),
         summary_ctx_chars = summary_ctx.chars().count(),
         enriched_msg_chars = enriched_msg.chars().count(),
         "{log_prefix}chat context assembled"

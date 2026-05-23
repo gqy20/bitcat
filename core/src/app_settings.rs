@@ -95,7 +95,7 @@ pub struct AppearanceSettings {
     /// 摄像头观察是否启用，默认关闭。该功能只在用户显式开启后采样。
     #[serde(default)]
     pub camera_observation_enabled: bool,
-    /// 摄像头观察间隔（秒），默认 300。最低 60 秒，避免频繁占用摄像头和 Vision API。
+    /// 摄像头观察间隔（秒），默认跟随截屏间隔。保存设置时会与截屏分析间隔保持一致。
     #[serde(default = "default_camera_observation_interval_sec")]
     pub camera_observation_interval_sec: u64,
     /// 是否保存摄像头原始 JPEG。默认 false，只保存结构化分析记录。
@@ -126,7 +126,7 @@ fn default_screenshot_interval_sec() -> u64 {
     30
 }
 fn default_camera_observation_interval_sec() -> u64 {
-    300
+    default_screenshot_interval_sec()
 }
 fn default_reminder_ai_timeout_ms() -> u64 {
     3_000

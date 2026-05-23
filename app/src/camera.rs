@@ -13,38 +13,90 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 static LAST_CAMERA_ANALYSIS: Mutex<Option<Instant>> = Mutex::new(None);
 static CAMERA_ANALYSIS_RUNNING: AtomicBool = AtomicBool::new(false);
+static CAMERA_WINDOW_AUTHORIZED: AtomicBool = AtomicBool::new(false);
 
 /// 预创建摄像头观察窗口。窗口默认隐藏，只承载 getUserMedia 采样脚本。
 pub fn precreate_camera_window(app: &AppHandle) -> tauri::Result<()> {
     if app.get_webview_window("camera").is_some() {
         return Ok(());
     }
-    WebviewWindowBuilder::new(app, "camera", WebviewUrl::App("camera.html".into()))
+    let window = WebviewWindowBuilder::new(app, "camera", WebviewUrl::App("camera.html".into()))
         .title("Camera Observation")
-        .inner_size(1.0, 1.0)
+        .inner_size(360.0, 240.0)
         .decorations(false)
         .transparent(true)
         .resizable(false)
         .skip_taskbar(true)
         .visible(false)
-        .build()
-        .map(|_| ())
+        .build()?;
+    info!("camera observation window precreated");
+    let _ = window.hide();
+    Ok(())
 }
 
 /// 通知摄像头窗口重新读取设置并按需开始/停止采样。
 pub fn refresh_camera_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("camera") {
-        let _ = window.emit("camera-observation-refresh", ());
+        let settings = AppSettings::load();
+        if settings.appearance.camera_observation_enabled {
+            if !CAMERA_WINDOW_AUTHORIZED.load(Ordering::SeqCst) {
+                match window.show() {
+                    Ok(()) => debug!("camera window shown for permission/capture"),
+                    Err(e) => warn!(error = %e, "failed to show camera window"),
+                }
+                let _ = window.set_focus();
+            } else if let Err(e) = window.hide() {
+                warn!(error = %e, "failed to hide authorized camera window");
+            }
+        } else if let Err(e) = window.hide() {
+            warn!(error = %e, "failed to hide disabled camera window");
+        }
+        match window.emit("camera-observation-refresh", ()) {
+            Ok(()) => info!(
+                enabled = settings.appearance.camera_observation_enabled,
+                interval_sec = settings.appearance.camera_observation_interval_sec,
+                save_frames = settings.appearance.camera_save_frames,
+                "camera observation refresh emitted"
+            ),
+            Err(e) => warn!(error = %e, "failed to emit camera observation refresh"),
+        }
+    } else {
+        warn!("camera observation refresh skipped because window is missing");
+    }
+}
+
+/// 请求摄像头窗口在当前周期采样一次。
+pub fn request_camera_capture(app: &AppHandle) {
+    if !AppSettings::load().appearance.camera_observation_enabled {
+        return;
+    }
+    if let Some(window) = app.get_webview_window("camera") {
+        match window.emit("camera-observation-capture", ()) {
+            Ok(()) => debug!("camera observation capture emitted"),
+            Err(e) => warn!(error = %e, "failed to emit camera observation capture"),
+        }
+    } else {
+        warn!("camera observation capture skipped because window is missing");
     }
 }
 
 #[tauri::command]
+pub fn cmd_camera_ready(app: AppHandle) -> Result<(), String> {
+    CAMERA_WINDOW_AUTHORIZED.store(true, Ordering::SeqCst);
+    if let Some(window) = app.get_webview_window("camera") {
+        window.hide().map_err(|e| e.to_string())?;
+        info!("camera observation window hidden after stream became ready");
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn cmd_camera_log(message: String) {
-    debug!(message = %message, "[camera/frontend]");
+    info!(message = %message, "[camera/frontend]");
 }
 
 #[tauri::command]
@@ -58,11 +110,17 @@ pub async fn cmd_camera_frame(
     if !settings.appearance.camera_observation_enabled {
         return Ok(());
     }
+    if let Some(window) = app.get_webview_window("camera") {
+        let _ = window.hide();
+    }
+    info!(
+        width,
+        height,
+        bytes = data_url.len(),
+        "camera frame received"
+    );
 
-    let interval = settings
-        .appearance
-        .camera_observation_interval_sec
-        .clamp(60, 3600);
+    let interval = settings.appearance.screenshot_interval_sec.clamp(5, 3600);
     if camera_finished_recently(interval / 2) {
         debug!("camera frame skipped because analysis finished recently");
         return Ok(());
