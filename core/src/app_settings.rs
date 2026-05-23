@@ -92,6 +92,15 @@ pub struct AppearanceSettings {
     /// 截屏分析完成后是否弹出气泡显示结果，默认 true。
     #[serde(default = "default_true")]
     pub screenshot_show_bubble: bool,
+    /// 摄像头观察是否启用，默认关闭。该功能只在用户显式开启后采样。
+    #[serde(default)]
+    pub camera_observation_enabled: bool,
+    /// 摄像头观察间隔（秒），默认 300。最低 60 秒，避免频繁占用摄像头和 Vision API。
+    #[serde(default = "default_camera_observation_interval_sec")]
+    pub camera_observation_interval_sec: u64,
+    /// 是否保存摄像头原始 JPEG。默认 false，只保存结构化分析记录。
+    #[serde(default)]
+    pub camera_save_frames: bool,
     /// 外部宠物资产根 URL。为空时使用内置 sprite。
     /// 开发期可填 `/__fixtures__/pets/default-cat` 或 file/server URL。
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -115,6 +124,9 @@ fn default_shortcut() -> String {
 }
 fn default_screenshot_interval_sec() -> u64 {
     30
+}
+fn default_camera_observation_interval_sec() -> u64 {
+    300
 }
 fn default_reminder_ai_timeout_ms() -> u64 {
     3_000
@@ -157,6 +169,9 @@ impl Default for AppearanceSettings {
             global_shortcut: default_shortcut(),
             screenshot_interval_sec: default_screenshot_interval_sec(),
             screenshot_show_bubble: true,
+            camera_observation_enabled: false,
+            camera_observation_interval_sec: default_camera_observation_interval_sec(),
+            camera_save_frames: false,
             pet_asset_url: None,
             pet_position: None,
         }
@@ -284,6 +299,9 @@ mod tests {
                 global_shortcut: "F12".into(),
                 screenshot_interval_sec: 45,
                 screenshot_show_bubble: false,
+                camera_observation_enabled: true,
+                camera_observation_interval_sec: 600,
+                camera_save_frames: true,
                 pet_asset_url: Some("/__fixtures__/pets/default-cat".into()),
                 pet_position: Some(WindowPosition { x: 123, y: 456 }),
             },

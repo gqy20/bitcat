@@ -1,16 +1,11 @@
-//! 设置窗口 IPC 命令集：前端设置界面与后端配置之间的桥梁。
+﻿//! 璁剧疆绐楀彛 IPC 鍛戒护闆嗭細鍓嶇璁剧疆鐣岄潰涓庡悗绔厤缃箣闂寸殑妗ユ銆?//!
+//! 璁捐瑕佺偣锛堣 plan `Settings_UI_Design_Plan`锛夛細
+//! - `~/.claude/settings.json` 浠呰锛?*姘镐笉鍐欏叆**锛汚I 瑕嗙洊鍐欏叆 `app_settings.json`
+//! - config/actions.yml / config/prompts.yml / config/user.yml 灏卞湴鍐欏洖锛堟敞閲婁細琚鐩栵紝淇濆瓨鍓嶈嚜鍔ㄥ浠?`.bak`锛?//! - 淇濆瓨鍚庝粎 set 鍘熷瓙 flag锛岀敱 gamepad_loop 涓?tick 鑷姩 reload锛堝鐢ㄧ幇鏈夋満鍒讹級
 //!
-//! 设计要点（见 plan `Settings_UI_Design_Plan`）：
-//! - `~/.claude/settings.json` 仅读，**永不写入**；AI 覆盖写入 `app_settings.json`
-//! - config/actions.yml / config/prompts.yml / config/user.yml 就地写回（注释会被覆盖，保存前自动备份 `.bak`）
-//! - 保存后仅 set 原子 flag，由 gamepad_loop 下 tick 自动 reload（复用现有机制）
-//!
-//! 安全设计：API Key 在前后端之间不以明文传递；`AiView.has_effective_key` 仅返回布尔值，
-//! 加载快照时用占位符代替真实 Key，防止 WebView2 DevTools 泄露凭证。
-//!
-//! 与以下模块交互：`ai_config`（AI 配置加载）、`action`（按键绑定）、
-//! `prompts`（提示词）、`user_profile`（用户画像）、`app_settings`（持久化）、`token_tracker`（用量统计）。
-
+//! 瀹夊叏璁捐锛欰PI Key 鍦ㄥ墠鍚庣涔嬮棿涓嶄互鏄庢枃浼犻€掞紱`AiView.has_effective_key` 浠呰繑鍥炲竷灏斿€硷紝
+//! 鍔犺浇蹇収鏃剁敤鍗犱綅绗︿唬鏇跨湡瀹?Key锛岄槻姝?WebView2 DevTools 娉勯湶鍑瘉銆?//!
+//! 涓庝互涓嬫ā鍧椾氦浜掞細`ai_config`锛圓I 閰嶇疆鍔犺浇锛夈€乣action`锛堟寜閿粦瀹氾級銆?//! `prompts`锛堟彁绀鸿瘝锛夈€乣user_profile`锛堢敤鎴风敾鍍忥級銆乣app_settings`锛堟寔涔呭寲锛夈€乣token_tracker`锛堢敤閲忕粺璁★級銆?
 use crate::commands::SharedWindowState;
 use ai_pad_core::action::{ActionConfig, ActionDef, Defaults};
 use ai_pad_core::app_settings::{AgentWatchSettings, AiOverride, AppSettings, AppearanceSettings};
@@ -34,37 +29,37 @@ const WINDOW_LABEL: &str = "settings";
 const WINDOW_W: f64 = 1040.0;
 const WINDOW_H: f64 = 720.0;
 
-// ---- 窗口生命周期 ----
+// ---- 绐楀彛鐢熷懡鍛ㄦ湡 ----
 
-/// 切换设置窗口显示（托盘菜单 / 快捷键调用）
+/// 鍒囨崲璁剧疆绐楀彛鏄剧ず锛堟墭鐩樿彍鍗?/ 蹇嵎閿皟鐢級
 pub fn toggle_settings(app: &AppHandle) {
     match app.get_webview_window(WINDOW_LABEL) {
         Some(w) => match w.is_visible() {
             Ok(true) => {
-                info!("[settings] 隐藏");
+                info!("[settings] 闅愯棌");
                 let _ = w.hide();
             }
             Ok(false) => {
-                info!("[settings] 显示");
+                info!("[settings] 鏄剧ず");
                 let _ = w.show();
                 let _ = w.set_focus();
             }
-            Err(e) => warn!(error = %e, "[settings] is_visible 错误"),
+            Err(e) => warn!(error = %e, "[settings] is_visible 閿欒"),
         },
         None => match create_settings_window(app) {
             Ok(w) => {
                 let _ = w.set_focus();
-                info!("[settings] 已创建并显示");
+                info!("[settings] 宸插垱寤哄苟鏄剧ず");
             }
-            Err(e) => warn!(error = %e, "[settings] 创建失败"),
+            Err(e) => warn!(error = %e, "[settings] 鍒涘缓澶辫触"),
         },
     }
 }
 
-/// 按需创建设置窗口
+/// 鎸夐渶鍒涘缓璁剧疆绐楀彛
 fn create_settings_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
     WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::App("settings.html".into()))
-        .title("8Bit Cat 设置")
+        .title("8Bit Cat 璁剧疆")
         .inner_size(WINDOW_W, WINDOW_H)
         .min_inner_size(860.0, 560.0)
         .decorations(false)
@@ -78,9 +73,9 @@ fn create_settings_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri
         .build()
 }
 
-// ---- 数据契约（前后端 JSON 交换结构）----
+// ---- 鏁版嵁濂戠害锛堝墠鍚庣 JSON 浜ゆ崲缁撴瀯锛?---
 
-/// 初次打开设置界面时一次性返回的全量快照。
+/// Full settings snapshot returned to the settings window.
 #[derive(Debug, Serialize)]
 pub struct SettingsSnapshot {
     pub ai: AiView,
@@ -90,31 +85,31 @@ pub struct SettingsSnapshot {
     pub appearance: AppearanceSettings,
     pub agent_watch: AgentWatchSettings,
     pub about: AboutInfo,
-    /// 按 config/buttons.yml 列出的所有可配置按键（有序，index 升序）
+    /// Complete configurable button catalog, ordered by button index.
     pub button_catalog: Vec<ButtonCatalogItem>,
 }
 
-/// 按键元数据：用于设置界面展示"全部支持的按键 + 中文说明"。
+/// Button metadata rendered by the settings page.
 #[derive(Debug, Serialize)]
 pub struct ButtonCatalogItem {
-    /// 按键主名，如 "Start"（同 config/actions.yml 里的 key）
+    /// Primary button name, matching keys in actions.yml.
     pub name: String,
-    /// 中文别名，例如 "开始"；取 config/buttons.yml aliases 中第一个中文别名
+    /// Display label chosen from button aliases.
     pub label: String,
-    /// 硬件位置描述，例如 "中间偏右"
+    /// Human-readable physical position.
     pub position: String,
-    /// 显示顺序（对应 config/buttons.yml 中的 button index）
+    /// Display order from buttons.yml.
     pub order: u32,
 }
 
-/// AI 视图：覆盖层原值 + 生效值（UI 可以在 input 显示 overlay，placeholder 显示 effective）。
+/// AI settings view: persisted overlay plus effective merged values.
 #[derive(Debug, Serialize)]
 pub struct AiView {
-    /// 当前 overlay（app_settings.json 里存的值，可能为空）
+    /// Current persisted overlay from app_settings.json.
     pub overlay: AiOverride,
-    /// 实际生效值（合并 env / overlay / claude settings / 默认后的结果）
+    /// Effective values after env, overlay, external settings, and defaults are merged.
     pub effective: AiEffective,
-    /// API Key 是否已配置（用于 UI 显示"已保存"占位符而不暴露明文）
+    /// Whether an effective API key is configured without exposing its value.
     pub has_effective_key: bool,
 }
 
@@ -242,6 +237,12 @@ pub struct AppearanceInput {
     pub pet_asset_url: Option<String>,
     #[serde(default = "default_true")]
     pub screenshot_show_bubble: bool,
+    #[serde(default)]
+    pub camera_observation_enabled: bool,
+    #[serde(default = "default_camera_observation_interval_sec")]
+    pub camera_observation_interval_sec: u64,
+    #[serde(default)]
+    pub camera_save_frames: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -263,6 +264,9 @@ pub struct AgentWatchInput {
 
 fn default_screenshot_interval_sec() -> u64 {
     30
+}
+fn default_camera_observation_interval_sec() -> u64 {
+    300
 }
 fn default_reminder_ai_timeout_ms() -> u64 {
     3_000
@@ -299,16 +303,16 @@ fn token_session_view(session: &TokenSession) -> TokenSessionView {
     }
 }
 
-// ---- 命令 ----
+// ---- 鍛戒护 ----
 
-/// 托盘菜单 / 快捷键触发的设置窗口显示命令。
+/// Show the settings window from tray menu or shortcut.
 #[tauri::command]
 pub async fn cmd_settings_show(app: AppHandle) -> Result<(), String> {
     toggle_settings(&app);
     Ok(())
 }
 
-/// 隐藏设置窗口（不销毁，保留 WebView 状态）。
+/// Hide the settings window while keeping the WebView alive.
 #[tauri::command]
 pub async fn cmd_settings_hide(app: AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window(WINDOW_LABEL) {
@@ -317,7 +321,7 @@ pub async fn cmd_settings_hide(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 关闭（隐藏）设置窗口，行为同 `cmd_settings_hide`。
+/// Close is implemented as hide for the settings window.
 #[tauri::command]
 pub async fn cmd_settings_close(app: AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window(WINDOW_LABEL) {
@@ -326,7 +330,7 @@ pub async fn cmd_settings_close(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 前端调试日志桥
+/// Frontend debug logging bridge.
 #[tauri::command]
 pub async fn cmd_settings_log(msg: String) -> Result<(), String> {
     if !ai_pad_core::logging::frontend_log_allowed(
@@ -344,12 +348,12 @@ pub async fn cmd_settings_log(msg: String) -> Result<(), String> {
     Ok(())
 }
 
-/// 读取全量配置快照
+/// 璇诲彇鍏ㄩ噺閰嶇疆蹇収
 #[tauri::command]
 pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
     let overlay = AppSettings::load();
 
-    // AI effective：尝试加载，失败则用默认占位
+    // AI effective锛氬皾璇曞姞杞斤紝澶辫触鍒欑敤榛樿鍗犱綅
     let (effective, has_key) = match ai_pad_core::ai_config::AiConfig::load() {
         Ok(cfg) => {
             let mt = cfg.max_tokens();
@@ -373,9 +377,9 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
         ),
     };
 
-    // actions / prompts：失败回退到内置默认
+    // actions / prompts: fall back to built-in defaults when local config is invalid.
     let action_cfg = ActionConfig::load("config/actions.yml").unwrap_or_else(|e| {
-        warn!(error = %e, "加载 config/actions.yml 失败，使用内置默认");
+        warn!(error = %e, "failed to load config/actions.yml, using built-in defaults");
         ActionConfig::default_builtin()
     });
     let prompts_cfg = PromptsConfig::load();
@@ -384,7 +388,7 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|| "<unknown>".into());
 
-    // 读取 buttons.yml 提供可配置按键全集
+    // Read buttons.yml to expose the complete configurable button catalog.
     let button_catalog = match ai_pad_core::config::ButtonConfig::load("config/buttons.yml") {
         Ok(btn_cfg) => {
             let mut items: Vec<ButtonCatalogItem> = btn_cfg
@@ -401,7 +405,7 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
             items
         }
         Err(e) => {
-            warn!(error = %e, "加载 config/buttons.yml 失败，按键列表为空");
+            warn!(error = %e, "failed to load config/buttons.yml, button catalog is empty");
             Vec::new()
         }
     };
@@ -423,14 +427,14 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
         about: AboutInfo {
             version: env!("CARGO_PKG_VERSION").to_string(),
             app_settings_path,
-            actions_yml_hint: "config/actions.yml（exe 同目录/config/ 或 CWD/config/）".into(),
-            prompts_yml_hint: "config/prompts.yml（exe 同目录/config/ 或 CWD/config/）".into(),
+            actions_yml_hint: "config/actions.yml".into(),
+            prompts_yml_hint: "config/prompts.yml".into(),
         },
         button_catalog,
     })
 }
 
-/// 返回 Token 用量统计：今日汇总 + 模型列表 + 最近 10 个 session 明细。
+/// Return token usage statistics for the settings page.
 #[tauri::command]
 pub async fn cmd_get_token_stats(model: Option<String>) -> Result<TokenStatsView, String> {
     let usage_path = token_usage_path()?;
@@ -636,15 +640,15 @@ fn reminder_view(reminder: ReminderRecord) -> ReminderView {
 
 fn schedule_label(schedule: &ReminderSchedule) -> String {
     match schedule {
-        ReminderSchedule::Once { at } => format!("一次 · {at}"),
+        ReminderSchedule::Once { at } => format!("涓€娆?路 {at}"),
         ReminderSchedule::Interval { every_minutes } => {
             if *every_minutes % 60 == 0 {
-                format!("每 {} 小时", every_minutes / 60)
+                format!("姣?{} 灏忔椂", every_minutes / 60)
             } else {
-                format!("每 {every_minutes} 分钟")
+                format!("姣?{every_minutes} 鍒嗛挓")
             }
         }
-        ReminderSchedule::Daily { time } => format!("每天 · {time}"),
+        ReminderSchedule::Daily { time } => format!("姣忓ぉ 路 {time}"),
     }
 }
 
@@ -814,7 +818,7 @@ fn resource_usage_snapshot() -> Result<ResourceUsageView, String> {
     }
 }
 
-/// 从 aliases 中挑选最合适的中文标签（优先含中文的条目；退化为第一个；空则用 name 当 fallback 由调用方决定）
+/// Pick the most suitable Chinese label from aliases.
 fn pick_cn_label(aliases: &[String]) -> String {
     for a in aliases {
         if a.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)) {
@@ -824,15 +828,13 @@ fn pick_cn_label(aliases: &[String]) -> String {
     aliases.first().cloned().unwrap_or_default()
 }
 
-/// 保存 AI 覆盖层（仅非空字段写入 overlay；空串视为"清除覆盖，回退下一层"）。
-///
-/// API Key 仅做非空校验，不限制格式/长度。
+/// Save AI override settings.
 #[tauri::command]
 pub async fn cmd_settings_save_ai(payload: AiOverride) -> Result<(), String> {
-    // 非空校验：如果用户填了 api_key，不能是纯空白；否则视为"清除覆盖"
+    // 闈炵┖鏍￠獙锛氬鏋滅敤鎴峰～浜?api_key锛屼笉鑳芥槸绾┖鐧斤紱鍚﹀垯瑙嗕负"娓呴櫎瑕嗙洊"
     if let Some(ref k) = payload.api_key {
         if k.trim().is_empty() {
-            // 当成清空：写 None 到 overlay
+            // 褰撴垚娓呯┖锛氬啓 None 鍒?overlay
         }
     }
     let mut s = AppSettings::load();
@@ -849,11 +851,11 @@ pub async fn cmd_settings_save_ai(payload: AiOverride) -> Result<(), String> {
         max_tokens: payload.max_tokens,
     };
     s.save()?;
-    info!("[settings] AI 覆盖层已保存");
+    info!("[settings] AI 瑕嗙洊灞傚凡淇濆瓨");
     Ok(())
 }
 
-/// 保存按键绑定（写回 actions.yml + 触发 reload flag）
+/// Save action bindings and trigger a config reload.
 #[tauri::command]
 pub async fn cmd_settings_save_actions(app: AppHandle, payload: ActionsView) -> Result<(), String> {
     let cfg = ActionConfig {
@@ -861,41 +863,40 @@ pub async fn cmd_settings_save_actions(app: AppHandle, payload: ActionsView) -> 
         actions: payload.actions,
     };
     cfg.save("config/actions.yml")?;
-    // 触发 gamepad_loop 热重载
     let ws: tauri::State<'_, SharedWindowState> = app.state();
     ws.config_reload.store(true, Ordering::SeqCst);
     info!(
         actions = cfg.actions.len(),
-        "[settings] config/actions.yml 已保存并触发 reload"
+        "[settings] config/actions.yml 宸蹭繚瀛樺苟瑙﹀彂 reload"
     );
     Ok(())
 }
 
-/// 保存 Prompt 配置（写回 prompts.yml）
+/// Save prompt configuration.
 #[tauri::command]
 pub async fn cmd_settings_save_prompts(payload: PromptsConfig) -> Result<(), String> {
     payload.save()?;
-    info!("[settings] config/prompts.yml 已保存");
+    info!("prompts config saved");
     Ok(())
 }
 
-/// 保存用户配置（写回 config/user.yml）
+/// Save user profile configuration.
 #[tauri::command]
 pub async fn cmd_settings_save_user(payload: UserProfile) -> Result<(), String> {
     payload.save()?;
-    info!("[settings] config/user.yml 已保存");
+    info!("user profile saved");
     Ok(())
 }
 
-/// 保存外观设置（写入 app_settings.json 的 appearance 段）
+/// 淇濆瓨澶栬璁剧疆锛堝啓鍏?app_settings.json 鐨?appearance 娈碉級
 #[tauri::command]
 pub async fn cmd_settings_save_appearance(
     app: AppHandle,
     payload: AppearanceInput,
 ) -> Result<(), String> {
     let mut s = AppSettings::load();
-    // 夹紧范围：不允许 < 5s（防止刷屏 vision API）
     let interval = payload.screenshot_interval_sec.clamp(5, 3600);
+    let camera_interval = payload.camera_observation_interval_sec.clamp(60, 3600);
     s.appearance = AppearanceSettings {
         always_on_top: payload.always_on_top,
         default_collapsed: payload.default_collapsed,
@@ -909,6 +910,9 @@ pub async fn cmd_settings_save_appearance(
         global_shortcut: payload.global_shortcut,
         screenshot_interval_sec: interval,
         screenshot_show_bubble: payload.screenshot_show_bubble,
+        camera_observation_enabled: payload.camera_observation_enabled,
+        camera_observation_interval_sec: camera_interval,
+        camera_save_frames: payload.camera_save_frames,
         pet_asset_url: payload.pet_asset_url.and_then(|value| {
             let trimmed = value.trim().trim_end_matches('/').to_string();
             if trimmed.is_empty() {
@@ -921,7 +925,6 @@ pub async fn cmd_settings_save_appearance(
     };
     s.save()?;
 
-    // 立即生效：同步 SharedWindowState.always_on_top + 真实窗口属性
     let ws: tauri::State<'_, SharedWindowState> = app.state();
     ws.always_on_top
         .store(s.appearance.always_on_top, Ordering::SeqCst);
@@ -936,11 +939,12 @@ pub async fn cmd_settings_save_appearance(
             s.appearance.pet_asset_url.clone(),
         );
     }
-    info!(appearance = ?s.appearance, "[settings] 外观设置已保存");
+    crate::camera::refresh_camera_window(&app);
+    info!(appearance = ?s.appearance, "appearance settings saved");
     Ok(())
 }
 
-/// 保存 Claude Code Agent 看管设置。
+/// Save Claude Code Agent watch settings.
 #[tauri::command]
 pub async fn cmd_settings_save_agent_watch(payload: AgentWatchInput) -> Result<(), String> {
     let mut s = AppSettings::load();
@@ -956,11 +960,11 @@ pub async fn cmd_settings_save_agent_watch(payload: AgentWatchInput) -> Result<(
         remote_install_enabled: payload.remote_install_enabled,
     };
     s.save()?;
-    info!(agent_watch = ?s.agent_watch, "[settings] Agent 看管设置已保存");
+    info!(agent_watch = ?s.agent_watch, "agent watch settings saved");
     Ok(())
 }
 
-/// 重置某一分类为内置默认（actions / prompts / appearance / ai / user）
+/// Reset one settings category to built-in defaults.
 #[tauri::command]
 pub async fn cmd_settings_reset(category: String) -> Result<(), String> {
     match category.as_str() {
@@ -988,22 +992,22 @@ pub async fn cmd_settings_reset(category: String) -> Result<(), String> {
         "user" => {
             UserProfile::default_builtin().save()?;
         }
-        other => return Err(format!("未知重置分类: {other}")),
+        other => return Err(format!("鏈煡閲嶇疆鍒嗙被: {other}")),
     }
-    info!(category = %category, "[settings] 已重置为默认");
+    info!(category = %category, "[settings] 宸查噸缃负榛樿");
     Ok(())
 }
 
-/// 通知后端应用配置（set config_reload flag，gamepad_loop 下 tick 会自动读取）
+/// 閫氱煡鍚庣搴旂敤閰嶇疆锛坰et config_reload flag锛実amepad_loop 涓?tick 浼氳嚜鍔ㄨ鍙栵級
 #[tauri::command]
 pub async fn cmd_settings_apply(app: AppHandle) -> Result<(), String> {
     let ws: tauri::State<'_, SharedWindowState> = app.state();
     ws.config_reload.store(true, Ordering::SeqCst);
-    info!("[settings] config_reload 已触发");
+    info!("settings config reload requested");
     Ok(())
 }
 
-// ---- 测试 ----
+// ---- 娴嬭瘯 ----
 
 #[cfg(test)]
 mod tests {
@@ -1037,8 +1041,8 @@ mod tests {
             },
             button_catalog: vec![ButtonCatalogItem {
                 name: "Start".into(),
-                label: "开始".into(),
-                position: "中间偏右".into(),
+                label: "Start".into(),
+                position: "涓棿鍋忓彸".into(),
                 order: 11,
             }],
         };

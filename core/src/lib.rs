@@ -42,6 +42,7 @@ pub mod agent_session;
 pub mod ai_config;
 pub mod app_settings;
 pub mod bridge;
+pub mod camera_observation;
 pub mod claude_code;
 pub mod config;
 pub mod dance;

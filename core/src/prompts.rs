@@ -30,6 +30,12 @@ pub struct VisionPromptConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CameraPromptConfig {
+    #[serde(default = "default_camera_prompt")]
+    pub prompt: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct MemoryV2Config {
     #[serde(default = "default_long_term_max")]
     pub long_term_max_entries: usize,
@@ -94,6 +100,8 @@ pub struct PromptsConfig {
     #[serde(default)]
     pub vision: VisionPromptConfig,
     #[serde(default)]
+    pub camera: CameraPromptConfig,
+    #[serde(default)]
     pub memory: MemoryConfig,
     #[serde(default)]
     pub memory_v2: MemoryV2Config,
@@ -114,6 +122,9 @@ fn default_vision_prompt() -> String {
 fn default_vision_prompt_multi() -> String {
     embedded_default::<PromptsConfig>().vision.prompt_multi
 }
+fn default_camera_prompt() -> String {
+    embedded_default::<PromptsConfig>().camera.prompt
+}
 
 impl Default for AgentPromptConfig {
     fn default() -> Self {
@@ -122,6 +133,12 @@ impl Default for AgentPromptConfig {
 }
 
 impl Default for VisionPromptConfig {
+    fn default() -> Self {
+        embedded_default()
+    }
+}
+
+impl Default for CameraPromptConfig {
     fn default() -> Self {
         embedded_default()
     }

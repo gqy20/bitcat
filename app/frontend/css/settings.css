@@ -226,6 +226,26 @@ summary {
     rgba(4, 8, 9, 0.14);
 }
 
+.nav::-webkit-scrollbar {
+  width: 8px;
+}
+
+.nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nav::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(232, 242, 239, 0.18);
+  background-clip: padding-box;
+}
+
+.nav::-webkit-scrollbar-thumb:hover {
+  background: rgba(232, 242, 239, 0.28);
+  background-clip: padding-box;
+}
+
 .nav-brand {
   min-height: 78px;
   margin: 0 4px 14px;
@@ -908,8 +928,7 @@ input[type="checkbox"]:checked::after {
 
 .usage-metric .metric-pair span {
   min-width: 0;
-  display: grid;
-  gap: 5px;
+  display: block;
   margin: 0;
   color: inherit;
 }
@@ -918,7 +937,7 @@ input[type="checkbox"]:checked::after {
   min-width: 0;
   color: white;
   font-family: var(--font-brand);
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 780;
   line-height: 1.08;
   font-variant-numeric: tabular-nums;

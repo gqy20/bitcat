@@ -89,6 +89,10 @@ async function mockInvoke(command) {
         reminder_ai_timeout_ms: 3000,
         global_shortcut: "CommandOrControl+Alt+Space",
         screenshot_interval_sec: 30,
+        screenshot_show_bubble: true,
+        camera_observation_enabled: false,
+        camera_observation_interval_sec: 300,
+        camera_save_frames: false,
         pet_asset_url: "",
       },
       agent_watch: {
@@ -510,12 +514,15 @@ function renderAppearance(a) {
   $("a-shortcut").value = a.global_shortcut;
   $("a-ss-interval").value = a.screenshot_interval_sec ?? 30;
   $("a-ss-bubble").checked = a.screenshot_show_bubble !== false;
+  $("a-camera-enabled").checked = !!a.camera_observation_enabled;
+  $("a-camera-interval").value = a.camera_observation_interval_sec ?? 300;
+  $("a-camera-save").checked = !!a.camera_save_frames;
   renderPetAssetPicker();
   renderPetAssetChoice(a.pet_asset_url || "");
   updateOverviewAppearance(a);
 
-  ["a-top","a-collapsed","a-tts","a-notify-sound","a-notify-sound-reminder","a-notify-sound-agent","a-notify-sound-skip-tts","a-reminder-ai","a-ss-bubble"].forEach(id => { $(id).onchange = () => markDirty("appearance"); });
-  ["a-shortcut","a-ss-interval","a-reminder-ai-timeout","a-pet-asset"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
+  ["a-top","a-collapsed","a-tts","a-notify-sound","a-notify-sound-reminder","a-notify-sound-agent","a-notify-sound-skip-tts","a-reminder-ai","a-ss-bubble","a-camera-enabled","a-camera-save"].forEach(id => { $(id).onchange = () => markDirty("appearance"); });
+  ["a-shortcut","a-ss-interval","a-camera-interval","a-reminder-ai-timeout","a-pet-asset"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
 }
 
 function collectAppearance() {
@@ -523,6 +530,8 @@ function collectAppearance() {
   const interval = Number.isFinite(rawInterval) ? Math.min(3600, Math.max(5, rawInterval)) : 30;
   const rawReminderAiTimeout = parseInt($("a-reminder-ai-timeout").value, 10);
   const reminderAiTimeout = Number.isFinite(rawReminderAiTimeout) ? Math.min(10000, Math.max(500, rawReminderAiTimeout)) : 3000;
+  const rawCameraInterval = parseInt($("a-camera-interval").value, 10);
+  const cameraInterval = Number.isFinite(rawCameraInterval) ? Math.min(3600, Math.max(60, rawCameraInterval)) : 300;
   return {
     always_on_top: $("a-top").checked,
     default_collapsed: $("a-collapsed").checked,
@@ -536,6 +545,9 @@ function collectAppearance() {
     global_shortcut: $("a-shortcut").value.trim() || "CommandOrControl+Alt+Space",
     screenshot_interval_sec: interval,
     screenshot_show_bubble: $("a-ss-bubble").checked,
+    camera_observation_enabled: $("a-camera-enabled").checked,
+    camera_observation_interval_sec: cameraInterval,
+    camera_save_frames: $("a-camera-save").checked,
     pet_asset_url: collectPetAssetUrl(),
   };
 }
@@ -1472,8 +1484,8 @@ function metricValue(value, unit = "") {
 function pairedMetric(leftLabel, leftValue, rightLabel, rightValue) {
   return `
     <span class="metric-pair">
-      <span><b>${escapeHtml(formatMetricPart(leftValue))}</b><small>${escapeHtml(leftLabel)}</small></span>
-      <span><b>${escapeHtml(formatMetricPart(rightValue))}</b><small>${escapeHtml(rightLabel)}</small></span>
+      <span title="${escapeAttr(leftLabel)}"><b>${escapeHtml(formatMetricPart(leftValue))}</b></span>
+      <span title="${escapeAttr(rightLabel)}"><b>${escapeHtml(formatMetricPart(rightValue))}</b></span>
     </span>
   `;
 }

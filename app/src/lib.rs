@@ -20,6 +20,7 @@ pub mod agent_monitor;
 pub mod agent_watch_window;
 pub mod audio_reactive;
 pub mod bubble;
+pub mod camera;
 pub mod claude_hooks;
 pub mod codex_hooks;
 pub mod commands;
@@ -103,6 +104,8 @@ pub fn run() {
             bubble::cmd_consume_bubble_text,
             bubble::cmd_hide_bubble,
             bubble::cmd_reposition_bubble,
+            camera::cmd_camera_frame,
+            camera::cmd_camera_log,
             voice::cmd_voice_update_text,
             voice::cmd_voice_get_text,
             snap::cmd_recreate_pet_window,
@@ -339,6 +342,9 @@ pub fn run() {
                 warn!(error = %e, "precreate notification window failed");
             }
             reminder_scheduler::spawn_reminder_scheduler(app.handle().clone());
+            if let Err(e) = camera::precreate_camera_window(app.handle()) {
+                warn!(error = %e, "precreate camera window failed");
+            }
 
             let app_handle = app.handle().clone();
             let hotkey_str = "CommandOrControl+Alt+Space";
@@ -474,6 +480,7 @@ pub fn run() {
 
             // ── Debug 辅助 ──
             // AI_PAD_DEBUG=1 时自动弹出 panel 并模拟导航操作，用于开发调试。
+            camera::refresh_camera_window(app.handle());
             if std::env::var("AI_PAD_DEBUG").is_ok() {
                 let dbg_app = app.handle().clone();
                 std::thread::spawn(move || {
