@@ -12,7 +12,7 @@ BitCat 的技术底座不同：当前是 Windows-first Rust workspace、Tauri 2 
 
 ## 目标
 
-让 BitCat 成为 Claude Code 的“桌宠看管员”：
+让 BitCat 成为 Claude Code 的“桌面伙伴看管员”：
 
 - Claude Code 工作时，猫进入专注/工作状态。
 - Claude Code 持续工作且暂不需要用户时，猫提醒“我帮你盯着，你可以先去做点别的”。

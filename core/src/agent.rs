@@ -798,7 +798,7 @@ mod tests {
         let cfg = PromptsConfig::default();
         assert!(!cfg.agent.preamble.is_empty());
         assert!(cfg.agent.preamble.contains("BitCat"));
-        assert!(cfg.agent.preamble.contains("猫"));
+        assert!(cfg.agent.preamble.contains("桌面 AI 伙伴"));
     }
 
     #[test]

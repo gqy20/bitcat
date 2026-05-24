@@ -216,7 +216,7 @@ mod tests {
         let cfg = AgentPromptConfig::default();
         assert!(!cfg.preamble.is_empty());
         assert!(cfg.preamble.contains("BitCat"));
-        assert!(cfg.preamble.contains("猫"));
+        assert!(cfg.preamble.contains("桌面 AI 伙伴"));
     }
 
     #[test]

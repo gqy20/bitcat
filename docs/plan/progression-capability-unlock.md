@@ -6,7 +6,7 @@ Steam 积分模式参考：Hades（多层货币）、Vampire Survivors（极简�
 
 ## 目标
 
-把 BitCat 从“一开始全功能开放的 AI 桌宠”，调整为“刚醒来有点笨、随着使用逐步学会能力的智能伙伴”。用户在使用过程中能感受到：
+把 BitCat 从“一开始全功能开放的桌面 AI 伙伴”，调整为“刚醒来有点笨、随着使用逐步学会能力的智能伙伴”。用户在使用过程中能感受到：
 
 - BitCat 的表达方式在变化；
 - 已有功能按阶段自然开放；
@@ -203,7 +203,7 @@ agent_lv5.preamble
 ```yaml
 agent:
   preamble: |
-    你是 BitCat，一只住在电脑屏幕上的像素风小猫助手。
+    你是 BitCat，一个住在电脑屏幕边缘的桌面 AI 伙伴。
     ...
   stage_overlays:
     feature_phone: |

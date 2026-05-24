@@ -68,7 +68,7 @@ Tauri 窗口属性：
 
 Snake 这类专注型小游戏使用 focus mode：隐藏 `pet / pet-mini / pet-snap / bubble / panel / settings`，让游戏独占屏幕交互。
 
-Battle 使用 overlay mode：只隐藏 `bubble / panel / settings`，保留真实桌宠窗口。游戏 canvas 只负责怪物、传送门、血条、技能按钮和伤害数字，不再绘制临时假宠物。桌宠本体通过 `PetEvent::SetMode(GamePlay)`、胜负状态和后续 performance 事件参与战斗表现。
+Battle 使用 overlay mode：只隐藏 `bubble / panel / settings`，保留真实宠物窗口。游戏 canvas 只负责怪物、传送门、血条、技能按钮和伤害数字，不再绘制临时假宠物。BitCat 本体通过 `PetEvent::SetMode(GamePlay)`、胜负状态和后续 performance 事件参与战斗表现。
 
 下一步风险需要实际运行验证：
 

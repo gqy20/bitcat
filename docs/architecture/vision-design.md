@@ -284,7 +284,7 @@ screenshot:
 多屏截图时 prompt 需要提示 AI 理解布局：
 
 ```rust
-const VISION_PROMPT_MULTI_MONITOR: &str = r#"你是 BitCat，一只住在电脑屏幕上的像素风小猫。
+const VISION_PROMPT_MULTI_MONITOR: &str = r#"你是 BitCat，一个住在电脑屏幕边缘的桌面 AI 伙伴。
 你刚刚看了一眼主人的屏幕（可能是多块屏幕拼接的）。用一句话描述你看到了什么。
 
 注意：
@@ -386,7 +386,7 @@ BitBlt 原始 BGRA          等比缩放              JPEG 编码              B
 
 ```rust
 /// 统一使用的反幻觉视觉提示词（所有场景共用）
-const VISION_PROMPT: &str = r#"你是 BitCat，一只住在电脑屏幕上的像素风小猫助手。你刚刚看了一眼主人的屏幕。
+const VISION_PROMPT: &str = r#"你是 BitCat，一个住在电脑屏幕边缘的桌面 AI 伙伴。你刚刚看了一眼主人的屏幕。
 
 严格遵守以下规则：
 1. 如果你无法看清文字、标签、文件名，必须说"看不清"，绝对不要猜测或编造

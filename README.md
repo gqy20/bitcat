@@ -1,8 +1,8 @@
 # BitCat
 
-蓝牙手柄驱动的桌面工具：8 位像素桌宠 + AI 对话（流式）+ 程序化提醒 + Agent Watch 任务看管 + 配置化弹出面板 + 语音输入 + 可选 TTS 朗读 + 截图/摄像头视觉分析 + 音乐响应表演 + 贴边吸附 + 迷你游戏。
+BitCat is a Windows desktop AI companion that lives at the edge of your screen. It combines streaming chat, deterministic reminders, Agent Watch, screen and camera observation, voice input, optional TTS, music-reactive performance, edge docking, quick actions, and mini games.
 
-基于 Tauri 2.0 + SDL2，单 exe，无 Node.js 运行时依赖。共 **400+ 个 Rust 测试 + 15 个前端测试文件**，接入 cargo-husky（pre-commit fmt / pre-push clippy+test）。
+Built with Tauri 2.0 + Rust + SDL2 as a single exe with no Node.js runtime dependency. The project has 400+ Rust tests, 15 frontend test files, and cargo-husky hooks for fmt, clippy, and fast tests.
 
 ## 快速开始
 
@@ -21,7 +21,7 @@ git tag v0.1.6
 git push origin v0.1.6
 ```
 
-启动后看到屏幕角落的像素猫即为成功。
+启动后看到屏幕角落的小宠物即为成功。
 
 ## 功能概览
 
@@ -113,7 +113,7 @@ git push origin v0.1.6
 
 ## 舞蹈系统
 
-AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时播放像素动画 + 窗口级大幅度位移。
+AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时播放宠物动画 + 窗口级大幅度位移。
 
 ### 编排（AI 侧）
 
@@ -193,7 +193,7 @@ Agent 可以调用提醒工具创建确定性的本地任务，例如“3 分钟
 
 - 资源包位于 `app/frontend/__fixtures__/pets/<id>/manifest.json`
 - `manifest.actions` 支持 timeline，可声明 `observe` / `nudge` / `acknowledge` / `blocked` / `dragging` 等语义短动作
-- 设置页按“推荐 / 终端状态 / 角色 / 经典像素”分组展示资源包
+- 设置页按“推荐 / 终端状态 / 角色 / 经典资源”分组展示资源包
 - 配置了外部资源包时加载失败会直接暴露错误，不再静默回退到旧内置精灵
 
 ## 记忆系统（两层存储 + AI 画像）
@@ -270,7 +270,7 @@ bitcat/
 │       ├── prompts.rs      # AI 提示词配置（agent/vision/memory/screen_summary），配置嵌入
 │       ├── device.rs       # SDL2 按键编号 → 名称映射
 │       ├── hotkey.rs       # Win32 SendInput 键鼠模拟 + force_foreground
-│       ├── pet.rs          # 桌宠状态机（Idle/Walk/Sleep/Talk/Happy/Confused/Dance）
+│       ├── pet.rs          # 宠物状态机（Idle/Walk/Sleep/Talk/Happy/Confused/Dance）
 │       ├── agent_session.rs # Agent Watch 会话归一模型（Claude Code / Codex）
 │       ├── agent_nudge.rs # Agent Watch 离开/等待/完成提醒策略
 │       ├── camera_observation.rs # 摄像头观察记录存储 + 最近上下文构建
@@ -425,7 +425,7 @@ actions:
 ### config/prompts.yml — AI 提示词
 
 包含多段配置：
-- `agent.preamble` — AI 人设（默认：BitCat 像素猫）
+- `agent.preamble` — AI 人设（默认：BitCat 桌面 AI 伙伴）
 - `vision.prompt` / `vision.prompt_multi` — 截图分析提示词（强调反幻觉）
 - `camera.prompt` — 摄像头观察提示词（保守描述，不做人脸身份或敏感属性推断）
 - `memory` / `memory_v2` — 短期记忆窗口、长期记忆检索和聚合参数
@@ -471,7 +471,7 @@ language: "zh-CN"         # 首选语言（空则自动判断）
 ```
 
 - max_tokens 统一 **256K**，可用 `ANTHROPIC_MAX_TOKENS` 环境变量覆盖
-- Agent 人设："BitCat" — 一只住在屏幕上的像素风小猫助手，活泼好奇，用中文交流
+- Agent 人设："BitCat" — 一个住在屏幕上的桌面 AI 伙伴，活泼好奇，用中文交流
 - 内置 **15 个 Tool**：
 
 | Tool | 功能 |
@@ -490,7 +490,7 @@ language: "zh-CN"         # 首选语言（空则自动判断）
 | `list_reminders` | 查看当前提醒任务 |
 | `cancel_reminder` | 取消提醒 |
 
-- 按 Start 键触发对话，流式回复、工具生命周期和最终 `AgentReaction` 会通过 tagged `PetEvent` 驱动桌宠状态
+- 按 Start 键触发对话，流式回复、工具生命周期和最终 `AgentReaction` 会通过 tagged `PetEvent` 驱动宠物状态
 - 完成、稍后和删除提醒目前由通知窗口与设置页提供，不暴露为 Agent Tool
 - 对话记忆**两层存储**：短期滚动窗口（默认不限条数，由字符预算控制注入）+ 长期 JSONL grep-first 候选召回 + AI 聚合画像
 - 所有持久化到 `~/.bitcat/memory/`
@@ -566,7 +566,7 @@ AI_PAD_DEBUG=1 cargo run -p ai-pad-app -- --debug
 - **serde + serde_yaml** — 配置加载（嵌入 + 外部覆盖）
 - **cargo-husky** — Git hooks：pre-commit fmt / pre-push clippy+test
 - **Vitest + jsdom** — 前端单元测试（15 个测试文件）
-- **Canvas + 粒子效果** — 像素精灵绘制 + 舞蹈窗口级动画，无打包工具
+- **Canvas + 粒子效果** — 宠物精灵绘制 + 舞蹈窗口级动画，无打包工具
 
 ## License
 

@@ -1025,7 +1025,7 @@ mod tests {
             entries: Vec::new(),
         };
         let candidate = MemoryCandidate::explicit(
-            "用户正在开发 BitCat 桌宠项目".into(),
+            "用户正在开发 BitCat 桌面 AI 伙伴项目".into(),
             4,
             vec!["project".into()],
         );
@@ -1033,7 +1033,7 @@ mod tests {
 
         let ctx = store.retrieve("BitCat", 500);
 
-        assert!(ctx.contains("用户正在开发 BitCat 桌宠项目"));
+        assert!(ctx.contains("用户正在开发 BitCat 桌面 AI 伙伴项目"));
         assert!(ctx.contains("tags=[project]"));
     }
 
@@ -1299,7 +1299,7 @@ mod tests {
             entries: Vec::new(),
         };
         store.record("我叫小明", "你好小明！", 100);
-        store.record("我在做 BitCat 项目", "Rust 桌宠听起来好酷", 100);
+        store.record("我在做 BitCat 项目", "Rust 桌面伙伴听起来好酷", 100);
 
         assert_eq!(store.entries.len(), 2);
         assert!(!store.entries[0].aggregated);
@@ -1363,7 +1363,7 @@ mod tests {
         let mut store = LongTermMemory {
             entries: Vec::new(),
         };
-        store.record("我在做 BitCat 项目", "Rust 桌宠好酷", 100);
+        store.record("我在做 BitCat 项目", "Rust 桌面伙伴好酷", 100);
         store.record("今天天气不错", "是呢，适合出门", 100);
         store.record("帮我提醒明天交 PR", "收到，明天会提醒的", 100);
 

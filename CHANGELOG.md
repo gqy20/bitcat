@@ -72,7 +72,7 @@
 - **Claude background task 看管**：Agent Watch 支持 Claude Code background task 信号，任务栈可展示后台任务、完成态和折叠状态。
 - **宠物 v2-only 资源包**：清理 v1/硬编码 fallback 路径，默认宠物、cat 和 catalog 资源均通过 manifest + spritesheet 加载。
 - **高精 `piggy` 资源包**：默认内置小猪升级为 192×208 原始帧、高分辨率 PNG sheet，显示尺寸收敛到 74×80，并新增可重复生成脚本。
-- **宠物资源分层**：所有内置资源包补充 `qualityTier`、`assetClass`、`releaseTier`、`recommendedUse` 等 metadata；设置页按推荐、终端状态、角色、经典像素分组展示。
+- **宠物资源分层**：所有内置资源包补充 `qualityTier`、`assetClass`、`releaseTier`、`recommendedUse` 等 metadata；设置页按推荐、终端状态、角色、经典资源分组展示。
 - **语义短动作反馈**：`manifest.actions` 支持 timeline，`PetStateMachine` 新增 action overlay，`piggy` 提供 `observe` / `nudge` / `acknowledge` / `blocked` / `dragging` 动作。
 
 ### 修复

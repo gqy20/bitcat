@@ -1,6 +1,6 @@
 # BitCat Roadmap
 
-> **目标**：将 BitCat 从 AI 桌宠进化为 **Steam 可发布的 AI 驱动桌面伴侣**。
+> **目标**：将 BitCat 打磨为 **Steam 可发布的 AI 驱动桌面伴侣**。
 > **核心差异化**：AI 通过结构化输出动态生成可玩内容（舞蹈 + 迷你游戏），而非仅对话。
 
 ---
@@ -30,7 +30,7 @@
 
 ## 源码确认的技术栈
 
-BitCat 当前不是 Web 应用套壳，而是 **Windows-first 的 Rust 桌面自动化程序 + Tauri 多透明 WebView 界面 + rig Agent 运行时**。`oc-claw` 可参考产品模型和会话状态抽象，但不建议照搬它的前端/桌面技术栈；本项目已有更贴近桌宠和手柄场景的底座。
+BitCat 当前不是 Web 应用套壳，而是 **Windows-first 的 Rust 桌面自动化程序 + Tauri 多透明 WebView 界面 + rig Agent 运行时**。`oc-claw` 可参考产品模型和会话状态抽象，但不建议照搬它的前端/桌面技术栈；本项目已有更贴近宠物交互和手柄场景的底座。
 
 | 层级 | 技术 | 源码依据 | 说明 |
 |------|------|----------|------|
@@ -232,7 +232,7 @@ panel → cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle
 
 ## Track E: AI 编码工具管理（参考 oc-claw）
 
-参考项目：[rainnoon/oc-claw](https://github.com/rainnoon/oc-claw)。它的核心价值不在具体 UI 栈，而在产品模型：把 Claude Code / Codex / Cursor / OpenClaw 等编码 Agent 的会话活动抽象为 `working / idle / waiting` 等状态，再用桌面宠物、会话面板、历史记录和用量指标持续呈现。BitCat 可以把这条思路做得更“桌宠原生”：手柄、pet 动画、bubble、panel 和截图记忆都参与 Agent 管理，而不是只做一个独立状态仪表盘。
+参考项目：[rainnoon/oc-claw](https://github.com/rainnoon/oc-claw)。它的核心价值不在具体 UI 栈，而在产品模型：把 Claude Code / Codex / Cursor / OpenClaw 等编码 Agent 的会话活动抽象为 `working / idle / waiting` 等状态，再用桌面宠物、会话面板、历史记录和用量指标持续呈现。BitCat 可以把这条思路做得更“伙伴原生”：手柄、pet 动画、bubble、panel 和截图记忆都参与 Agent 管理，而不是只做一个独立状态仪表盘。
 
 ### oc-claw 源码核验结论
 
@@ -346,7 +346,7 @@ oc-claw 的状态宠物可以作为参考，但 BitCat 应把状态直接接进�
 
 ### 与现有路线的关系
 
-E 线不是替代 A/B/C，而是让 BitCat 从“自己是一个 AI 桌宠”进化成“帮主人看管其他 AI 编码 Agent 的桌宠管家”：
+E 线不是替代 A/B/C，而是让 BitCat 从“自己能陪伴和协作”进化成“帮主人看管其他 AI 编码 Agent 的桌面伙伴”：
 
 ```text
 B4 工具事件协议 ──→ E3 控制动作审计
@@ -384,7 +384,7 @@ pet/bubble/panel ──→ E2 状态呈现与手柄操作
 | VPet | 免费 | 开源社区驱动 |
 | Weyrdlets 2.0 | $5-8 | 有迷你游戏但无 AI |
 | AI Desktop Pet | ~$8 | Live2D + 本地 LLM + Workshop |
-| **BitCat** | **$5-7** | 像素风 + AI 对话 + **AI 生成内容** + 开源 |
+| **BitCat** | **$5-7** | 桌面陪伴 + AI 对话 + **AI 生成内容** + 开源 |
 
 ---
 
