@@ -12,12 +12,13 @@ use base64::Engine;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 use tracing::{debug, info, warn};
 
 static LAST_CAMERA_ANALYSIS: Mutex<Option<Instant>> = Mutex::new(None);
 static CAMERA_ANALYSIS_RUNNING: AtomicBool = AtomicBool::new(false);
 static CAMERA_WINDOW_AUTHORIZED: AtomicBool = AtomicBool::new(false);
+const OFFSCREEN: i32 = -32_000;
 
 /// 预创建摄像头观察窗口。窗口默认隐藏，只承载 getUserMedia 采样脚本。
 pub fn precreate_camera_window(app: &AppHandle) -> tauri::Result<()> {
@@ -26,13 +27,14 @@ pub fn precreate_camera_window(app: &AppHandle) -> tauri::Result<()> {
     }
     let window = WebviewWindowBuilder::new(app, "camera", WebviewUrl::App("camera.html".into()))
         .title("Camera Observation")
-        .inner_size(360.0, 240.0)
+        .inner_size(1.0, 1.0)
         .decorations(false)
         .transparent(true)
         .resizable(false)
         .skip_taskbar(true)
         .visible(false)
         .build()?;
+    let _ = window.set_position(PhysicalPosition::new(OFFSCREEN, OFFSCREEN));
     info!("camera observation window precreated");
     let _ = window.hide();
     Ok(())
@@ -42,18 +44,11 @@ pub fn precreate_camera_window(app: &AppHandle) -> tauri::Result<()> {
 pub fn refresh_camera_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("camera") {
         let settings = AppSettings::load();
-        if settings.appearance.camera_observation_enabled {
-            if !CAMERA_WINDOW_AUTHORIZED.load(Ordering::SeqCst) {
-                match window.show() {
-                    Ok(()) => debug!("camera window shown for permission/capture"),
-                    Err(e) => warn!(error = %e, "failed to show camera window"),
-                }
-                let _ = window.set_focus();
-            } else if let Err(e) = window.hide() {
-                warn!(error = %e, "failed to hide authorized camera window");
-            }
-        } else if let Err(e) = window.hide() {
-            warn!(error = %e, "failed to hide disabled camera window");
+        if let Err(e) = window.set_position(PhysicalPosition::new(OFFSCREEN, OFFSCREEN)) {
+            warn!(error = %e, "failed to move camera window offscreen");
+        }
+        if let Err(e) = window.hide() {
+            warn!(error = %e, "failed to hide camera window before refresh");
         }
         match window.emit("camera-observation-refresh", ()) {
             Ok(()) => info!(
@@ -75,6 +70,8 @@ pub fn request_camera_capture(app: &AppHandle) {
         return;
     }
     if let Some(window) = app.get_webview_window("camera") {
+        let _ = window.set_position(PhysicalPosition::new(OFFSCREEN, OFFSCREEN));
+        let _ = window.hide();
         match window.emit("camera-observation-capture", ()) {
             Ok(()) => debug!("camera observation capture emitted"),
             Err(e) => warn!(error = %e, "failed to emit camera observation capture"),
@@ -88,6 +85,7 @@ pub fn request_camera_capture(app: &AppHandle) {
 pub fn cmd_camera_ready(app: AppHandle) -> Result<(), String> {
     CAMERA_WINDOW_AUTHORIZED.store(true, Ordering::SeqCst);
     if let Some(window) = app.get_webview_window("camera") {
+        let _ = window.set_position(PhysicalPosition::new(OFFSCREEN, OFFSCREEN));
         window.hide().map_err(|e| e.to_string())?;
         info!("camera observation window hidden after stream became ready");
     }
@@ -111,6 +109,7 @@ pub async fn cmd_camera_frame(
         return Ok(());
     }
     if let Some(window) = app.get_webview_window("camera") {
+        let _ = window.set_position(PhysicalPosition::new(OFFSCREEN, OFFSCREEN));
         let _ = window.hide();
     }
     info!(

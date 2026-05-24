@@ -1,8 +1,8 @@
 # ai-pad / 8Bit Cat
 
-蓝牙手柄驱动的桌面工具：8 位像素桌宠 + AI 对话（流式）+ 程序化提醒 + Agent Watch 任务看管 + 配置化弹出面板 + 语音输入 + 可选 TTS 朗读 + 截图视觉分析 + 贴边吸附 + 迷你游戏。
+蓝牙手柄驱动的桌面工具：8 位像素桌宠 + AI 对话（流式）+ 程序化提醒 + Agent Watch 任务看管 + 配置化弹出面板 + 语音输入 + 可选 TTS 朗读 + 截图/摄像头视觉分析 + 音乐响应表演 + 贴边吸附 + 迷你游戏。
 
-基于 Tauri 2.0 + SDL2，单 exe，无 Node.js 依赖。共 **350+ 个测试**（Rust workspace + Vitest 前端），接入 cargo-husky（pre-commit fmt / pre-push clippy+test）。
+基于 Tauri 2.0 + SDL2，单 exe，无 Node.js 运行时依赖。共 **400+ 个 Rust 测试 + 15 个前端测试文件**，接入 cargo-husky（pre-commit fmt / pre-push clippy+test）。
 
 ## 快速开始
 
@@ -44,6 +44,7 @@ git push origin v0.1.6
 | AI 回复后 | 如果设置中开启 TTS，则自动朗读 |
 | 系统托盘右键 | 截图/折叠/置顶/**设置窗口**/重载配置/退出 |
 | 后台（每 30s） | 截图 + Vision API 分析 + 屏幕活动摘要 |
+| 设置开启摄像头观察后 | 隐藏 WebView 低频采样摄像头帧，保存保守 Vision 观察 |
 | AI 对话中 | 自动暂停截图管线（避免浪费 Vision API 调用） |
 
 ## 弹出面板
@@ -89,7 +90,7 @@ git push origin v0.1.6
 1. BitBlt 捕获屏幕 + dHash 感知哈希去重 + 熄屏检测（`SM_MONITORISOFF` + 全黑帧采样）
 2. 缩放 → JPEG 编码 → Vision API（Anthropic Messages）分析
 3. 结果通过气泡显示，并保存到 `~/.ai-pad/screenshots/`（7 天自动清理）
-4. 屏幕活动摘要定时总结，**最近 10 条截图原始分析记录注入 AI prompt**
+4. 屏幕活动摘要定时总结，默认取最近 30 条截图分析生成摘要，最多 20 条摘要注入 AI prompt
 5. **聊天输入聚焦时自动暂停截图**（避免浪费 Vision API 调用）
 6. 舞蹈播放期间同样暂停截图
 7. 多显示器会按单个显示器独立分析和保存，多个可见显示器的 Vision API 请求会并行执行，再按显示器顺序汇总到气泡
@@ -100,6 +101,15 @@ git push origin v0.1.6
 - 手柄 R2（默认配置）
 - 全局热键 `Ctrl+Alt+S`（来自 `actions.yml` 的 `keyboard_shortcut`）
 - 双击宠物左眼
+
+## 摄像头观察
+
+摄像头观察默认关闭，可在设置页“外观与行为”中开启。开启后，应用会预创建隐藏的 `camera` WebView，由前端 `getUserMedia` 获取权限并按截图间隔低频采样，后端只接收 JPEG data URL、做节流和 Vision 分析。
+
+- 提示词位于 `config/prompts.yml` 的 `camera.prompt`，严格要求不做人脸身份识别，不推断敏感属性。
+- 观察记录保存到 `~/.ai-pad/camera/YYYY-MM-DD/`；默认只保存分析 JSON，勾选“保存摄像头帧”后才保存帧图片。
+- 采样会避让 AI 对话、舞蹈、游戏等忙碌状态，避免打断主要交互。
+- 最近摄像头观察可作为上下文注入 AI，用于“我是不是离开座位了”这类低风险状态提醒。
 
 ## 舞蹈系统
 
@@ -190,7 +200,7 @@ Agent 可以调用提醒工具创建确定性的本地任务，例如“3 分钟
 
 ### 第一层：短期对话记忆
 
-- 滚动窗口（默认 20 条），每次 AI 对话后记录 user_msg + ai_reply（按字符截断）
+- 滚动窗口默认不按条数淘汰（`memory.max_entries: 0`），由 `max_context_chars` 控制注入长度；每次 AI 对话后记录 user_msg + ai_reply（按字符截断）
 - 持久化到 `~/.ai-pad/memory/chat_summary.json`
 - 每次对话注入 prompt：`[最近对话记录]...[/最近对话记录]`
 
@@ -209,12 +219,15 @@ Agent 可以调用提醒工具创建确定性的本地任务，例如“3 分钟
 
 ## 设置窗口
 
-系统托盘右键可打开独立设置窗口（720×520），覆盖层配置机制：
+系统托盘右键可打开独立设置窗口（1040×720），覆盖层配置机制：
 
 - **AI 覆盖**：api_key / base_url / model / max_tokens → `app_settings.json`
 - **动作绑定**：编辑 config/actions.yml 并实时重载
 - **提示词配置**：编辑 config/prompts.yml 并实时重载
 - **外观设置**：always_on_top / default_collapsed / tts_enabled / global_shortcut / screenshot_interval_sec / pet_position
+- **摄像头观察**：camera_observation_enabled / camera_save_frames，采样间隔跟随截图间隔
+- **Agent Watch**：本地/远程看板开关、远程安装脚本开关、离开提醒和 TTS 策略
+- **提醒**：刷新、完成、10 分钟后、取消、删除本地提醒
 - **Token 用量**：展示今日总量、最近 session、Chat/Vision/ScreenSummary/MemoryAggregation 分类统计
 - 设计原则：`~/.claude/settings.json` 只读，所有用户修改通过覆盖层
 - 支持按分类重置为默认值
@@ -236,7 +249,7 @@ Agent 可以调用提醒工具创建确定性的本地任务，例如“3 分钟
 
 ```
 8bit/
-├── Cargo.toml              # workspace: members = ["core", "app"], release LTO+strip
+├── Cargo.toml              # workspace: members = ["core", "app", "xtask"], release LTO+strip
 ├── config/                 # 运行时配置目录（编译时嵌入 exe，exe 同目录可覆盖）
 │   ├── actions.yml         # 按键动作绑定
 │   ├── buttons.yml         # 硬件按键映射
@@ -258,6 +271,9 @@ Agent 可以调用提醒工具创建确定性的本地任务，例如“3 分钟
 │       ├── device.rs       # SDL2 按键编号 → 名称映射
 │       ├── hotkey.rs       # Win32 SendInput 键鼠模拟 + force_foreground
 │       ├── pet.rs          # 桌宠状态机（Idle/Walk/Sleep/Talk/Happy/Confused/Dance）
+│       ├── agent_session.rs # Agent Watch 会话归一模型（Claude Code / Codex）
+│       ├── agent_nudge.rs # Agent Watch 离开/等待/完成提醒策略
+│       ├── camera_observation.rs # 摄像头观察记录存储 + 最近上下文构建
 │       ├── memory.rs       # 两层记忆系统：短期滚动窗口 + 长期 JSONL 候选召回 + AI 聚合画像
 │       ├── reminder.rs     # 程序化提醒 store、原子写入、生命周期操作与 JSONL 事件日志
 │       ├── vision.rs       # Vision API 请求构建/响应解析
@@ -266,23 +282,28 @@ Agent 可以调用提醒工具创建确定性的本地任务，例如“3 分钟
 │       ├── minigame.rs     # 迷你游戏 GameDef schema、内置模式与校验
 │       ├── tool_events.rs  # 工具运行时事件审计日志
 │       ├── token_tracker.rs # Token 用量 JSONL + session 聚合
-│       └── tools.rs        # AI Tool 实现（launch/shell/read_file/get_time/recent_screenshots/hotkey/clipboard/foreground/perform_dance/play_dance/search_memory/remember）
+│       └── tools.rs        # AI Tool 实现（launch/shell/read_file/get_time/recent_screenshots/search_memory/remember/reminder/hotkey/clipboard/foreground/dance）
 └── app/                    # Tauri 2.0 应用
     ├── tauri.conf.json     # 窗口、权限、withGlobalTauri
     ├── capabilities/
     ├── src/
     │   ├── main.rs         # 入口（--debug 控制台），日志双写初始化
-    │   ├── lib.rs          # Tauri Builder + gamepad_loop + chat_loop(独立线程) + bubble_follower(独立线程)
+    │   ├── lib.rs          # Tauri Builder + 全局状态/命令注册 + 后台循环启动
+    │   ├── action_bus.rs   # 手柄/热键/前端动作归一分发
     │   ├── gamepad.rs      # PetEvent 序列化, PetCommand→前端事件转换, chat_loop 解耦
     │   ├── game.rs         # 迷你游戏窗口与生命周期管理
     │   ├── agent_monitor.rs # Agent Watch 会话状态与 hook 事件监控
     │   ├── commands.rs     # 共享状态 + Tauri command（snap_preview/crossfade/play_dance 等）
     │   ├── bubble.rs       # 独立气泡窗口, 流式 start/chunk/end 协议, bubble_follower 线程
+    │   ├── camera.rs       # 隐藏摄像头窗口 + 摄像头帧 Vision 观察
     │   ├── notification_window.rs # Agent Watch 与提醒共用的灵动岛式通知窗口
     │   ├── reminder_scheduler.rs # 到期提醒轮询调度
     │   ├── voice.rs        # 语音输入窗口, 强制前台化, generation 防残留
     │   ├── panel.rs        # 弹出面板（YAML 布局, 方向键导航, 动作执行）
     │   ├── settings.rs     # 设置窗口后端命令（读/写 app_settings + yml 重载）
+    │   ├── pet_inbox.rs    # 宠物 Inbox 窗口
+    │   ├── audio_reactive.rs # fake/WASAPI 音乐响应表演数据源
+    │   ├── remote_endpoint.rs # Agent Watch 远程地址发现与安装命令生成
     │   ├── screenshot.rs   # 截图线程（BitBlt + 熄屏检测 + Vision API + 聊天/舞蹈暂停）
     │   ├── steam.rs        # Steamworks 本地 DLL/AppID 探针，失败只写诊断日志
     │   ├── joystick.rs     # SDL2 手柄封装 + is_attached 热插拔检测
@@ -293,13 +314,16 @@ Agent 可以调用提醒工具创建确定性的本地任务，例如“3 分钟
         ├── bubble.html     # 气泡窗口（流式文本 + Markdown + 毛玻璃）
         ├── game.html       # 迷你游戏窗口（Snake / Memory / Catch / Battle）
         ├── agent_watch.html # Agent Watch 浮动任务栈窗口
+        ├── notification.html # Agent Watch 与提醒共用通知窗口
+        ├── camera.html     # 隐藏摄像头采样窗口
+        ├── pet_inbox.html  # 宠物 Inbox 窗口
         ├── panel.html      # 面板窗口（尺寸/网格/按钮来自 panel_action.yml）
         ├── voice.html      # 语音输入条（280×40, textarea 接收输入法注入）
         ├── glow.html       # 吸附竖条（发光动画）
-        ├── settings.html   # 设置窗口（720×520, 分类 Tab, 实时预览）
+        ├── settings.html   # 设置窗口（1040×720, 分类 Tab, 实时预览）
         ├── css/            # pet.css / bubble.css / game.css / panel.css / glow.css / settings.css
         ├── js/             # app.js / bubble.js / game_engine.js / panel.js / voice.js / glow.js / settings.js / particles.js / sprite.js / pet.js
-        ├── __tests__/      # Vitest 单元测试（10+ 个测试文件）
+        ├── __tests__/      # Vitest 单元测试（15 个测试文件）
         └── vitest.config.ts
 ```
 
@@ -400,11 +424,14 @@ actions:
 
 ### config/prompts.yml — AI 提示词
 
-包含四段配置：
+包含多段配置：
 - `agent.preamble` — AI 人设（默认：8Bit 像素猫）
 - `vision.prompt` / `vision.prompt_multi` — 截图分析提示词（强调反幻觉）
-- `memory` — 短期记忆窗口大小和截断阈值
-- `screen_summary` — 截图摘要注入条数（默认 10 条）
+- `camera.prompt` — 摄像头观察提示词（保守描述，不做人脸身份或敏感属性推断）
+- `memory` / `memory_v2` — 短期记忆窗口、长期记忆检索和聚合参数
+- `screen_summary` — 截图摘要聚合和注入条数（默认取 30 条原始分析，注入 20 条摘要）
+- `reminder_personalizer` — 到期提醒通知文案润色
+- `aggregation` — 长期记忆聚合画像提示词
 
 ### config/user.yml — 用户画像
 
@@ -445,7 +472,7 @@ language: "zh-CN"         # 首选语言（空则自动判断）
 
 - max_tokens 统一 **256K**，可用 `ANTHROPIC_MAX_TOKENS` 环境变量覆盖
 - Agent 人设："8Bit" — 一只住在屏幕上的像素风小猫助手，活泼好奇，用中文交流
-- 内置 **10+ 个 Tool**：
+- 内置 **15 个 Tool**：
 
 | Tool | 功能 |
 |------|------|
@@ -461,10 +488,11 @@ language: "zh-CN"         # 首选语言（空则自动判断）
 | `play_dance` | 播放已保存的舞蹈 |
 | `create_reminder` | 创建一次性或重复提醒，写入本地提醒 store |
 | `list_reminders` | 查看当前提醒任务 |
-| `complete_reminder` / `snooze_reminder` / `cancel_reminder` | 完成、稍后或取消提醒 |
+| `cancel_reminder` | 取消提醒 |
 
 - 按 Start 键触发对话，流式回复、工具生命周期和最终 `AgentReaction` 会通过 tagged `PetEvent` 驱动桌宠状态
-- 对话记忆**两层存储**：短期滚动窗口（默认 20 条）+ 长期 JSONL grep-first 候选召回 + AI 聚合画像
+- 完成、稍后和删除提醒目前由通知窗口与设置页提供，不暴露为 Agent Tool
+- 对话记忆**两层存储**：短期滚动窗口（默认不限条数，由字符预算控制注入）+ 长期 JSONL grep-first 候选召回 + AI 聚合画像
 - 所有持久化到 `~/.ai-pad/memory/`
 - Agent 方法带 `#[instrument]` tracing span，完整记录工具调用链路
 - Token 用量写入 `~/.ai-pad/logs/token_usage.jsonl`，最近会话聚合写入 `~/.ai-pad/logs/token_sessions.json`
@@ -487,11 +515,15 @@ emit "panel-confirm"      ──────►  panel.js 确认
 emit "panel-close"        ──────►  panel.js 关闭
 emit "play-dance"          ──────►  app.js 舞蹈播放器（窗口移动+精灵动画）
 emit "game-input"         ──────►  game_engine.js 小游戏输入
+emit "camera-observation-refresh" ─► camera.js 读取设置并启动/停止采样
+emit "camera-observation-capture" ─► camera.js 采样一帧并 invoke 后端
+emit "notification-show"  ──────►  notification.js 展示提醒/Agent Watch 通知
+emit "agent-watch-update" ──────►  agent_watch.js 渲染任务栈
 emit "voice-clear"        ──────►  voice.js 清空 textarea（voice.rs）
 emit "voice-flush"        ──────►  voice.js 同步 textarea（voice.rs）
                               ◄───  invoke cmd_consume_bubble_text
                               ◄───  invoke cmd_voice_update_text
-                              ◄───  invoke cmd_play_dance / cmd_settings_*
+                              ◄───  invoke cmd_play_dance / cmd_settings_* / cmd_camera_frame
                               ◄───  invoke cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle / cmd_screenshot_now
                               ◄───  emit "voice-ready" (mpsc 握手完成)
 ```
@@ -503,9 +535,12 @@ emit "voice-flush"        ──────►  voice.js 同步 textarea（voic
   ├── gamepad_loop (OS thread)     — SDL2 轮询 80ms tick, 按键→PetCommand
   ├── chat_loop (OS thread)       — 气泡输入消费 + 长期记忆聚合（独立于手柄）
   ├── screenshot_loop (OS thread) — 定时截图 + Vision API（聊天/舞蹈时暂停）
+  ├── camera window              — 隐藏 WebView getUserMedia + 低频 Vision 观察
   ├── bubble_follower (OS thread) — 气泡跟随宠物窗口定位
+  ├── reminder_scheduler (OS thread) — 每 5 秒扫描到期提醒
   ├── dance_bridge (async task)   — mpsc channel 消费 play_dance 指令
   ├── agent_monitor (async task)  — Claude Code / Codex hook 事件看管
+  ├── agent_view_server (async task) — 只读 /watch 远程看板
   └── game window                 — 独立 WebView 运行迷你游戏前端逻辑
 ```
 
@@ -522,15 +557,15 @@ AI_PAD_DEBUG=1 cargo run -p ai-pad-app -- --debug
 
 ## 技术栈
 
-- **Tauri 2.0** — WebView 多窗口（pet/bubble/panel/voice/glow/settings/game/agent-watch），全局热键，托盘
+- **Tauri 2.0** — WebView 多窗口（pet/bubble/panel/voice/glow/settings/game/agent-watch/notification/camera/pet-inbox），全局热键，托盘
 - **SDL2 (bundled)** — 手柄输入读取（DirectInput），热插拔检测
 - **rig-core** — AI Agent 抽象层（Anthropic SDK 兼容，streaming prompt + Tool 定义）
 - **tokio + futures** — 异步运行时 + 流式处理 + 多线程解耦
 - **tracing** — 结构化日志 + `#[instrument]` span 可观测性
-- **windows-sys** — SendInput 键鼠模拟 + BitBlt 截图 + SAPI TTS + AttachThreadInput
+- **windows-sys / windows** — SendInput 键鼠模拟 + BitBlt 截图 + SAPI TTS + AttachThreadInput + WASAPI 音频采样
 - **serde + serde_yaml** — 配置加载（嵌入 + 外部覆盖）
 - **cargo-husky** — Git hooks：pre-commit fmt / pre-push clippy+test
-- **Vitest + jsdom** — 前端单元测试（10+ 个测试文件）
+- **Vitest + jsdom** — 前端单元测试（15 个测试文件）
 - **Canvas + 粒子效果** — 像素精灵绘制 + 舞蹈窗口级动画，无打包工具
 
 ## License

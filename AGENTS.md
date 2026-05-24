@@ -16,7 +16,7 @@ make test           # 完整 workspace（core + app，app 首次编译较慢）
 make nextest        # 同 make test
 
 # 前端测试（Vitest + jsdom）
-cd app/frontend && npx vitest run     # 3 个测试文件
+cd app/frontend && npx vitest run     # 15 个测试文件
 cd app/frontend && npx vitest         # 监听模式
 
 # 运行单个测试 / 模块
@@ -108,17 +108,28 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
   └── config/actions.yml 热键/启动 → hotkey.rs SendInput
 
 截图观察线程 → screenshot_loop() [screenshot.rs, 独立线程]
-  ├── BitBlt 截屏 → dHash 去重 → 缩放 → JPEG 编码
+  ├── BitBlt 截屏 → 熄屏/黑屏检测 → dHash 去重 → 缩放 → JPEG 编码
   ├── vision.rs → Vision API 分析 → 描述文本 → bubble 显示
   └── 存储 ~/.ai-pad/screenshots/YYYY-MM-DD/（7 天自动清理）
+
+摄像头观察 → camera.html getUserMedia（默认关闭）
+  ├── 隐藏 WebView 低频采样 JPEG data URL
+  ├── camera.rs 节流、业务避让、Vision API 分析
+  └── 存储 ~/.ai-pad/camera/YYYY-MM-DD/（默认只存分析 JSON）
 ```
 
-### 多窗口模型（4 个 WebView2 窗口）
+### 多窗口模型（主要 WebView2 窗口）
 
 - **pet** — 128×128 透明窗口，Canvas 像素精灵动画
-- **bubble** — 动态高度（140→340px）透明窗口，AI 流式文本渲染。短文本固定 140px；长文本自动加高并上移避免遮挡宠物；超长文本（>340px）内部可滚轮翻阅（wheel 事件 JS 兜底 scrollTop，因 Tauri 透明窗口 native scroll 不稳定）
-- **panel** — 480×320 玻璃面板，3×2 网格，方向键导航
+- **bubble** — 动态高度透明窗口，AI 流式文本渲染。前端可拖拽调整，Rust follower 会跟随宠物定位
+- **panel** — 默认 480×360 玻璃面板，2×2 网格，方向键导航，布局来自 `config/panel_action.yml`
 - **voice** — 280×40 录音条，textarea 接收 IME 注入（预创建在屏幕外）
+- **settings** — 1040×720 设置窗口，覆盖层配置、记忆/提醒审查、用量统计和 Agent Watch 管理
+- **game** — 透明置顶小游戏窗口，支持 Snake / Memory / Catch / Battle
+- **agent-watch** — 只读任务看管浮窗，展示 Claude Code / Codex 会话
+- **notification** — Agent Watch 与提醒共用的顶部通知窗口
+- **camera** — 屏幕外隐藏摄像头采样窗口，使用浏览器 `getUserMedia`
+- **pet-inbox / glow** — 宠物 Inbox 与贴边吸附竖条辅助窗口
 
 ### Voice 输入防残留机制
 
@@ -143,7 +154,7 @@ app 层通过 `SharedPetEventBus` 统一发送 `pet-event`，集中处理去重�
 
 ### AI Agent
 
-配置优先级：环境变量 > `~/.claude/settings.json` > `.env` > 默认值。当前通过 rig `AgentBuilder` 注册 10 个内置 Tool：`launch_program` / `shell` / `read_file` / `get_time` / `recent_screenshots` / `send_hotkey` / `read_clipboard` / `force_foreground` / `perform_dance` / `play_dance`。`max_tokens` 默认 256K。
+配置优先级：环境变量 > `~/.ai-pad/app_settings.json` 覆盖层 > `~/.claude/settings.json` > `.env` > 默认值。当前通过 rig `AgentBuilder` 注册 15 个内置 Tool：`launch_program` / `shell` / `read_file` / `get_time` / `recent_screenshots` / `search_memory` / `remember` / `create_reminder` / `list_reminders` / `cancel_reminder` / `send_hotkey` / `read_clipboard` / `force_foreground` / `perform_dance` / `play_dance`。`max_tokens` 默认 256K。
 
 主对话使用 `stream_prompt().multi_turn(MAX_AGENT_TURNS)`。`PetAgent::chat_stream()` 将 rig 的 `MultiTurnStreamItem` 拆成三类 app 可消费事件：`Text` 流式写入 bubble；`Tool` 携带 `ToolRuntimeEvent` 表达 planned / blocked / finished / failed；`Status` 从文本 delta 和 tool-call item 派生 `AiWriting` / `ToolPreparing`。`PermissionHook` 仍是 shell 安全边界，危险命令通过 `ToolCallHookAction::Skip` 返回可解释结果。
 
@@ -151,7 +162,7 @@ app 层通过 `SharedPetEventBus` 统一发送 `pet-event`，集中处理去重�
 
 ### 程序化提醒
 
-AI Agent 通过 `create_reminder` / `list_reminders` / `complete_reminder` / `snooze_reminder` / `cancel_reminder` Tool 管理确定性的提醒任务。提醒持久化到系统数据目录下的 `ai-pad/reminders/reminders.json`（Windows 通常是 `%APPDATA%/ai-pad/reminders/reminders.json`），格式是当前版本的 JSON 数组；不要在主路径里静默兼容旧格式、BOM 或半写入文件，解析失败应明确暴露并写入诊断日志。
+AI Agent 通过 `create_reminder` / `list_reminders` / `cancel_reminder` Tool 管理确定性的提醒任务。完成、稍后和删除由通知窗口与设置页提供，不暴露为 Agent Tool。提醒持久化到系统数据目录下的 `ai-pad/reminders/reminders.json`（Windows 通常是 `%APPDATA%/ai-pad/reminders/reminders.json`），格式是当前版本的 JSON 数组；不要在主路径里静默兼容旧格式、BOM 或半写入文件，解析失败应明确暴露并写入诊断日志。
 
 提醒写入使用临时文件 + 原子替换，Windows 下通过 `MoveFileExW(MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)` 刷盘替换。调度器每 5 秒扫描到期提醒，通过统一通知窗口弹出；通知窗口和设置页的完成、稍后、取消、删除操作都会更新 store，并 emit `reminders-updated` 让设置页刷新。`create_reminder` 工具创建失败时必须告诉模型“提醒没有创建成功”，避免 AI 口头承诺但本地没有任务。
 
@@ -159,11 +170,15 @@ AI Agent 通过 `create_reminder` / `list_reminders` / `complete_reminder` / `sn
 
 ### 截图观察系统
 
-独立线程定时截图（默认 30s），流程：BitBlt 捕获 → 熄屏检测（`SM_MONITORISOFF` + 全黑帧采样）→ dHash 去重 → 缩放到 max_width → JPEG 编码 → Vision API（Anthropic Messages）分析 → 结果通过 bubble 显示并保存到 `~/.ai-pad/screenshots/`。支持多显示器水平拼接 + 调试多分辨率对比。配置在 `config/prompts.yml` 的 `screen_summary` 段。
+独立线程定时截图（默认 30s），流程：BitBlt 捕获 → 熄屏检测（`SM_MONITORISOFF` + 全黑帧采样）→ dHash 去重 → 缩放到 max_width → JPEG 编码 → Vision API（Anthropic Messages）分析 → 结果通过 bubble 显示并保存到 `~/.ai-pad/screenshots/`。多显示器按单个显示器独立分析和保存，再按显示器顺序汇总到气泡。配置在 `config/prompts.yml` 的 `vision` / `screen_summary` 段。
+
+### 摄像头观察系统
+
+摄像头观察默认关闭，由设置页 `appearance.camera_observation_enabled` 控制。开启后，`camera.html` 在屏幕外隐藏 WebView 中用 `getUserMedia` 获取权限并按 `camera_observation_interval_sec` 采样；`app/src/camera.rs` 接收 JPEG data URL、做节流和业务避让，再复用 `vision.rs` 结构化分析。提示词在 `config/prompts.yml` 的 `camera.prompt` 段，要求保守描述、禁止身份识别和敏感属性推断。记录保存到 `~/.ai-pad/camera/YYYY-MM-DD/`，默认只保存分析 JSON，`camera_save_frames` 打开后才保存帧图片。
 
 ### 记忆系统
 
-`MemoryStore` 维护滚动窗口对话记忆（默认 20 条），持久化到 `~/.ai-pad/memory/chat_summary.json`。每次 AI 对话后记录 user_msg + ai_reply（按字符截断），下次对话时通过 `build_context()` 注入 prompt。配置在 `config/prompts.yml` 的 `memory` 段。
+`MemoryStore` 维护滚动窗口对话记忆，默认不按条数淘汰（`memory.max_entries: 0`），由 `max_context_chars` 控制注入长度；持久化到 `~/.ai-pad/memory/chat_summary.json`。每次 AI 对话后记录 user_msg + ai_reply（按字符截断），下次对话时通过 `build_context()` 注入 prompt。配置在 `config/prompts.yml` 的 `memory` 段。
 
 长期记忆由 `AgentReaction.memory_candidates` 或 `remember` 工具驱动写入 `LongTermMemory`，不再使用关键词式 `should_store` 判断。结构化条目保留 `summary` / `tags` / `importance` / `source`，并提供 `retrieve_with()` 按 text/tag/source/min_importance 过滤，以及 `review_entries()` / `review_markdown()` 供设置页审查和人工删除。
 
@@ -175,7 +190,7 @@ AI Agent 通过 `create_reminder` / `list_reminders` / `complete_reminder` / `sn
 
 ### Prompts 配置
 
-`config/prompts.yml` 统一管理四段提示词：`agent.preamble`（AI 人设）、`vision.prompt`/`vision.prompt_multi`（截图分析提示词，强调反幻觉）、`memory`（记忆窗口大小和截断阈值）、`screen_summary`（截图摘要注入配置）。所有字段有编译时默认值，YAML 可选覆盖。运行时从 exe 同目录/config/ 加载，构建时需 cp 到 target/config/。
+`config/prompts.yml` 统一管理 `agent.preamble`（AI 人设）、`vision.prompt`/`vision.prompt_multi`（截图分析提示词，强调反幻觉）、`camera.prompt`（摄像头观察提示词）、`memory`/`memory_v2`（记忆窗口、长期记忆和聚合配置）、`screen_summary`（截图摘要注入配置）、`reminder_personalizer`（到期提醒文案润色）和 `aggregation`（画像聚合）。所有字段有编译时默认值，YAML 可选覆盖。运行时从 exe 同目录/config/ 加载，构建时需 cp 到 target/config/。
 
 ### 日志与 .env
 
@@ -190,6 +205,7 @@ AI Agent 通过 `create_reminder` / `list_reminders` / `complete_reminder` / `sn
 - **模块文档**：每个 `.rs` 文件顶部应有 `//!` 模块文档（3 句话：做什么、为什么这样设计、与谁交互）。公共函数/结构体应有 `///` 注释说明用途和约束。新增模块时必须补齐；修改模块时同步更新。
 - **意图理解**：大模型擅长的简单任务不要做关键词匹配、正则分类或”小分类器”前置判断；让模型在普通对话里自行选择工具，Rust 只负责 schema、校验、权限和执行。
 - **记忆检索**：默认用可 grep 的结构化文本，不做 Embeddings / Vector RAG。若未来有人想重新评估，必须先更新 `docs/architecture/design-tradeoffs.md` 说明收益大于复杂度。
+- **临时产物**：浏览器自动化截图/快照等会话级临时文件放在 `.playwright-cli/`（已 gitignore）。调研等需要留存的文档放 `docs/research/`，不要散落在项目根目录。`--filename` 参数的 playwright-cli 快照输出到 `.playwright-cli/` 目录内，不要写到项目根。
 
 ## 测试规范
 
@@ -251,13 +267,20 @@ AI Agent 通过 `create_reminder` / `list_reminders` / `complete_reminder` / `sn
 - `app/src/lib.rs` — 主入口，gamepad_loop（~520 行）+ 右键菜单（Win32 TrackPopupMenu）+ .env 加载 + 全局热键注册
 - `app/src/main.rs` — --debug 控制台分配 + 日志双写（stderr + `~/.ai-pad/logs/` 按日滚动）
 - `app/src/screenshot.rs` — 截图观察线程：BitBlt 截屏 + 熄屏检测 + 缩放 JPEG + Vision API 调用 + 存储/清理
+- `app/src/camera.rs` — 隐藏摄像头窗口、帧接收、Vision 分析和记录持久化
+- `app/src/agent_monitor.rs` — Claude Code / Codex 本地与远程 hook 事件看管
+- `app/src/agent_watch_window.rs` — Agent Watch 浮窗生命周期和定位
+- `app/src/audio_reactive.rs` — fake/WASAPI 音乐响应表演数据源
 - `core/src/pet.rs` — 宠物状态机（6 状态，帧动画，proptest 属性测试）
-- `core/src/agent.rs` — AI Agent 流式对话 + 12 个 Tool 定义 + rig stream status 派生
+- `core/src/agent.rs` — AI Agent 流式对话 + 15 个 Tool 定义 + rig stream status 派生
+- `core/src/agent_session.rs` — Agent Watch 会话状态归一模型
+- `core/src/agent_nudge.rs` — Agent Watch 离开、等待和完成提醒策略
 - `core/src/agent_reaction.rs` — rig Extractor 结构化收尾，生成 mood/speech/memory_candidates
 - `core/src/pet_event.rs` — tagged PetEvent 协议与 Rig/Tool 状态映射
 - `core/src/mood_policy.rs` — React TTL、情绪优先级覆盖和低优先级节流
 - `core/src/bridge.rs` — 按键→命令映射，PetCommand 序列化
 - `core/src/screenshot.rs` — 截图类型定义、dHash 感知哈希、resize/JPEG 编码、截图存储 + 清理
+- `core/src/camera_observation.rs` — 摄像头观察记录存储与最近上下文构建
 - `core/src/vision.rs` — Vision API 请求构建/响应解析（Anthropic Messages 图片分析）
 - `core/src/memory.rs` — 短期/长期记忆、grep-first 检索、结构化 memory candidates 持久化与 review/delete
 - `core/src/reminder.rs` — 程序化提醒 store、原子写入、生命周期操作与 JSONL 事件日志

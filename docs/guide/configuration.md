@@ -73,6 +73,8 @@ language: ""
 | TTS 语音 | AI 回复完成后用 Windows SAPI 本地朗读 |
 | 全局快捷键 | 默认 `Ctrl+Alt+Space` 打开面板 |
 | 截屏分析间隔 | 默认 30 秒，范围 5 到 3600 秒 |
+| 摄像头观察 | 默认关闭；开启后使用隐藏 WebView 低频采样摄像头帧 |
+| 保存摄像头帧 | 默认关闭；关闭时只保存摄像头观察 JSON |
 
 猫咪被拖拽后的物理坐标会写入 `appearance.pet_position`。保存外观设置时会保留这个位置，不会因为改置顶、折叠、TTS 或截图间隔而清空。
 
@@ -147,20 +149,20 @@ actions:
 
 ## config/panel_action.yml
 
-快捷面板布局和按钮来自该文件。默认 480x420、3x3：
+快捷面板布局和按钮来自该文件。当前默认 480x360、2x2，四个入口都是内置小游戏：
 
 ```yaml
 defaults:
   width: 480
-  height: 420
-  columns: 3
-  rows: 3
+  height: 360
+  columns: 2
+  rows: 2
 
 actions:
   game:
-    label: 游戏
+    label: 毛线球大作战
     icon: "🎮"
-    order: 70
+    order: 10
     type: builtin
     command: game
 ```
@@ -169,7 +171,7 @@ actions:
 
 - `type: launch`：启动程序
 - `type: script`：执行脚本
-- `type: builtin`：内置入口，目前支持 `dance`、`game`、`settings`、`chat`
+- `type: builtin`：内置入口，目前支持 `dance`、`game`、`memory`、`catch`、`battle`、`settings`、`chat`
 
 ## config/prompts.yml
 
@@ -182,7 +184,7 @@ memory:
 
 memory_v2:
   long_term_max_entries: 200
-  retrieve_budget_chars: 800
+  retrieve_budget_chars: 10000
 
 screen_summary:
   interval_min: 15
@@ -191,7 +193,7 @@ screen_summary:
   max_context_chars: 2000
 ```
 
-屏幕分析和摘要现在使用结构化输出，文档、日志和设置页都以结构字段为准，不再依赖自由文本解析。
+还包括 `camera.prompt`、`reminder_personalizer.preamble` 和 `aggregation.prompt`。屏幕、摄像头、提醒润色和摘要都使用结构化输出，文档、日志和设置页都以结构字段为准，不再依赖自由文本解析。
 
 ## 热重载
 

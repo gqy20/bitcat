@@ -301,7 +301,7 @@ minigame.rs     ███████              180  (15%)
 
 - 当前项目已经有 `app/src/action_bus.rs`，并且舞蹈入口已通过 `ActionBus::PlayDance` 归一分发。Phase 1 已新增 `Action::PlayGameDefault`，面板入口会启动默认 Snake；`app/src/game.rs` 也已经提供 `start_game(GameDef)` / `cmd_start_game_with_def`，未来 AI 工具应直接复用这条 GameDef 启动通道。
 - 舞蹈系统的成熟模式是 `core::dance` 持久化与请求通道 → app bridge 消费 → 前端播放。游戏可复用这个思路；当前窗口生命周期、输入独占和默认 Snake 已稳定，下一步是把 AI 工具注册到 agent/tools，并补齐 GameDef 持久化和更多引擎。
-- `panel.js` 已扩为 3×3，保留原 6 个入口并新增"游戏 / 设置 / 聊天"。后续新增入口时要同步 `COLS/ROWS`、面板尺寸和手柄导航边界。
+- 历史记录：当时 `panel.js` 曾扩为 3×3 并加入"游戏 / 设置 / 聊天"。当前实现已收敛为 `panel_action.yml` 驱动的 480×360、2×2 游戏启动器；后续新增入口时以 YAML 的 `columns` / `rows` 和 `panel.rs` ViewModel 为准。
 - `gamepad_loop` 已实现游戏激活优先级：game active > panel visible > voice held > 普通动作/滚轮。游戏激活时 D-pad/A/B/Start 转发为 `game-input`，普通滚轮和宠物动作暂停。
 - Tauri capabilities 已加入 `"game"`，动态 `game` 窗口可以使用 Tauri event / invoke API。
 
@@ -346,7 +346,7 @@ AI 路径推迟到 Phase 2：
 - 修改 `app/src/lib.rs`：注册 `game` 模块、`SharedGame`、`cmd_start_game`、`cmd_get_current_game`、`cmd_game_end`、`cmd_game_log`。
 - 修改 `app/capabilities/default.json`：窗口列表加入 `"game"`。
 - 新增 `app/frontend/game.html`、`app/frontend/css/game.css`、`app/frontend/js/game_engine.js`：页面能加载配置、绘制透明 canvas、显示简单 HUD。
-- 修改 `app/frontend/js/panel.js` / `panel.css` / `panel.rs`：面板扩为 3×3，新增"游戏"格子，触发 `cmd_start_game`。
+- 历史实现曾修改 `app/frontend/js/panel.js` / `panel.css` / `panel.rs` 扩展 3×3 面板并新增"游戏"格子；当前面板入口已改为 2×2 游戏启动器，动作来自 `config/panel_action.yml`。
 
 验收结果：
 
@@ -378,7 +378,7 @@ AI 路径推迟到 Phase 2：
 
 ### Phase 1 代码量预估
 
-第一阶段已完成，实际提交约 **1278 行新增/修改**。上浮主要来自完整前端 Snake 实现、Tauri game 窗口生命周期、3×3 面板扩展、宠物新状态测试和 capabilities schema 同步。
+第一阶段已完成，实际提交约 **1278 行新增/修改**。上浮主要来自完整前端 Snake 实现、Tauri game 窗口生命周期、当时的面板扩展、宠物新状态测试和 capabilities schema 同步。当前面板已收敛为 2×2 游戏启动器。
 
 | 文件 | Phase | 预计行数 | 说明 |
 |------|-------|----------|------|

@@ -23,7 +23,7 @@ AI 对话是 8Bit Cat 的主能力。它会流式回复、调用工具、根据�
 
 ## AI 工具
 
-当前 Agent 注册了 12 个工具：
+当前 Agent 注册了 15 个工具：
 
 | 工具 | 用途 |
 |------|------|
@@ -34,11 +34,16 @@ AI 对话是 8Bit Cat 的主能力。它会流式回复、调用工具、根据�
 | `recent_screenshots` | 查看最近截图分析 |
 | `search_memory` | 检索长期记忆 |
 | `remember` | 保存明确的长期记忆 |
+| `create_reminder` | 创建一次性或重复提醒 |
+| `list_reminders` | 查看提醒任务 |
+| `cancel_reminder` | 取消提醒 |
 | `send_hotkey` | 发送键盘组合键 |
 | `read_clipboard` | 读取剪贴板 |
 | `force_foreground` | 聚焦窗口 |
 | `perform_dance` | 编排并播放一段舞蹈 |
 | `play_dance` | 播放已保存或内置舞蹈 |
+
+完成、稍后和删除提醒由通知窗口与设置页处理，目前不作为 Agent Tool 暴露。
 
 危险或系统控制类操作仍由权限边界拦截。被阻止时，工具结果会以可解释结果返回给模型，宠物也会进入对应的阻止/失败表现。
 
@@ -60,7 +65,7 @@ AI 对话是 8Bit Cat 的主能力。它会流式回复、调用工具、根据�
 
 ### 短期记忆
 
-- 保存最近 20 条对话到 `~/.ai-pad/memory/chat_summary.json`。
+- 保存对话到 `~/.ai-pad/memory/chat_summary.json`。默认 `memory.max_entries: 0` 表示不按条数淘汰，由 `max_context_chars` 控制注入长度。
 - 单条用户消息和 AI 回复会按字符截断。
 - 下次对话时作为最近上下文注入。
 

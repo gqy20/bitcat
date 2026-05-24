@@ -73,7 +73,7 @@ cargo check -p ai-pad-app
 
 ## 记忆不符合预期
 
-- 短期记忆只保留最近 20 条。
+- 短期记忆默认不按条数淘汰，但注入 prompt 时受 `memory.max_context_chars` 限制。
 - 长期记忆由模型结构化候选或 `remember` 工具写入，不是所有聊天都会保存。
 - 在设置页“记忆与画像”审查长期记忆，必要时删除。
 - 重要身份信息建议写进 `config/user.yml` 或设置页显式画像。

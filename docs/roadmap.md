@@ -14,8 +14,8 @@
 | AI 对话（Anthropic Claude via rig-core，流式输出） | 已有 |
 | 15 个内置工具（launch/shell/read_file/get_time/recent_screenshots/search_memory/remember/reminder/hotkey/clipboard/foreground/dance 等） | 已有 |
 | SDL2 手柄输入（8BitDo Micro） | 已有 |
-| 多窗口模型（pet / bubble / panel / voice） | 已有 |
-| 截图观察 + Vision API 分析 | 已有 |
+| 多窗口模型（pet / bubble / panel / voice / settings / game / agent-watch / notification / camera 等） | 已有 |
+| 截图观察 + 摄像头观察 + Vision API 分析 | 截图已默认启用；摄像头观察默认关闭，可在设置页开启 |
 | 滚动窗口记忆系统 | 已有 |
 | YML 配置热加载 | 已有 |
 | 舞蹈系统（内置/用户目录 YAML + AI tool 触发播放） | 已落地 |
@@ -47,8 +47,8 @@
 | Tool Schema | `schemars` + `serde` | `core/src/tools.rs`, `core/src/agent.rs` | 参数类型 derive JSON Schema，减少手写 schema 漂移 |
 | Notification Window | Tauri 透明顶部窗口 + Vanilla JS | `app/src/notification_window.rs`, `app/frontend/notification.html` | 提醒和 Agent Watch 共用，支持动作、队列、去重和提示音 |
 | 手柄输入 | SDL2 0.38 bundled + static-link | `app/Cargo.toml`, `app/src/joystick.rs` | 8BitDo / DirectInput 轮询，Windows 构建静态 SDL2 |
-| Windows API | `windows-sys` | `core/src/hotkey.rs`, `app/src/screenshot.rs`, `app/src/main.rs` | SendInput、BitBlt、SAPI TTS、console、power/session 检测 |
-| 截图/Vision | Win32 BitBlt + `image` JPEG + rig Extractor | `app/src/screenshot.rs`, `core/src/vision.rs` | app 捕获像素，core 做压缩、dHash、Vision 结构化分析 |
+| Windows API | `windows-sys` / `windows` | `core/src/hotkey.rs`, `app/src/screenshot.rs`, `app/src/tts.rs`, `app/src/audio_reactive.rs`, `app/src/main.rs` | SendInput、BitBlt、SAPI TTS、WASAPI、console、power/session 检测 |
+| 截图/摄像头/Vision | Win32 BitBlt + WebView getUserMedia + `image` JPEG + rig Extractor | `app/src/screenshot.rs`, `app/src/camera.rs`, `core/src/vision.rs`, `core/src/camera_observation.rs` | 截图逐屏捕获；摄像头默认关闭，开启后保守结构化观察 |
 | 配置 | YAML + 内嵌默认值 + exe 同目录覆盖 | `config/*.yml`, `core/src/config.rs` | `actions/buttons/panel_action/prompts/user` |
 | 日志/审计 | `tracing` + rolling file + JSONL | `app/src/main.rs`, `core/src/tool_events.rs`, `core/src/token_tracker.rs` | 双写日志、token 用量、工具事件审计 |
 | 测试 | cargo-nextest / insta / rstest / proptest / wiremock / tauri::test | `.config/nextest.toml`, `core/Cargo.toml`, `app/Cargo.toml` | core 快速测，app IPC feature 测，外部 API 用 mock |
@@ -106,25 +106,27 @@ Agent 管理线应优先复用现有栈：
 
 ### A2. 迷你游戏引擎
 
-Phase 1 已完成（提交 `a2105ff`）：新增全屏透明 `game` 窗口，面板扩为 3×3 并加入"游戏"入口，内置 Snake 可通过键盘/手柄游玩，结束后联动 `GamePlay` / `GameWin` / `GameLose` 宠物状态。
+Phase 1 已完成（提交 `a2105ff`）：新增全屏透明 `game` 窗口并加入默认游戏入口，内置 Snake 可通过键盘/手柄游玩，结束后联动 `GamePlay` / `GameWin` / `GameLose` 宠物状态。当前面板已收敛为 2×2 游戏启动器，默认入口是 Snake / Memory / Catch / Battle。
 
 当前已落地的数据流：
 
 ```
-panel → cmd_start_game → app/src/game.rs 动态创建 game 窗口
-      → game.html / game_engine.js 运行 Snake
+panel → cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle
+      → app/src/game.rs 动态创建 game 窗口
+      → game.html / game_engine.js 运行 Snake / Memory / Catch / Battle
       → cmd_game_end(result, score) → 关闭窗口 + 切换 pet 状态
 ```
 
 下一步继续复用 A1 的模式：模型通过工具提交结构化 `GameDef` → Rust validate / save → game 窗口运行游戏 → 结束联动 pet 状态。当前底层已经可以启动任意 `GameDef`：`cmd_start_game_with_def` / `start_game(GameDef)` 已落地，`ActionBus::PlayGameDefault` 和面板入口会启动默认 Snake。尚未完成的是把这个能力注册成 AI 可调用的 `play_game` / `perform_game` 工具，以及把生成的游戏配置持久化到用户目录。
 
-三种原型游戏共享同一个 GameEngine 类：
+四种原型游戏共享同一个 GameEngine 入口：
 
 | 游戏 | 操作 | 复杂度 |
 |------|------|--------|
-| 贪吃蛇 | 方向键转向 | 已完成 Phase 1 |
-| 记忆翻牌 | 方向键移动 + A 翻牌 | Phase 2 |
-| 打地鼠 | 方向键移动光标 + A 点击 | Phase 2 |
+| 毛线球大作战（Snake） | 方向键转向，A 加速 | 已落地 |
+| 翻牌配对（Memory） | 方向键移动 + A 翻牌 | 已落地 |
+| 接食物（Catch） | 方向键移动篮子 | 已落地 |
+| 飞机守护战（Battle） | 方向键移动，A 射击，X/Y/L1 技能 | 已落地 |
 
 输入已改为游戏激活时独占：D-pad/A/B/Start 由 `gamepad_loop` 转发为 `game-input`，普通滚轮、宠物动作和面板动作暂停。胜利→`GameWin`，失败→`GameLose`，取消→`Idle`。
 
@@ -161,7 +163,7 @@ panel → cmd_start_game → app/src/game.rs 动态创建 game 窗口
 
 ### B4. 工具运行时与开销优化（谨慎，不做关键词意图识别）
 
-当前 12 个工具仍全量注册到每次对话，但 B4 第一阶段已经完成了更基础的运行时治理：工具调用不再混入 bubble 正文，而是通过结构化事件单独呈现；普通工具显示低干扰状态条，舞蹈这类表演型工具显示“正在编舞 / 准备开跳”并短暂退场；工具结果会写入 `~/.ai-pad/logs/tool_events.jsonl`，用于后续统计成功率、耗时和拦截次数。
+当前 15 个工具仍全量注册到每次对话，但 B4 第一阶段已经完成了更基础的运行时治理：工具调用不再混入 bubble 正文，而是通过结构化事件单独呈现；普通工具显示低干扰状态条，舞蹈这类表演型工具显示“正在编舞 / 准备开跳”并短暂退场；工具结果会写入 `~/.ai-pad/logs/tool_events.jsonl`，用于后续统计成功率、耗时和拦截次数。
 
 新的原则保持不变：**默认相信大模型自己选择工具，Rust 负责 schema、权限、生命周期事件、审计和体验呈现**。B4 现在已经足够支撑下一阶段游戏工具接入：未来 AI 层 `perform_game` / `play_game` 这类表演型或互动型工具应复用 `ToolKind::Performance` 或扩展出更精细的 kind，让 bubble 退到辅助位置，把主视觉交给 pet/panel/game 窗口；底层 `start_game(GameDef)` 已经存在，工具只需要接入这条通道。
 
@@ -499,6 +501,7 @@ A1+A2+E1/E2+C1 ──→ D1(Steam) MVP 差异化更完整
 ├── dances/              # AI 生成的舞蹈 (A1)
 ├── games/               # AI 生成的游戏 (A2)
 ├── screenshots/         # 已有
+├── camera/              # 摄像头观察记录（默认关闭，开启后写 analysis JSON/可选帧图片）
 ├── memory/              # 已有：chat_summary.json + long_term.jsonl grep-first 记忆
 ├── logs/
 │   ├── ai-pad.YYYY-MM-DD.log

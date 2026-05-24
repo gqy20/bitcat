@@ -88,7 +88,7 @@ $env:ANTHROPIC_MODEL="claude-sonnet-4-20250514"
 | L1 / R1 / L2 | 默认发送 Alt+Tab / Alt+` / Ctrl+Tab |
 | 方向键 | 面板可见时导航；否则滚动当前桌面窗口 |
 
-快捷面板默认是 3x3 网格，来自 `config/panel_action.yml`：VSCode、浏览器、资源管理器、PowerShell、记事本、跳舞、游戏、设置、聊天。
+快捷面板默认是 2x2 网格，来自 `config/panel_action.yml`：毛线球大作战、翻牌配对、接食物、飞机守护战。VSCode、浏览器、设置、聊天等入口可以按需手动加回 YAML。
 
 ## 数据目录
 
@@ -104,12 +104,17 @@ $env:ANTHROPIC_MODEL="claude-sonnet-4-20250514"
 ├── screenshots/YYYY-MM-DD/
 │   ├── HHMMSS.jpg
 │   └── HHMMSS_analysis.json
+├── camera/YYYY-MM-DD/
+│   └── HHMMSS_analysis.json
 ├── dances/
 ├── logs/
 │   ├── token_usage.jsonl
 │   ├── token_sessions.json
-│   └── tool_events.jsonl
+│   ├── tool_events.jsonl
+│   ├── reminder_events.jsonl
+│   ├── agent_watch_events.jsonl
+│   └── agent_watch_sessions.jsonl
 └── scores/                 # 后续游戏分数使用
 ```
 
-截图目录会自动清理 7 天前的数据。长期记忆是 JSONL，一行一条，可用 `rg` 检索，也可在设置页审查和删除。
+截图目录会自动清理 7 天前的数据。摄像头观察默认关闭，开启后默认只保存分析 JSON，勾选保存帧后才会留下图片。长期记忆是 JSONL，一行一条，可用 `rg` 检索，也可在设置页审查和删除。
