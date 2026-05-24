@@ -262,7 +262,7 @@ impl SharedAgent {
         self.inner
             .get_or_init(|| match PetAgent::new() {
                 Ok(a) => {
-                    info!("AI Agent 初始化成功 (8Bit Cat)");
+                    info!("AI Agent 初始化成功 (BitCat)");
                     Some(a)
                 }
                 Err(e) => {
@@ -472,7 +472,7 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                 continue;
             }
         };
-        info!("ai-pad 启动（手柄已就绪）");
+        info!("BitCat 启动（手柄已就绪）");
 
         let mut prev_buttons: u32 = 0;
         let mut prev_hat: Option<(i32, i32)> = None;

@@ -10,9 +10,9 @@
 
 ## 一、策略概述
 
-**核心模式**：8Bit 桌宠本体免费上架 Steam，通过 DLC 捆绑包提供增值内容。
+**核心模式**：BitCat 桌宠本体免费上架 Steam，通过 DLC 捆绑包提供增值内容。
 
-**为什么这个模式适合 8Bit**：
+**为什么这个模式适合 BitCat**：
 
 1. **桌宠天然是"钩子产品"** — 免费让用户把桌宠放在桌面上，陪伴感本身就是留存动力
 2. **内容有清晰的"核心 vs 增值"边界** — AI 对话是核心，外观/额外游戏/配饰是增值
@@ -90,7 +90,7 @@
 |------|---------|
 | 樱花粉 | 粉色调 + 柔和圆角 + 花瓣粒子 |
 | 终端绿 | 黑底绿字 + 等宽字体 + 光标闪烁 |
-| 复古像素 | 像素边框 + 8bit 色彩 + 扫描线效果 |
+| 复古像素 | 像素边框 + bitcat 色彩 + 扫描线效果 |
 | 深海蓝 | 深蓝渐变 + 水波纹 + 气泡粒子 |
 
 **5 个宠物配饰**：
@@ -267,7 +267,7 @@ Steam 发布时需要为每个 DLC 分配独立 App ID：
 
 | App ID | 内容 | 类型 |
 |--------|------|------|
-| 主 App ID | 8Bit 桌宠本体 | 免费 |
+| 主 App ID | BitCat 桌宠本体 | 免费 |
 | DLC App ID 1 | 角色收藏包 | $1.99 |
 | DLC App ID 2 | 游戏扩展包 | $1.99 |
 | DLC App ID 3 | 终极伙伴包 | $3.99 |
@@ -307,7 +307,7 @@ function showDlcPrompt(title, message) {
 Steam 不在线时回退到本地缓存。缓存文件：
 
 ```
-~/.ai-pad/dlc_cache.json  — { "character_pack": true, "game_expansion": false, ... }
+~/.bitcat/dlc_cache.json  — { "character_pack": true, "game_expansion": false, ... }
 ```
 
 缓存每 24 小时刷新一次。超过 7 天无法验证时，DLC 内容暂时不可用（Steam 政策要求 DRM 验证周期）。
@@ -369,11 +369,11 @@ DLC 内容以文件夹形式存在于安装目录。免费版不包含这些文�
 
 ### 定价依据
 
-| 参考 | 价格 | 8Bit 对比 |
+| 参考 | 价格 | BitCat 对比 |
 |------|------|----------|
-| Bongo Cat Mver | 免费 | 8Bit 有 AI，价值更高 |
-| Wallpaper Engine | $3.99 | 8Bit 是桌宠不是壁纸，但定价可参考 |
-| Desktop Duck | 免费 | 简单桌宠，8Bit 复杂度高很多 |
+| Bongo Cat Mver | 免费 | BitCat 有 AI，价值更高 |
+| Wallpaper Engine | $3.99 | BitCat 是桌宠不是壁纸，但定价可参考 |
+| Desktop Duck | 免费 | 简单桌宠，BitCat 复杂度高很多 |
 | Stream Pets | 免费 + $4.99 高级版 | 最接近的模式 |
 
 ### 定价方案

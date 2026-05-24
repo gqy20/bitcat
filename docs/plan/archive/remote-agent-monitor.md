@@ -1,12 +1,12 @@
 # 远程 Agent 监督计划
 
-> 日期：2026-05-17 | 状态：规划中 | 范围：Mac/Linux 远程设备上的 Claude Code + Codex，通过 8Bit Cat（Windows）统一监督
+> 日期：2026-05-17 | 状态：规划中 | 范围：Mac/Linux 远程设备上的 Claude Code + Codex，通过 BitCat（Windows）统一监督
 
 ## 背景
 
 Phase 1 已落地本机 Claude Code + Codex 的 hook 监督链路：PowerShell sender → TCP :5342 → `agent_monitor.rs` → 状态归一化 → Nudge 提醒 → Agent Watch 浮窗。
 
-用户有多台设备（Mac + Linux），上面也在跑 Claude Code / Codex。希望这些远程会话也能统一汇总到 Windows 端的 8Bit Cat 里看管——不需要盯着每台机器，桌宠替你看着，有事叫你。
+用户有多台设备（Mac + Linux），上面也在跑 Claude Code / Codex。希望这些远程会话也能统一汇总到 Windows 端的 BitCat 里看管——不需要盯着每台机器，桌宠替你看着，有事叫你。
 
 ## 目标
 
@@ -31,7 +31,7 @@ Phase 1 已落地本机 Claude Code + Codex 的 hook 监督链路：PowerShell s
 
 ```
 ┌──────────────────────┐         SSH Reverse Tunnel (或直连)        ┌─────────────────────┐
-│  Mac / Linux 远程    │                                            │  Windows (8Bit Cat) │
+│  Mac / Linux 远程    │                                            │  Windows (BitCat) │
 │                      │   ───────────────────────────────────→    │                     │
 │  Claude Code Hook    │   localhost:5343 → 隧道 → Win:5342       │  TCP :5342 监听      │
 │  ↓                   │   或直连 Win:5342 (局域网)               │  ↓                  │
@@ -149,7 +149,7 @@ struct AgentHookEnvelope {
 
 ```
 1. 参数解析
-   --host <ip>       必填，Windows 8Bit Cat 所在 IP
+   --host <ip>       必填，Windows BitCat 所在 IP
    --port <port>     可选，默认 5342
    --tunnel [user@win] 可选，自动建 SSH 反向隧道
    --source claude_code|codex|all 可选，默认 all
@@ -163,7 +163,7 @@ struct AgentHookEnvelope {
    - jq 是否可用？（无 jq 则用 python/json 内建方案降级）
    - 到 --host:--port 的网络连通性（timeout 2s 测试）
 
-3. 生成 sender.sh → ~/.ai-pad/hooks/sender.sh
+3. 生成 sender.sh → ~/.bitcat/hooks/sender.sh
    - 注入 AI_PAD_HOST, AI_PAD_PORT, AI_PAD_MACHINE, AI_PAD_SOURCE
    - chmod +x
 
@@ -171,7 +171,7 @@ struct AgentHookEnvelope {
    - 读 ~/.claude/settings.json
    - 合并 ai-pad 条目（逻辑镜像 claude_hooks.rs 的 ensure_ai_pad_hooks）
    - command 用 "bash $SENDER_PATH"
-   - 标记 ai_pad_marker = "ai-pad-remote-watch"
+   - 标记 ai_pad_marker = "bitcat-remote-watch"
    - 备份原文件 → atomic write
 
 5. 安装 Codex hooks（如果检测到）
@@ -193,7 +193,7 @@ struct AgentHookEnvelope {
 
 ```bash
 #!/bin/bash
-# ai-pad remote hook sender
+# BitCat remote hook sender
 # Reads hook JSON from stdin, wraps in {source,machine,payload}, sends via TCP.
 set -euo pipefail
 
@@ -224,7 +224,7 @@ exit 0
 #### 2.3 Hook 配置合并逻辑
 
 与 `claude_hooks.rs` / `codex_hooks.rs` 保持一致的合并策略：
-- 只操作带 `ai_pad_marker = "ai-pad-remote-watch"` 的条目
+- 只操作带 `ai_pad_marker = "bitcat-remote-watch"` 的条目
 - 保留用户已有 hook
 - 备份原文件
 - atomic write（写 tmp → rename）
@@ -234,8 +234,8 @@ Claude Code settings.json 中每个事件的 command 形式：
 ```json
 {
   "type": "command",
-  "command": "bash /home/user/.ai-pad/hooks/sender.sh",
-  "ai_pad_marker": "ai-pad-remote-watch"
+  "command": "bash /home/user/.bitcat/hooks/sender.sh",
+  "ai_pad_marker": "bitcat-remote-watch"
 }
 ```
 
@@ -247,10 +247,10 @@ matcher = "*"
 
 [[hooks.PreToolUse.hooks]]
 type = "command"
-command = "bash /home/user/.ai-pad/hooks/sender.sh"
-commandLinux = "bash /home/user/.ai-pad/hooks/sender.sh"
+command = "bash /home/user/.bitcat/hooks/sender.sh"
+commandLinux = "bash /home/user/.bitcat/hooks/sender.sh"
 timeout = 5
-ai_pad_marker = "ai-pad-remote-watch"
+ai_pad_marker = "bitcat-remote-watch"
 ```
 
 ### Step 3：前端 Agent Watch 加设备标识（JS/CSS，~30 行）
@@ -383,7 +383,7 @@ pub async fn cmd_list_remote_devices(
 | sender.sh 生成且含正确 HOST/PORT/MACHINE |
 | settings.json 合并保留已有 hook |
 | config.toml 合并保留已有 hook |
-| `--uninstall` 清理所有 ai-pad-remote-watch 条目 |
+| `--uninstall` 清理所有 bitcat-remote-watch 条目 |
 | `--tunnel` 生成 autossh 命令 |
 
 ### 前端测试

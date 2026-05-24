@@ -2,19 +2,19 @@
 
 ## 启动后看不到猫
 
-- 看系统托盘是否有 8Bit Cat 图标。
+- 看系统托盘是否有 BitCat 图标。
 - 如果开启了“启动时折叠”，猫会以屏幕边缘竖条显示，点击竖条恢复。
-- 猫可能在其他显示器边缘或被置顶窗口遮住。可在设置页重置外观，或删除 `~/.ai-pad/app_settings.json` 中的 `appearance.pet_position`。
+- 猫可能在其他显示器边缘或被置顶窗口遮住。可在设置页重置外观，或删除 `~/.bitcat/app_settings.json` 中的 `appearance.pet_position`。
 
 ## 启动报错或闪退
 
 - 用 debug 模式启动：
 
 ```powershell
-.\ai-pad-app.exe --debug
+.\bitcat.exe --debug
 ```
 
-- 查看 `~/.ai-pad/logs/`。
+- 查看 `~/.bitcat/logs/`。
 - 确认 WebView2 Runtime 已安装。
 - 源码构建 app/Tauri/SDL2 相关逻辑时优先用 `make build`。如果直接跑 cargo，Windows 下需设置：
 
@@ -27,14 +27,14 @@ cargo check -p ai-pad-app
 
 - 设置页确认 API Key、Base URL、Model 当前有效值。
 - 如果使用代理，确认兼容 Anthropic Messages 和 tool_use 协议。
-- 看 `~/.ai-pad/logs/` 是否有 API 错误。
+- 看 `~/.bitcat/logs/` 是否有 API 错误。
 - 设置页“用量统计”如果没有 chat token 记录，通常说明请求没有成功完成。
 
 ## 工具调用被阻止
 
 这是正常安全边界。`shell`、热键、启动程序等系统操作可能被权限策略拦截。气泡会显示工具状态，模型会收到可解释的 blocked 结果。
 
-工具事件可在 `~/.ai-pad/logs/tool_events.jsonl` 查看。
+工具事件可在 `~/.bitcat/logs/tool_events.jsonl` 查看。
 
 ## 手柄不响应
 
@@ -62,7 +62,7 @@ cargo check -p ai-pad-app
 
 - 确认模型和代理支持图片输入。
 - 对话、舞蹈、黑屏、熄屏、画面未变化时会自动跳过截图。
-- 手动触发一次托盘“立即截图”，看 `~/.ai-pad/screenshots/YYYY-MM-DD/` 是否生成文件。
+- 手动触发一次托盘“立即截图”，看 `~/.bitcat/screenshots/YYYY-MM-DD/` 是否生成文件。
 - 设置页“用量统计”可查看 vision token 是否增长。
 
 ## 截图太费 token

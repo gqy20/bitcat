@@ -65,7 +65,7 @@ Roadmap 承诺:  AI 编排动作序列 → 生成 YML → 播放
   ├─ tools::execute_perform_dance()
   │   ├─ DanceDef 组装
   │   ├─ dance::validate_dance_def()
-  │   ├─ dance::save_dance() → ~/.ai-pad/dances/{name}.yaml
+  │   ├─ dance::save_dance() → ~/.bitcat/dances/{name}.yaml
   │   └─ dance::request_play_dance()
   │
   └─ app dance bridge
@@ -477,7 +477,7 @@ async fn generate_with_retry(agent: &PetAgent, prompt: &str) -> Result<DanceDef,
 |------|-----------|------|
 | **PermissionHook** | 自动生效 | 同一个 Agent 实例，hook 拦截危险工具调用。但设置了 `output_schema` 后 LLM 倾向于直接输出 JSON 而非调工具，实际触发概率低 |
 | **MemoryStore** | 自动沿用 | `perform_dance` 发生在普通对话工具调用中，沿用现有 `chat_stream` 上下文 |
-| **config/prompts.yml (preamble)** | 自动生效 | Agent 的 preamble 作为系统提示词发送，AI 知道自己是 8Bit Cat |
+| **config/prompts.yml (preamble)** | 自动生效 | Agent 的 preamble 作为系统提示词发送，AI 知道自己是 BitCat |
 | **create_dance Tool** | 已移除 | 不再保留 mood 查表兼容工具 |
 | **choreograph() 查表** | 已移除 | 内置预设改为 `config/dances/*.yaml` |
 | **前端 dancePlayer** | 不变 | 无论 DanceDef 来源（AI 生成 or 查表），前端播放机制相同 |

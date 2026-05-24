@@ -75,7 +75,7 @@ fn clean_dist() -> Result<()> {
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        if name.starts_with("ai-pad-") && name.ends_with(".zip") {
+        if (name.starts_with("bitcat-") || name.starts_with("ai-pad-")) && name.ends_with(".zip") {
             fs::remove_file(path)?;
         }
     }
@@ -170,7 +170,7 @@ fn package_portable(options: PackageOptions) -> Result<()> {
     fs::create_dir_all(&out_dir)?;
 
     let portable_name = format!(
-        "ai-pad-{}-windows-{}-portable",
+        "bitcat-{}-windows-{}-portable",
         options.version, options.arch
     );
     let portable_dir = repo_root.join(&portable_name);
@@ -180,7 +180,7 @@ fn package_portable(options: PackageOptions) -> Result<()> {
     remove_if_exists(&zip_path)?;
 
     fs::create_dir_all(&portable_dir)?;
-    fs::copy(&exe, portable_dir.join("ai-pad-app.exe"))?;
+    fs::copy(&exe, portable_dir.join("bitcat.exe"))?;
 
     copy_config(&repo_root.join("config"), &portable_dir.join("config"))?;
 
@@ -305,7 +305,7 @@ package-portable options:
   --arch <value>             Artifact arch label. Defaults to x64.
   --release-dir <path>       Release directory. Defaults to target[/target]/release.
   --out-dir <path>           Output directory. Defaults to current directory.
-  --upx                      Compress ai-pad-app.exe with UPX before packaging.
+  --upx                      Compress the release executable with UPX before packaging.
   --include-sdl2-dll         Include SDL2.dll for dynamic SDL2 builds.
 "
     );

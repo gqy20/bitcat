@@ -1,6 +1,6 @@
 # AI 对话与记忆
 
-AI 对话是 8Bit Cat 的主能力。它会流式回复、调用工具、根据对话结果改变宠物情绪，并把值得长期保留的信息写入可审查的记忆文件。
+AI 对话是 BitCat 的主能力。它会流式回复、调用工具、根据对话结果改变宠物情绪，并把值得长期保留的信息写入可审查的记忆文件。
 
 ## 触发方式
 
@@ -47,7 +47,7 @@ AI 对话是 8Bit Cat 的主能力。它会流式回复、调用工具、根据�
 
 危险或系统控制类操作仍由权限边界拦截。被阻止时，工具结果会以可解释结果返回给模型，宠物也会进入对应的阻止/失败表现。
 
-工具事件会写入 `~/.ai-pad/logs/tool_events.jsonl`，只保存短 preview，不保存大文本。
+工具事件会写入 `~/.bitcat/logs/tool_events.jsonl`，只保存短 preview，不保存大文本。
 
 ## 宠物语义事件
 
@@ -65,13 +65,13 @@ AI 对话是 8Bit Cat 的主能力。它会流式回复、调用工具、根据�
 
 ### 短期记忆
 
-- 保存对话到 `~/.ai-pad/memory/chat_summary.json`。默认 `memory.max_entries: 0` 表示不按条数淘汰，由 `max_context_chars` 控制注入长度。
+- 保存对话到 `~/.bitcat/memory/chat_summary.json`。默认 `memory.max_entries: 0` 表示不按条数淘汰，由 `max_context_chars` 控制注入长度。
 - 单条用户消息和 AI 回复会按字符截断。
 - 下次对话时作为最近上下文注入。
 
 ### 长期记忆
 
-- 主文件：`~/.ai-pad/memory/long_term.jsonl`。
+- 主文件：`~/.bitcat/memory/long_term.jsonl`。
 - 一行一条记录，包含稳定 `id`、`created_at`、`summary`、`tags`、`importance`、`source`、`deleted`。
 - 写入来源：对话结束后的 `AgentReaction.memory_candidates`，或模型显式调用 `remember` 工具。
 - 检索方式：`search_memory` / `retrieve_with()` 按 text、tag、source、min_importance 做 grep-first 候选召回。

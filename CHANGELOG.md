@@ -8,6 +8,16 @@
 
 ## [0.1.6] - 2026-05-18
 
+> 2026-05-24 release prep addendum: public project naming, GitHub repository
+> metadata, and release artifact names are now unified under **BitCat**.
+
+### Brand and release
+
+- **Brand rename to BitCat**: README, user guides, roadmap, GDD, research docs, app window titles, settings UI, and frontend page titles now use BitCat.
+- **GitHub and artifacts renamed**: repository URL is `gqy20/bitcat`; GitHub Release artifacts now use `bitcat-<tag>-windows-x64.*`; portable packages expose `bitcat.exe`.
+- **App metadata updated**: Tauri `productName` is `BitCat`, and the app identifier is `com.bitcat.app`.
+- **Local data and hook names migrated**: user data, logs, screenshots, memory, reminders, Agent Watch hook filenames, markers, and envelope schema now use `.bitcat`, `bitcat-*`, and `bitcat.agent-hook.v1`.
+- **No project-level 8bit wording**: old 8bit-facing project wording was removed; `8BitDo` remains only as the gamepad hardware brand.
 0.1.6 聚焦小游戏可玩性、美术资源质量、宠物资源包升级和远程 Agent Watch 体验优化。
 
 ### 新增
@@ -90,7 +100,7 @@
 
 - 更新 README，补充宠物资源包、语义短动作、远程 Agent Watch 和 0.1.5 发布 tag 示例。
 - 更新 Remote Agent Watch 用户指南，说明 endpoint 发现、多地址重试、无需重启、健康检查和 `5342`/`5344` 防火墙排查。
-- 补充 Codex CLI hook trust 操作说明：出现 `hooks need review` 时进入 `/hooks`，逐个进入 8Bit Cat hook 并按 `T` 信任。
+- 补充 Codex CLI hook trust 操作说明：出现 `hooks need review` 时进入 `/hooks`，逐个进入 BitCat hook 并按 `T` 信任。
 - 更新 Claude Code Agent Watch 计划、宠物资源包计划和 roadmap，记录远程看管 IP 选择、v2 资源包和语义 action overlay 进展。
 
 ---
@@ -105,7 +115,7 @@
 - **Claude Code hook 监控**：新增 Claude Code 只读 hook 安装、事件转发和设置页入口，hook payload 会进入本地 Agent Watch TCP monitor。
 - **Agent Watch 浮动任务栈**：新增独立 `agent-watch` 窗口、前端 HUD、capabilities 权限和窗口生命周期管理，能够展示当前任务状态、hook 事件、运行中命令和离开提醒。
 - **Codex hook 监控**：新增 Codex hook 安装与事件转发，和 Claude Code hook 共用 Agent Watch TCP monitor 与浮动任务栈。
-- **Hook doctor 修复**：新增 hook 配置诊断与修复逻辑，可清理旧的 ai-pad hook、重建脚本并恢复缺失事件。
+- **Hook doctor 修复**：新增 hook 配置诊断与修复逻辑，可清理旧的 BitCat hook、重建脚本并恢复缺失事件。
 - **Agent Watch 设置页集成**：设置窗口新增 Claude / Codex hook 状态、安装/修复控制和 Agent Watch 打开入口。
 - **宠物外部资产 fixture loader**：新增 spritesheet fixture loader、默认猫 fixture、导出脚本和前端测试，支持通过 manifest + sprites.png 载入宠物资源并覆盖默认帧。
 - **小游戏 Memory 模式**：新增翻牌配对模式，复用 `GameDef`、`game` 窗口、ActionBus 和手柄/键盘输入通道。
@@ -123,7 +133,7 @@
 ### 变更
 
 - Agent Watch 会话看管从规划文档进入可运行路径，设置页、浮窗和 hook 安装器共享后端状态。
-- Claude / Codex hook 脚本均采用 ai-pad marker 管理，便于重复安装、修复和人工排查。
+- Claude / Codex hook 脚本均采用 BitCat marker 管理，便于重复安装、修复和人工排查。
 - Snake `rules.win_length` 校验上限从 200 提高到 500，允许更长的小游戏局。
 - `MinigameType` 扩展为 `snake` / `memory` / `catch` / `battle`，前端 `createEngine` 改为注册式分发，后续新增模式更容易复用同一窗口生命周期。
 - 面板配置默认尺寸从 480×420 调整为 480×520，以容纳更多内置入口。
@@ -157,7 +167,7 @@
 - **Rig 生命周期状态**：对话流新增 `AiWriting`、`ToolPreparing`、`ToolRunning`、`ToolBlocked`、`ToolFailed` 等通知，宠物动画可跟随模型写作和工具执行状态变化。
 - **AgentReaction 收尾**：对话结束后用结构化输出生成最终情绪、speech 和长期记忆候选，不再依赖回复文本关键词猜测。
 - **长期记忆工具**：新增 `search_memory` 与 `remember` 工具，长期记忆支持按文本、标签、来源、重要度进行 grep-first 检索。
-- **长期记忆 JSONL 存储**：长期记忆主文件切换为 `~/.ai-pad/memory/long_term.jsonl`，一行一条记录，包含稳定 id、标签、重要度、来源和软删除字段。
+- **长期记忆 JSONL 存储**：长期记忆主文件切换为 `~/.bitcat/memory/long_term.jsonl`，一行一条记录，包含稳定 id、标签、重要度、来源和软删除字段。
 - **宠物事件总线**：新增 `PetEventBus` 和 `MoodPolicy`，集中处理事件去重、低优先级节流、情绪 TTL、覆盖规则和最近事件日志。
 - **事件诊断面板**：设置页新增宠物事件诊断，可查看最近 50 条事件的发送、去重、节流和失败原因。
 - **记忆审查面板**：设置页新增长期记忆审查和删除入口，便于人工查看、清理和校正 AI 记住的内容。
@@ -290,10 +300,10 @@
 - 新增小游戏配置校验，限制网格、速度、胜利长度和主题枚举，防止异常配置卡死或越界。
 
 **Token 与工具观测**
-- AI 调用开始记录 token 用量到 `~/.ai-pad/logs/token_usage.jsonl`，并聚合最近会话到 `token_sessions.json`。
+- AI 调用开始记录 token 用量到 `~/.bitcat/logs/token_usage.jsonl`，并聚合最近会话到 `token_sessions.json`。
 - 设置窗口新增「用量」视图，展示今日汇总、最近 session、Chat/Vision/ScreenSummary/MemoryAggregation 分类统计。
 - Agent 工具调用新增运行时事件：计划、完成、失败、被阻止等状态可推送到气泡窗口。
-- 工具事件审计日志写入 `~/.ai-pad/logs/tool_events.jsonl`，便于排查工具链行为。
+- 工具事件审计日志写入 `~/.bitcat/logs/tool_events.jsonl`，便于排查工具链行为。
 
 **气泡与交互**
 - 气泡窗口支持手动拖拽调整大小，并保留用户手动尺寸偏好。
@@ -349,13 +359,13 @@
 ### 新增
 
 **舞蹈系统**
-- AI 工具调用生成舞蹈定义（`create_dance` tool）+ YML 持久化到 `~/.ai-pad/dances/`
+- AI 工具调用生成舞蹈定义（`create_dance` tool）+ YML 持久化到 `~/.bitcat/dances/`
 - 前端 dancePlayer 播放器：按时间轴切换 sprite 动作帧（jump/spin/wave/shake/idle），支持循环和时长参数
 - 手柄 Y 键 / Panel 按钮直接触发舞蹈，播放期间自动暂停截图管线
 - 窗口级动画（screen-ratio 相对坐标，不再依赖绝对像素）
 
 **记忆与画像**
-- 两层存储记忆系统：短期滚动窗口（默认 20 条）+ 长期 AI 聚合画像（`~/.ai-pad/memory/chat_summary.json`）
+- 两层存储记忆系统：短期滚动窗口（默认 20 条）+ 长期 AI 聚合画像（`~/.bitcat/memory/chat_summary.json`）
 - 用户画像配置 `config/user.yml`：显式声明 name/role/preferences，优先于自动聚合结果
 - 截图原始分析记录注入 prompt（最近 10 条），屏幕活动摘要定时总结并注入上下文
 

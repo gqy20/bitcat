@@ -239,7 +239,7 @@ Input: { type: 'direction' | 'confirm' | 'cancel' | 'pause', dx?, dy? }
       → emit("game-end", { result, score })
       → game.rs: 关闭全屏窗口
       → pet.set_state(GameWin/GameLose)
-      → 记分板持久化 ~/.ai-pad/scores/
+      → 记分板持久化 ~/.bitcat/scores/
       → 胜利可触发庆祝舞蹈
 ```
 
@@ -249,7 +249,7 @@ AI 生成游戏配置的路径（Level 1）：
 用户聊天"我想玩个游戏"
   → 普通对话 Agent 自行决定调用 play_game 工具
   → 提交 GameDef 结构化参数（JsonSchema 约束）
-  → Rust 验证 bounds → 保存到 ~/.ai-pad/games/
+  → Rust 验证 bounds → 保存到 ~/.bitcat/games/
   → 同上流程启动游戏
 ```
 
@@ -416,8 +416,8 @@ AI 路径推迟到 Phase 2：
 
 - `game_engine.js` 增加 Memory 和 Catch，实现固定模板注册机制。
 - `config/minigames.yml` 增加三种游戏默认配置与难度预设。
-- `core/src/minigame.rs` 增加 `save_game()`、`load_game()`、`list_games()`，目录为 `~/.ai-pad/games/`，格式优先 YAML，规则保持可人工审查。
-- 新增分数持久化，目录为 `~/.ai-pad/scores/`，采用 append-only JSONL，方便 `rg` 检索和人工排查。
+- `core/src/minigame.rs` 增加 `save_game()`、`load_game()`、`list_games()`，目录为 `~/.bitcat/games/`，格式优先 YAML，规则保持可人工审查。
+- 新增分数持久化，目录为 `~/.bitcat/scores/`，采用 append-only JSONL，方便 `rg` 检索和人工排查。
 - `ActionBus` 在现有 `PlayGameDefault` 基础上增加 `PlayGame(GameDef)` 或 `PlayGamePreset(String)`，前端、手柄、AI 工具都走同一入口。
 
 验收标准：

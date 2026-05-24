@@ -1,4 +1,4 @@
-// 8Bit Cat 设置界面逻辑
+// BitCat 设置界面逻辑
 // - 启动拉取 cmd_settings_load
 // - 左侧 tab 切换 + dirty 检测
 // - 底部保存/取消/重置，Esc 关闭
@@ -63,7 +63,7 @@ async function mockInvoke(command) {
         name: "小顾",
         role: "独立开发者",
         preferences: ["回答先给结论", "代码改动保持克制"],
-        context: "正在打磨 8Bit Cat 的桌面体验。",
+        context: "正在打磨 BitCat 的桌面体验。",
         language: "zh-CN",
       },
       actions: {
@@ -108,7 +108,7 @@ async function mockInvoke(command) {
       },
       about: {
         version: "preview",
-        app_settings_path: "~/.ai-pad/app_settings.json",
+        app_settings_path: "~/.bitcat/app_settings.json",
         actions_yml_hint: "config/actions.yml",
         prompts_yml_hint: "config/prompts.yml",
       },
@@ -141,8 +141,8 @@ async function mockInvoke(command) {
       ],
       recent_sessions: [],
       paths: {
-        usage_jsonl: "~/.ai-pad/logs/token_usage.jsonl",
-        sessions_json: "~/.ai-pad/logs/token_sessions.json",
+        usage_jsonl: "~/.bitcat/logs/token_usage.jsonl",
+        sessions_json: "~/.bitcat/logs/token_sessions.json",
       },
     };
   }

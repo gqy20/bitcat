@@ -34,8 +34,8 @@
 
 1. **完整明细**：每次 API 调用的 input/output/cache token 都被记录
 2. **零侵入**：不改变现有函数签名的行为语义（返回值不变），只追加 side-effect
-3. **持久化**：append-only 行日志写入 `~/.ai-pad/logs/token_usage.jsonl`
-4. **汇总查询**：最近会话写入 `~/.ai-pad/logs/token_sessions.json`，按日统计由 helper 读取 JSONL
+3. **持久化**：append-only 行日志写入 `~/.bitcat/logs/token_usage.jsonl`
+4. **汇总查询**：最近会话写入 `~/.bitcat/logs/token_sessions.json`，按日统计由 helper 读取 JSONL
 5. **可扩展**：后续可对接费用计算、每日限额告警、模型路由建议
 
 ## 2.1 当前实现快照
@@ -117,14 +117,14 @@ pub struct TokenSession {
 
 ### 3.2 存储格式
 
-**行日志** `~/.ai-pad/logs/token_usage.jsonl`（append-only）：
+**行日志** `~/.bitcat/logs/token_usage.jsonl`（append-only）：
 
 ```json
 {"timestamp":"2026-05-13T14:30:00+08:00","session_id":"a1b2c3","category":"Chat","model":"claude-sonnet-4-20250514","input_tokens":850,"output_tokens":120,"total_tokens":970,"cache_read_tokens":800,"cache_write_tokens":0,"elapsed_ms":1234,"extra":null}
 {"timestamp":"2026-05-13T14:30:02+08:00","session_id":"a1b2c3","category":"Vision","model":"claude-sonnet-4-20250514","input_tokens":3500,"output_tokens":80,"total_tokens":3580,"cache_read_tokens":0,"cache_write_tokens":0,"elapsed_ms":800,"extra":null}
 ```
 
-**会话日志** `~/.ai-pad/logs/token_sessions.json`（覆盖写入，仅保留最近 200 条）：
+**会话日志** `~/.bitcat/logs/token_sessions.json`（覆盖写入，仅保留最近 200 条）：
 
 ```json
 {

@@ -31,9 +31,9 @@ function configuredPetAssetUrl(options = {}) {
   const fromQuery = params.get('petAsset');
   if (fromQuery) return normalizeBaseUrl(fromQuery);
   try {
-    const fromSession = window.sessionStorage && window.sessionStorage.getItem('ai-pad.petAssetUrl');
+    const fromSession = window.sessionStorage && window.sessionStorage.getItem('bitcat.petAssetUrl');
     if (fromSession) return normalizeBaseUrl(fromSession);
-    const fromLocal = window.localStorage && window.localStorage.getItem('ai-pad.petAssetUrl');
+    const fromLocal = window.localStorage && window.localStorage.getItem('bitcat.petAssetUrl');
     return normalizeBaseUrl(fromLocal) || (fallbackToDefault ? DEFAULT_PET_ASSET_URL : null);
   } catch (_) {
     return fallbackToDefault ? DEFAULT_PET_ASSET_URL : null;
@@ -50,7 +50,7 @@ async function configuredPetAssetUrlAsync() {
     if (!url) return DEFAULT_PET_ASSET_URL;
     const normalized = normalizeBaseUrl(url);
     window.__PET_ASSET_URL__ = normalized;
-    try { window.sessionStorage.setItem('ai-pad.petAssetUrl', normalized); } catch (_) {}
+    try { window.sessionStorage.setItem('bitcat.petAssetUrl', normalized); } catch (_) {}
     return normalized;
   } catch (error) {
     console.warn('[sprite-loader] pet asset setting unavailable:', error);

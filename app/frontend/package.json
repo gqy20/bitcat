@@ -1,1 +1,1 @@
-{"name": "8bit-frontend", "private": true, "scripts": {"test": "vitest run", "test:watch": "vitest"}, "devDependencies": {"vitest": "^3.0.0", "jsdom": "^26.0.0"}}
+{"name": "bitcat-frontend", "private": true, "scripts": {"test": "vitest run", "test:watch": "vitest"}, "devDependencies": {"vitest": "^3.0.0", "jsdom": "^26.0.0"}}

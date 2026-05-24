@@ -352,7 +352,7 @@ min_width: 480
     #[test]
     fn test_screenshot_base_dir_under_home() {
         let dir = screenshot_base_dir().unwrap();
-        assert!(dir.to_string_lossy().contains(".ai-pad"));
+        assert!(dir.to_string_lossy().contains(".bitcat"));
         assert!(dir.to_string_lossy().contains("screenshots"));
     }
 

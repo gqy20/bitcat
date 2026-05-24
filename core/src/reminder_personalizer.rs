@@ -31,11 +31,12 @@ pub struct ReminderNotificationCopy {
 }
 
 /// Visual and sound tone accepted by the notification island.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ReminderNotificationTone {
     Info,
     Success,
+    #[default]
     Warning,
     Danger,
 }
@@ -48,12 +49,6 @@ impl ReminderNotificationTone {
             Self::Warning => "warning",
             Self::Danger => "danger",
         }
-    }
-}
-
-impl Default for ReminderNotificationTone {
-    fn default() -> Self {
-        Self::Warning
     }
 }
 

@@ -58,7 +58,7 @@ pub fn precreate_notification_window(app: &AppHandle) -> Result<(), tauri::Error
         WINDOW_LABEL,
         WebviewUrl::App("notification.html".into()),
     )
-    .title("8Bit Notification")
+    .title("BitCat Notification")
     .inner_size(WINDOW_W, WINDOW_H)
     .decorations(false)
     .transparent(true)

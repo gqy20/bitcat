@@ -1,10 +1,10 @@
 #!/usr/bin/env sh
-# Install 8Bit Cat remote Agent Watch hooks on macOS/Linux.
+# Install BitCat remote Agent Watch hooks on macOS/Linux.
 # Reads Claude Code/Codex hook JSON locally and forwards it to the Windows monitor.
 set -eu
 
-MARKER="ai-pad-remote-watch"
-KNOWN_MARKERS="ai-pad-remote-watch,ai-pad-claude-code-watch,ai-pad-codex-watch"
+MARKER="bitcat-remote-watch"
+KNOWN_MARKERS="bitcat-remote-watch,bitcat-claude-code-watch,bitcat-codex-watch"
 HOST=""
 HOSTS=""
 PORT="5342"
@@ -89,7 +89,7 @@ else
   MACHINE="remote"
 fi
 
-HOOK_DIR="${HOME}/.ai-pad/hooks"
+HOOK_DIR="${HOME}/.bitcat/hooks"
 SENDER="${HOOK_DIR}/sender.sh"
 
 write_sender() {
@@ -230,7 +230,7 @@ if command -v python3 >/dev/null 2>&1; then
 import json, os, sys
 payload = json.loads(sys.stdin.read())
 print(json.dumps({
-  "schema": "ai-pad.agent-hook.v1",
+  "schema": "bitcat.agent-hook.v1",
   "source": os.environ.get("SOURCE", "claude_code"),
   "machine": os.environ.get("MACHINE", "remote"),
   "payload": payload,
@@ -241,7 +241,7 @@ else
 fi
 
 if [ -z "\$envelope" ]; then
-  envelope=\$(printf '{"schema":"ai-pad.agent-hook.v1","source":"%s","machine":"%s","payload":%s}' "\$SOURCE" "\$MACHINE" "\$raw")
+  envelope=\$(printf '{"schema":"bitcat.agent-hook.v1","source":"%s","machine":"%s","payload":%s}' "\$SOURCE" "\$MACHINE" "\$raw")
 fi
 
 for host in \$(printf '%s' "\$HOSTS" | tr ',' ' '); do
@@ -261,7 +261,7 @@ EOF
 backup_file() {
   path="$1"
   if [ -f "$path" ]; then
-    cp "$path" "${path}.ai-pad-backup.$(date +%Y%m%d-%H%M%S)"
+    cp "$path" "${path}.bitcat-backup.$(date +%Y%m%d-%H%M%S)"
   fi
 }
 
@@ -323,7 +323,7 @@ for event, matcher in events:
 with open(path, "w", encoding="utf-8") as f:
     json.dump(root, f, indent=2, ensure_ascii=False)
     f.write("\n")
-print(f"repaired Claude Code hooks: removed {removed} stale 8Bit Cat hook(s)")
+print(f"repaired Claude Code hooks: removed {removed} stale BitCat hook(s)")
 PY
   echo "installed Claude Code remote hooks"
 }
@@ -351,7 +351,7 @@ install_codex() {
       if (!skip) print
     }
     END {
-      if (removed) print "repaired Codex hooks: removed stale 8Bit Cat block(s)" > "/dev/stderr"
+      if (removed) print "repaired Codex hooks: removed stale BitCat block(s)" > "/dev/stderr"
     }
   ' "$config" > "$tmp"
   cat >> "$tmp" <<EOF
@@ -438,7 +438,7 @@ PY
     mv "$tmp" "${HOME}/.codex/config.toml"
   fi
   rm -f "$SENDER"
-  echo "removed 8Bit Cat remote hooks"
+  echo "removed BitCat remote hooks"
 }
 
 send_self_test() {
@@ -461,20 +461,20 @@ source = os.environ.get("AI_PAD_SOURCE", "codex")
 machine = os.environ.get("MACHINE", "remote")
 cwd = os.environ.get("CWD", "")
 print(json.dumps({
-  "schema": "ai-pad.agent-hook.v1",
+  "schema": "bitcat.agent-hook.v1",
   "source": source,
   "machine": machine,
   "payload": {
-    "session_id": "ai-pad-remote-self-test-" + machine,
+    "session_id": "bitcat-remote-self-test-" + machine,
     "hook_event_name": "UserPromptSubmit",
     "cwd": cwd,
-    "prompt": "8Bit Cat remote hook self-test"
+    "prompt": "BitCat remote hook self-test"
   }
 }, separators=(",", ":")))
 PY
 )"
   else
-    envelope="$(printf '{"schema":"ai-pad.agent-hook.v1","source":"%s","machine":"%s","payload":{"session_id":"ai-pad-remote-self-test-%s","hook_event_name":"UserPromptSubmit","cwd":"%s","prompt":"8Bit Cat remote hook self-test"}}' "$test_source" "$MACHINE" "$MACHINE" "$cwd")"
+    envelope="$(printf '{"schema":"bitcat.agent-hook.v1","source":"%s","machine":"%s","payload":{"session_id":"bitcat-remote-self-test-%s","hook_event_name":"UserPromptSubmit","cwd":"%s","prompt":"BitCat remote hook self-test"}}' "$test_source" "$MACHINE" "$MACHINE" "$cwd")"
   fi
   [ -n "$envelope" ] || {
     echo "remote self-test: skipped, could not build payload" >&2

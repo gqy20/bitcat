@@ -35,11 +35,11 @@ fn main() {
     }
 
     // ── 日志双写初始化 ──
-    // 文件层：~/.ai-pad/logs/app.log.YYYY-MM-DD，按日期滚动。
+    // 文件层：~/.bitcat/logs/app.log.YYYY-MM-DD，按日期滚动。
     // stderr 层：带颜色输出，方便终端实时查看。
     // 两层共享同一个 EnvFilter，默认级别 ai_pad_app=info, ai_pad_core=debug。
     let log_dir = ai_pad_core::logging::log_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from(".ai-pad-logs"));
+        .unwrap_or_else(|_| std::path::PathBuf::from(".bitcat-logs"));
     let _ = std::fs::create_dir_all(&log_dir);
     let native_crash_handler =
         native_crash::install_native_crash_handler(log_dir.clone()).map_err(|e| e.to_string());
@@ -112,7 +112,7 @@ fn log_startup_diagnostics(debug_console: bool) {
         exe = %exe,
         cwd = %cwd,
         log_dir = %log_dir,
-        "ai-pad startup diagnostics"
+        "bitcat startup diagnostics"
     );
 }
 

@@ -41,7 +41,7 @@ Bundled 资源包位于 `app/frontend/__fixtures__/pets/`：
    - 大尺寸 WebP 资源包会让发布包增加数 MB，需要决定哪些进入正式 bundle。
 
 2. **外部资源包目录**
-   - 推荐正式入口：`~/.ai-pad/pets/<id>/manifest.json`。
+   - 推荐正式入口：`~/.bitcat/pets/<id>/manifest.json`。
    - 当前 project-local `/__fixtures__/pets/<id>` 适合作为开发与 bundled 资源入口。
 
 3. **设置页预览与诊断**
@@ -58,5 +58,5 @@ Bundled 资源包位于 `app/frontend/__fixtures__/pets/`：
 
 1. 在打包前统计每个 bundled pack 的实际字节数，写入 release checklist。
 2. 给设置页增加“测试资源包”按钮，复用 `loadPetAssetPack()` 做 manifest/image 校验。
-3. 支持 `~/.ai-pad/pets/<id>` 用户目录扫描，并把结果合并到 preset 列表。
+3. 支持 `~/.bitcat/pets/<id>` 用户目录扫描，并把结果合并到 preset 列表。
 4. 根据发布包大小决定是否把大 WebP 资源包移到外部下载或开发 fixtures。

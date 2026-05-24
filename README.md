@@ -1,4 +1,4 @@
-# ai-pad / 8Bit Cat
+# BitCat
 
 蓝牙手柄驱动的桌面工具：8 位像素桌宠 + AI 对话（流式）+ 程序化提醒 + Agent Watch 任务看管 + 配置化弹出面板 + 语音输入 + 可选 TTS 朗读 + 截图/摄像头视觉分析 + 音乐响应表演 + 贴边吸附 + 迷你游戏。
 
@@ -89,7 +89,7 @@ git push origin v0.1.6
 
 1. BitBlt 捕获屏幕 + dHash 感知哈希去重 + 熄屏检测（`SM_MONITORISOFF` + 全黑帧采样）
 2. 缩放 → JPEG 编码 → Vision API（Anthropic Messages）分析
-3. 结果通过气泡显示，并保存到 `~/.ai-pad/screenshots/`（7 天自动清理）
+3. 结果通过气泡显示，并保存到 `~/.bitcat/screenshots/`（7 天自动清理）
 4. 屏幕活动摘要定时总结，默认取最近 30 条截图分析生成摘要，最多 20 条摘要注入 AI prompt
 5. **聊天输入聚焦时自动暂停截图**（避免浪费 Vision API 调用）
 6. 舞蹈播放期间同样暂停截图
@@ -107,7 +107,7 @@ git push origin v0.1.6
 摄像头观察默认关闭，可在设置页“外观与行为”中开启。开启后，应用会预创建隐藏的 `camera` WebView，由前端 `getUserMedia` 获取权限并按截图间隔低频采样，后端只接收 JPEG data URL、做节流和 Vision 分析。
 
 - 提示词位于 `config/prompts.yml` 的 `camera.prompt`，严格要求不做人脸身份识别，不推断敏感属性。
-- 观察记录保存到 `~/.ai-pad/camera/YYYY-MM-DD/`；默认只保存分析 JSON，勾选“保存摄像头帧”后才保存帧图片。
+- 观察记录保存到 `~/.bitcat/camera/YYYY-MM-DD/`；默认只保存分析 JSON，勾选“保存摄像头帧”后才保存帧图片。
 - 采样会避让 AI 对话、舞蹈、游戏等忙碌状态，避免打断主要交互。
 - 最近摄像头观察可作为上下文注入 AI，用于“我是不是离开座位了”这类低风险状态提醒。
 
@@ -119,8 +119,8 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
 
 1. AI 在普通对话中自行判断用户是否需要表演舞蹈
 2. AI 调用 `perform_dance` Tool，提交完整 `DanceDef`（`jump/spin/wave/shake/idle` + 时长 + repeat）
-3. 后端校验舞蹈名称、步数、单步时长和总时长后，YAML 持久化到 `~/.ai-pad/dances/`
-4. 项目内置默认舞蹈位于 `config/dances/`，用户/AI 生成舞蹈优先从 `~/.ai-pad/dances/` 读取
+3. 后端校验舞蹈名称、步数、单步时长和总时长后，YAML 持久化到 `~/.bitcat/dances/`
+4. 项目内置默认舞蹈位于 `config/dances/`，用户/AI 生成舞蹈优先从 `~/.bitcat/dances/` 读取
 
 ### 播放（前端）
 
@@ -168,7 +168,7 @@ Agent Watch 是桌宠侧的只读任务看管面板，用于观察 Claude Code /
 
 - Claude Code 与 Codex hook 会把会话事件包装成统一 envelope，转发给本地 Agent Watch TCP monitor。
 - 浮动任务栈展示最近会话、当前状态、运行中命令、hook 事件和离开提醒。
-- Hook doctor 可以清理旧 ai-pad hook、重写 PowerShell 转发脚本，并补齐缺失事件。
+- Hook doctor 可以清理旧 BitCat hook、重写 PowerShell 转发脚本，并补齐缺失事件。
 - 监控窗口与普通桌宠窗口解耦，游戏运行或桌宠表演不会阻塞会话事件记录。
 - 设置页提供远程 Mac/Linux 一键安装命令和只读 `/watch` 地址；地址发现已抽象为远程 endpoint，支持 LAN、Tailscale/tailnet、VPN 和其他可达地址，UI 默认脱敏显示，复制命令时使用完整地址并支持多地址重试。远程安装脚本会做一次自检上报，且远程看板和安装脚本可以分别关闭。
 
@@ -176,10 +176,10 @@ Agent Watch 是桌宠侧的只读任务看管面板，用于观察 Claude Code /
 
 Agent 可以调用提醒工具创建确定性的本地任务，例如“3 分钟后提醒我喝水”或“每小时提醒我休息”。提醒不依赖模型继续在线，到期后由本地调度器触发统一通知窗口。
 
-- 提醒存储在系统数据目录下的 `ai-pad/reminders/reminders.json`，Windows 通常是 `%APPDATA%/ai-pad/reminders/reminders.json`。
+- 提醒存储在系统数据目录下的 `bitcat/reminders/reminders.json`，Windows 通常是 `%APPDATA%/bitcat/reminders/reminders.json`。
 - store 使用当前版本 JSON 数组格式；读失败会在设置页暴露，并写入结构化诊断，不静默迁移旧格式或半写入文件。
 - 写入使用临时文件 + 原子替换，避免程序退出或机器睡眠时留下空文件。
-- 到期提醒、完成、稍后、取消、删除都会写入 `~/.ai-pad/logs/reminder_events.jsonl`。
+- 到期提醒、完成、稍后、取消、删除都会写入 `~/.bitcat/logs/reminder_events.jsonl`。
 - 设置页“提醒”Tab 可以刷新、完成、10 分钟后、取消或用垃圾桶删除记录；通知窗口里的动作也会回写 store 并刷新设置页。
 - `create_reminder` 创建失败时，工具结果会明确告诉 Agent 提醒没有创建成功，避免只在对话里口头承诺。
 
@@ -201,20 +201,20 @@ Agent 可以调用提醒工具创建确定性的本地任务，例如“3 分钟
 ### 第一层：短期对话记忆
 
 - 滚动窗口默认不按条数淘汰（`memory.max_entries: 0`），由 `max_context_chars` 控制注入长度；每次 AI 对话后记录 user_msg + ai_reply（按字符截断）
-- 持久化到 `~/.ai-pad/memory/chat_summary.json`
+- 持久化到 `~/.bitcat/memory/chat_summary.json`
 - 每次对话注入 prompt：`[最近对话记录]...[/最近对话记录]`
 
 ### 第二层：长期记忆
 
 - 对话结束后由 `AgentReaction.memory_candidates` 或 `remember` 工具写入长期记忆，Rust 只做 schema、长度、标签和重要度边界校验
 - 支持按 text/tag/source/min_importance 做 grep-first 候选召回，最多返回 20 条交给模型判断语义相关性
-- 持久化到 `~/.ai-pad/memory/long_term.jsonl`，一行一条当前有效记录，包含稳定 `id` 和 `deleted` 软删除字段
+- 持久化到 `~/.bitcat/memory/long_term.jsonl`，一行一条当前有效记录，包含稳定 `id` 和 `deleted` 软删除字段
 
 ### AI 聚合画像
 
 - 定期调用 Anthropic API 将未聚合的长期记忆条目浓缩为用户画像
 - 最大 400 字符，注入 prompt：`[关于主人]...[/关于主人]`
-- 存储到 `~/.ai-pad/memory/profile.json`
+- 存储到 `~/.bitcat/memory/profile.json`
 - 所有持久化使用原子写入（tempfile + rename）
 
 ## 设置窗口
@@ -248,7 +248,7 @@ Agent 可以调用提醒工具创建确定性的本地任务，例如“3 分钟
 ## 项目结构
 
 ```
-8bit/
+bitcat/
 ├── Cargo.toml              # workspace: members = ["core", "app", "xtask"], release LTO+strip
 ├── config/                 # 运行时配置目录（编译时嵌入 exe，exe 同目录可覆盖）
 │   ├── actions.yml         # 按键动作绑定
@@ -425,7 +425,7 @@ actions:
 ### config/prompts.yml — AI 提示词
 
 包含多段配置：
-- `agent.preamble` — AI 人设（默认：8Bit 像素猫）
+- `agent.preamble` — AI 人设（默认：BitCat 像素猫）
 - `vision.prompt` / `vision.prompt_multi` — 截图分析提示词（强调反幻觉）
 - `camera.prompt` — 摄像头观察提示词（保守描述，不做人脸身份或敏感属性推断）
 - `memory` / `memory_v2` — 短期记忆窗口、长期记忆检索和聚合参数
@@ -471,7 +471,7 @@ language: "zh-CN"         # 首选语言（空则自动判断）
 ```
 
 - max_tokens 统一 **256K**，可用 `ANTHROPIC_MAX_TOKENS` 环境变量覆盖
-- Agent 人设："8Bit" — 一只住在屏幕上的像素风小猫助手，活泼好奇，用中文交流
+- Agent 人设："BitCat" — 一只住在屏幕上的像素风小猫助手，活泼好奇，用中文交流
 - 内置 **15 个 Tool**：
 
 | Tool | 功能 |
@@ -493,11 +493,11 @@ language: "zh-CN"         # 首选语言（空则自动判断）
 - 按 Start 键触发对话，流式回复、工具生命周期和最终 `AgentReaction` 会通过 tagged `PetEvent` 驱动桌宠状态
 - 完成、稍后和删除提醒目前由通知窗口与设置页提供，不暴露为 Agent Tool
 - 对话记忆**两层存储**：短期滚动窗口（默认不限条数，由字符预算控制注入）+ 长期 JSONL grep-first 候选召回 + AI 聚合画像
-- 所有持久化到 `~/.ai-pad/memory/`
+- 所有持久化到 `~/.bitcat/memory/`
 - Agent 方法带 `#[instrument]` tracing span，完整记录工具调用链路
-- Token 用量写入 `~/.ai-pad/logs/token_usage.jsonl`，最近会话聚合写入 `~/.ai-pad/logs/token_sessions.json`
-- 工具运行时审计写入 `~/.ai-pad/logs/tool_events.jsonl`
-- 提醒生命周期写入 `~/.ai-pad/logs/reminder_events.jsonl`，包含创建失败、触发、完成、稍后、取消、删除和 store 读写异常
+- Token 用量写入 `~/.bitcat/logs/token_usage.jsonl`，最近会话聚合写入 `~/.bitcat/logs/token_sessions.json`
+- 工具运行时审计写入 `~/.bitcat/logs/tool_events.jsonl`
+- 提醒生命周期写入 `~/.bitcat/logs/reminder_events.jsonl`，包含创建失败、触发、完成、稍后、取消、删除和 store 读写异常
 
 ## 通信架构
 

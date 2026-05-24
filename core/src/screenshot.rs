@@ -3,7 +3,7 @@
 //! 本模块提供截图数据的纯算法和 I/O 操作，不依赖任何窗口系统调用。
 //! 与 `app/src/screenshot.rs` 分工：app 侧通过 BitBlt 捕获原始 BGRA 帧并调用
 //! Vision API，本模块负责 dHash 感知哈希去重、resize/JPEG 编码以及
-//! `~/.ai-pad/screenshots/` 下的按日存储和 7 天自动清理。
+//! `~/.bitcat/screenshots/` 下的按日存储和 7 天自动清理。
 //!
 //! 被截屏观察线程（`app::screenshot::screenshot_loop`）和
 //! [`screen_summary`](crate::screen_summary) 模块共同消费：
@@ -280,13 +280,13 @@ impl ScreenshotRecord {
     }
 }
 
-/// 返回 `~/.ai-pad/screenshots/` 路径。
+/// 返回 `~/.bitcat/screenshots/` 路径。
 pub fn screenshot_base_dir() -> Result<std::path::PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
-    Ok(home.join(".ai-pad").join("screenshots"))
+    Ok(home.join(".bitcat").join("screenshots"))
 }
 
-/// 确保当天日期子目录存在并返回其路径（如 `~/.ai-pad/screenshots/2025-06-01/`）。
+/// 确保当天日期子目录存在并返回其路径（如 `~/.bitcat/screenshots/2025-06-01/`）。
 pub fn ensure_today_dir() -> Result<std::path::PathBuf, String> {
     let base = screenshot_base_dir()?;
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();

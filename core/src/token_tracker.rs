@@ -2,7 +2,7 @@
 //!
 //! 记录每次 AI 调用的 token 消耗到 JSONL 文件，按会话聚合统计。
 //! 支持按日期、类别（Chat/Vision/ScreenSummary/MemoryAggregation）查询汇总。
-//! 数据持久化到 ~/.ai-pad/logs/ 目录，供设置界面展示用量统计。
+//! 数据持久化到 ~/.bitcat/logs/ 目录，供设置界面展示用量统计。
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -240,12 +240,12 @@ pub fn new_session_id() -> String {
     format!("{now:x}")
 }
 
-/// 返回 token 用量明细文件路径 `~/.ai-pad/logs/token_usage.jsonl`
+/// 返回 token 用量明细文件路径 `~/.bitcat/logs/token_usage.jsonl`
 pub fn token_usage_path() -> Result<PathBuf, String> {
     Ok(crate::logging::log_dir()?.join("token_usage.jsonl"))
 }
 
-/// 返回 token 会话聚合文件路径 `~/.ai-pad/logs/token_sessions.json`
+/// 返回 token 会话聚合文件路径 `~/.bitcat/logs/token_sessions.json`
 pub fn token_sessions_path() -> Result<PathBuf, String> {
     Ok(crate::logging::log_dir()?.join("token_sessions.json"))
 }

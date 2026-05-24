@@ -1,11 +1,11 @@
-# 8Bit Steam 发布调研与准备清单
+# BitCat Steam 发布调研与准备清单
 
 更新日期：2026-05-17  
-适用对象：`ai-pad / 8Bit Cat` 当前 Windows/Tauri 桌面应用形态
+适用对象：`BitCat` 当前 Windows/Tauri 桌面应用形态
 
 ## 结论先行
 
-8Bit 可以按 Steam 的“game or software/application”流程准备上架。Steam 不强制集成 Steamworks API；只要能通过 SteamPipe 上传可启动构建、完成商店页/定价/内容问卷、通过 Valve 审核，就可以发布。但这个项目有几类会被审核重点关注的能力：
+BitCat 可以按 Steam 的“game or software/application”流程准备上架。Steam 不强制集成 Steamworks API；只要能通过 SteamPipe 上传可启动构建、完成商店页/定价/内容问卷、通过 Valve 审核，就可以发布。但这个项目有几类会被审核重点关注的能力：
 
 - 实时生成式 AI：普通对话、Vision 截图分析、AI 工具调用、记忆写入。
 - 屏幕与剪贴板读取：后台截图、手动截图、最近截图记录、读剪贴板工具。
@@ -29,7 +29,7 @@
    SDK 里包含 SteamPipe/SteamCMD 上传工具，以及示例 `app_build*.vdf` / `depot_build*.vdf` 脚本。
 
 5. 准备 SteamPipe 构建与 depot。
-   depot 是交付给用户的一组文件。Windows 首发可以只做一个 Windows 64-bit depot：`ai-pad-app.exe` + `config/*.yml` + 必要资源/许可证文件。SDL2 当前静态链接，不需要额外复制 `SDL2.dll`。
+   depot 是交付给用户的一组文件。Windows 首发可以只做一个 Windows 64-bit depot：`bitcat.exe` + `config/*.yml` + 必要资源/许可证文件。SDL2 当前静态链接，不需要额外复制 `SDL2.dll`。
 
 6. 完成商店页、定价和内容问卷。
    商店页、提议定价、产品构建都要给 Valve 审核。内容问卷里生成式 AI 部分必须详细描述“开发中使用的 AI”和“运行时 live-generated AI”，并说明 guardrails。
@@ -73,7 +73,7 @@ Steam depot 不建议上传 zip。建议新增一个 `xtask package-steam` 或�
 
 ```text
 target/steam-content/
-  ai-pad-app.exe
+  bitcat.exe
   config/
     actions.yml
     buttons.yml
@@ -86,10 +86,10 @@ target/steam-content/
 
 Steamworks 里设置：
 
-- Launch option：`ai-pad-app.exe`
+- Launch option：`bitcat.exe`
 - OS：Windows
 - Architecture：64-bit
-- Install folder：建议稳定为 `8bit` 或 `ai-pad`
+- Install folder：建议稳定为 `bitcat` 或 `BitCat`
 - Depot：首发一个 Windows depot 即可
 - Branches：`default` 用于正式，`beta` / `internal` 用于测试
 
@@ -99,7 +99,7 @@ Steamworks 里设置：
 "AppBuild"
 {
   "AppID" "YOUR_APP_ID"
-  "Desc" "8Bit Windows release v0.1.x"
+  "Desc" "BitCat Windows release v0.1.x"
   "ContentRoot" "..\\content\\"
   "BuildOutput" "..\\output\\"
   "Depots"
@@ -120,23 +120,23 @@ Steamworks 里设置：
 上传命令形态：
 
 ```powershell
-tools\ContentBuilder\builder\steamcmd.exe +login <build_account> +run_app_build ..\scripts\app_build_8bit.vdf +quit
+tools\ContentBuilder\builder\steamcmd.exe +login <build_account> +run_app_build ..\scripts\app_build_bitcat.vdf +quit
 ```
 
 首次建议先上传到私有 beta branch，在 Steam 客户端里安装运行，验证这些点：
 
 - 非开发机可启动，WebView2 依赖表现正常。
 - `config/*.yml` 能从 exe 同目录加载。
-- `~/.ai-pad/` 下日志、截图、记忆、设置写入正常。
+- `~/.bitcat/` 下日志、截图、记忆、设置写入正常。
 - 托盘、透明窗口、置顶、全局热键、手柄 SDL2 轮询可用。
 - 没有开发 API Key、`.env`、日志、测试产物、`.pdb` 被打进 depot。
 
 ## Steamworks API：首发可不接，但有三项值得评估
 
-Steam 明确说 Steamworks API 不是发布必需项，但推荐接入。8Bit 首发可以先不接 Steamworks API，把风险集中在核心体验上。后续优先级：
+Steam 明确说 Steamworks API 不是发布必需项，但推荐接入。BitCat 首发可以先不接 Steamworks API，把风险集中在核心体验上。后续优先级：
 
 1. Steam Cloud
-   用于同步设置、用户画像、长期记忆和自定义舞蹈。当前数据主要在 `~/.ai-pad/`，Auto-Cloud 对这种路径不一定最顺手；建议先把可同步用户数据迁到 `%APPDATA%/ai-pad/` 或 `%LOCALAPPDATA%/ai-pad/`，再配置 Auto-Cloud。不要同步截图原图、token 日志、临时日志。
+   用于同步设置、用户画像、长期记忆和自定义舞蹈。当前数据主要在 `~/.bitcat/`，Auto-Cloud 对这种路径不一定最顺手；建议先把可同步用户数据迁到 `%APPDATA%/bitcat/` 或 `%LOCALAPPDATA%/bitcat/`，再配置 Auto-Cloud。不要同步截图原图、token 日志、临时日志。
 
 2. Steam Input
    当前用 SDL2 直接读手柄，能跑即可。若要让 Steam Deck/手柄配置体验更原生，再接 Steam Input action manifest。
@@ -164,12 +164,12 @@ Steam 明确说 Steamworks API 不是发布必需项，但推荐接入。8Bit �
 
 - 胶囊图只放产品美术、产品名、官方副标题；不要放评分、奖项、折扣文案、跨产品宣传或杂项营销字。
 - 截图要展示真实产品运行画面，不要用概念图、预渲染静帧、奖项/营销文案图。
-- 对 8Bit 来说，截图应覆盖：桌宠状态、聊天气泡、设置页、手柄面板、截图观察权限提示、小游戏/舞蹈。
+- 对 BitCat 来说，截图应覆盖：桌宠状态、聊天气泡、设置页、手柄面板、截图观察权限提示、小游戏/舞蹈。
 - Trailer 建议 45-75 秒，展示真实桌面使用：出现宠物、手柄触发、AI 对话、手动截图、设置里关闭/开启敏感功能。
 
 ## 定价与折扣
 
-Steam 支持多币种定价，初始定价和价格调整会由 Valve 审核，通常 1-2 个工作日。8Bit 当前更像小型桌面软件/玩具，建议先做同类竞品价格带调研后再定价。
+Steam 支持多币种定价，初始定价和价格调整会由 Valve 审核，通常 1-2 个工作日。BitCat 当前更像小型桌面软件/玩具，建议先做同类竞品价格带调研后再定价。
 
 可选 launch discount：
 
@@ -199,7 +199,7 @@ Steam 支持多币种定价，初始定价和价格调整会由 Valve 审核，�
 - 不随包发布 `.env` 或开发者 API Key。
 - Store page 不承诺尚未完成的能力；未来功能写成 roadmap/公告，不写成 launch features。
 
-## 8Bit 发布前技术清单
+## BitCat 发布前技术清单
 
 P0，发布前必须：
 
@@ -217,7 +217,7 @@ P1，强烈建议：
 
 - Steam beta branch 自动上传脚本。
 - Auto-update 只走 Steam，不在应用内自更新。
-- 将可同步用户数据从 `~/.ai-pad` 迁到更标准的 AppData 路径，便于 Steam Cloud。
+- 将可同步用户数据从 `~/.bitcat` 迁到更标准的 AppData 路径，便于 Steam Cloud。
 - 添加崩溃日志/诊断导出，但用户可控。
 - 建立发布回滚流程：保留上一个 stable build，可在 Steamworks builds 页面回滚。
 
@@ -232,7 +232,7 @@ P2，后续增强：
 
 短描述方向：
 
-> 8Bit 是一只住在桌面角落的像素 AI 桌宠。它可以用手柄唤起聊天、快捷面板、小游戏和舞蹈，也可以在你允许时观察屏幕并帮你整理上下文。
+> BitCat 是一只住在桌面角落的像素 AI 桌宠。它可以用手柄唤起聊天、快捷面板、小游戏和舞蹈，也可以在你允许时观察屏幕并帮你整理上下文。
 
 标签方向：
 

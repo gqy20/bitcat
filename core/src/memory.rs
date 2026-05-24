@@ -5,7 +5,7 @@
 //! 人工审查和大模型共同读取。记忆检索先用标签、来源、重要度和文本包含等可解释条件筛选候选，
 //! 再交给大模型判断压缩。
 //!
-//! 三层各自持久化到 `~/.ai-pad/memory/`：
+//! 三层各自持久化到 `~/.bitcat/memory/`：
 //! - **MemoryStore** — `chat_summary.json`，滚动窗口短期记忆，直接注入 prompt
 //! - **LongTermMemory** — `long_term.jsonl`，原始对话按需候选召回注入
 //! - **ProfileStore** — `profile.json`，AI 定期聚合的用户画像摘要
@@ -88,11 +88,11 @@ impl Default for MemoryConfig {
 
 // ---- 存储路径 ----
 
-/// 返回短期记忆文件路径 `~/.ai-pad/memory/chat_summary.json`。
+/// 返回短期记忆文件路径 `~/.bitcat/memory/chat_summary.json`。
 fn memory_file_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
     Ok(home
-        .join(".ai-pad")
+        .join(".bitcat")
         .join("memory")
         .join("chat_summary.json"))
 }
@@ -312,10 +312,10 @@ pub struct LongTermReviewEntry {
     pub ai_reply: String,
 }
 
-/// 返回长期记忆文件路径 `~/.ai-pad/memory/long_term.jsonl`。
+/// 返回长期记忆文件路径 `~/.bitcat/memory/long_term.jsonl`。
 fn long_term_file_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
-    Ok(home.join(".ai-pad").join("memory").join("long_term.jsonl"))
+    Ok(home.join(".bitcat").join("memory").join("long_term.jsonl"))
 }
 
 impl LongTermMemory {
@@ -753,10 +753,10 @@ struct ProfileAggregation {
     pub profile_text: String,
 }
 
-/// 返回用户画像文件路径 `~/.ai-pad/memory/profile.json`。
+/// 返回用户画像文件路径 `~/.bitcat/memory/profile.json`。
 fn profile_file_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
-    Ok(home.join(".ai-pad").join("memory").join("profile.json"))
+    Ok(home.join(".bitcat").join("memory").join("profile.json"))
 }
 
 impl ProfileStore {
@@ -1025,15 +1025,15 @@ mod tests {
             entries: Vec::new(),
         };
         let candidate = MemoryCandidate::explicit(
-            "用户正在开发 8Bit Cat 桌宠项目".into(),
+            "用户正在开发 BitCat 桌宠项目".into(),
             4,
             vec!["project".into()],
         );
         store.record_candidate(&candidate, "我们继续项目", "没问题", 10);
 
-        let ctx = store.retrieve("8Bit Cat", 500);
+        let ctx = store.retrieve("BitCat", 500);
 
-        assert!(ctx.contains("用户正在开发 8Bit Cat 桌宠项目"));
+        assert!(ctx.contains("用户正在开发 BitCat 桌宠项目"));
         assert!(ctx.contains("tags=[project]"));
     }
 
@@ -1246,7 +1246,7 @@ mod tests {
     fn test_memory_file_path() {
         let p = memory_file_path().unwrap();
         let s = p.to_string_lossy();
-        assert!(s.contains(".ai-pad"), "应在 .ai-pad 下");
+        assert!(s.contains(".bitcat"), "应在 .bitcat 下");
         assert!(s.contains("memory"), "应有 memory 子目录");
         assert!(s.ends_with("chat_summary.json"));
     }
@@ -1271,7 +1271,7 @@ mod tests {
     #[test]
     fn test_save_and_load_roundtrip() {
         let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join(".ai-pad").join("memory");
+        let dir = tmp.path().join(".bitcat").join("memory");
 
         let mut store = MemoryStore {
             entries: Vec::new(),
@@ -1299,7 +1299,7 @@ mod tests {
             entries: Vec::new(),
         };
         store.record("我叫小明", "你好小明！", 100);
-        store.record("我在做 8Bit 项目", "Rust 桌宠听起来好酷", 100);
+        store.record("我在做 BitCat 项目", "Rust 桌宠听起来好酷", 100);
 
         assert_eq!(store.entries.len(), 2);
         assert!(!store.entries[0].aggregated);
@@ -1308,7 +1308,7 @@ mod tests {
         let json = serde_json::to_string(&store).unwrap();
         let back: LongTermMemory = serde_json::from_str(&json).unwrap();
         assert_eq!(back.entries.len(), 2);
-        assert_eq!(back.entries[1].user_msg, "我在做 8Bit 项目");
+        assert_eq!(back.entries[1].user_msg, "我在做 BitCat 项目");
     }
 
     #[test]
@@ -1363,13 +1363,13 @@ mod tests {
         let mut store = LongTermMemory {
             entries: Vec::new(),
         };
-        store.record("我在做 8Bit Cat 项目", "Rust 桌宠好酷", 100);
+        store.record("我在做 BitCat 项目", "Rust 桌宠好酷", 100);
         store.record("今天天气不错", "是呢，适合出门", 100);
         store.record("帮我提醒明天交 PR", "收到，明天会提醒的", 100);
 
-        let ctx = store.retrieve("8Bit 项目进展", 500);
+        let ctx = store.retrieve("BitCat 项目进展", 500);
         assert!(ctx.contains("[memory candidates]"));
-        assert!(ctx.contains("8Bit Cat"));
+        assert!(ctx.contains("BitCat"));
         assert!(ctx.contains("[/memory candidates]"));
     }
 
@@ -1449,13 +1449,13 @@ mod tests {
     #[test]
     fn test_profile_build_context_format() {
         let store = ProfileStore {
-            profile_text: "主人叫小明，正在开发 8Bit Cat".into(),
+            profile_text: "主人叫小明，正在开发 BitCat".into(),
             updated_at: "2026-05-12".into(),
         };
         let ctx = store.build_context();
         assert!(ctx.contains("[关于主人]"));
         assert!(ctx.contains("小明"));
-        assert!(ctx.contains("8Bit Cat"));
+        assert!(ctx.contains("BitCat"));
         assert!(ctx.contains("[/关于主人]"));
     }
 
@@ -1492,7 +1492,7 @@ mod tests {
                     "id": "toolu_test",
                     "name": "submit",
                     "input": {
-                        "profile_text": "主人叫小明，程序员，正在做 8Bit Cat 项目。"
+                        "profile_text": "主人叫小明，程序员，正在做 BitCat 项目。"
                     }
                 }]
             })))
@@ -1550,7 +1550,7 @@ mod tests {
                     "id": "toolu_test",
                     "name": "submit",
                     "input": {
-                        "profile_text": "主人叫小明，程序员。正在做 8Bit Cat 项目（Rust）。"
+                        "profile_text": "主人叫小明，程序员。正在做 BitCat 项目（Rust）。"
                     }
                 }]
             })))

@@ -309,7 +309,7 @@ pub fn precreate_bubble_window(app: &AppHandle) -> Result<(), tauri::Error> {
         return Ok(());
     }
     WebviewWindowBuilder::new(app, "bubble", WebviewUrl::App("bubble.html".into()))
-        .title("8Bit Bubble")
+        .title("BitCat Bubble")
         .inner_size(BUBBLE_W, BUBBLE_H)
         .min_inner_size(220.0, 104.0)
         .max_inner_size(420.0, 680.0)
@@ -504,7 +504,7 @@ pub fn position_above_pet(app: &AppHandle, bubble: &tauri::WebviewWindow) {
 /// 按需创建气泡窗口（不可见、置顶、透明），用于首次 show 前的懒初始化。
 pub fn create_bubble_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
     WebviewWindowBuilder::new(app, "bubble", WebviewUrl::App("bubble.html".into()))
-        .title("8Bit Bubble")
+        .title("BitCat Bubble")
         .inner_size(BUBBLE_W, BUBBLE_H)
         .min_inner_size(220.0, 104.0)
         .max_inner_size(420.0, 680.0)

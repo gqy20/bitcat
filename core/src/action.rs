@@ -92,7 +92,7 @@ impl ActionConfig {
         if let Ok(old) = fs::read_to_string(&target) {
             let _ = fs::write(target.with_extension("yml.bak"), old);
         }
-        let header = "# 由 8Bit Cat 设置界面生成\n\
+        let header = "# 由 BitCat 设置界面生成\n\
                       # 手动编辑仍然生效，但下次保存设置会覆盖注释\n\n";
         let body = serde_yaml::to_string(self).map_err(|e| e.to_string())?;
         fs::write(&target, format!("{header}{body}"))

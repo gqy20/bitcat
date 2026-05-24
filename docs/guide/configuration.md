@@ -1,8 +1,8 @@
 # 配置详解
 
-8Bit Cat 的配置分两类：
+BitCat 的配置分两类：
 
-- 设置页保存到 `~/.ai-pad/app_settings.json`，适合 API、外观、截图间隔、TTS 等用户偏好。
+- 设置页保存到 `~/.bitcat/app_settings.json`，适合 API、外观、截图间隔、TTS 等用户偏好。
 - `config/*.yml` 放在 exe 同目录或项目 `config/` 下，适合按键、面板、提示词和用户画像。
 
 配置读取顺序：
@@ -26,7 +26,7 @@ exe 同目录/config > 当前工作目录/config > 内置默认配置
 | Model | 对话、Vision、Extractor 使用的模型名 |
 | Max Tokens | 最大输出 token |
 
-设置页会显示合并后的当前有效值。写入目标是 `~/.ai-pad/app_settings.json`，不会修改 `~/.claude/settings.json`。
+设置页会显示合并后的当前有效值。写入目标是 `~/.bitcat/app_settings.json`，不会修改 `~/.claude/settings.json`。
 
 ### 记忆与画像
 
@@ -42,7 +42,7 @@ language: ""
 
 显式画像优先级高于 AI 自动聚合画像。只要 `user.yml` 有内容，AI 就会优先看到 `[关于主人]...[/关于主人]` 中的显式信息；全空时才回退到自动聚合画像。
 
-同一页还能审查长期记忆。长期记忆来自 `AgentReaction.memory_candidates` 或 `remember` 工具，保存在 `~/.ai-pad/memory/long_term.jsonl`，支持按条删除，删除使用软删除字段 `deleted: true`。
+同一页还能审查长期记忆。长期记忆来自 `AgentReaction.memory_candidates` 或 `remember` 工具，保存在 `~/.bitcat/memory/long_term.jsonl`，支持按条删除，删除使用软删除字段 `deleted: true`。
 
 ### 按键与操作
 
@@ -90,12 +90,12 @@ language: ""
 
 ## Agent Watch hooks
 
-Agent 看管页可以修复 Claude Code / Codex hook。修复操作会写入 8Bit Cat 自己的 PowerShell hook 脚本，并合并到对应的用户配置：
+Agent 看管页可以修复 Claude Code / Codex hook。修复操作会写入 BitCat 自己的 PowerShell hook 脚本，并合并到对应的用户配置：
 
 - Claude Code：`~/.claude/settings.json`
 - Codex：`$CODEX_HOME/config.toml` 或 `~/.codex/config.toml`
 
-修复是可重复执行的，只清理带 8Bit Cat `ai_pad_marker` 的 hook，不会改动用户或其他工具写入的 hook。详细规则见 [Agent Watch Hooks](agent-watch-hooks.md)。
+修复是可重复执行的，只清理带 BitCat `ai_pad_marker` 的 hook，不会改动用户或其他工具写入的 hook。详细规则见 [Agent Watch Hooks](agent-watch-hooks.md)。
 
 ## config/actions.yml
 

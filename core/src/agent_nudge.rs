@@ -455,14 +455,14 @@ mod tests {
         let mut s = session(AgentStatus::Waiting, 10);
         s.machine = Some("qy113".into());
         s.source = AgentSource::Codex;
-        s.workspace = "D:\\C\\Desktop\\ai\\8bit".into();
+        s.workspace = "D:\\C\\Desktop\\ai\\bitcat".into();
         s.tool_name = Some("Patch".into());
         let decision = policy.evaluate(&s, &settings, 20);
         match decision {
             AgentNudgeDecision::Send(nudge) => {
                 assert_eq!(nudge.kind, AgentNudgeKind::WaitingForUser);
-                assert!(nudge.message.contains("qy113 / 8bit / Codex"));
-                assert!(nudge.message.contains("位置：D:\\C\\Desktop\\ai\\8bit"));
+                assert!(nudge.message.contains("qy113 / bitcat / Codex"));
+                assert!(nudge.message.contains("位置：D:\\C\\Desktop\\ai\\bitcat"));
                 assert!(nudge.message.contains("任务：Patch"));
             }
             other => panic!("expected waiting nudge, got {other:?}"),

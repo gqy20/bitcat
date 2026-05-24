@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tracing::warn;
 
-/// 写入 `~/.ai-pad/logs/tool_events.jsonl` 的工具事件记录。
+/// 写入 `~/.bitcat/logs/tool_events.jsonl` 的工具事件记录。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolEventRecord {
     pub timestamp: String,
@@ -46,7 +46,7 @@ impl ToolEventRecord {
     }
 }
 
-/// 返回工具事件 JSONL 路径 `~/.ai-pad/logs/tool_events.jsonl`。
+/// 返回工具事件 JSONL 路径 `~/.bitcat/logs/tool_events.jsonl`。
 pub fn tool_events_path() -> Result<PathBuf, String> {
     Ok(crate::logging::log_dir()?.join("tool_events.jsonl"))
 }

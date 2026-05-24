@@ -6,13 +6,13 @@
 
 `oc-claw` 的源码证明了一条很有价值的产品路线：桌宠不只是自己对话，也可以看管其他 AI 编码 Agent。它通过 Claude Code hook、会话 JSONL、权限事件和前端 Mini 面板，把编码 Agent 的状态压成 `working / waiting / done / idle`，再驱动宠物动画和提醒。
 
-8Bit Cat 的技术底座不同：当前是 Windows-first Rust workspace、Tauri 2 多透明窗口、Vanilla JS Canvas、SDL2 手柄输入和 rig Agent。第一版应参考 `oc-claw` 的状态模型，但不照搬 React/Vite 前端、巨型 `lib.rs` 或多工具混合实现。
+BitCat 的技术底座不同：当前是 Windows-first Rust workspace、Tauri 2 多透明窗口、Vanilla JS Canvas、SDL2 手柄输入和 rig Agent。第一版应参考 `oc-claw` 的状态模型，但不照搬 React/Vite 前端、巨型 `lib.rs` 或多工具混合实现。
 
 新增产品动机：用户在让 AI 编码 Agent 工作时，常会不自觉盯着终端或对话窗口等结果。多数时间 Agent 正在推理、编辑或跑命令，用户并不需要持续观看；真正需要用户注意的是权限请求、输入请求、失败和完成。桌宠应承担“替你看着”的角色：Agent 自己干活时提醒用户可以离开屏幕做点别的，轮到用户处理时再叫回来。
 
 ## 目标
 
-让 8Bit Cat 成为 Claude Code 的“桌宠看管员”：
+让 BitCat 成为 Claude Code 的“桌宠看管员”：
 
 - Claude Code 工作时，猫进入专注/工作状态。
 - Claude Code 持续工作且暂不需要用户时，猫提醒“我帮你盯着，你可以先去做点别的”。
@@ -308,7 +308,7 @@ pub struct AgentSessionView {
 Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提醒，必须可追踪。
 
 ```text
-~/.ai-pad/logs/
+~/.bitcat/logs/
   agent_watch_events.jsonl    # 归一后的 hook event，不保存大 payload
   agent_watch_sessions.jsonl  # 每次事件后的 session 快照，用于调试当前任务栈
   agent_watch_nudges.jsonl    # 提醒决策：sent / skipped / cooled_down / gated
@@ -342,10 +342,10 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
 
 ### Hook 安装安全
 
-安装 `~/.claude/hooks/ai-pad-hook.ps1` 和合并 `~/.claude/settings.json` 时：
+安装 `~/.claude/hooks/bitcat-hook.ps1` 和合并 `~/.claude/settings.json` 时：
 
 1. 读取并解析 settings JSON，解析失败时直接返回错误，不覆盖。
-2. 写入前创建带时间戳备份，例如 `settings.ai-pad-backup-20260515-143000.json`。
+2. 写入前创建带时间戳备份，例如 `settings.bitcat-backup-20260515-143000.json`。
 3. 只增删 ai-pad 自己标记的 hook，不改动其他 hook。
 4. 写入使用临时文件 + rename。
 5. hook 脚本里端口、版本、安装来源写明注释，方便用户人工检查。
@@ -388,14 +388,14 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
    - 调用 core parser，更新 `Arc<Mutex<HashMap<String, AgentSession>>>`。
    - 调用 `AgentNudgePolicy` 生成提醒，并通过 `SharedPetEventBus` 发出。
    - emit `agent-session-update` 到前端。
-   - 追加 `~/.ai-pad/logs/agent_watch_events.jsonl`。
-   - 追加 `~/.ai-pad/logs/agent_watch_sessions.jsonl`，用于调试浮窗任务栈。
-   - 可选追加 `~/.ai-pad/logs/agent_watch_nudges.jsonl`，用于调试提醒去重和冷却。
+   - 追加 `~/.bitcat/logs/agent_watch_events.jsonl`。
+   - 追加 `~/.bitcat/logs/agent_watch_sessions.jsonl`，用于调试浮窗任务栈。
+   - 可选追加 `~/.bitcat/logs/agent_watch_nudges.jsonl`，用于调试提醒去重和冷却。
 
 5. 新增 `app/src/claude_hooks.rs`
-   - 写入 `~/.claude/hooks/ai-pad-hook.ps1`。
+   - 写入 `~/.claude/hooks/bitcat-hook.ps1`。
    - 合并 `~/.claude/settings.json` 时遵循 Claude Code 的嵌套 hooks schema：`event -> [{ matcher?, hooks: [...] }]`。
-   - 安装入口已升级为 Hook Doctor：重复点击会检查并修复 8Bit Cat 自己写入的 hook，清理旧版/重复/无效事件里的 `ai_pad_marker = "ai-pad-claude-code-watch"`，再写入当前标准配置。
+   - 安装入口已升级为 Hook Doctor：重复点击会检查并修复 BitCat 自己写入的 hook，清理旧版/重复/无效事件里的 `ai_pad_marker = "bitcat-claude-code-watch"`，再写入当前标准配置。
    - 只增删带 `ai_pad_marker` 的桌宠 hook，不覆盖用户或其他工具的 hook；如果配置结构异常到无法安全合并，则返回错误而不是强改。
    - 合并更新 `~/.claude/settings.json` 的 hook 配置。
    - PowerShell 脚本必须：
@@ -622,7 +622,7 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
   - `PermissionRequest → Waiting`
   - `Stop → Done`
 - Windows session path 测试：
-  - `D:\C\Desktop\ai\8bit` → Claude project dir 格式。
+  - `D:\C\Desktop\ai\bitcat` → Claude project dir 格式。
 - preview 截断测试：
   - 中文按字符截断，不按字节切。
 - `AgentNudgePolicy` 测试：
@@ -637,7 +637,7 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
 
 - hook config merge 测试：
   - 保留用户已有 hooks。
-  - 去重旧 ai-pad hook。
+  - 去重旧 BitCat hook。
   - settings 文件损坏时不覆盖，返回错误。
 - TCP event 处理：
   - 收到事件后更新 session map。

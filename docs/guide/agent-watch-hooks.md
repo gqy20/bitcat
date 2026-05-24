@@ -1,6 +1,6 @@
 # Agent Watch Hooks
 
-Agent Watch observes Claude Code and Codex through read-only hooks. The hook scripts only forward local JSON events to the 8Bit Cat monitor on `127.0.0.1:5342`; they do not approve permissions, modify prompts, or control the external agent.
+Agent Watch observes Claude Code and Codex through read-only hooks. The hook scripts only forward local JSON events to the BitCat monitor on `127.0.0.1:5342`; they do not approve permissions, modify prompts, or control the external agent.
 
 For reachable macOS/Linux machines watched over LAN, Tailscale/tailnet, VPN, or another routable address, see [Remote Agent Watch](remote-agent-watch.md). Remote hooks send the same event shape to the Windows monitor with an additional `machine` field.
 
@@ -9,25 +9,25 @@ For reachable macOS/Linux machines watched over LAN, Tailscale/tailnet, VPN, or 
 Claude Code:
 
 - Settings: `~/.claude/settings.json`
-- Script: `~/.claude/hooks/ai-pad-hook.ps1`
-- Marker: `ai-pad-claude-code-watch`
+- Script: `~/.claude/hooks/bitcat-hook.ps1`
+- Marker: `bitcat-claude-code-watch`
 
 Codex:
 
 - Config: `$CODEX_HOME/config.toml`, or `~/.codex/config.toml`
-- Script: `~/.codex/hooks/ai-pad-codex-hook.ps1`
-- Marker: `ai-pad-codex-watch`
+- Script: `~/.codex/hooks/bitcat-codex-hook.ps1`
+- Marker: `bitcat-codex-watch`
 
 ## Hook Doctor
 
 The settings page buttons are repair operations. They are safe to click repeatedly.
 
-On each repair, 8Bit Cat:
+On each repair, BitCat:
 
 - rewrites its own PowerShell hook script if the generated content changed;
 - backs up the existing settings/config file before saving;
-- removes stale or duplicate hooks that contain the 8Bit Cat marker;
-- removes old 8Bit Cat hooks from invalid event names, such as the removed `SubagentStopFailure` event;
+- removes stale or duplicate hooks that contain the BitCat marker;
+- removes old BitCat hooks from invalid event names, such as the removed `SubagentStopFailure` event;
 - installs the current standard hook set.
 
 The repair is marker-scoped. It only removes or replaces hooks containing `ai_pad_marker`. User hooks and hooks installed by other tools are preserved, including hooks that share the same event or matcher.
@@ -71,4 +71,4 @@ Codex hooks:
 
 Claude Code or VS Code may need a restart after repair because running agent processes may have already loaded their hook configuration.
 
-Codex may additionally require trusting newly discovered hooks in the Codex UI or CLI before they execute. If Codex shows `hooks need review`, run `/hooks`, enter each 8Bit Cat hook item, and press `T` to trust it. The repair and remote install commands write the hook config but do not bypass Codex's trust model.
+Codex may additionally require trusting newly discovered hooks in the Codex UI or CLI before they execute. If Codex shows `hooks need review`, run `/hooks`, enter each BitCat hook item, and press `T` to trust it. The repair and remote install commands write the hook config but do not bypass Codex's trust model.

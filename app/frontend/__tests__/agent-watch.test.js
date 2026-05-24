@@ -159,11 +159,11 @@ describe('agent watch metadata', () => {
       sessions: [{
         session_id: 's3',
         source: 'codex',
-        workspace_name: '8bit',
+        workspace_name: 'bitcat',
         status: 'done',
         display: {
           action_label: 'Shell',
-          project: '8bit',
+          project: 'bitcat',
           source_label: 'Codex',
           age_label: '17s',
           tone: 'done',
@@ -192,9 +192,9 @@ describe('agent watch metadata', () => {
       sessions: [{
         session_id: 's-header',
         source: 'codex',
-        workspace_name: '8bit',
+        workspace_name: 'bitcat',
         status: 'working',
-        display: { action_label: 'Patch', project: '8bit', source_label: 'Codex' },
+        display: { action_label: 'Patch', project: 'bitcat', source_label: 'Codex' },
       }],
     });
 
@@ -214,13 +214,13 @@ describe('agent watch metadata', () => {
         session_id: 's2',
         source: 'codex',
         machine: '',
-        workspace_name: '8bit',
+        workspace_name: 'bitcat',
         status: 'done',
         display: {
           action_label: 'Shell',
           headline: 'Done',
           detail: 'Task finished',
-          project: '8bit',
+          project: 'bitcat',
           source_label: 'Codex',
           age_label: '17s',
           tone: 'done',
@@ -230,7 +230,7 @@ describe('agent watch metadata', () => {
 
     const card = dom.window.document.querySelector('.task-card');
 
-    expect(card.querySelector('.task-title')?.textContent).toBe('8bit');
+    expect(card.querySelector('.task-title')?.textContent).toBe('bitcat');
     expect(card.querySelector('.task-meta')?.textContent).toContain('Shell');
     expect(card.textContent).not.toContain('Done');
     expect(card.textContent).not.toContain('Task finished');
@@ -258,20 +258,20 @@ describe('agent watch metadata', () => {
     const view = dom.window.__agentWatchTest.viewOf({
       source: 'codex',
       machine: 'qy113',
-      workspace_name: '8bit',
+      workspace_name: 'bitcat',
       status: 'working',
       status_label: 'Working',
       display: {
         action_label: 'Shell',
         headline: 'Run remote install self-check',
         detail: 'scripts/remote-install.sh',
-        project: '8bit',
+        project: 'bitcat',
       },
       age_sec: 12,
     });
 
     expect(view.machine).toBe('qy113');
-    expect(view.project).toBe('8bit');
+    expect(view.project).toBe('bitcat');
     expect(view.source).toBe('Codex');
     expect(view.kind).toBe('Shell');
     expect(view.detail).toBe('scripts/remote-install.sh');

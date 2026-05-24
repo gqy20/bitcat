@@ -1,5 +1,6 @@
 ---
 source: core/src/prompts.rs
+assertion_line: 241
 expression: cfg
 ---
 agent:
@@ -7,6 +8,8 @@ agent:
 vision:
   prompt: 自定义视觉提示词
   prompt_multi: 多屏提示
+camera:
+  prompt: "你是 BitCat 的摄像头观察模块。你刚刚看到了一帧来自用户电脑摄像头的画面。\n请只根据画面中明确可见的信息做低风险、保守的状态概括：\n1. description 控制在 80 字以内，描述用户是否在画面中、是否大致在电脑前、画面是否清楚。\n2. 不要做人脸身份识别，不要推断年龄、性别、种族、疾病、心理状态或敏感属性。\n3. 可以用“可能”“看起来”表达低置信度状态，例如可能离开、可能低头、可能在看屏幕。\n4. confirmed_text 通常应为空；除非画面中有非常清晰、短小且确实可见的文字。\n5. inferred_activity 最多 3 条，只写非敏感、低强度推断，例如“人在电脑前”“可能暂时离开”“画面过暗无法判断”。\n6. risk_flags 用 snake_case，可选：face_visible、low_light、blurred、partial_frame、no_person_visible、possible_hallucination、none。\n7. confidence 必须保守；画面模糊、过暗、只露出局部或人物不在画面中时不要高于 0.65。\n\n请分析这帧摄像头画面。\n"
 memory:
   max_entries: 0
   max_context_chars: 20000
@@ -19,7 +22,7 @@ memory_v2:
 screen_summary:
   interval_min: 15
   max_recent_analyses: 30
-  prompt: "你是 8Bit 的观察模块。以下是一段时间内对主人屏幕的多次 AI 观察记录。\n\n请将它们整理为结构化的活动日志：\n- 按活动类型分组（编程、浏览、通讯、娱乐、文档等）\n- 每组列出时间段和具体活动\n- 合并重复的观察（如连续多次看到同一应用，合并为时间段范围）\n- 优先使用 confirmed 字段；inferred 只能作为低置信活动概括；risks 包含 media_metadata / small_text 时，不要把歌名、歌手、文件名当作确定事实\n- 媒体记录只有明确看到暂停按钮（双竖线）时才能写\"正在播放\"；如果只看到播放三角形或按钮状态不明，只写\"打开了音乐播放器/浏览歌单\"\n- 保留关键细节（项目名、文件名、网站等能看清的信息），但不要保留 uncertain_text 里的猜测\n- 控制在 300 字以内\n"
+  prompt: "你是 BitCat 的观察模块。以下是一段时间内对主人屏幕的多次 AI 观察记录。\n\n请将它们整理为结构化的活动日志：\n- 按活动类型分组（编程、浏览、通讯、娱乐、文档等）\n- 每组列出时间段和具体活动\n- 合并重复的观察（如连续多次看到同一应用，合并为时间段范围）\n- 优先使用 confirmed 字段；inferred 只能作为低置信活动概括；risks 包含 media_metadata / small_text 时，不要把歌名、歌手、文件名当作确定事实\n- 媒体记录只有明确看到暂停按钮（双竖线）时才能写\"正在播放\"；如果只看到播放三角形或按钮状态不明，只写\"打开了音乐播放器/浏览歌单\"\n- 保留关键细节（项目名、文件名、网站等能看清的信息），但不要保留 uncertain_text 里的猜测\n- 控制在 300 字以内\n"
   max_context_entries: 20
   max_context_chars: 2000
 aggregation:

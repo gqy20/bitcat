@@ -797,7 +797,7 @@ mod tests {
     fn test_preamble_is_non_empty() {
         let cfg = PromptsConfig::default();
         assert!(!cfg.agent.preamble.is_empty());
-        assert!(cfg.agent.preamble.contains("8Bit"));
+        assert!(cfg.agent.preamble.contains("BitCat"));
         assert!(cfg.agent.preamble.contains("猫"));
     }
 

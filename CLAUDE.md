@@ -61,11 +61,11 @@ $env:CMAKE_POLICY_VERSION_MINIMUM="3.5"; make build
 - 快速改 core 逻辑：`make test-core` 或 `make test-fast`
 - 改 app/Tauri/SDL2 相关逻辑：`make build`，提交前再跑 `make test-app` 或 `make test`
 - 本地运行：`make run`；需要完整静态 SDL2 构建前，可先跑 `make build`
-- 便携包：`make dist`，会先 `make release`，再通过 `xtask` 生成 `ai-pad-<version>-windows-x64-portable.zip`
+- 便携包：`make dist`，会先 `make release`，再通过 `xtask` 生成 `bitcat-<version>-windows-x64-portable.zip`
 - UPX 便携包：`make dist-upx`，只建议用于 portable zip；安装包保持 Tauri bundle 原样
 - CI 发布：`.github/workflows/release.yml` 也调用同一个 `xtask package-portable`，本地和 CI 的 portable 清单保持一致
 
-portable zip 标准内容：`ai-pad-app.exe` + `config/*.yml`。SDL2 通过 `sdl2 = { features = ["bundled", "static-link"] }` 静态链接进 exe，不再随包复制 `SDL2.dll`。如需直接使用 Cargo 命令绕过 Makefile，Windows 下仍需手动设置：
+portable zip 标准内容：`bitcat.exe` + `config/*.yml`。SDL2 通过 `sdl2 = { features = ["bundled", "static-link"] }` 静态链接进 exe，不再随包复制 `SDL2.dll`。如需直接使用 Cargo 命令绕过 Makefile，Windows 下仍需手动设置：
 
 ```powershell
 $env:CMAKE_POLICY_VERSION_MINIMUM="3.5"
@@ -110,12 +110,12 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 截图观察线程 → screenshot_loop() [screenshot.rs, 独立线程]
   ├── BitBlt 截屏 → 熄屏/黑屏检测 → dHash 去重 → 缩放 → JPEG 编码
   ├── vision.rs → Vision API 分析 → 描述文本 → bubble 显示
-  └── 存储 ~/.ai-pad/screenshots/YYYY-MM-DD/（7 天自动清理）
+  └── 存储 ~/.bitcat/screenshots/YYYY-MM-DD/（7 天自动清理）
 
 摄像头观察 → camera.html getUserMedia（默认关闭）
   ├── 隐藏 WebView 低频采样 JPEG data URL
   ├── camera.rs 节流、业务避让、Vision API 分析
-  └── 存储 ~/.ai-pad/camera/YYYY-MM-DD/（默认只存分析 JSON）
+  └── 存储 ~/.bitcat/camera/YYYY-MM-DD/（默认只存分析 JSON）
 ```
 
 ### 多窗口模型（主要 WebView2 窗口）
@@ -154,7 +154,7 @@ app 层通过 `SharedPetEventBus` 统一发送 `pet-event`，集中处理去重�
 
 ### AI Agent
 
-配置优先级：环境变量 > `~/.ai-pad/app_settings.json` 覆盖层 > `~/.claude/settings.json` > `.env` > 默认值。当前通过 rig `AgentBuilder` 注册 15 个内置 Tool：`launch_program` / `shell` / `read_file` / `get_time` / `recent_screenshots` / `search_memory` / `remember` / `create_reminder` / `list_reminders` / `cancel_reminder` / `send_hotkey` / `read_clipboard` / `force_foreground` / `perform_dance` / `play_dance`。`max_tokens` 默认 256K。
+配置优先级：环境变量 > `~/.bitcat/app_settings.json` 覆盖层 > `~/.claude/settings.json` > `.env` > 默认值。当前通过 rig `AgentBuilder` 注册 15 个内置 Tool：`launch_program` / `shell` / `read_file` / `get_time` / `recent_screenshots` / `search_memory` / `remember` / `create_reminder` / `list_reminders` / `cancel_reminder` / `send_hotkey` / `read_clipboard` / `force_foreground` / `perform_dance` / `play_dance`。`max_tokens` 默认 256K。
 
 主对话使用 `stream_prompt().multi_turn(MAX_AGENT_TURNS)`。`PetAgent::chat_stream()` 将 rig 的 `MultiTurnStreamItem` 拆成三类 app 可消费事件：`Text` 流式写入 bubble；`Tool` 携带 `ToolRuntimeEvent` 表达 planned / blocked / finished / failed；`Status` 从文本 delta 和 tool-call item 派生 `AiWriting` / `ToolPreparing`。`PermissionHook` 仍是 shell 安全边界，危险命令通过 `ToolCallHookAction::Skip` 返回可解释结果。
 
@@ -162,27 +162,27 @@ app 层通过 `SharedPetEventBus` 统一发送 `pet-event`，集中处理去重�
 
 ### 程序化提醒
 
-AI Agent 通过 `create_reminder` / `list_reminders` / `cancel_reminder` Tool 管理确定性的提醒任务。完成、稍后和删除由通知窗口与设置页提供，不暴露为 Agent Tool。提醒持久化到系统数据目录下的 `ai-pad/reminders/reminders.json`（Windows 通常是 `%APPDATA%/ai-pad/reminders/reminders.json`），格式是当前版本的 JSON 数组；不要在主路径里静默兼容旧格式、BOM 或半写入文件，解析失败应明确暴露并写入诊断日志。
+AI Agent 通过 `create_reminder` / `list_reminders` / `cancel_reminder` Tool 管理确定性的提醒任务。完成、稍后和删除由通知窗口与设置页提供，不暴露为 Agent Tool。提醒持久化到系统数据目录下的 `bitcat/reminders/reminders.json`（Windows 通常是 `%APPDATA%/bitcat/reminders/reminders.json`），格式是当前版本的 JSON 数组；不要在主路径里静默兼容旧格式、BOM 或半写入文件，解析失败应明确暴露并写入诊断日志。
 
 提醒写入使用临时文件 + 原子替换，Windows 下通过 `MoveFileExW(MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)` 刷盘替换。调度器每 5 秒扫描到期提醒，通过统一通知窗口弹出；通知窗口和设置页的完成、稍后、取消、删除操作都会更新 store，并 emit `reminders-updated` 让设置页刷新。`create_reminder` 工具创建失败时必须告诉模型“提醒没有创建成功”，避免 AI 口头承诺但本地没有任务。
 
-提醒事件写入 `~/.ai-pad/logs/reminder_events.jsonl`，生命周期包括 `created` / `create_failed` / `fired` / `completed` / `snoozed` / `cancelled` / `deleted`，存储异常包括 `store_read_failed` / `store_write_failed`。事件记录应保留 `reminder_id`、`source`、`ui_source`、`store_path`、`error`、`file_size`、`head_bytes` 等诊断字段，便于复盘 Hook、通知和设置页之间的问题。
+提醒事件写入 `~/.bitcat/logs/reminder_events.jsonl`，生命周期包括 `created` / `create_failed` / `fired` / `completed` / `snoozed` / `cancelled` / `deleted`，存储异常包括 `store_read_failed` / `store_write_failed`。事件记录应保留 `reminder_id`、`source`、`ui_source`、`store_path`、`error`、`file_size`、`head_bytes` 等诊断字段，便于复盘 Hook、通知和设置页之间的问题。
 
 ### 截图观察系统
 
-独立线程定时截图（默认 30s），流程：BitBlt 捕获 → 熄屏检测（`SM_MONITORISOFF` + 全黑帧采样）→ dHash 去重 → 缩放到 max_width → JPEG 编码 → Vision API（Anthropic Messages）分析 → 结果通过 bubble 显示并保存到 `~/.ai-pad/screenshots/`。多显示器按单个显示器独立分析和保存，再按显示器顺序汇总到气泡。配置在 `config/prompts.yml` 的 `vision` / `screen_summary` 段。
+独立线程定时截图（默认 30s），流程：BitBlt 捕获 → 熄屏检测（`SM_MONITORISOFF` + 全黑帧采样）→ dHash 去重 → 缩放到 max_width → JPEG 编码 → Vision API（Anthropic Messages）分析 → 结果通过 bubble 显示并保存到 `~/.bitcat/screenshots/`。多显示器按单个显示器独立分析和保存，再按显示器顺序汇总到气泡。配置在 `config/prompts.yml` 的 `vision` / `screen_summary` 段。
 
 ### 摄像头观察系统
 
-摄像头观察默认关闭，由设置页 `appearance.camera_observation_enabled` 控制。开启后，`camera.html` 在屏幕外隐藏 WebView 中用 `getUserMedia` 获取权限并按 `camera_observation_interval_sec` 采样；`app/src/camera.rs` 接收 JPEG data URL、做节流和业务避让，再复用 `vision.rs` 结构化分析。提示词在 `config/prompts.yml` 的 `camera.prompt` 段，要求保守描述、禁止身份识别和敏感属性推断。记录保存到 `~/.ai-pad/camera/YYYY-MM-DD/`，默认只保存分析 JSON，`camera_save_frames` 打开后才保存帧图片。
+摄像头观察默认关闭，由设置页 `appearance.camera_observation_enabled` 控制。开启后，`camera.html` 在屏幕外隐藏 WebView 中用 `getUserMedia` 获取权限并按 `camera_observation_interval_sec` 采样；`app/src/camera.rs` 接收 JPEG data URL、做节流和业务避让，再复用 `vision.rs` 结构化分析。提示词在 `config/prompts.yml` 的 `camera.prompt` 段，要求保守描述、禁止身份识别和敏感属性推断。记录保存到 `~/.bitcat/camera/YYYY-MM-DD/`，默认只保存分析 JSON，`camera_save_frames` 打开后才保存帧图片。
 
 ### 记忆系统
 
-`MemoryStore` 维护滚动窗口对话记忆，默认不按条数淘汰（`memory.max_entries: 0`），由 `max_context_chars` 控制注入长度；持久化到 `~/.ai-pad/memory/chat_summary.json`。每次 AI 对话后记录 user_msg + ai_reply（按字符截断），下次对话时通过 `build_context()` 注入 prompt。配置在 `config/prompts.yml` 的 `memory` 段。
+`MemoryStore` 维护滚动窗口对话记忆，默认不按条数淘汰（`memory.max_entries: 0`），由 `max_context_chars` 控制注入长度；持久化到 `~/.bitcat/memory/chat_summary.json`。每次 AI 对话后记录 user_msg + ai_reply（按字符截断），下次对话时通过 `build_context()` 注入 prompt。配置在 `config/prompts.yml` 的 `memory` 段。
 
 长期记忆由 `AgentReaction.memory_candidates` 或 `remember` 工具驱动写入 `LongTermMemory`，不再使用关键词式 `should_store` 判断。结构化条目保留 `summary` / `tags` / `importance` / `source`，并提供 `retrieve_with()` 按 text/tag/source/min_importance 过滤，以及 `review_entries()` / `review_markdown()` 供设置页审查和人工删除。
 
-长期记忆检索坚持 **grep-first**：优先使用一行一条的 JSONL record / Markdown / 稳定字段，让记忆可以被 `rg`、人工审查和大模型共同读取。当前长期记忆主文件是 `~/.ai-pad/memory/long_term.jsonl`，保存当前有效记录，通过 `deleted: true` 软删除，不做 tombstone event sourcing。不要引入 Embeddings / Vector RAG / 向量数据库作为主线方案；当前取舍见 `docs/architecture/design-tradeoffs.md`。需要召回历史时，先用文本、来源、标签、重要度等可解释条件筛出候选，再交给大模型判断和压缩。
+长期记忆检索坚持 **grep-first**：优先使用一行一条的 JSONL record / Markdown / 稳定字段，让记忆可以被 `rg`、人工审查和大模型共同读取。当前长期记忆主文件是 `~/.bitcat/memory/long_term.jsonl`，保存当前有效记录，通过 `deleted: true` 软删除，不做 tombstone event sourcing。不要引入 Embeddings / Vector RAG / 向量数据库作为主线方案；当前取舍见 `docs/architecture/design-tradeoffs.md`。需要召回历史时，先用文本、来源、标签、重要度等可解释条件筛出候选，再交给大模型判断和压缩。
 
 ### 用户画像
 
@@ -194,7 +194,7 @@ AI Agent 通过 `create_reminder` / `list_reminders` / `cancel_reminder` Tool �
 
 ### 日志与 .env
 
-日志双写：stderr（带颜色）+ 文件 `~/.ai-pad/logs/`（按日滚动，默认 `ai_pad_app=info,ai_pad_core=debug`）。`.env` 多级加载：exe 同目录 → CWD → 项目根目录（兜底 target/debug 向上两级）。
+日志双写：stderr（带颜色）+ 文件 `~/.bitcat/logs/`（按日滚动，默认 `ai_pad_app=info,ai_pad_core=debug`）。`.env` 多级加载：exe 同目录 → CWD → 项目根目录（兜底 target/debug 向上两级）。
 
 ## 编码规范
 
@@ -265,7 +265,7 @@ AI Agent 通过 `create_reminder` / `list_reminders` / `cancel_reminder` Tool �
 ## 关键文件
 
 - `app/src/lib.rs` — 主入口，gamepad_loop（~520 行）+ 右键菜单（Win32 TrackPopupMenu）+ .env 加载 + 全局热键注册
-- `app/src/main.rs` — --debug 控制台分配 + 日志双写（stderr + `~/.ai-pad/logs/` 按日滚动）
+- `app/src/main.rs` — --debug 控制台分配 + 日志双写（stderr + `~/.bitcat/logs/` 按日滚动）
 - `app/src/screenshot.rs` — 截图观察线程：BitBlt 截屏 + 熄屏检测 + 缩放 JPEG + Vision API 调用 + 存储/清理
 - `app/src/camera.rs` — 隐藏摄像头窗口、帧接收、Vision 分析和记录持久化
 - `app/src/agent_monitor.rs` — Claude Code / Codex 本地与远程 hook 事件看管

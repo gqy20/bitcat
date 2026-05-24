@@ -20,7 +20,7 @@
 > │       ├── picker.rs               #   /pets 选择弹窗
 > │       └── preview.rs              #   选择器预览
 > │
-> └── 8bit/                           ← 目标项目（本文档提出的优化对象）
+> └── bitcat/                           ← 目标项目（本文档提出的优化对象）
 >     ├── core/src/pet.rs             #   ★ Rust 状态机（与 pet.js 镜像）
 >     ├── core/src/dance.rs           #   舞蹈定义与 YML 持久化
 >     ├── core/src/bridge.rs          #   IPC 桥接：事件→命令转换
@@ -32,7 +32,7 @@
 >
 > **本文档中的路径约定：**
 > - Codex 源码引用格式：`📄 pets/文件名:行号` （相对于 `codex/codex-rs/tui/src/`）
-> - 8Bit 源码引用格式：`📄 文件名:行号` （相对于各自目录，见上方树形结构）
+> - BitCat 源码引用格式：`📄 文件名:行号` （相对于各自目录，见上方树形结构）
 > - 正文中用 `<!-- CODEX:文件名:行号 -->` 和 `<!-- 8BIT:文件名:行号 -->` 标注精确位置
 
 ---
@@ -54,7 +54,7 @@
 
 ### 1.1 技术栈差异
 
-| 维度 | Codex CLI 宠物 | 8Bit Cat |
+| 维度 | Codex CLI 宠物 | BitCat |
 |------|---------------|----------|
 | **运行环境** | 终端 TUI (Ratatui) | 桌面窗口 (Tauri 2 + WebView2) |
 | **渲染方式** | Kitty/Sixel 终端图像协议 | HTML5 Canvas 2D (`fillRect`) |
@@ -92,7 +92,7 @@ fn current_animation_frame(animation: &Animation, elapsed: Duration) -> Option<A
 - **基于绝对时间定位** — 掉帧时自动跳到正确位置，不会"追赶"
 - **返回 delay** — 调用方知道何时该请求下一帧
 
-**8Bit — 帧计数器累加（counter-driven）:**
+**BitCat — 帧计数器累加（counter-driven）:**
 <!-- 8BIT:pet.js:42-51 -->
 
 ```javascript
@@ -163,7 +163,7 @@ fn visible_notification(&self, now: Instant) -> Option<&PetNotification> {
 }
 ```
 
-**8Bit — 固定超时回落:**
+**BitCat — 固定超时回落:**
 <!-- 8BIT:pet.js:4-68 -->
 
 ```javascript
@@ -235,7 +235,7 @@ pub struct Animation {
 }
 ```
 
-**8Bit — 内联像素数据:**
+**BitCat — 内联像素数据:**
 <!-- 8BIT:sprite.js:17-195 -->
 
 ```javascript
@@ -276,7 +276,7 @@ const SPRITES = {
 
 ### 2.1 问题诊断
 
-当前 8Bit 的 idle 动画是 4 帧 × 500ms 均匀循环：
+当前 BitCat 的 idle 动画是 4 帧 × 500ms 均匀循环：
 
 ```
 现状:  睁眼(500ms) → 半眯(500ms) → 闭眼(500ms) → 睁眼(500ms) → 循环
@@ -527,7 +527,7 @@ fn app_state_animation(
  引起注意        强化印象        最后确认        安静下来
 ```
 
-### 3.3 应用到 8Bit
+### 3.3 应用到 BitCat
 
 将"三遍 + 回落"编码为通用的**状态动画构建函数**：
 
@@ -627,7 +627,7 @@ impl PetNotification {
 
 **关键设计：通知可刷新。** 如果 Agent 持续在运行，Running 通知会不断被 refresh，所以动画不会回落。
 
-### 4.3 应用到 8Bit
+### 4.3 应用到 BitCat
 
 #### 定义通知类型
 
@@ -803,14 +803,14 @@ pub(super) fn frame_cache_key(&self) -> Result<String> {
 }
 ```
 
-### 5.3 应用到 8Bit 的方案
+### 5.3 应用到 BitCat 的方案
 
-考虑到 8Bit 是桌面应用（非终端），不需要 Sixel/Kitty 编码，但可以借鉴**外部数据驱动**的思想。
+考虑到 BitCat 是桌面应用（非终端），不需要 Sixel/Kitty 编码，但可以借鉴**外部数据驱动**的思想。
 
 #### 方案 A：精灵条 PNG + JSON Manifest（推荐）
 
 ```
-~/.ai-pad/pets/
+~/.bitcat/pets/
 └── default/
     ├── manifest.json          # 动画定义
     └── sprites.png            # 精灵条（所有帧水平排列）
@@ -937,7 +937,7 @@ function quantizeToPalette(rgbaData, palette) {
 保留现有 `SPRITES` 和 `cloneSprite` 作为**内置默认宠物**（当没有外部 manifest 时使用）。加载顺序：
 
 ```
-1. 尝试加载 ~/.ai-pad/pets/<id>/manifest.json
+1. 尝试加载 ~/.bitcat/pets/<id>/manifest.json
 2. 失败 → 使用内置默认宠物（现有 sprite.js 数据）
 ```
 
@@ -946,7 +946,7 @@ function quantizeToPalette(rgbaData, palette) {
 用户想换成一只狗？只需：
 
 ```
-~/.ai-pad/pets/
+~/.bitcat/pets/
 ├── default/     # 猫（内置）
 └── dog/
     ├── manifest.json    # 同结构，不同帧图
@@ -1218,7 +1218,7 @@ Phase 4 (2-3 天):  #5 + #6 — Idle variants + Dance 统一
 
 ### 关键注意事项
 
-1. **前后端同步**: 8Bit 的 `core/src/pet.rs` 和 `app/frontend/js/pet.js` 是手动同步的两套状态机。任何动画逻辑改动必须**同时修改两处**，或者考虑长期方案：让 JS 直接从 Rust 获取状态配置（通过 Tauri invoke）。
+1. **前后端同步**: BitCat 的 `core/src/pet.rs` 和 `app/frontend/js/pet.js` 是手动同步的两套状态机。任何动画逻辑改动必须**同时修改两处**，或者考虑长期方案：让 JS 直接从 Rust 获取状态配置（通过 Tauri invoke）。
 
 2. **DPI 缩放**: `app.js` 中已有 DPI 处理逻辑（`scale = cssW / logicW`），精灵表外化后需要确保加载的像素数据在不同 DPI 下正确缩放。
 
@@ -1254,12 +1254,12 @@ Phase 4 (2-3 天):  #5 + #6 — Idle variants + Dance 统一
 | **pets/catalog.rs** | 18-67 | 8 个内置宠物 ID/名称/描述/精灵表文件 | 宠物目录 |
 | **pets/frames.rs** | 全文 | 精灵表 webp → 独立 frame_NNN.png 切片 | 资产管线 |
 | **pets/asset_pack.rs** | 全文 | CDN 下载 → SHA256 校验 → 原子写入缓存 | 资产管线 |
-| **pets/image_protocol.rs** | 全文 | Kitty/Sixel 协议检测与选择 | 渲染（8Bit 不需要） |
-| **pets/sixel.rs** | 全文 | RGB332 Sixel 编码器 | 渲染（8Bit 不需要） |
+| **pets/image_protocol.rs** | 全文 | Kitty/Sixel 协议检测与选择 | 渲染（BitCat 不需要） |
+| **pets/sixel.rs** | 全文 | RGB332 Sixel 编码器 | 渲染（BitCat 不需要） |
 
-## 附录：8Bit 关键源码索引
+## 附录：BitCat 关键源码索引
 
-> 路径相对于项目根目录 `D:\C\Desktop\ai\8bit\`。
+> 路径相对于项目根目录 `D:\C\Desktop\ai\bitcat\`。
 
 | 📄 相对路径 | 行号 | 功能 | 本文引用章节 |
 |------|------|------|-------------|

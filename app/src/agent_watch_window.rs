@@ -76,7 +76,7 @@ fn ensure_agent_watch_window(app: &AppHandle) -> Result<WebviewWindow, tauri::Er
         WINDOW_LABEL,
         WebviewUrl::App("agent_watch.html".into()),
     )
-    .title("8Bit Agent Watch")
+    .title("BitCat Agent Watch")
     .inner_size(WINDOW_W, WINDOW_H)
     .min_inner_size(WINDOW_W, FOLDED_WINDOW_H)
     .max_inner_size(WINDOW_W, WINDOW_H)

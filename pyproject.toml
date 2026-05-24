@@ -1,5 +1,5 @@
 [project]
-name = "ai-pad"
+name = "bitcat"
 version = "0.1.0"
 description = "AI 驱动的手柄控制器"
 requires-python = ">=3.12"
@@ -10,8 +10,8 @@ dependencies = [
 ]
 
 [project.scripts]
-ai-pad-read = "ai_pad.reader:run"
-ai-pad-ctl = "ai_pad.ctl:run"
+bitcat-read = "ai_pad.reader:run"
+bitcat-ctl = "ai_pad.ctl:run"
 
 [build-system]
 requires = ["hatchling"]

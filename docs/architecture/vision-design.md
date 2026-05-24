@@ -1,11 +1,11 @@
 # 桌面截图 + AI 视觉分析设计方案
 
-> 项目代号：8Bit Cat | 技术栈：Tauri 2.0 + rig-core + windows-sys (Rust)
+> 项目代号：BitCat | 技术栈：Tauri 2.0 + rig-core + windows-sys (Rust)
 > 设计日期：2026-05-10 | 平台：Windows 11
 
 ## 一、目标
 
-让 8Bit Cat 能够**周期性或按需截取桌面屏幕**，通过 AI 视觉模型分析画面内容，从而实现：
+让 BitCat 能够**周期性或按需截取桌面屏幕**，通过 AI 视觉模型分析画面内容，从而实现：
 
 - 被动观察：猫猫"看一眼"屏幕，气泡描述当前状态
 - 主动建议：检测到编译错误/长时间空闲/新应用启动时主动反应
@@ -284,7 +284,7 @@ screenshot:
 多屏截图时 prompt 需要提示 AI 理解布局：
 
 ```rust
-const VISION_PROMPT_MULTI_MONITOR: &str = r#"你是 8Bit，一只住在电脑屏幕上的像素风小猫。
+const VISION_PROMPT_MULTI_MONITOR: &str = r#"你是 BitCat，一只住在电脑屏幕上的像素风小猫。
 你刚刚看了一眼主人的屏幕（可能是多块屏幕拼接的）。用一句话描述你看到了什么。
 
 注意：
@@ -386,7 +386,7 @@ BitBlt 原始 BGRA          等比缩放              JPEG 编码              B
 
 ```rust
 /// 统一使用的反幻觉视觉提示词（所有场景共用）
-const VISION_PROMPT: &str = r#"你是 8Bit，一只住在电脑屏幕上的像素风小猫助手。你刚刚看了一眼主人的屏幕。
+const VISION_PROMPT: &str = r#"你是 BitCat，一只住在电脑屏幕上的像素风小猫助手。你刚刚看了一眼主人的屏幕。
 
 严格遵守以下规则：
 1. 如果你无法看清文字、标签、文件名，必须说"看不清"，绝对不要猜测或编造
@@ -432,7 +432,7 @@ const VISION_APPEND_OCR: &str = r#"
 "#;
 
 // 场景 2：异常检测
-const VISION_PROMPT_ALERT: &str = r#"你是 8Bit，关注屏幕上的异常情况。
+const VISION_PROMPT_ALERT: &str = r#"你是 BitCat，关注屏幕上的异常情况。
 检查是否有：编译/构建错误、弹窗警告、程序崩溃、网络断开等。
 如果有异常，简要说明；如果没有，说"一切正常"即可。
 "#;
@@ -472,7 +472,7 @@ const VISION_PROMPT_OCR: &str = r#"读取屏幕上所有可见的文字内容。
 ### 存储管理
 
 ```
-~/.ai-pad/screenshots/
+~/.bitcat/screenshots/
 ├── 2026-05-10/
 │   ├── 143022_primary.jpg        # 主屏截图
 │   ├── 143022_all.jpg            # 双屏拼接图
@@ -528,7 +528,7 @@ app/src/
     ├── capture_screen()       # BitBlt 截取桌面
     ├── encode_jpeg()          # 缩放 + JPEG 编码
     ├── perceptual_hash()      # 变化检测哈希
-    ├── save_screenshot()      # 存储到 ~/.ai-pad/screenshots/
+    ├── save_screenshot()      # 存储到 ~/.bitcat/screenshots/
     └── ScreenshotConfig       # 间隔/分辨率/质量配置
 
 core/src/
@@ -587,7 +587,7 @@ memory 系统 ──→ 用户偏好设置 ──→ 决定截图策略/频率  
 | **排除列表** | 可配置不捕获的窗口（密码管理器、银行 App、无痕浏览器） |
 | **本地优先** | 截图和分析默认本地完成，不上传云端 |
 | **自动清理** | 7 天滚动删除旧截图，可配置 |
-| **用户审计** | `~/.ai-pad/screenshots/` 目录可直接浏览所有截图 |
+| **用户审计** | `~/.bitcat/screenshots/` 目录可直接浏览所有截图 |
 
 ## 八、代码量估算
 

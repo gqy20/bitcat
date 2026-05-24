@@ -1,6 +1,6 @@
 # 快速入门
 
-8Bit Cat 是一个 Windows 桌面宠物：屏幕角落有一只像素小猫，可以聊天、看屏幕、记住偏好、跳舞、启动工具，也能用手柄控制。
+BitCat 是一个 Windows 桌面宠物：屏幕角落有一只像素小猫，可以聊天、看屏幕、记住偏好、跳舞、启动工具，也能用手柄控制。
 
 ## 运行要求
 
@@ -13,10 +13,10 @@
 
 ### 便携包
 
-下载 `ai-pad-<version>-windows-x64-portable.zip`，解压后运行 `ai-pad-app.exe`。便携包内包含：
+下载 `bitcat-<version>-windows-x64-portable.zip`，解压后运行 `bitcat.exe`。便携包内包含：
 
 ```text
-ai-pad-app.exe
+bitcat.exe
 config/*.yml
 ```
 
@@ -25,8 +25,8 @@ config/*.yml
 需要 Rust、Visual Studio Build Tools 和 `cargo-nextest`。
 
 ```powershell
-git clone https://github.com/your-repo/8bit.git
-cd 8bit
+git clone https://github.com/gqy20/bitcat.git
+cd bitcat
 make build
 ```
 
@@ -37,7 +37,7 @@ make build
 配置优先级从高到低：
 
 ```text
-环境变量 > ~/.ai-pad/app_settings.json > ~/.claude/settings.json > 内置默认值
+环境变量 > ~/.bitcat/app_settings.json > ~/.claude/settings.json > 内置默认值
 ```
 
 推荐第一次启动后右键系统托盘图标，打开“设置...”，在“AI 与对话”里填写：
@@ -59,7 +59,7 @@ $env:ANTHROPIC_MODEL="claude-sonnet-4-20250514"
 
 ## 首次运行
 
-双击 `ai-pad-app.exe` 后，屏幕角落会出现 128x128 的像素猫。右键托盘图标可以打开菜单：立即截图、停止舞动、置顶、折叠、重载配置、设置、退出。
+双击 `bitcat.exe` 后，屏幕角落会出现 128x128 的像素猫。右键托盘图标可以打开菜单：立即截图、停止舞动、置顶、折叠、重载配置、设置、退出。
 
 常用入口：
 
@@ -92,10 +92,10 @@ $env:ANTHROPIC_MODEL="claude-sonnet-4-20250514"
 
 ## 数据目录
 
-用户数据位于 `~/.ai-pad/`：
+用户数据位于 `~/.bitcat/`：
 
 ```text
-~/.ai-pad/
+~/.bitcat/
 ├── app_settings.json
 ├── memory/
 │   ├── chat_summary.json

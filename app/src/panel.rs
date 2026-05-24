@@ -293,7 +293,7 @@ pub fn toggle_panel(app: &AppHandle) {
 fn create_panel_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
     let (panel_w, panel_h) = panel_size_from_config();
     WebviewWindowBuilder::new(app, "panel", WebviewUrl::App("panel.html".into()))
-        .title("8Bit Panel")
+        .title("BitCat Panel")
         .inner_size(panel_w, panel_h)
         .decorations(false)
         .transparent(true)

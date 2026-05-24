@@ -163,7 +163,7 @@ impl PromptsConfig {
         if let Ok(old) = fs::read_to_string(&target) {
             let _ = fs::write(target.with_extension("yml.bak"), old);
         }
-        let header = "# 由 8Bit Cat 设置界面生成\n\
+        let header = "# 由 BitCat 设置界面生成\n\
                       # 手动编辑仍然生效，但下次保存设置会覆盖注释\n\n";
         let body = serde_yaml::to_string(self).map_err(|e| e.to_string())?;
         fs::write(&target, format!("{header}{body}"))
@@ -215,7 +215,7 @@ mod tests {
     fn test_default_agent_preamble_contains_key_phrases() {
         let cfg = AgentPromptConfig::default();
         assert!(!cfg.preamble.is_empty());
-        assert!(cfg.preamble.contains("8Bit"));
+        assert!(cfg.preamble.contains("BitCat"));
         assert!(cfg.preamble.contains("猫"));
     }
 
@@ -256,8 +256,8 @@ agent:
     #[test]
     fn test_empty_config_all_defaults() {
         let cfg: PromptsConfig = serde_yaml::from_str("{}").unwrap();
-        assert!(cfg.agent.preamble.contains("8Bit"));
-        assert!(cfg.vision.prompt.contains("8Bit"));
+        assert!(cfg.agent.preamble.contains("BitCat"));
+        assert!(cfg.vision.prompt.contains("BitCat"));
         assert_eq!(cfg.memory.max_entries, 0);
         assert_eq!(cfg.screen_summary.interval_min, 15);
         assert!(!cfg.screen_summary.prompt.is_empty());

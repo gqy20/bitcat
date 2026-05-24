@@ -71,7 +71,7 @@ fn ensure_window(app: &AppHandle) -> Result<WebviewWindow, tauri::Error> {
     }
     let window =
         WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::App("pet_inbox.html".into()))
-            .title("8Bit Inbox")
+            .title("BitCat Inbox")
             .inner_size(WINDOW_W, WINDOW_H)
             .decorations(false)
             .transparent(true)

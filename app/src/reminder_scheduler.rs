@@ -15,7 +15,7 @@ const MAX_PERSONALIZER_TIMEOUT_MS: u64 = 10_000;
 /// Start the reminder scheduler thread.
 pub fn spawn_reminder_scheduler(app: AppHandle) {
     std::thread::Builder::new()
-        .name("ai-pad-reminder-scheduler".to_string())
+        .name("bitcat-reminder-scheduler".to_string())
         .spawn(move || loop {
             if crate::shutdown::is_requested() {
                 debug!("reminder scheduler shutdown requested");

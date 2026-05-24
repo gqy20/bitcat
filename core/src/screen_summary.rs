@@ -2,7 +2,7 @@
 //!
 //! 本模块定期收集 Vision API 的截图分析描述，调用 AI 将它们压缩为
 //! [`StructuredSummary`]（活动分组 + 显著变化），以滚动窗口方式保留最近 N 条，
-//! 持久化到 `~/.ai-pad/memory/screen_summary.json`。
+//! 持久化到 `~/.bitcat/memory/screen_summary.json`。
 //!
 //! 与 [`vision`](crate::vision) 模块协作：vision 负责单帧分析，
 //! 本模块负责跨帧聚合和上下文注入，供 agent prompt 使用。
@@ -114,7 +114,7 @@ impl ActivityCategory {
     }
 }
 
-/// 屏幕摘要存储，全量追加并持久化到 `~/.ai-pad/memory/screen_summary.json`。
+/// 屏幕摘要存储，全量追加并持久化到 `~/.bitcat/memory/screen_summary.json`。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScreenSummaryStore {
     pub entries: Vec<ScreenSummaryEntry>,
@@ -178,7 +178,7 @@ impl Default for ScreenSummaryConfig {
 fn summary_file_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
     Ok(home
-        .join(".ai-pad")
+        .join(".bitcat")
         .join("memory")
         .join("screen_summary.json"))
 }
@@ -524,7 +524,7 @@ mod tests {
     fn test_summary_file_path() {
         let p = summary_file_path().unwrap();
         let s = p.to_string_lossy();
-        assert!(s.contains(".ai-pad"), "应在 .ai-pad 下");
+        assert!(s.contains(".bitcat"), "应在 .bitcat 下");
         assert!(s.contains("memory"), "应有 memory 子目录");
         assert!(s.ends_with("screen_summary.json"));
     }

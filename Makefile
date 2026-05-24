@@ -1,4 +1,4 @@
-# 8Bit Cat — ai-pad Makefile
+# BitCat Makefile
 #
 # 用法:
 #   make build      开发构建
@@ -18,7 +18,7 @@ export CMAKE_POLICY_VERSION_MINIMUM = 3.5
 
 DEBUG_DIR   = target/debug
 RELEASE_DIR = target/release
-EXE_NAME    = ai-pad-app.exe
+EXE_NAME    = bitcat.exe
 
 # ══════════════════════════════════════
 #  构建
@@ -37,7 +37,7 @@ release:
 # ══════════════════════════════════════
 
 VERSION   = $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-DIST_NAME = ai-pad-$(VERSION)-windows-x64
+DIST_NAME = bitcat-$(VERSION)-windows-x64
 
 dist: release
 	cargo run -p xtask -- package-portable --version "$(VERSION)" --release-dir "$(RELEASE_DIR)" --out-dir "."

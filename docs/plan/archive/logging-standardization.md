@@ -33,7 +33,7 @@
 - 不保存完整 AI 回复；
 - 不保存完整语音识别文本；
 - 不保存 prompt 全文、memory 上下文全文、截图分析全文；
-- 不代替 `~/.ai-pad/memory/`、`screenshots/`、`token_usage.jsonl` 这类结构化数据文件。
+- 不代替 `~/.bitcat/memory/`、`screenshots/`、`token_usage.jsonl` 这类结构化数据文件。
 
 日志只记录“发生了什么、规模多大、结果如何、哪里能继续查”。
 
@@ -193,7 +193,7 @@ info!(
 - 生产代码统一走 `tracing`，避免新增 `eprintln!`；
 - 用户消息、AI 回复、语音文本、前端日志使用 `log_preview()` 或长度字段；
 - 高频 chunk / 截图细节降到 DEBUG/TRACE；
-- Token 明细从普通日志迁移到 `~/.ai-pad/logs/token_usage.jsonl` 和 `token_sessions.json`；
+- Token 明细从普通日志迁移到 `~/.bitcat/logs/token_usage.jsonl` 和 `token_sessions.json`；
 - 设置页通过 `cmd_get_token_stats` 读取结构化统计，不解析日志。
 
 下面清单保留为回归检查项：每次新增 chat / voice / screenshot / tool / settings 日志时，应确认没有重新引入全文裸写、WARN 滥用或高频 INFO。
@@ -333,7 +333,7 @@ B2 `token_usage.jsonl` 不应混进普通日志。日志只记录：
 info!(input_tokens, output_tokens, cache_tokens, "token usage recorded");
 ```
 
-完整明细写入 `~/.ai-pad/logs/token_usage.jsonl`。
+完整明细写入 `~/.bitcat/logs/token_usage.jsonl`。
 
 ### JSON 日志模式
 

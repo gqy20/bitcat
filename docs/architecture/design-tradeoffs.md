@@ -63,7 +63,7 @@
 ### 推荐形态
 
 ```text
-~/.ai-pad/memory/
+~/.bitcat/memory/
 ├── chat_summary.json          # 当前滚动摘要，继续保留
 ├── long_term.jsonl            # 当前有效长期记忆 record，可 grep，deleted 软删除
 ├── daily/2026-05-13.md        # 可选：按天沉淀的人类可读摘要
@@ -74,7 +74,7 @@
 候选查询可以是：
 
 ```powershell
-rg -n "Tauri|截图|token|日志" ~/.ai-pad/memory
+rg -n "Tauri|截图|token|日志" ~/.bitcat/memory
 ```
 
 程序侧可以封装为：

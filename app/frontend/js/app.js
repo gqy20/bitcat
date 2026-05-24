@@ -85,7 +85,7 @@ import { PerformerHost } from './performance/performer-host.js';
   let hoverActionCooldownUntil = 0;
   let normalPetWidth = 128;
   let normalPetHeight = 128;
-  const PET_SIZE_STORAGE_KEY = 'ai-pad.petSize';
+  const PET_SIZE_STORAGE_KEY = 'bitcat.petSize';
   const PET_BADGE_REFRESH_MS = 2500;
   const PET_MIN_SIZE = 72;
   const PET_MAX_SIZE = 256;
@@ -1210,8 +1210,8 @@ import { PerformerHost } from './performance/performer-host.js';
     window.__TAURI__.event.listen('pet-asset-config-changed', (event) => {
       const url = event.payload || '';
       try {
-        if (url) window.sessionStorage.setItem('ai-pad.petAssetUrl', url);
-        else window.sessionStorage.removeItem('ai-pad.petAssetUrl');
+        if (url) window.sessionStorage.setItem('bitcat.petAssetUrl', url);
+        else window.sessionStorage.removeItem('bitcat.petAssetUrl');
       } catch (_) {}
       window.location.reload();
     });

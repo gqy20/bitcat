@@ -93,7 +93,7 @@ describe('notification island', () => {
   it('double click expands and extends the notification instead of dismissing', () => {
     dom.window.__notificationShow({
       title: 'Agent completed',
-      body: '8bit · Codex',
+      body: 'bitcat · Codex',
       tone: 'success',
       ttl_ms: 12000,
     });

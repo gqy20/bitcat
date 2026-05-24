@@ -45,7 +45,7 @@ Manifest v1 应该贴合这个模型，而不是强迫重写渲染器。
 外部宠物资产应该放在用户数据目录下，而不是 app bundle 内：
 
 ```text
-~/.ai-pad/pets/
+~/.bitcat/pets/
   default-cat/
     manifest.json
     sprites.png
@@ -65,7 +65,7 @@ App bundle 仍然通过 `sprite.js` 携带内置小猫。以后可以把内置�
   "schemaVersion": 1,
   "id": "default-cat",
   "displayName": "Default Cat",
-  "description": "The built-in 8-bit cat exported as a manifest-compatible pet.",
+  "description": "The built-in built-in cat exported as a manifest-compatible pet.",
   "sprite": {
     "image": "sprites.png",
     "frameWidth": 16,
@@ -164,7 +164,7 @@ v1 不对这些状态做隐式 fallback。外部 pack 如果缺状态，应拒�
 推荐加载顺序：
 
 1. 从设置中读取当前宠物 id。
-2. 尝试读取 `~/.ai-pad/pets/<id>/manifest.json`。
+2. 尝试读取 `~/.bitcat/pets/<id>/manifest.json`。
 3. 校验 manifest schema 和引用的 sprite 图片。
 4. 将 `sprites.png` 加载到 offscreen canvas。
 5. 根据 `frameWidth`、`frameHeight` 和 `columns` 切帧。
@@ -253,7 +253,7 @@ Rust 继续发送语义事件：
 - [ ] 增加设置页宠物 id 选择入口。
 - [ ] 用易懂文案展示校验错误。
 - [ ] 使用同一条 `renderSprite()` 路径提供预览。
-- [ ] 将正式用户资产路径收敛到 `~/.ai-pad/pets/<id>`，保留 query/localStorage 作为开发入口。
+- [ ] 将正式用户资产路径收敛到 `~/.bitcat/pets/<id>`，保留 query/localStorage 作为开发入口。
 
 ### Phase D：导出内置资产
 
@@ -262,7 +262,7 @@ Rust 继续发送语义事件：
 
 ## 待决策问题
 
-- 自定义宠物正式入口使用 `~/.ai-pad/pets`；开发期继续允许 query/localStorage 指向 project-local fixture。
+- 自定义宠物正式入口使用 `~/.bitcat/pets`；开发期继续允许 query/localStorage 指向 project-local fixture。
 - v1 要求 palette，暂不支持直接 RGBA 图片渲染。
 - 外部宠物允许独立覆盖 performance action sprites。
 - v1 固定 16x16 frame，暂不支持 32x32 或 scale factor。
@@ -273,7 +273,7 @@ Rust 继续发送语义事件：
 下一步进入 Phase C：把外部宠物选择做成可用的设置页能力。推荐先支持用户目录：
 
 ```text
-~/.ai-pad/pets/default-cat/
+~/.bitcat/pets/default-cat/
   manifest.json
   sprites.png
 ```

@@ -1,6 +1,6 @@
 # 手柄操作
 
-8Bit Cat 原生支持 SDL2 手柄。默认配置按 8BitDo Micro D-Input 模式校准，其他手柄可通过 `config/buttons.yml` 调整按键编号映射。
+BitCat 原生支持 SDL2 手柄。默认配置按 8BitDo Micro D-Input 模式校准，其他手柄可通过 `config/buttons.yml` 调整按键编号映射。
 
 ## 8BitDo Micro 配对
 
@@ -72,4 +72,4 @@ actions:
       delay: 1.0
 ```
 
-不同手柄按键编号不一致时，修改 `config/buttons.yml`。用 `ai-pad-app.exe --debug` 启动后，按键日志会显示原始编号，方便校准。
+不同手柄按键编号不一致时，修改 `config/buttons.yml`。用 `bitcat.exe --debug` 启动后，按键日志会显示原始编号，方便校准。

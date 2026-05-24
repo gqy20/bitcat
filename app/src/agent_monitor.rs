@@ -1079,7 +1079,7 @@ mod tests {
         let session = AgentSession {
             session_id: "wait".into(),
             source: AgentSource::Codex,
-            workspace: "D:\\C\\Desktop\\ai\\8bit".into(),
+            workspace: "D:\\C\\Desktop\\ai\\bitcat".into(),
             parent_session_id: None,
             status: AgentStatus::Waiting,
             tool_name: Some("Patch".into()),
@@ -1120,9 +1120,13 @@ mod tests {
         ));
         assert_eq!(notification.source, "agent_watch");
         assert_eq!(notification.tone, "warning");
-        assert_eq!(notification.title, "8bit · Codex · Patch 需要查看");
+        assert_eq!(notification.title, "bitcat · Codex · Patch 需要查看");
         assert!(notification.body.is_none());
-        assert!(!notification.body.as_deref().unwrap_or("").contains("8bit"));
+        assert!(!notification
+            .body
+            .as_deref()
+            .unwrap_or("")
+            .contains("bitcat"));
         assert!(notification.actions.is_empty());
         assert!(notification.reminder_id.is_none());
     }

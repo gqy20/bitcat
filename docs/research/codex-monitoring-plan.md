@@ -2,7 +2,7 @@
 
 ## 目标
 
-让 8bit 桌宠能像看管 Claude Code 一样看管 Codex：实时显示工作状态、等待/完成/异常时主动提醒，复用现有 Agent Watch UI 和 nudge 策略。
+让 bitcat 桌宠能像看管 Claude Code 一样看管 Codex：实时显示工作状态、等待/完成/异常时主动提醒，复用现有 Agent Watch UI 和 nudge 策略。
 
 ## 现有架构速览
 
@@ -120,7 +120,7 @@ fn handle_hook_payload(app: &AppHandle, raw: &str) -> Result<(), String> {
 
 与 `claude_hooks.rs` 平行，负责：
 
-1. 写 PowerShell 脚本 `~/.codex/hooks/ai-pad-codex-hook.ps1`
+1. 写 PowerShell 脚本 `~/.codex/hooks/bitcat-codex-hook.ps1`
    - 读取 stdin，包装成 `{ "source": "codex", "payload": <原始JSON> }`
    - TCP 发送到 `127.0.0.1:5342`（复用同一个端口）
 2. 写 Codex 配置文件
@@ -136,7 +136,7 @@ matcher = "*"
 
 [[hooks.PreToolUse.hooks]]
 type = "command"
-command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File '$HOME/.codex/hooks/ai-pad-codex-hook.ps1'"
+command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File '$HOME/.codex/hooks/bitcat-codex-hook.ps1'"
 
 # ... 类似注册所有事件
 ```
@@ -184,7 +184,7 @@ fn nudge_message(kind: &AgentNudgeKind, source: &AgentSource) -> String {
 
 Codex TUI 自己的 pet 只有 4 个状态（`Running / Waiting / Review / Failed`），但 app-server 事件更丰富：
 
-| App Server 事件 | 8bit AgentStatus | 补充信息 |
+| App Server 事件 | bitcat AgentStatus | 补充信息 |
 |----------------|------------------|----------|
 | `TurnStarted` | `Working` | turn_id, input preview |
 | `ItemStarted(CommandExecution)` | `ToolRunning` | command preview |
@@ -224,7 +224,7 @@ Codex TUI 的 pet 非常克制——只表达 4 个高层语义状态，不承�
 - **Review**：turn 完成（TTL 7 天，等用户查看）
 - **Failed**：非重试错误
 
-这与 8bit 的 `AgentStatus` 压缩思路一致。阶段一可以直接沿用 Codex 的状态压缩比例，不用把每个 item 都映射成宠物事件。
+这与 bitcat 的 `AgentStatus` 压缩思路一致。阶段一可以直接沿用 Codex 的状态压缩比例，不用把每个 item 都映射成宠物事件。
 
 ## 实施步骤（阶段一）
 
@@ -345,8 +345,8 @@ matcher = "*"
 
 [[hooks.PreToolUse.hooks]]
 type = "command"
-command = "powershell -NoProfile -ExecutionPolicy Bypass -File '$HOME/.codex/hooks/ai-pad-codex-hook.ps1'"
-commandWindows = "powershell -NoProfile -ExecutionPolicy Bypass -File \"%USERPROFILE%\\.codex\\hooks\\ai-pad-codex-hook.ps1\""
+command = "powershell -NoProfile -ExecutionPolicy Bypass -File '$HOME/.codex/hooks/bitcat-codex-hook.ps1'"
+commandWindows = "powershell -NoProfile -ExecutionPolicy Bypass -File \"%USERPROFILE%\\.codex\\hooks\\bitcat-codex-hook.ps1\""
 timeout = 60
 ```
 
@@ -376,10 +376,10 @@ let should_run = matches!(trust, HookTrust::Managed | HookTrust::Trusted);
 
 当前设置页的 Codex 按钮不再只是追加配置，而是执行可重复的检查与修复：
 
-- 只清理带 `ai_pad_marker = "ai-pad-codex-watch"` 的 8Bit Cat hook；
+- 只清理带 `ai_pad_marker = "bitcat-codex-watch"` 的 BitCat hook；
 - 保留用户或其他工具写入的 hook，即使它们在同一个 event/matcher 下；
-- 旧版本生成的重复 ai-pad hook 会先移除，再写入当前标准 hook；
-- 旧的无效事件名下如果只剩 ai-pad hook，会被移除；
+- 旧版本生成的重复 BitCat hook 会先移除，再写入当前标准 hook；
+- 旧的无效事件名下如果只剩 BitCat hook，会被移除；
 - PowerShell 脚本内容变化时会重写脚本；
 - 写入 `config.toml` 前仍保留备份。
 
@@ -414,7 +414,7 @@ Hook Doctor 只解决配置一致性，不绕过 Codex 的 hook trust 流程。V
 - 启动参数 `--listen ws://0.0.0.0:8080` 暴露 WebSocket 端点
 - JSON-RPC 2.0 协议，60+ 通知类型，9 种 ServerRequest
 
-**对于 8bit 集成**：8bit 作为外部进程，需要连接已运行的 Codex app-server。最佳路径：
+**对于 bitcat 集成**：bitcat 作为外部进程，需要连接已运行的 Codex app-server。最佳路径：
 1. 检测 Codex app-server 是否运行（尝试 WebSocket 连接）
 2. 发送 `Initialize` 握手
 3. 订阅 `TurnStarted` / `ItemStarted` / `TurnCompleted` 等通知

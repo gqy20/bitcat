@@ -538,7 +538,7 @@ pub fn precreate_pet_windows(app: &tauri::AppHandle) -> Result<(), tauri::Error>
 
     if app.get_webview_window("pet").is_none() {
         let mut builder = WebviewWindowBuilder::new(app, "pet", WebviewUrl::App("pet.html".into()))
-            .title("8Bit Cat")
+            .title("BitCat")
             .inner_size(128.0, 128.0)
             .decorations(false)
             .transparent(true)
@@ -601,7 +601,7 @@ pub fn precreate_pet_windows(app: &tauri::AppHandle) -> Result<(), tauri::Error>
     if app.get_webview_window("pet-mini").is_none() {
         let mut builder =
             WebviewWindowBuilder::new(app, "pet-mini", WebviewUrl::App("pet.html".into()))
-                .title("8Bit Cat Mini")
+                .title("BitCat Mini")
                 .inner_size(48.0, 48.0)
                 .decorations(false)
                 .transparent(true)
@@ -625,7 +625,7 @@ pub fn precreate_pet_windows(app: &tauri::AppHandle) -> Result<(), tauri::Error>
     if app.get_webview_window("pet-snap").is_none() {
         let mut builder =
             WebviewWindowBuilder::new(app, "pet-snap", WebviewUrl::App("pet.html".into()))
-                .title("8Bit Cat Snap")
+                .title("BitCat Snap")
                 .inner_size(SNAP_W, SNAP_H as f64)
                 .decorations(false)
                 .transparent(true)

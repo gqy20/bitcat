@@ -1,6 +1,6 @@
 # 舞蹈、音乐舞动与小游戏
 
-8Bit Cat 的娱乐能力分三类：AI 编舞、音乐响应舞动、桌面小游戏。
+BitCat 的娱乐能力分三类：AI 编舞、音乐响应舞动、桌面小游戏。
 
 ## AI 舞蹈
 
@@ -57,7 +57,7 @@ steps:
 
 | 优先级 | 路径 |
 |--------|------|
-| 用户/AI 生成 | `~/.ai-pad/dances/{name}.yaml` |
+| 用户/AI 生成 | `~/.bitcat/dances/{name}.yaml` |
 | 内置预设 | `config/dances/{name}.yaml` |
 
 ## 音乐响应舞动

@@ -1,7 +1,7 @@
 //! 舞蹈定义、YML 持久化与目录管理
 //!
 //! 舞蹈 = 按时间轴切换 sprite 动作帧的序列。AI 通过 perform_dance 工具
-//! 直接提交 DanceDef，序列化为 YAML 存入 ~/.ai-pad/dances/。
+//! 直接提交 DanceDef，序列化为 YAML 存入 ~/.bitcat/dances/。
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -126,9 +126,9 @@ pub fn validate_dance_def(def: &DanceDef) -> Result<(), String> {
 
 // ---- 目录管理 ----
 
-/// 返回舞蹈存储目录 ~/.ai-pad/dances/
+/// 返回舞蹈存储目录 ~/.bitcat/dances/
 pub fn dance_dir() -> Option<PathBuf> {
-    dirs::data_dir().map(|d| d.join("ai-pad").join("dances"))
+    dirs::data_dir().map(|d| d.join("bitcat").join("dances"))
 }
 
 /// 返回项目内置舞蹈目录 config/dances/

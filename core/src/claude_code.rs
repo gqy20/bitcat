@@ -622,7 +622,7 @@ mod tests {
         let raw = r#"{
             "session_id": "s1",
             "hook_event_name": "PreToolUse",
-            "cwd": "D:\\C\\Desktop\\ai\\8bit",
+            "cwd": "D:\\C\\Desktop\\ai\\bitcat",
             "tool_name": "Bash",
             "tool_input": {"command": "cargo test"},
             "pid": 123

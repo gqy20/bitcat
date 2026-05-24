@@ -47,7 +47,7 @@ pub enum ReminderSchedule {
     Daily { time: String },
 }
 
-/// A reminder record stored in `~/.ai-pad/reminders/reminders.json`.
+/// A reminder record stored in `~/.bitcat/reminders/reminders.json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ReminderRecord {
     pub id: String,
@@ -66,7 +66,7 @@ pub struct ReminderRecord {
     pub fire_count: u32,
 }
 
-/// Reminder lifecycle event written to `~/.ai-pad/logs/reminder_events.jsonl`.
+/// Reminder lifecycle event written to `~/.bitcat/logs/reminder_events.jsonl`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReminderEventRecord {
     pub at: String,
@@ -152,7 +152,7 @@ pub struct CancelReminderArgs {
 pub fn reminder_store_path() -> Result<PathBuf, String> {
     let dir = dirs::data_dir()
         .ok_or_else(|| "unable to determine user data directory".to_string())?
-        .join("ai-pad")
+        .join("bitcat")
         .join("reminders");
     Ok(dir.join("reminders.json"))
 }

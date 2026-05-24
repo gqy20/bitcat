@@ -1,5 +1,5 @@
 @font-face {
-  font-family: "Geist 8Bit";
+  font-family: "Geist BitCat";
   src: url("/assets/fonts/geist-latin-variable.woff2") format("woff2");
   font-display: swap;
   font-style: normal;
@@ -8,7 +8,7 @@
 }
 
 @font-face {
-  font-family: "JetBrains Mono 8Bit";
+  font-family: "JetBrains Mono BitCat";
   src: url("/assets/fonts/jetbrains-mono-latin-variable.woff2") format("woff2");
   font-display: swap;
   font-style: normal;
@@ -46,8 +46,8 @@
   --radius-sm: 6px;
   --font-ui: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", sans-serif;
   --font-sans: var(--font-ui);
-  --font-brand: "Geist 8Bit", "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", sans-serif;
-  --font-mono: "JetBrains Mono 8Bit", "Cascadia Mono", "JetBrains Mono", "Consolas", monospace;
+  --font-brand: "Geist BitCat", "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  --font-mono: "JetBrains Mono BitCat", "Cascadia Mono", "JetBrains Mono", "Consolas", monospace;
   --text-xs: 11px;
   --text-sm: 12px;
   --text-md: 14px;

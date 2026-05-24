@@ -10,7 +10,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tauri_plugin_opener::OpenerExt;
 
-const AI_PAD_HOOK_MARKER: &str = "ai-pad-claude-code-watch";
+const AI_PAD_HOOK_MARKER: &str = "bitcat-claude-code-watch";
 const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
 
 #[derive(Debug, Clone, Copy)]
@@ -55,7 +55,7 @@ fn home_dir() -> Option<PathBuf> {
 }
 
 pub fn hook_script_path() -> Result<PathBuf, String> {
-    Ok(claude_dir()?.join("hooks").join("ai-pad-hook.ps1"))
+    Ok(claude_dir()?.join("hooks").join("bitcat-hook.ps1"))
 }
 
 pub fn settings_path() -> Result<PathBuf, String> {
@@ -342,13 +342,13 @@ fn matcher_matches(value: Option<&Value>, expected: Option<&str>) -> bool {
 fn hook_script(port: u16) -> String {
     format!(
         r#"# {AI_PAD_HOOK_MARKER}
-# Installed by 8Bit Cat. Read-only: sends Claude Code hook JSON to local ai-pad monitor.
+# Installed by BitCat. Read-only: sends Claude Code hook JSON to local BitCat monitor.
 [Console]::InputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $ErrorActionPreference = "Stop"
 
 $payload = $null
-$logDir = Join-Path $HOME ".ai-pad\logs"
+$logDir = Join-Path $HOME ".bitcat\logs"
 $logFile = Join-Path $logDir "agent_hook_bridge.jsonl"
 
 function Get-Field($obj, [string[]]$names) {{
@@ -386,7 +386,7 @@ if ([string]::IsNullOrWhiteSpace($raw)) {{ exit 0 }}
 try {{
   $payload = $raw | ConvertFrom-Json
   $envelope = [ordered]@{{
-    schema = "ai-pad.agent-hook.v1"
+    schema = "bitcat.agent-hook.v1"
     source = "claude"
     machine = $env:COMPUTERNAME
     payload = $payload
@@ -416,7 +416,7 @@ fn backup_if_exists(path: &PathBuf) -> Result<(), String> {
         return Ok(());
     }
     let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
-    let backup = path.with_file_name(format!("settings.ai-pad-backup-{stamp}.json"));
+    let backup = path.with_file_name(format!("settings.bitcat-backup-{stamp}.json"));
     std::fs::copy(path, &backup).map_err(|e| format!("备份 settings.json 失败: {e}"))?;
     Ok(())
 }
@@ -490,7 +490,7 @@ mod tests {
         let mut report = HookRepairReport::default();
         ensure_ai_pad_hooks(
             &mut settings,
-            &PathBuf::from("C:\\x\\ai-pad-hook.ps1"),
+            &PathBuf::from("C:\\x\\bitcat-hook.ps1"),
             &mut report,
         )
         .unwrap();
@@ -540,7 +540,7 @@ mod tests {
         let mut report = HookRepairReport::default();
         ensure_ai_pad_hooks(
             &mut settings,
-            &PathBuf::from("C:\\x\\ai-pad-hook.ps1"),
+            &PathBuf::from("C:\\x\\bitcat-hook.ps1"),
             &mut report,
         )
         .unwrap();

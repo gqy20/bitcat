@@ -4,7 +4,7 @@
 
 ## 背景
 
-当前项目（8Bit Cat）使用 `rig` v0.36.0 框架构建 AI Agent。经过 P0 与后续宠物语义事件改造后，chat / vision / screen_summary / memory aggregation / AgentReaction 已经统一回到 rig 生态；宠物状态也从旧的视觉 `SetState` 迁移为 `PetEvent` 语义协议。剩余工作主要是继续减少不可解释的本地规则，并谨慎引入更低风险的 rig 能力。
+当前项目（BitCat）使用 `rig` v0.36.0 框架构建 AI Agent。经过 P0 与后续宠物语义事件改造后，chat / vision / screen_summary / memory aggregation / AgentReaction 已经统一回到 rig 生态；宠物状态也从旧的视觉 `SetState` 迁移为 `PetEvent` 语义协议。剩余工作主要是继续减少不可解释的本地规则，并谨慎引入更低风险的 rig 能力。
 
 | 已用 | 未用 |
 |------|------|
@@ -255,7 +255,7 @@ pub enum ActivityCategory {
 #### 改造原则
 
 1. **不保留旧 String 主接口**：`analyze_screenshot()` 直接改为 `Result<VisionAnalysis, String>`；`generate_summary()` 直接改为 `Result<StructuredSummary, String>`。
-2. **不兼容旧存储结构**：截图分析记录和屏幕摘要记录直接升级为新结构。开发期旧的 `~/.ai-pad/screenshots/` 与 screen summary 数据可清空或忽略，不写迁移器。
+2. **不兼容旧存储结构**：截图分析记录和屏幕摘要记录直接升级为新结构。开发期旧的 `~/.bitcat/screenshots/` 与 screen summary 数据可清空或忽略，不写迁移器。
 3. **删除旧解析函数**：`parse_vision_response()`、`parse_text_response()` 和只为兼容自由文本而存在的 fallback 不继续保留。
 4. **调用点同步改造**：bubble 显示取 `analysis.description`；记忆/摘要注入使用结构体格式化后的稳定文本。
 5. **测试以结构体为中心**：保留请求体快照测试，但主要断言 `VisionAnalysis` / `StructuredSummary` 字段，而不是 `String contains(...)`。
@@ -432,7 +432,7 @@ UI 分层：
 3. **已完成：app 层桥接事件**：新增 `bubble-tool-event`，由 `bubble.rs`/聊天循环发送到前端。
 4. **已完成：bubble 表演型工具体验**：普通工具显示低干扰状态条；`perform_dance/play_dance` 作为 `performance` 类型使用舞台文案（正在编舞 / 准备开跳 / 编舞失败），完成后短延迟退场，让 pet 舞蹈接管主视觉。
 5. **已完成：工具结果阶段雏形**：`StreamUserItem::ToolResult` 已关联回计划事件并发出 `Finished / Failed / Blocked`，包含 `success`、`elapsed_ms` 和短 `result_preview`；`Blocked` 通过 PermissionHook 的稳定拦截原因识别。`Allowed` 不做伪事件，后续若需要精确展示需把 PermissionHook 改为带事件 sink 的状态化 hook。
-6. **已完成：工具事件日志雏形**：`~/.ai-pad/logs/tool_events.jsonl` 追加稳定字段，如 `session_id`、`tool_name`、`phase`、`success`、`elapsed_ms`、`blocked`、`result_preview`；参数和结果只写短 preview。
+6. **已完成：工具事件日志雏形**：`~/.bitcat/logs/tool_events.jsonl` 追加稳定字段，如 `session_id`、`tool_name`、`phase`、`success`、`elapsed_ms`、`blocked`、`result_preview`；参数和结果只写短 preview。
 7. **已完成：Args → JsonSchema 单一事实源**：`LaunchArgs` / `ShellArgs` / `ReadFileArgs` / `GetTimeArgs` / `RecentScreenshotsArgs` / `HotkeyArgs` / `ClipboardArgs` / `ForegroundArgs` / `PerformDanceArgs` / `PlayDanceArgs` 已 derive `JsonSchema`，`agent.rs` 不再维护大块手写参数 JSON。
 8. **已完成：类型级枚举约束**：`GetTimeArgs.format` 从自由字符串提升为 `GetTimeFormat` enum，schema 枚举和执行逻辑共用同一类型。
 9. **已完成首轮：压缩工具描述**：已先压缩 `perform_dance` / `play_dance` 的 description 和 schema doc comment，减少固定 prompt 文本。下一步不急着做预算工具，等真实工具规模继续增长后再复测。
@@ -534,7 +534,7 @@ pub struct MemoryCandidate {
 当前方向是把记忆做成可 grep、可读、可 diff 的结构化文本：
 
 ```
-~/.ai-pad/memory/
+~/.bitcat/memory/
   chat_summary.json        — 当前滚动摘要，继续保留
   long_term.jsonl          — 一行一条长期记忆 record，可 grep，deleted 软删除
   daily/YYYY-MM-DD.md      — 可选：按天沉淀的人类可读摘要

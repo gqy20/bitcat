@@ -180,7 +180,7 @@ impl Default for AppearanceSettings {
 
 /// `app_settings.json` 的实际路径。None 表示无法解析 config_dir（罕见）。
 pub fn settings_path() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("ai-pad").join("app_settings.json"))
+    dirs::config_dir().map(|d| d.join("bitcat").join("app_settings.json"))
 }
 
 impl AppSettings {

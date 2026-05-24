@@ -18,7 +18,7 @@ const MAX_ROTATED_FILES: usize = 5;
 static LOG_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 static FRONTEND_LOG_GATE: OnceLock<Mutex<HashMap<String, SystemTime>>> = OnceLock::new();
 
-/// Return the canonical ai-pad log directory.
+/// Return the canonical BitCat log directory.
 ///
 /// Resolution order is explicit Windows profile, generic HOME, then the
 /// platform-specific home directory reported by `dirs`.
@@ -33,7 +33,7 @@ pub fn log_dir() -> Result<PathBuf, String> {
         })
         .or_else(dirs::home_dir)
         .ok_or_else(|| "unable to resolve home directory".to_string())?;
-    Ok(home.join(".ai-pad").join("logs"))
+    Ok(home.join(".bitcat").join("logs"))
 }
 
 /// Append a serializable record to a JSONL file under the canonical log dir.

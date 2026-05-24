@@ -1,6 +1,6 @@
-# 8Bit Cat Roadmap
+# BitCat Roadmap
 
-> **目标**：将 8Bit Cat 从 AI 桌宠进化为 **Steam 可发布的 AI 驱动桌面伴侣**。
+> **目标**：将 BitCat 从 AI 桌宠进化为 **Steam 可发布的 AI 驱动桌面伴侣**。
 > **核心差异化**：AI 通过结构化输出动态生成可玩内容（舞蹈 + 迷你游戏），而非仅对话。
 
 ---
@@ -30,7 +30,7 @@
 
 ## 源码确认的技术栈
 
-8Bit Cat 当前不是 Web 应用套壳，而是 **Windows-first 的 Rust 桌面自动化程序 + Tauri 多透明 WebView 界面 + rig Agent 运行时**。`oc-claw` 可参考产品模型和会话状态抽象，但不建议照搬它的前端/桌面技术栈；本项目已有更贴近桌宠和手柄场景的底座。
+BitCat 当前不是 Web 应用套壳，而是 **Windows-first 的 Rust 桌面自动化程序 + Tauri 多透明 WebView 界面 + rig Agent 运行时**。`oc-claw` 可参考产品模型和会话状态抽象，但不建议照搬它的前端/桌面技术栈；本项目已有更贴近桌宠和手柄场景的底座。
 
 | 层级 | 技术 | 源码依据 | 说明 |
 |------|------|----------|------|
@@ -70,7 +70,7 @@ Agent 管理线应优先复用现有栈：
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      8Bit Cat 产品路线                        │
+│                      BitCat 产品路线                        │
 │                                                             │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
 │  │ Track A  │  │ Track B  │  │ Track C  │  │ Track E  │   │
@@ -100,7 +100,7 @@ Agent 管理线应优先复用现有栈：
 
 - 新增 4 个 sprite 动作帧：jump / spin / wave / shake
 - 前端 dancePlayer 劫持渲染循环，播完交还控制权
-- 用户目录 `~/.ai-pad/dances/` 优先，内置预设 `config/dances/` 兜底
+- 用户目录 `~/.bitcat/dances/` 优先，内置预设 `config/dances/` 兜底
 
 详细设计：[plan/archive/structured-output-design.md](plan/archive/structured-output-design.md)
 
@@ -151,7 +151,7 @@ panel → cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle
 
 ### B2. Token 全链路追踪
 
-已完成 MVP：chat / vision / screen_summary / memory_aggregation 的 input/output/cache token 明细写入 `~/.ai-pad/logs/token_usage.jsonl`，最近会话汇总写入 `~/.ai-pad/logs/token_sessions.json`，并通过设置页 `cmd_get_token_stats` 展示今日消耗、最近会话和各链路占比。下一步是把统计用于决策：先观察真实用量，再决定是否优化工具 schema、上下文注入或模型路由。
+已完成 MVP：chat / vision / screen_summary / memory_aggregation 的 input/output/cache token 明细写入 `~/.bitcat/logs/token_usage.jsonl`，最近会话汇总写入 `~/.bitcat/logs/token_sessions.json`，并通过设置页 `cmd_get_token_stats` 展示今日消耗、最近会话和各链路占比。下一步是把统计用于决策：先观察真实用量，再决定是否优化工具 schema、上下文注入或模型路由。
 
 详细设计：[plan/archive/token-tracking.md](plan/archive/token-tracking.md)
 
@@ -163,7 +163,7 @@ panel → cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle
 
 ### B4. 工具运行时与开销优化（谨慎，不做关键词意图识别）
 
-当前 15 个工具仍全量注册到每次对话，但 B4 第一阶段已经完成了更基础的运行时治理：工具调用不再混入 bubble 正文，而是通过结构化事件单独呈现；普通工具显示低干扰状态条，舞蹈这类表演型工具显示“正在编舞 / 准备开跳”并短暂退场；工具结果会写入 `~/.ai-pad/logs/tool_events.jsonl`，用于后续统计成功率、耗时和拦截次数。
+当前 15 个工具仍全量注册到每次对话，但 B4 第一阶段已经完成了更基础的运行时治理：工具调用不再混入 bubble 正文，而是通过结构化事件单独呈现；普通工具显示低干扰状态条，舞蹈这类表演型工具显示“正在编舞 / 准备开跳”并短暂退场；工具结果会写入 `~/.bitcat/logs/tool_events.jsonl`，用于后续统计成功率、耗时和拦截次数。
 
 新的原则保持不变：**默认相信大模型自己选择工具，Rust 负责 schema、权限、生命周期事件、审计和体验呈现**。B4 现在已经足够支撑下一阶段游戏工具接入：未来 AI 层 `perform_game` / `play_game` 这类表演型或互动型工具应复用 `ToolKind::Performance` 或扩展出更精细的 kind，让 bubble 退到辅助位置，把主视觉交给 pet/panel/game 窗口；底层 `start_game(GameDef)` 已经存在，工具只需要接入这条通道。
 
@@ -181,7 +181,7 @@ panel → cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle
 
 ### B5. grep-first 文本记忆检索
 
-长期记忆的 grep-first 主链路已落地：`LongTermMemory` 使用 `~/.ai-pad/memory/long_term.jsonl`，一行一条当前有效 record，包含稳定 `id`、`created_at` 和 `deleted` 软删除字段；`record_candidate()` / `remember` 写入结构化候选，`retrieve_with()` 按 text/tag/source/min_importance 做可解释召回并最多返回 20 条候选，设置页按 id 审查和软删除。本项目仍不采用 Embeddings / Vector RAG；后续 B5 剩余工作是上下文瘦身和候选压缩：减少默认预塞长期记忆，让模型更多通过 `search_memory` 按需取候选，再自行判断语义相关性。
+长期记忆的 grep-first 主链路已落地：`LongTermMemory` 使用 `~/.bitcat/memory/long_term.jsonl`，一行一条当前有效 record，包含稳定 `id`、`created_at` 和 `deleted` 软删除字段；`record_candidate()` / `remember` 写入结构化候选，`retrieve_with()` 按 text/tag/source/min_importance 做可解释召回并最多返回 20 条候选，设置页按 id 审查和软删除。本项目仍不采用 Embeddings / Vector RAG；后续 B5 剩余工作是上下文瘦身和候选压缩：减少默认预塞长期记忆，让模型更多通过 `search_memory` 按需取候选，再自行判断语义相关性。
 
 详细取舍：[architecture/design-tradeoffs.md](architecture/design-tradeoffs.md)
 
@@ -194,7 +194,7 @@ panel → cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle
 1. **顶部通知岛**：reminder 和 Agent Watch 共用同一个通知窗口，支持队列、去重、动作按钮和来源字段。
 2. **提示音**：设置页可按来源配置系统提示音，覆盖 `info / success / warning / danger` 等等级，失败时只记录日志，不影响通知展示。
 3. **AI 提醒润色**：到期提醒可选调用无工具结构化 `ReminderPersonalizer`，根据标题、备注、到期时间和用户上下文生成更自然的短提醒；默认关闭，失败时回退确定性原文，prompt 统一在 `config/prompts.yml` 的 `reminder_personalizer` 段。
-4. **可诊断性**：提醒生命周期写入 `~/.ai-pad/logs/reminder_events.jsonl`，字段保留 `reminder_id`、`source`、`ui_source`、`store_path` 和异常上下文。
+4. **可诊断性**：提醒生命周期写入 `~/.bitcat/logs/reminder_events.jsonl`，字段保留 `reminder_id`、`source`、`ui_source`、`store_path` 和异常上下文。
 
 后续只保留打磨项：根据真实使用决定是否把 `complete_reminder` / `snooze_reminder` 也暴露给 Agent 工具；完善到期批量并发、费用门控和设置页的失败诊断。
 
@@ -232,15 +232,15 @@ panel → cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle
 
 ## Track E: AI 编码工具管理（参考 oc-claw）
 
-参考项目：[rainnoon/oc-claw](https://github.com/rainnoon/oc-claw)。它的核心价值不在具体 UI 栈，而在产品模型：把 Claude Code / Codex / Cursor / OpenClaw 等编码 Agent 的会话活动抽象为 `working / idle / waiting` 等状态，再用桌面宠物、会话面板、历史记录和用量指标持续呈现。8Bit Cat 可以把这条思路做得更“桌宠原生”：手柄、pet 动画、bubble、panel 和截图记忆都参与 Agent 管理，而不是只做一个独立状态仪表盘。
+参考项目：[rainnoon/oc-claw](https://github.com/rainnoon/oc-claw)。它的核心价值不在具体 UI 栈，而在产品模型：把 Claude Code / Codex / Cursor / OpenClaw 等编码 Agent 的会话活动抽象为 `working / idle / waiting` 等状态，再用桌面宠物、会话面板、历史记录和用量指标持续呈现。BitCat 可以把这条思路做得更“桌宠原生”：手柄、pet 动画、bubble、panel 和截图记忆都参与 Agent 管理，而不是只做一个独立状态仪表盘。
 
 ### oc-claw 源码核验结论
 
-本地核验 `oc-claw` 源码后，确认它是 **Tauri 2 + React 19 + Vite + Tailwind + Motion** 的构建型前端项目，真正应用位于 `frontend/`，Tauri 后端主要集中在 `frontend/src-tauri/src/lib.rs`（约 12K 行）。因此对 8Bit Cat 来说，它更适合作为 Agent 管理交互参考，而不是技术栈模板。
+本地核验 `oc-claw` 源码后，确认它是 **Tauri 2 + React 19 + Vite + Tailwind + Motion** 的构建型前端项目，真正应用位于 `frontend/`，Tauri 后端主要集中在 `frontend/src-tauri/src/lib.rs`（约 12K 行）。因此对 BitCat 来说，它更适合作为 Agent 管理交互参考，而不是技术栈模板。
 
 关键源码事实：
 
-| 主题 | oc-claw 源码现状 | 对 8Bit Cat 的启发 |
+| 主题 | oc-claw 源码现状 | 对 BitCat 的启发 |
 |------|------------------|-------------------|
 | 桌面壳 | Tauri 2，单个 `mini` 透明窗口，前端走 Vite 构建 | 我们保留多 WebView 静态窗口，不引入 React/Vite |
 | Agent 状态模型 | `ClaudeSession` 统一承载 `cc/codex/cursor`，字段含 `status/tool/toolInput/lastResponse/source` | 可以借鉴统一 `AgentSession`，但应拆进 core 类型和 app 监听层 |
@@ -253,7 +253,7 @@ panel → cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle
 | 状态排序 | Mini 面板按 waiting / compacting / working / idle 和更新时间排序 | 适合迁移到 Agent 管理页 |
 | 统计 | Claude/Codex 从 JSONL 提取 token；Codex token_count 是累计快照，需转 delta；Cursor 不可靠，返回空统计 | 统计逻辑要按 source 分支，不能假设所有工具都有 usage |
 
-最重要的修正：**oc-claw 源码并不证明 Windows Codex hook 已可用**。它保留了非 Windows Codex hook 和统计解析，但 Windows 分支明确写着 “Codex support is dropped on Windows”，并主动删除旧 hook。8Bit Cat 是 Windows-first，所以 E1 里 Codex 只能列为“待验证适配”，不能直接按 oc-claw 实现路线排期。
+最重要的修正：**oc-claw 源码并不证明 Windows Codex hook 已可用**。它保留了非 Windows Codex hook 和统计解析，但 Windows 分支明确写着 “Codex support is dropped on Windows”，并主动删除旧 hook。BitCat 是 Windows-first，所以 E1 里 Codex 只能列为“待验证适配”，不能直接按 oc-claw 实现路线排期。
 
 ### E1. Claude Code / Codex 会话监听
 
@@ -278,7 +278,7 @@ agent_monitor_loop()
   ├── 推送 agent-session-update 到 settings / agent-watch 浮动窗 / remote viewer
   ├── 通过统一顶部通知窗口发 waiting / done / error 提醒
   ├── 通过 PetEventBus 发低频状态反馈
-  └── 写入 ~/.ai-pad/logs/agent_watch_events.jsonl / agent_watch_sessions.jsonl / agent_watch_nudges.jsonl
+  └── 写入 ~/.bitcat/logs/agent_watch_events.jsonl / agent_watch_sessions.jsonl / agent_watch_nudges.jsonl
 ```
 
 `AgentSession` 建议字段：
@@ -294,7 +294,7 @@ agent_monitor_loop()
 
 ### E2. 桌宠化 Agent 状态管理
 
-oc-claw 的状态宠物可以作为参考，但 8Bit Cat 应把状态直接接进现有宠物身体语言：
+oc-claw 的状态宠物可以作为参考，但 BitCat 应把状态直接接进现有宠物身体语言：
 
 | Agent 状态 | 桌宠表现 | UI 表现 |
 |------------|----------|---------|
@@ -346,7 +346,7 @@ oc-claw 的状态宠物可以作为参考，但 8Bit Cat 应把状态直接接�
 
 ### 与现有路线的关系
 
-E 线不是替代 A/B/C，而是让 8Bit Cat 从“自己是一个 AI 桌宠”进化成“帮主人看管其他 AI 编码 Agent 的桌宠管家”：
+E 线不是替代 A/B/C，而是让 BitCat 从“自己是一个 AI 桌宠”进化成“帮主人看管其他 AI 编码 Agent 的桌宠管家”：
 
 ```text
 B4 工具事件协议 ──→ E3 控制动作审计
@@ -384,7 +384,7 @@ pet/bubble/panel ──→ E2 状态呈现与手柄操作
 | VPet | 免费 | 开源社区驱动 |
 | Weyrdlets 2.0 | $5-8 | 有迷你游戏但无 AI |
 | AI Desktop Pet | ~$8 | Live2D + 本地 LLM + Workshop |
-| **8Bit Cat** | **$5-7** | 像素风 + AI 对话 + **AI 生成内容** + 开源 |
+| **BitCat** | **$5-7** | 像素风 + AI 对话 + **AI 生成内容** + 开源 |
 
 ---
 
@@ -497,14 +497,14 @@ A1+A2+E1/E2+C1 ──→ D1(Steam) MVP 差异化更完整
 ## 数据目录规划
 
 ```
-~/.ai-pad/
+~/.bitcat/
 ├── dances/              # AI 生成的舞蹈 (A1)
 ├── games/               # AI 生成的游戏 (A2)
 ├── screenshots/         # 已有
 ├── camera/              # 摄像头观察记录（默认关闭，开启后写 analysis JSON/可选帧图片）
 ├── memory/              # 已有：chat_summary.json + long_term.jsonl grep-first 记忆
 ├── logs/
-│   ├── ai-pad.YYYY-MM-DD.log
+│   ├── bitcat.YYYY-MM-DD.log
 │   ├── token_usage.jsonl    # Token 追踪行日志 (B2)
 │   ├── token_sessions.json  # 会话级汇总 (B2)
 │   ├── tool_events.jsonl    # 工具生命周期审计 (B4)

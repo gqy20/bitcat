@@ -1,6 +1,6 @@
 # Remote Agent Watch
 
-Remote Agent Watch lets a Windows 8Bit Cat instance watch Claude Code and Codex sessions running on reachable macOS/Linux machines. Reachability can be LAN, Tailscale/tailnet, VPN, or another manually reachable address.
+Remote Agent Watch lets a Windows BitCat instance watch Claude Code and Codex sessions running on reachable macOS/Linux machines. Reachability can be LAN, Tailscale/tailnet, VPN, or another manually reachable address.
 
 ## Ports
 
@@ -25,7 +25,7 @@ On the Windows host, open Settings -> Agent Watch and copy the remote install co
 curl -fsSL http://<windows-ip>:5344/remote-install.sh | bash -s -- --host <windows-ip> --port 5342
 ```
 
-Run that command on the remote macOS/Linux machine. It does not require the remote machine to have this repository checked out; the script is downloaded from the Windows 8Bit Cat viewer service.
+Run that command on the remote macOS/Linux machine. It does not require the remote machine to have this repository checked out; the script is downloaded from the Windows BitCat viewer service.
 
 When Windows has more than one plausible remote address, Settings generates a slightly longer command that tries each candidate and uses the first reachable one. This covers machines that can reach `192.168.x.x`, `10.x.x.x`, or a tailnet/CGNAT `100.64.0.0/10` address.
 
@@ -42,10 +42,10 @@ Settings shows redacted endpoint labels by default, such as `LAN 192.168.*.20` o
 
 The installer:
 
-- writes `~/.ai-pad/hooks/sender.sh`;
+- writes `~/.bitcat/hooks/sender.sh`;
 - installs marker-scoped Claude Code hooks when `~/.claude` exists;
 - installs marker-scoped Codex hooks when `~/.codex` exists;
-- repairs previous 8Bit Cat hook installs by removing known stale markers before writing the current hook set;
+- repairs previous BitCat hook installs by removing known stale markers before writing the current hook set;
 - wraps hook payloads as `{ "source", "machine", "payload" }`;
 - sends the envelope to the Windows monitor.
 
@@ -53,7 +53,7 @@ The sender is intentionally best-effort: it uses a short network timeout and exi
 
 After installation, the script sends one self-test envelope to the Windows monitor. This should make the remote device appear in Agent Watch immediately when port `5342` is reachable. You can opt out with `--no-self-test`.
 
-You do not need to restart 8Bit Cat after installing remote hooks. After the self-test, real remote sessions continue to update whenever Claude Code or Codex emits a hook event, such as a prompt submit, tool call, permission request, stop, or notification.
+You do not need to restart BitCat after installing remote hooks. After the self-test, real remote sessions continue to update whenever Claude Code or Codex emits a hook event, such as a prompt submit, tool call, permission request, stop, or notification.
 
 ## Trust Codex Hooks
 
@@ -69,10 +69,10 @@ open the hook review UI:
 /hooks
 ```
 
-Then review each 8Bit Cat hook. Enter every hook item and press `T` to trust it. The commands should point at the installed sender, for example:
+Then review each BitCat hook. Enter every hook item and press `T` to trust it. The commands should point at the installed sender, for example:
 
 ```bash
-AI_PAD_SOURCE=codex bash ~/.ai-pad/hooks/sender.sh
+AI_PAD_SOURCE=codex bash ~/.bitcat/hooks/sender.sh
 ```
 
 After all hooks are trusted, return to Codex and submit another prompt or trigger a tool call. The Windows Agent Watch view should then show the remote Codex session. This trust step is required by Codex and is not bypassed by the installer.
@@ -86,7 +86,7 @@ curl -fsSL http://<windows-ip>:5344/remote-install.sh | bash -s -- --host <windo
 curl -fsSL http://<windows-ip>:5344/remote-install.sh | bash -s -- --host <windows-ip> --source codex
 ```
 
-Remove 8Bit Cat remote hooks:
+Remove BitCat remote hooks:
 
 ```bash
 curl -fsSL http://<windows-ip>:5344/remote-install.sh | bash -s -- --uninstall
@@ -106,7 +106,7 @@ It should return:
 {"ok":true}
 ```
 
-The installer normally sends a self-test event right after writing the hooks, so the Windows Settings -> Agent Watch page should show the remote device without restarting 8Bit Cat. Then trigger a Claude Code or Codex event on the remote machine to verify real hook traffic. The standalone `/watch` page is read-only and can be opened from any reachable device while the remote viewer switch is enabled.
+The installer normally sends a self-test event right after writing the hooks, so the Windows Settings -> Agent Watch page should show the remote device without restarting BitCat. Then trigger a Claude Code or Codex event on the remote machine to verify real hook traffic. The standalone `/watch` page is read-only and can be opened from any reachable device while the remote viewer switch is enabled.
 
 If the script downloads but sessions never appear, the remote machine can probably reach `5344` but not `5342`. Allow inbound TCP `5342` through Windows Firewall and make sure the selected endpoint is reachable from that remote network.
 

@@ -1,6 +1,6 @@
 # 截图观察
 
-8Bit Cat 会在后台定时截图，用 Vision 模型分析屏幕内容，让对话能理解你最近在做什么。截图分析结果会保存到本地，并可作为 AI 上下文或工具查询来源。
+BitCat 会在后台定时截图，用 Vision 模型分析屏幕内容，让对话能理解你最近在做什么。截图分析结果会保存到本地，并可作为 AI 上下文或工具查询来源。
 
 ## 工作流程
 
@@ -31,7 +31,7 @@
 ## 保存位置
 
 ```text
-~/.ai-pad/screenshots/YYYY-MM-DD/
+~/.bitcat/screenshots/YYYY-MM-DD/
 ├── HHMMSS.jpg
 └── HHMMSS_analysis.json
 ```
@@ -86,7 +86,7 @@ screen_summary:
 - `camera.html` 用浏览器 `getUserMedia` 获取权限并在屏幕外隐藏运行。
 - 采样间隔跟随设置页的截图间隔，后端还会做节流和忙碌状态避让。
 - 提示词来自 `config/prompts.yml` 的 `camera.prompt`，禁止身份识别和敏感属性推断，只做低风险状态概括。
-- 记录保存到 `~/.ai-pad/camera/YYYY-MM-DD/`；默认只保存分析 JSON，启用“保存摄像头帧”后才保存图片。
+- 记录保存到 `~/.bitcat/camera/YYYY-MM-DD/`；默认只保存分析 JSON，启用“保存摄像头帧”后才保存图片。
 
 ## 降低消耗
 

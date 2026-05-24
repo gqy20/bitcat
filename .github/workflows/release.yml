@@ -132,7 +132,7 @@ jobs:
           $bundleRoot = "target/${{ matrix.target }}/release/bundle"
           Get-ChildItem -Path $bundleRoot -Recurse -Include *.msi,*.exe -ErrorAction SilentlyContinue | ForEach-Object {
             $ext = $_.Extension.TrimStart('.')
-            $dest = "$outDir/ai-pad-$tag-windows-${{ matrix.arch }}.$ext"
+            $dest = "$outDir/bitcat-$tag-windows-${{ matrix.arch }}.$ext"
             Copy-Item $_.FullName $dest -Force
             Write-Host "✓ $ext bundle: $dest"
           }
@@ -143,7 +143,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ai-pad-${{ env.RELEASE_TAG }}-windows-${{ matrix.arch }}
+          name: bitcat-${{ env.RELEASE_TAG }}-windows-${{ matrix.arch }}
           path: release-out/*
           if-no-files-found: error
 
@@ -161,7 +161,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: dist
-          pattern: ai-pad-*
+          pattern: bitcat-*
           merge-multiple: true
 
       # ── SHA256 校验文件（所有产物）──
@@ -218,9 +218,9 @@ jobs:
             '',
             '| 类型 | 文件 | 说明 |',
             '|------|------|------|',
-            "| 🟦 Windows 安装器 (MSI) | ``ai-pad-$tag-windows-x64.msi`` | 标准 MSI，适合企业/静默安装 |",
-            "| 🟩 Windows 安装器 (NSIS) | ``ai-pad-$tag-windows-x64.exe`` | 常规安装向导（推荐） |",
-            "| 🟨 Windows 便携版 | ``ai-pad-$tag-windows-x64-portable.zip`` | 解压即用，无需安装 |",
+            "| 🟦 Windows 安装器 (MSI) | ``bitcat-$tag-windows-x64.msi`` | 标准 MSI，适合企业/静默安装 |",
+            "| 🟩 Windows 安装器 (NSIS) | ``bitcat-$tag-windows-x64.exe`` | 常规安装向导（推荐） |",
+            "| 🟨 Windows 便携版 | ``bitcat-$tag-windows-x64-portable.zip`` | 解压即用，无需安装 |",
             '| 🔐 校验和 | ``checksums.txt`` | SHA-256 |',
             '',
             '> 下载后可用 ``Get-FileHash <文件> -Algorithm SHA256`` 与 ``checksums.txt`` 对比验证完整性。'
@@ -228,7 +228,7 @@ jobs:
 
           $repo = '${{ github.repository }}'
           $body = @(
-            "## 8Bit Cat $tag",
+            "## BitCat $tag",
             '',
             'AI 桌面宠物 — Rust + Tauri 2.0 + SDL2 手柄驱动',
             '',
@@ -251,7 +251,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: "8Bit Cat ${{ env.RELEASE_TAG }}"
+          name: "BitCat ${{ env.RELEASE_TAG }}"
           body_path: release-notes.md
           draft: false
           prerelease: ${{ contains(env.RELEASE_TAG, 'alpha') || contains(env.RELEASE_TAG, 'beta') || contains(env.RELEASE_TAG, 'rc') }}

@@ -36,7 +36,7 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let stop_dance_item = MenuItem::with_id(app, MENU_STOP_DANCE, "停止舞动", true, None::<&str>)?;
     let separator_state = PredefinedMenuItem::separator(app)?;
     let reload_item = MenuItem::with_id(app, MENU_RELOAD, "重新载入配置", true, None::<&str>)?;
-    let exit_item = MenuItem::with_id(app, MENU_EXIT, "退出 8Bit Cat", true, None::<&str>)?;
+    let exit_item = MenuItem::with_id(app, MENU_EXIT, "退出 BitCat", true, None::<&str>)?;
 
     let menu = Menu::with_items(
         app,
@@ -170,7 +170,7 @@ pub async fn cmd_show_pet_context_menu(
         .map_err(|e| e.to_string())?;
     let more_menu = Submenu::with_id_and_items(&app, PET_MENU_MORE, "更多", true, &[&reload_item])
         .map_err(|e| e.to_string())?;
-    let exit_item = MenuItem::with_id(&app, PET_MENU_EXIT, "退出 8Bit Cat", true, None::<&str>)
+    let exit_item = MenuItem::with_id(&app, PET_MENU_EXIT, "退出 BitCat", true, None::<&str>)
         .map_err(|e| e.to_string())?;
 
     let menu = Menu::with_items(

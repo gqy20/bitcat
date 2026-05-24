@@ -227,7 +227,7 @@ pub fn start_game(app: &AppHandle, def: GameDef) -> Result<(), String> {
 fn create_game_window(app: &AppHandle, startup_id: u64) -> Result<tauri::WebviewWindow, String> {
     info!(startup_id, url = "game.html", "[game] build window begin");
     let window = WebviewWindowBuilder::new(app, "game", WebviewUrl::App("game.html".into()))
-        .title("8Bit Game")
+        .title("BitCat Game")
         .inner_size(1280.0, 720.0)
         .decorations(false)
         .transparent(true)

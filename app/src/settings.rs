@@ -59,7 +59,7 @@ pub fn toggle_settings(app: &AppHandle) {
 /// 鎸夐渶鍒涘缓璁剧疆绐楀彛
 fn create_settings_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
     WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::App("settings.html".into()))
-        .title("8Bit Cat 璁剧疆")
+        .title("BitCat 璁剧疆")
         .inner_size(WINDOW_W, WINDOW_H)
         .min_inner_size(860.0, 560.0)
         .decorations(false)

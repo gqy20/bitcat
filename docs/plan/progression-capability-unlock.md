@@ -1,4 +1,4 @@
-# 8Bit 成长与能力解锁实施计划
+# BitCat 成长与能力解锁实施计划
 
 状态：设计落地计划，未开始实现（2026-05-18 补充积分体系五层设计、商店、成就、每日任务、心情系统）
 前置调研：[core-gameplay-progression-research.md](../research/core-gameplay-progression-research.md)
@@ -6,9 +6,9 @@ Steam 积分模式参考：Hades（多层货币）、Vampire Survivors（极简�
 
 ## 目标
 
-把 8Bit 从“一开始全功能开放的 AI 桌宠”，调整为“刚醒来有点笨、随着使用逐步学会能力的智能伙伴”。用户在使用过程中能感受到：
+把 BitCat 从“一开始全功能开放的 AI 桌宠”，调整为“刚醒来有点笨、随着使用逐步学会能力的智能伙伴”。用户在使用过程中能感受到：
 
-- 8Bit 的表达方式在变化；
+- BitCat 的表达方式在变化；
 - 已有功能按阶段自然开放；
 - 用户能通过日常使用获得 Bit 和默契；
 - 高风险能力需要显式授权，不会因为升级自动打开。
@@ -144,9 +144,9 @@ pub enum FeatureId {
 本地文件：
 
 ```text
-~/.ai-pad/progression/progress.json      — 主状态（等级/Bit/默契/心情/库存/成就）
-~/.ai-pad/progression/ledger.jsonl       — Bit 收支流水（append-only，可 grep）
-~/.ai-pad/progression/daily_quests.json  — 当日任务状态
+~/.bitcat/progression/progress.json      — 主状态（等级/Bit/默契/心情/库存/成就）
+~/.bitcat/progression/ledger.jsonl       — Bit 收支流水（append-only，可 grep）
+~/.bitcat/progression/daily_quests.json  — 当日任务状态
 config/shop.yml                          — 商品定义
 config/achievements.yml                  — 成就定义
 config/daily_quests.yml                  — 每日任务模板池
@@ -203,7 +203,7 @@ agent_lv5.preamble
 ```yaml
 agent:
   preamble: |
-    你是 8Bit，一只住在电脑屏幕上的像素风小猫助手。
+    你是 BitCat，一只住在电脑屏幕上的像素风小猫助手。
     ...
   stage_overlays:
     feature_phone: |
@@ -232,13 +232,13 @@ pub struct AgentPromptConfig {
 聊天前注入：
 
 ```text
-[8Bit成长状态]
+[BitCat成长状态]
 当前阶段：Lv2 小记性
 阶段表现：你可以记住用户明确允许你记住的信息。遇到不确定记忆时要承认可能记错。
 已开放能力：chat, short_memory, memory_review
 尚未开放能力：background_vision, shell, hotkey, agent_watch
 安全规则：不要声称你拥有尚未开放或用户未授权的能力。
-[/8Bit成长状态]
+[/BitCat成长状态]
 ```
 
 这个上下文应该在 `app/src/gamepad.rs` 中与 memory/profile/screen_summary 一起拼进 `context_parts`。
@@ -298,7 +298,7 @@ pub struct AgentPromptConfig {
 
 ```text
 ┌─────────────────────────────────────────────────────┐
-│                 8Bit 积分体系                          │
+│                 BitCat 积分体系                          │
 │                                                     │
 │  第一层：Bit（日常软货币，可花费）                       │
 │    赚：聊天/游戏/签到/截图                              │
@@ -308,7 +308,7 @@ pub struct AgentPromptConfig {
 │                                                     │
 │  第二层：默契（经验值，不可花费）                        │
 │    赚：所有互动累积                                    │
-│    用：等级提升 → 能力解锁 → 8Bit 变聪明                │
+│    用：等级提升 → 能力解锁 → BitCat 变聪明                │
 │    节奏：长线累积，几周爬一级                            │
 │    参考：Dead Cells（Cells → 蓝图解锁）                │
 │                                                     │
@@ -321,10 +321,10 @@ pub struct AgentPromptConfig {
 │  第四层：每日任务（短期目标）                            │
 │    形式：每天 3 个随机小目标                             │
 │    奖励：Bit + 偶尔触发隐藏成就                          │
-│    心理：给用户”今天打开 8Bit 要做什么”的理由             │
+│    心理：给用户”今天打开 BitCat 要做什么”的理由             │
 │    参考：Slay the Spire 每日挑战                       │
 │                                                     │
-│  第五层：8Bit 心情（隐式积分）                          │
+│  第五层：BitCat 心情（隐式积分）                          │
 │    机制：受互动频率和类型影响，不显示具体数值              │
 │    效果：高心情 → 主动搭话/更积极的回复                  │
 │          低心情 → 安静/犯困/回复变简短                   │
@@ -386,7 +386,7 @@ pub enum ShopCategory {
 
 ```text
 config/shop.yml          — 商品定义（可扩展，无需改代码）
-~/.ai-pad/progression/inventory.json  — 已购买商品记录
+~/.bitcat/progression/inventory.json  — 已购买商品记录
 ```
 
 商店内容在 `shop.yml` 中定义而非硬编码，方便后续追加商品而不用改 Rust 代码。
@@ -431,7 +431,7 @@ pub enum AchievementCondition {
     TotalDances(u32),                   // 累计跳舞 N 次
     TotalScreenshots(u32),              // 累计手动截图 N 次
     SpecificTime { hour_start: u32, hour_end: u32 }, // 特定时间段使用
-    SpecificPhrase(String),             // 对 8Bit 说出特定内容（隐藏成就）
+    SpecificPhrase(String),             // 对 BitCat 说出特定内容（隐藏成就）
     Custom(String),                     // 自定义条件表达式
 }
 ```
@@ -470,9 +470,9 @@ pub enum AchievementCondition {
 **隐藏成就**（条件不公开，达成后揭晓）：
 | ID | 名称 | 条件 | 稀有度 |
 |----|------|------|--------|
-| secret_cat_person | ??? | 对 8Bit 说”你是最好的” | Rare |
+| secret_cat_person | ??? | 对 BitCat 说”你是最好的” | Rare |
 | secret_hacker | ??? | shell 命令执行成功 5 次 | Epic |
-| secret_midnight | ??? | 0:00 正好在和 8Bit 聊天 | Rare |
+| secret_midnight | ??? | 0:00 正好在和 BitCat 聊天 | Rare |
 | secret_patience | ??? | 连续 10 分钟不操作 | Uncommon |
 
 **成就解锁奖励**：大部分成就不给 Bit（避免刷成就通胀），但有 2 个例外：
@@ -481,7 +481,7 @@ pub enum AchievementCondition {
 
 ## 每日任务系统
 
-给用户”今天打开 8Bit 要做什么”的短期目标。每天 3 个随机任务，次日 0 点刷新。
+给用户”今天打开 BitCat 要做什么”的短期目标。每天 3 个随机任务，次日 0 点刷新。
 
 ### 任务定义
 
@@ -509,12 +509,12 @@ pub enum QuestType {
 
 | 任务模板 | 概率权重 | Bit 奖励 |
 |---------|---------|---------|
-| 和 8Bit 聊 3 次 | 3 | 15 |
-| 和 8Bit 聊 5 次 | 2 | 25 |
+| 和 BitCat 聊 3 次 | 3 | 15 |
+| 和 BitCat 聊 5 次 | 2 | 25 |
 | 玩一局 Snake | 2 | 20 |
 | 玩一局 Memory | 2 | 20 |
 | 玩任意一局游戏 | 3 | 15 |
-| 让 8Bit 跳一段舞 | 2 | 10 |
+| 让 BitCat 跳一段舞 | 2 | 10 |
 | 手动截一张图 | 1 | 15 |
 | 使用 AI 工具 1 次 | 2 | 20 |
 | 连续对话 3 轮 | 1 | 30 |
@@ -524,15 +524,15 @@ pub enum QuestType {
 ### 任务数据
 
 ```text
-~/.ai-pad/progression/daily_quests.json  — 当日任务状态
+~/.bitcat/progression/daily_quests.json  — 当日任务状态
 config/daily_quests.yml                  — 任务模板池
 ```
 
 任务刷新时如果前一天的未完成，**不惩罚**，直接替换为新任务（参考研究文档的”断签不惩罚”原则）。
 
-## 8Bit 心情系统
+## BitCat 心情系统
 
-隐式积分：影响 8Bit 的回复风格和主动行为，不向用户显示具体数值。
+隐式积分：影响 BitCat 的回复风格和主动行为，不向用户显示具体数值。
 
 ### 心情因子
 
@@ -565,7 +565,7 @@ happiness 钳位到 [0.0, 1.0]
 | 0.2~0.5 低落 | 回复变简短、更多犯困动画、不太主动 |
 | 0.0~0.2 孤单 | 安静待机、偶尔叹气动画、用户回来时特别高兴 |
 
-**关键设计**：心情不显示具体数值。用户通过 8Bit 的行为自然感知”它今天好像不太开心”。如果用户主动关心（”你还好吗”），8Bit 可以诚实回答自己的感受，这本身就是互动的一部分。
+**关键设计**：心情不显示具体数值。用户通过 BitCat 的行为自然感知”它今天好像不太开心”。如果用户主动关心（”你还好吗”），BitCat 可以诚实回答自己的感受，这本身就是互动的一部分。
 
 ### 心情不影响的东西
 
@@ -599,7 +599,7 @@ happiness 钳位到 [0.0, 1.0]
 默契达到门槛时：
   1. 宠物进入特殊动画（发光 + 跳跃）
   2. 全屏半透明遮罩
-  3. “8Bit 长大了！” 标题
+  3. “BitCat 长大了！” 标题
   4. 新等级名称 + 解锁能力描述
   5. 如果新能力需要授权，显示”去设置开启”按钮
   6. 3s 后自动消失，或用户点击关闭
@@ -694,7 +694,7 @@ happiness 钳位到 [0.0, 1.0]
 ### Phase 1：接入聊天上下文
 
 - 在 `app/src/gamepad.rs` 加载 `ProgressStore`。
-- 拼接 `[8Bit成长状态]` 到 `context_parts`。
+- 拼接 `[BitCat成长状态]` 到 `context_parts`。
 - 聊天成功后记录 `ProgressEvent::ChatCompleted`。
 - 升级时用 bubble 或 pet event 提示。
 
@@ -802,5 +802,5 @@ frontend：
 - `app/src/gamepad.rs` 注入成长上下文并记录聊天完成
 - 基础测试
 
-这个 PR 完成后，8Bit 就能在对话里表现出”当前阶段”，Bit / 默契 / 成就 / 每日任务的数据层就位，但还不动工具权限和设置页 UI，风险最低。
+这个 PR 完成后，BitCat 就能在对话里表现出”当前阶段”，Bit / 默契 / 成就 / 每日任务的数据层就位，但还不动工具权限和设置页 UI，风险最低。
 

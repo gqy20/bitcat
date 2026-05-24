@@ -124,8 +124,8 @@ describe('sprite-loader', () => {
     const previousTauri = window.__TAURI__;
     const previousPetAssetUrl = window.__PET_ASSET_URL__;
     window.__PET_ASSET_URL__ = '';
-    window.sessionStorage.removeItem('ai-pad.petAssetUrl');
-    window.localStorage.removeItem('ai-pad.petAssetUrl');
+    window.sessionStorage.removeItem('bitcat.petAssetUrl');
+    window.localStorage.removeItem('bitcat.petAssetUrl');
     window.__TAURI__ = {
       core: {
         invoke: async (command) => {
@@ -140,11 +140,11 @@ describe('sprite-loader', () => {
     };
 
     await expect(configuredPetAssetUrlAsync()).resolves.toBe('/__fixtures__/pets/status');
-    expect(window.sessionStorage.getItem('ai-pad.petAssetUrl')).toBe('/__fixtures__/pets/status');
+    expect(window.sessionStorage.getItem('bitcat.petAssetUrl')).toBe('/__fixtures__/pets/status');
 
     window.__TAURI__ = previousTauri;
     window.__PET_ASSET_URL__ = previousPetAssetUrl;
-    window.sessionStorage.removeItem('ai-pad.petAssetUrl');
+    window.sessionStorage.removeItem('bitcat.petAssetUrl');
   });
 
   it('loads the piggy v2 pack when no asset url is configured', async () => {
