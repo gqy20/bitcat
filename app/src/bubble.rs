@@ -218,7 +218,7 @@ pub struct AgentToastPayload {
 pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
     let state: State<SharedBubble> = app.state();
 
-    if ai_pad_core::performance::is_performing() {
+    if bitcat_core::performance::is_performing() {
         debug!(
             text_len = text.chars().count(),
             "bubble skipped while performance is active"

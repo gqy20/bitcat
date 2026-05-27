@@ -3,7 +3,7 @@
 //! The app keeps the settings file in the platform config directory so it can
 //! always be found before user preferences are loaded. Runtime data paths are
 //! resolved from `AppSettings.storage`, falling back to the current BitCat
-//! defaults without probing or importing legacy ai-pad directories.
+//! defaults without probing or importing directories from the old project name.
 
 use std::path::PathBuf;
 

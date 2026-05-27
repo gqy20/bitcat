@@ -12,7 +12,7 @@
 
 .PHONY: build release dist dist-upx test test-core test-app test-fast nextest run check clippy clean \
         install-hooks \
-        py-read py-ctl py-test all
+        py-test all
 
 export CMAKE_POLICY_VERSION_MINIMUM = 3.5
 
@@ -78,7 +78,7 @@ nextest: test
 # 原理：cargo-husky 的 build.rs 在 cargo test 时写入 .git/hooks/
 # 脚本源在 .cargo-husky/hooks/。跳过安装：CARGO_HUSKY_DONT_INSTALL_HOOKS=true
 install-hooks:
-	@cargo test -p ai-pad-core --no-run --quiet
+	@cargo test -p bitcat-core --no-run --quiet
 	@echo 'Git hooks 已安装到 .git/hooks/（pre-commit + pre-push）'
 
 check:
@@ -88,7 +88,7 @@ clippy:
 	cargo clippy -- -W clippy::all
 
 run:
-	cargo run -p ai-pad-app --bin ai-pad-app
+	cargo run -p bitcat-app --bin bitcat
 
 # ══════════════════════════════════════
 #  清理
@@ -101,12 +101,6 @@ clean:
 # ══════════════════════════════════════
 #  Python（预留）
 # ══════════════════════════════════════
-
-py-read:
-	uv run python -m ai_pad.reader
-
-py-ctl:
-	uv run python -m ai_pad.ctl
 
 py-test:
 	uv run pytest -v

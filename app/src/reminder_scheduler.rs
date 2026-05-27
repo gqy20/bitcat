@@ -21,7 +21,7 @@ pub fn spawn_reminder_scheduler(app: AppHandle) {
                 debug!("reminder scheduler shutdown requested");
                 break;
             }
-            match ai_pad_core::reminder::fire_due_reminders(chrono::Local::now()) {
+            match bitcat_core::reminder::fire_due_reminders(chrono::Local::now()) {
                 Ok(reminders) => {
                     for reminder in reminders {
                         if let Err(e) = show_due_reminder(&app, &reminder) {
@@ -38,16 +38,16 @@ pub fn spawn_reminder_scheduler(app: AppHandle) {
 
 fn show_due_reminder(
     app: &AppHandle,
-    reminder: &ai_pad_core::reminder::ReminderRecord,
+    reminder: &bitcat_core::reminder::ReminderRecord,
 ) -> Result<(), String> {
     let copy = personalize_due_reminder(reminder);
     crate::notification_window::show_reminder_notification_with_copy(app, reminder, copy)
 }
 
 fn personalize_due_reminder(
-    reminder: &ai_pad_core::reminder::ReminderRecord,
-) -> Option<ai_pad_core::reminder_personalizer::ReminderNotificationCopy> {
-    let settings = ai_pad_core::app_settings::AppSettings::load();
+    reminder: &bitcat_core::reminder::ReminderRecord,
+) -> Option<bitcat_core::reminder_personalizer::ReminderNotificationCopy> {
+    let settings = bitcat_core::app_settings::AppSettings::load();
     if !settings.appearance.reminder_ai_personalization_enabled {
         return None;
     }
@@ -56,7 +56,7 @@ fn personalize_due_reminder(
         .appearance
         .reminder_ai_timeout_ms
         .clamp(MIN_PERSONALIZER_TIMEOUT_MS, MAX_PERSONALIZER_TIMEOUT_MS);
-    let ai_config = match ai_pad_core::ai_config::AiConfig::load() {
+    let ai_config = match bitcat_core::ai_config::AiConfig::load() {
         Ok(config) => config,
         Err(e) => {
             warn!(error = %e, reminder_id = %reminder.id, "reminder personalizer config unavailable");
@@ -76,7 +76,7 @@ fn personalize_due_reminder(
     };
     match runtime.block_on(tokio::time::timeout(
         std::time::Duration::from_millis(timeout_ms),
-        ai_pad_core::reminder_personalizer::personalize_reminder_notification(
+        bitcat_core::reminder_personalizer::personalize_reminder_notification(
             &ai_config, &reminder,
         ),
     )) {

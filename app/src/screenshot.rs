@@ -12,9 +12,9 @@
 //! `SCREENSHOT_PIPELINE_LOCK`，确保 BitBlt 捕获和 Vision 分析串行。
 //!
 //! 与 [`crate::bubble`] 模块交互：分析结果通过 `show_bubble` 显示；
-//! 与 [`ai_pad_core::vision`] 模块交互：构建 Vision API 请求并解析响应。
+//! 与 [`bitcat_core::vision`] 模块交互：构建 Vision API 请求并解析响应。
 
-use ai_pad_core::screenshot::{CapturedFrame, ScreenInfo, ScreenshotTarget};
+use bitcat_core::screenshot::{CapturedFrame, ScreenInfo, ScreenshotTarget};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
@@ -52,7 +52,7 @@ fn emit_screenshot_observing(app: &tauri::AppHandle) {
     let bus: tauri::State<'_, crate::pet_event_bus::SharedPetEventBus> = app.state();
     bus.emit(
         app,
-        ai_pad_core::pet_event::PetEvent::screenshot_observing(),
+        bitcat_core::pet_event::PetEvent::screenshot_observing(),
     );
 }
 
@@ -210,7 +210,7 @@ fn capture_primary() -> Result<CapturedFrame, String> {
 /// 安全约束：赋值 → 调用 → 立即清零，且调用期间不可并发。
 #[cfg(target_os = "windows")]
 fn capture_all_screens() -> Result<CapturedFrame, String> {
-    use ai_pad_core::screenshot::stitch_horizontal;
+    use bitcat_core::screenshot::stitch_horizontal;
     let frames = capture_all_monitor_frames()?;
     if frames.len() == 1 {
         return Ok(frames.into_iter().next().unwrap().frame);
@@ -464,9 +464,9 @@ pub fn cmd_get_recent_screenshot_analyses(
     count: Option<usize>,
 ) -> Result<Vec<RecentScreenshotAnalysisSummary>, String> {
     let count = count.unwrap_or(3).clamp(1, 6);
-    let base = ai_pad_core::screenshot::screenshot_base_dir()?;
+    let base = bitcat_core::screenshot::screenshot_base_dir()?;
     Ok(
-        ai_pad_core::screenshot::list_recent_analyses_multi_day_named(&base, count)
+        bitcat_core::screenshot::list_recent_analyses_multi_day_named(&base, count)
             .into_iter()
             .map(|(day, file_name, record)| RecentScreenshotAnalysisSummary {
                 time_label: screenshot_time_label(&file_name, &day),
@@ -522,7 +522,7 @@ mod inbox_tests {
 /// 全黑帧采样 → 缩放 JPEG → Vision API 分析 → 保存文件 → 气泡展示 →
 /// 定时生成屏幕活动摘要。使用单线程 tokio runtime 驱动异步 HTTP 调用。
 pub fn screenshot_loop(app: &tauri::AppHandle) {
-    use ai_pad_core::screenshot::ScreenshotConfig;
+    use bitcat_core::screenshot::ScreenshotConfig;
     use tracing::{debug, error, info, trace, warn};
 
     let rt = match tokio::runtime::Builder::new_current_thread()
@@ -548,7 +548,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
     };
 
     // 从 app_settings.json 读取用户可调间隔；每轮循环都会 re-load
-    let initial_interval = ai_pad_core::app_settings::AppSettings::load()
+    let initial_interval = bitcat_core::app_settings::AppSettings::load()
         .appearance
         .screenshot_interval_sec
         .clamp(5, 3600);
@@ -566,7 +566,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             info!("[screenshot] shutdown requested, exiting");
             break;
         }
-        let interval_sec = ai_pad_core::app_settings::AppSettings::load()
+        let interval_sec = bitcat_core::app_settings::AppSettings::load()
             .appearance
             .screenshot_interval_sec
             .clamp(5, 3600);
@@ -597,7 +597,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
         };
 
         // 表现会话期间跳过本轮：避免视觉分析回调打断舞蹈、音乐响应或游戏表演
-        if ai_pad_core::performance::blocks_screenshot_observation() {
+        if bitcat_core::performance::blocks_screenshot_observation() {
             debug!(
                 cycle = cycle_count,
                 "[screenshot] performance active，跳过本轮"
@@ -685,7 +685,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             config.debug_resolutions.clone()
         };
 
-        let ai_config = match ai_pad_core::ai_config::AiConfig::load() {
+        let ai_config = match bitcat_core::ai_config::AiConfig::load() {
             Ok(c) => c,
             Err(e) => {
                 warn!(error = %e, "AI 配置加载失败");
@@ -703,7 +703,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
         let multi_monitor = analysis_results.len() > 1;
         let bubble_parts = bubble_parts_from_results(analysis_results, multi_monitor);
 
-        let show_bubble = ai_pad_core::app_settings::AppSettings::load()
+        let show_bubble = bitcat_core::app_settings::AppSettings::load()
             .appearance
             .screenshot_show_bubble;
 
@@ -731,7 +731,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
         }
 
         // 清理 7 天前的截图
-        if let Ok(removed) = ai_pad_core::screenshot::cleanup_old_screenshots(7) {
+        if let Ok(removed) = bitcat_core::screenshot::cleanup_old_screenshots(7) {
             if removed > 0 {
                 info!(removed = removed, "清理过期截图");
             }
@@ -739,7 +739,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
 
         // 定时 AI 摘要：每 interval_min 分钟触发一次
         {
-            let prompts_cfg = ai_pad_core::prompts::PromptsConfig::load();
+            let prompts_cfg = bitcat_core::prompts::PromptsConfig::load();
             let summary_cfg = &prompts_cfg.screen_summary;
             let summary_cycles = (summary_cfg.interval_min as u64 * 60) / config.interval_sec;
             if summary_cycles > 0
@@ -755,8 +755,8 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
 
                 info!(time_range = %time_range, "开始生成屏幕活动摘要");
 
-                if let Ok(today_dir) = ai_pad_core::screenshot::ensure_today_dir() {
-                    let records = ai_pad_core::screenshot::list_recent_analyses(
+                if let Ok(today_dir) = bitcat_core::screenshot::ensure_today_dir() {
+                    let records = bitcat_core::screenshot::list_recent_analyses(
                         &today_dir,
                         summary_cfg.max_recent_analyses,
                     );
@@ -767,7 +767,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
                         .collect();
 
                     if !descriptions.is_empty() {
-                        match rt.block_on(ai_pad_core::screen_summary::generate_summary(
+                        match rt.block_on(bitcat_core::screen_summary::generate_summary(
                             &descriptions,
                             summary_cfg,
                             &ai_config,
@@ -780,7 +780,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
                                     "屏幕摘要生成完成"
                                 );
                                 let mut store =
-                                    ai_pad_core::screen_summary::ScreenSummaryStore::load();
+                                    bitcat_core::screen_summary::ScreenSummaryStore::load();
                                 store.record(&time_range, summary);
                                 if let Err(e) = store.save() {
                                     warn!(error = %e, "保存屏幕摘要失败");
@@ -804,7 +804,7 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
 fn analyze_visible_monitors(
     app: &tauri::AppHandle,
     monitors: Vec<CapturedMonitorFrame>,
-    ai_config: &ai_pad_core::ai_config::AiConfig,
+    ai_config: &bitcat_core::ai_config::AiConfig,
     resolutions: &[u32],
     jpeg_quality: u8,
 ) -> Vec<MonitorAnalysisResult> {
@@ -868,7 +868,7 @@ fn analyze_visible_monitors(
 
 fn analyze_monitor_with_guards(
     app: &tauri::AppHandle,
-    ai_config: &ai_pad_core::ai_config::AiConfig,
+    ai_config: &bitcat_core::ai_config::AiConfig,
     monitor: CapturedMonitorFrame,
     resolutions: &[u32],
     jpeg_quality: u8,
@@ -932,21 +932,21 @@ fn bubble_parts_from_results(
 }
 
 fn analyze_and_save_monitor_frame(
-    ai_config: &ai_pad_core::ai_config::AiConfig,
+    ai_config: &bitcat_core::ai_config::AiConfig,
     monitor: &CapturedMonitorFrame,
     resolutions: &[u32],
     jpeg_quality: u8,
 ) -> Result<Option<String>, String> {
-    use ai_pad_core::screenshot::{encode_jpeg, resize_bgra};
-    use ai_pad_core::vision::{self, VisionConfig};
     use base64::Engine;
+    use bitcat_core::screenshot::{encode_jpeg, resize_bgra};
+    use bitcat_core::vision::{self, VisionConfig};
     use tracing::{debug, info, warn};
 
-    let prompt_cfg = ai_pad_core::prompts::PromptsConfig::load().vision;
+    let prompt_cfg = bitcat_core::prompts::PromptsConfig::load().vision;
     let vision_model = ai_config.model.clone();
     let mut last_description = None;
 
-    let dir = ai_pad_core::screenshot::ensure_today_dir()?;
+    let dir = bitcat_core::screenshot::ensure_today_dir()?;
     let prefix = chrono::Local::now().format("%H%M%S").to_string();
 
     for (i, &res_w) in resolutions.iter().enumerate() {
@@ -1004,11 +1004,11 @@ fn analyze_and_save_monitor_frame(
             }
             Err(e) => {
                 warn!(error = %e, monitor = %monitor.label, width = res_w, "视觉分析失败");
-                ai_pad_core::vision::VisionAnalysis::default()
+                bitcat_core::vision::VisionAnalysis::default()
             }
         };
 
-        let record = ai_pad_core::screenshot::ScreenshotRecord {
+        let record = bitcat_core::screenshot::ScreenshotRecord {
             analysis: analysis.clone(),
             hash: 0,
             skipped: false,
@@ -1025,7 +1025,7 @@ fn analyze_and_save_monitor_frame(
         if let Err(e) = std::fs::write(&jpg_path, &jpeg) {
             warn!(error = %e, path = ?jpg_path, "保存 JPEG 失败");
         }
-        if let Err(e) = ai_pad_core::screenshot::save_analysis_json(&dir, &prefix, &suffix, &record)
+        if let Err(e) = bitcat_core::screenshot::save_analysis_json(&dir, &prefix, &suffix, &record)
         {
             warn!(error = %e, "保存分析结果失败");
         }
@@ -1047,7 +1047,7 @@ fn analyze_and_save_monitor_frame(
 
 /// 手动触发截图分析（同步，内部自行创建 tokio runtime）。
 pub fn do_screenshot_now(app: &tauri::AppHandle) -> Result<String, String> {
-    use ai_pad_core::screenshot::ScreenshotConfig;
+    use bitcat_core::screenshot::ScreenshotConfig;
 
     let _pipeline_guard = SCREENSHOT_PIPELINE_LOCK
         .try_lock()
@@ -1066,7 +1066,7 @@ pub fn do_screenshot_now(app: &tauri::AppHandle) -> Result<String, String> {
     }
 
     let config = ScreenshotConfig::default();
-    let ai_config = ai_pad_core::ai_config::AiConfig::load()?;
+    let ai_config = bitcat_core::ai_config::AiConfig::load()?;
     emit_screenshot_observing(app);
 
     {
@@ -1157,7 +1157,7 @@ pub async fn cmd_screenshot_now(app: tauri::AppHandle) -> Result<String, String>
 
 #[cfg(test)]
 mod tests {
-    use ai_pad_core::screenshot::{CapturedFrame, ScreenInfo, ScreenshotConfig};
+    use bitcat_core::screenshot::{CapturedFrame, ScreenInfo, ScreenshotConfig};
 
     use super::{classify_frame_skip_reason, FrameSkipReason};
 

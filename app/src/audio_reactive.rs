@@ -72,8 +72,8 @@ fn start_music_source(
 ) -> Result<u64, String> {
     stop_current(shared.inner(), Some(&app), "replaced");
 
-    let session = ai_pad_core::performance::start_performance(
-        ai_pad_core::performance::PerformanceKind::MusicReactiveDance,
+    let session = bitcat_core::performance::start_performance(
+        bitcat_core::performance::PerformanceKind::MusicReactiveDance,
     );
     let payload = serde_json::json!({
         "session_id": session.id,
@@ -82,9 +82,9 @@ fn start_music_source(
     });
     app.emit("performance-start", &payload)
         .map_err(|e| format!("emit performance-start failed: {e}"))?;
-    ai_pad_core::performance::update_phase(
+    bitcat_core::performance::update_phase(
         session.id,
-        ai_pad_core::performance::PerformancePhase::Active,
+        bitcat_core::performance::PerformancePhase::Active,
     );
 
     let stop = Arc::new(AtomicBool::new(false));
@@ -109,7 +109,7 @@ fn stop_current(shared: &SharedAudioReactive, app: Option<&AppHandle>, reason: &
     };
     if let Some(run) = guard.take() {
         run.stop.store(true, Ordering::Relaxed);
-        ai_pad_core::performance::stop_performance(run.session_id, reason);
+        bitcat_core::performance::stop_performance(run.session_id, reason);
         if let Some(app) = app {
             emit_stop(app, run.session_id, reason);
         }
@@ -118,7 +118,7 @@ fn stop_current(shared: &SharedAudioReactive, app: Option<&AppHandle>, reason: &
 
 fn finish_source(app: &AppHandle, session_id: u64, reason: &str) {
     emit_stop(app, session_id, reason);
-    ai_pad_core::performance::stop_performance(session_id, reason);
+    bitcat_core::performance::stop_performance(session_id, reason);
 }
 
 fn emit_stop(app: &AppHandle, session_id: u64, reason: &str) {
@@ -147,7 +147,7 @@ fn spawn_fake_music_loop(app: AppHandle, session_id: u64, stop: Arc<AtomicBool>)
             if stop.load(Ordering::Relaxed) {
                 break;
             }
-            if !ai_pad_core::performance::is_performing() {
+            if !bitcat_core::performance::is_performing() {
                 break;
             }
             if crate::shutdown::is_requested() {
@@ -194,7 +194,7 @@ fn spawn_wasapi_music_loop(app: AppHandle, session_id: u64, stop: Arc<AtomicBool
                         "recoverable": true,
                     }),
                 );
-                ai_pad_core::performance::fail_performance(session_id, e);
+                bitcat_core::performance::fail_performance(session_id, e);
             }
         }
     });
@@ -329,7 +329,7 @@ fn wasapi_loopback(
     let mut has_bucket = false;
     let mut bucket_onset = false;
     while !stop.load(Ordering::Relaxed) {
-        if !ai_pad_core::performance::is_performing() || crate::shutdown::is_requested() {
+        if !bitcat_core::performance::is_performing() || crate::shutdown::is_requested() {
             break;
         }
         std::thread::sleep(Duration::from_millis(WASAPI_POLL_MS));

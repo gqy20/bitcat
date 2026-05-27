@@ -20,9 +20,9 @@ cd app/frontend && npx vitest run     # 15 个测试文件
 cd app/frontend && npx vitest         # 监听模式
 
 # 运行单个测试 / 模块
-cargo nextest run -p ai-pad-core -E 'test(~pet::)'        # 按名字过滤
-cargo nextest run -p ai-pad-core -E 'test(/test_walk_/)'  # 按正则过滤
-cargo test -p ai-pad-app --features ipc-tests             # Tauri IPC 集成测试（需 WebView2）
+cargo nextest run -p bitcat-core -E 'test(~pet::)'        # 按名字过滤
+cargo nextest run -p bitcat-core -E 'test(/test_walk_/)'  # 按正则过滤
+cargo test -p bitcat-app --features ipc-tests             # Tauri IPC 集成测试（需 WebView2）
 
 # Insta 快照工作流
 cargo insta test       # 运行测试，生成 .snap.new（未审查的快照）
@@ -69,7 +69,7 @@ portable zip 标准内容：`bitcat.exe` + `config/*.yml`。SDL2 通过 `sdl2 = 
 
 ```powershell
 $env:CMAKE_POLICY_VERSION_MINIMUM="3.5"
-cargo check -p ai-pad-app
+cargo check -p bitcat-app
 ```
 
 ### 打包工具约定
@@ -93,8 +93,8 @@ Rust workspace（`core` + `app` + `xtask`），Tauri 2.0 多窗口桌面应用�
 
 | Crate | 职责 | 关键依赖 |
 |-------|------|----------|
-| **core**（`ai-pad-core`） | 纯逻辑，零 UI 依赖，可独立单测 | rig-core(AI), serde_yaml, windows-sys |
-| **app**（`ai-pad-app`） | Tauri 2.0 壳：窗口管理、手柄循环、IPC、托盘 | tauri 2, sdl2(bundled + static-link), tokio |
+| **core**（`bitcat-core`） | 纯逻辑，零 UI 依赖，可独立单测 | rig-core(AI), serde_yaml, windows-sys |
+| **app**（`bitcat-app`） | Tauri 2.0 壳：窗口管理、手柄循环、IPC、托盘 | tauri 2, sdl2(bundled + static-link), tokio |
 | **xtask** | 仓库维护工具：portable zip 打包等项目级命令 | zip |
 
 ### 核心数据流
@@ -194,7 +194,7 @@ AI Agent 通过 `create_reminder` / `list_reminders` / `cancel_reminder` Tool �
 
 ### 日志与 .env
 
-日志双写：stderr（带颜色）+ 文件 `~/.bitcat/logs/`（按日滚动，默认 `ai_pad_app=info,ai_pad_core=debug`）。`.env` 多级加载：exe 同目录 → CWD → 项目根目录（兜底 target/debug 向上两级）。
+日志双写：stderr（带颜色）+ 文件 `~/.bitcat/logs/`（按日滚动，默认 `bitcat_app=info,bitcat_core=debug`）。`.env` 多级加载：exe 同目录 → CWD → 项目根目录（兜底 target/debug 向上两级）。
 
 ## 编码规范
 

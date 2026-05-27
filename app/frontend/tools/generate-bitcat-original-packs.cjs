@@ -428,7 +428,7 @@ function manifestFor(pack) {
     },
     mini: { state: 'idle', frame: 0, headRows: 140 },
     metadata: {
-      generatedFrom: ['app/frontend/tools/generate-ai-pad-original-packs.cjs'],
+      generatedFrom: ['app/frontend/tools/generate-bitcat-original-packs.cjs'],
       assetClass: pack.assetClass,
       qualityTier: 'generated',
       style: pack.style,

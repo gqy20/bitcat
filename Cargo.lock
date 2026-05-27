@@ -18,62 +18,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ai-pad-app"
-version = "0.1.6"
-dependencies = [
- "ai-pad-core",
- "base64 0.22.1",
- "chrono",
- "ctrlc",
- "dotenvy",
- "libloading 0.8.9",
- "sdl2",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-opener",
- "tokio",
- "toml_edit 0.22.27",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "windows 0.54.0",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "ai-pad-core"
-version = "0.1.6"
-dependencies = [
- "base64 0.22.1",
- "cargo-husky",
- "chrono",
- "dirs 5.0.1",
- "dotenvy",
- "futures",
- "image",
- "insta",
- "mockall",
- "proptest",
- "rand 0.9.4",
- "reqwest 0.12.28",
- "rig-core",
- "rstest",
- "schemars 1.2.1",
- "serde",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "windows-sys 0.61.2",
- "wiremock",
-]
-
-[[package]]
 name = "alloc-no-stdlib"
 version = "2.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -370,6 +314,62 @@ name = "bit-vec"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
+
+[[package]]
+name = "bitcat-app"
+version = "0.1.6"
+dependencies = [
+ "base64 0.22.1",
+ "bitcat-core",
+ "chrono",
+ "ctrlc",
+ "dotenvy",
+ "libloading 0.8.9",
+ "sdl2",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-opener",
+ "tokio",
+ "toml_edit 0.22.27",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "windows 0.54.0",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "bitcat-core"
+version = "0.1.6"
+dependencies = [
+ "base64 0.22.1",
+ "cargo-husky",
+ "chrono",
+ "dirs 5.0.1",
+ "dotenvy",
+ "futures",
+ "image",
+ "insta",
+ "mockall",
+ "proptest",
+ "rand 0.9.4",
+ "reqwest 0.12.28",
+ "rig-core",
+ "rstest",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "windows-sys 0.61.2",
+ "wiremock",
+]
 
 [[package]]
 name = "bitflags"

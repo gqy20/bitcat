@@ -35,7 +35,7 @@ BitCat 当前不是 Web 应用套壳，而是 **Windows-first 的 Rust 桌面自
 | 层级 | 技术 | 源码依据 | 说明 |
 |------|------|----------|------|
 | Workspace | Rust workspace：`core` / `app` / `xtask` | `Cargo.toml` | 逻辑、桌面壳、维护命令分离 |
-| Core crate | Rust 2024 + `ai-pad-core` | `core/Cargo.toml` | 纯逻辑层，无 Tauri/UI 依赖，便于快速测试 |
+| Core crate | Rust 2024 + `bitcat-core` | `core/Cargo.toml` | 纯逻辑层，无 Tauri/UI 依赖，便于快速测试 |
 | App crate | Rust 2021 + Tauri 2 | `app/Cargo.toml`, `app/tauri.conf.json` | 桌面窗口、托盘、全局快捷键、IPC |
 | UI Runtime | WebView2 via Tauri | `tauri.conf.json` `frontendDist: ./frontend` | 多窗口透明桌宠，而非浏览器页应用 |
 | Frontend | Vanilla HTML/CSS/JS + Canvas | `app/frontend/*.html`, `app/frontend/js/*.js` | 无 React/Vue/构建步骤；Node 只用于测试 |

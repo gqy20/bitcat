@@ -17,19 +17,19 @@ use crate::panel;
 use crate::pet_event_bus::SharedPetEventBus;
 use crate::tts;
 use crate::voice;
-use ai_pad_core::action::{ActionConfig, ActionDef};
-use ai_pad_core::agent::{parse_tool_failure_stop, AgentStreamEvent, PetAgent, ToolPhase};
-use ai_pad_core::agent_reaction::{extract_agent_reaction, fallback_agent_reaction};
-use ai_pad_core::bridge::{handle_button_press, PetCommand};
-use ai_pad_core::device::button_name;
-use ai_pad_core::hotkey;
-use ai_pad_core::logging::log_preview;
-use ai_pad_core::memory::{LongTermMemory, MemoryStore, ProfileStore};
-use ai_pad_core::pet_event::{
+use bitcat_core::action::{ActionConfig, ActionDef};
+use bitcat_core::agent::{parse_tool_failure_stop, AgentStreamEvent, PetAgent, ToolPhase};
+use bitcat_core::agent_reaction::{extract_agent_reaction, fallback_agent_reaction};
+use bitcat_core::bridge::{handle_button_press, PetCommand};
+use bitcat_core::device::button_name;
+use bitcat_core::hotkey;
+use bitcat_core::logging::log_preview;
+use bitcat_core::memory::{LongTermMemory, MemoryStore, ProfileStore};
+use bitcat_core::pet_event::{
     agent_status_to_pet_event, tool_event_to_pet_event, PetEvent, PetMode, PetMood,
     PetNotificationKind,
 };
-use ai_pad_core::user_profile::UserProfile;
+use bitcat_core::user_profile::UserProfile;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -283,7 +283,7 @@ impl Default for SharedAgent {
 /// 前端调试日志桥接：将前端的 console 输出转发到 Rust 日志系统。
 #[tauri::command]
 pub async fn cmd_pet_log(msg: String) -> Result<(), String> {
-    if !ai_pad_core::logging::frontend_log_allowed("pet", std::time::Duration::from_millis(120)) {
+    if !bitcat_core::logging::frontend_log_allowed("pet", std::time::Duration::from_millis(120)) {
         return Ok(());
     }
     let preview = log_preview(&msg, 80);
@@ -536,7 +536,7 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                         if game_active {
                             let is_battle = matches!(
                                 crate::game::current_game_type(app),
-                                Some(ai_pad_core::minigame::MinigameType::Battle)
+                                Some(bitcat_core::minigame::MinigameType::Battle)
                             );
                             if is_battle {
                                 match name {
@@ -577,7 +577,7 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                                         emit_game_input(app, GameInput::Confirm);
                                         if matches!(
                                             crate::game::current_game_type(app),
-                                            Some(ai_pad_core::minigame::MinigameType::Snake)
+                                            Some(bitcat_core::minigame::MinigameType::Snake)
                                         ) {
                                             emit_game_input(app, GameInput::Boost { active: true });
                                         }
@@ -622,15 +622,15 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                         // 舞蹈命令：走 bridge 统一播放管线，启用 is_dancing 状态
                         if let Some(PetCommand::PlayDance { name }) = &pet_cmd {
                             info!(dance = %name, "[gamepad] Y 键 → 播放舞蹈");
-                            if ai_pad_core::dance::load_dance(name).is_err() {
+                            if bitcat_core::dance::load_dance(name).is_err() {
                                 warn!(dance = %name, "[gamepad] 舞蹈不存在，无法播放");
                             } else {
-                                let req = ai_pad_core::dance::PlayDanceRequest {
+                                let req = bitcat_core::dance::PlayDanceRequest {
                                     name: name.clone(),
                                     loops: Some(1), // Y 键默认单次
                                     duration_ms: None,
                                 };
-                                if let Err(e) = ai_pad_core::dance::request_play_dance(req) {
+                                if let Err(e) = bitcat_core::dance::request_play_dance(req) {
                                     warn!(error = %e, "手柄触发舞蹈失败");
                                 }
                             }
@@ -701,7 +701,7 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                         if name == "A"
                             && matches!(
                                 crate::game::current_game_type(app),
-                                Some(ai_pad_core::minigame::MinigameType::Snake)
+                                Some(bitcat_core::minigame::MinigameType::Snake)
                             )
                         {
                             info!("→ 贪吃蛇加速结束");
@@ -872,7 +872,7 @@ pub fn chat_loop(app: &tauri::AppHandle) {
 
         // --- 2. 定时聚合长期记忆 → 用户画像 ---
         {
-            let prompts_cfg = ai_pad_core::prompts::PromptsConfig::load();
+            let prompts_cfg = bitcat_core::prompts::PromptsConfig::load();
             let core: State<SharedChatCore> = app.state();
             let agg_interval = std::time::Duration::from_secs(
                 (prompts_cfg.memory_v2.aggregation_interval_min as u64) * 60,
@@ -909,13 +909,13 @@ pub fn chat_loop(app: &tauri::AppHandle) {
             let should_aggregate = unagg_count >= 20 || (!profile_empty && elapsed >= agg_interval);
 
             if should_aggregate && unagg_count > 0 {
-                match ai_pad_core::ai_config::AiConfig::load() {
+                match bitcat_core::ai_config::AiConfig::load() {
                     Ok(cfg) => {
                         // 快照条目和现有画像（持锁克隆一次，聚合 IO 不持锁）
                         let (entries_cloned, cur_profile) = {
                             let lt = core.long_term.lock().unwrap();
                             let pf = core.profile.lock().unwrap();
-                            let entries: Vec<ai_pad_core::memory::LongTermEntry> =
+                            let entries: Vec<bitcat_core::memory::LongTermEntry> =
                                 lt.unaggregated_entries().into_iter().cloned().collect();
                             (entries, pf.profile_text.clone())
                         };
@@ -923,13 +923,13 @@ pub fn chat_loop(app: &tauri::AppHandle) {
                             count = unagg_count,
                             "[chat_loop] 开始聚合长期记忆 → 用户画像"
                         );
-                        let entry_refs: Vec<&ai_pad_core::memory::LongTermEntry> =
+                        let entry_refs: Vec<&bitcat_core::memory::LongTermEntry> =
                             entries_cloned.iter().collect();
-                        let agg_prompt = ai_pad_core::prompts::PromptsConfig::default()
+                        let agg_prompt = bitcat_core::prompts::PromptsConfig::default()
                             .aggregation
                             .prompt;
                         let agg_result = match catch_unwind(AssertUnwindSafe(|| {
-                            rt.block_on(ai_pad_core::memory::aggregate_profile(
+                            rt.block_on(bitcat_core::memory::aggregate_profile(
                                 &entry_refs,
                                 &cur_profile,
                                 &cfg,
@@ -1047,7 +1047,7 @@ pub fn run_ai_chat(
         return;
     }
 
-    let prompts_cfg = ai_pad_core::prompts::PromptsConfig::load();
+    let prompts_cfg = bitcat_core::prompts::PromptsConfig::load();
     let memory_config = &prompts_cfg.memory;
     let long_term_budget_chars = prompts_cfg.memory_v2.retrieve_budget_chars;
 
@@ -1086,11 +1086,11 @@ pub fn run_ai_chat(
             return;
         }
     };
-    let summary_store = ai_pad_core::screen_summary::ScreenSummaryStore::load();
-    let summary_config = ai_pad_core::prompts::PromptsConfig::load().screen_summary;
+    let summary_store = bitcat_core::screen_summary::ScreenSummaryStore::load();
+    let summary_config = bitcat_core::prompts::PromptsConfig::load().screen_summary;
     let summary_ctx = summary_store.build_context(&summary_config);
-    let recent_ctx = ai_pad_core::screenshot::build_recent_analyses_context(10, 1500);
-    let camera_ctx = ai_pad_core::camera_observation::build_recent_camera_context(6, 1200);
+    let recent_ctx = bitcat_core::screenshot::build_recent_analyses_context(10, 1500);
+    let camera_ctx = bitcat_core::camera_observation::build_recent_camera_context(6, 1200);
     let observation_policy = if !recent_ctx.is_empty() && !camera_ctx.is_empty() {
         [
             "[综合观察说明]",
@@ -1270,7 +1270,7 @@ pub fn run_ai_chat(
                 "{prefix}AI chat completed"
             );
             let reply_for_tts = reply.clone();
-            let tts_on = ai_pad_core::app_settings::AppSettings::load()
+            let tts_on = bitcat_core::app_settings::AppSettings::load()
                 .appearance
                 .tts_enabled;
             if tts_on {
@@ -1375,7 +1375,7 @@ pub fn run_ai_chat(
 /// 状态由 `alt_tab` / `ctrl_tab` 参数维护，不经过 ActionBus。
 fn execute_action(
     action: &ActionDef,
-    defaults: &ai_pad_core::action::Defaults,
+    defaults: &bitcat_core::action::Defaults,
     alt_tab: &mut HeldModifier,
     ctrl_tab: &mut HeldModifier,
 ) {
@@ -1386,7 +1386,7 @@ fn execute_action(
                 None => return,
             };
             let args = action.args.as_deref().unwrap_or("");
-            let _ = ai_pad_core::action::launch_program(
+            let _ = bitcat_core::action::launch_program(
                 program,
                 args,
                 &action.workdir,
@@ -1498,7 +1498,7 @@ impl HeldCombo {
         self.held
     }
 
-    pub fn press_keys(&mut self, config: &ai_pad_core::action::ActionConfig) {
+    pub fn press_keys(&mut self, config: &bitcat_core::action::ActionConfig) {
         let mut vks = Vec::new();
         for action_def in config.actions.values() {
             if action_def.action_type == "voice" {

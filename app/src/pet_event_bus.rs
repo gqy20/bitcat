@@ -4,8 +4,8 @@
 //! 这样 gamepad、game、Rig 工具生命周期等上游只需要描述发生了什么，不需要分散了解前端状态机细节。
 //! 它依赖 core 中的纯逻辑协议与 `MoodPolicy`，再通过 Tauri `emit` 把最终事件推给宠物窗口。
 
-use ai_pad_core::mood_policy::MoodPolicy;
-use ai_pad_core::pet_event::{PetEvent, PetNotificationKind};
+use bitcat_core::mood_policy::MoodPolicy;
+use bitcat_core::pet_event::{PetEvent, PetNotificationKind};
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::sync::Mutex;
@@ -227,7 +227,7 @@ pub async fn cmd_get_pet_event_log(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ai_pad_core::pet_event::{PetMood, PetNotificationKind};
+    use bitcat_core::pet_event::{PetMood, PetNotificationKind};
 
     #[test]
     fn bus_adds_mood_ttl_before_emit() {

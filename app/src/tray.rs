@@ -135,7 +135,7 @@ pub async fn cmd_show_pet_context_menu(
     let panel_item = MenuItem::with_id(&app, PET_MENU_PANEL, "打开快捷面板", true, None::<&str>)
         .map_err(|e| e.to_string())?;
     let separator_primary = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
-    let is_performing = ai_pad_core::performance::is_performing();
+    let is_performing = bitcat_core::performance::is_performing();
     let stop_dance_item = MenuItem::with_id(
         &app,
         PET_MENU_STOP_DANCE,
@@ -219,7 +219,7 @@ fn analyze_current_screen(app: &AppHandle) {
 fn stop_dance(app: &AppHandle) {
     let shared = app.state::<crate::audio_reactive::SharedAudioReactive>();
     crate::audio_reactive::stop_music_dance(app, shared.inner(), "menu_stop");
-    if let Some(session) = ai_pad_core::performance::current_performance() {
+    if let Some(session) = bitcat_core::performance::current_performance() {
         let _ = app.emit(
             "performance-stop",
             serde_json::json!({
@@ -227,7 +227,7 @@ fn stop_dance(app: &AppHandle) {
                 "reason": "menu_stop",
             }),
         );
-        ai_pad_core::performance::stop_performance(session.id, "menu_stop");
+        bitcat_core::performance::stop_performance(session.id, "menu_stop");
     }
 }
 
@@ -283,11 +283,11 @@ fn visible_pet_window(app: &AppHandle) -> Option<WebviewWindow> {
 
 /// 重载 config/actions.yml / config/panel_action.yml / config/prompts.yml，通知 gamepad_loop 刷新。
 fn ws_reload_config(app: &AppHandle) {
-    match ai_pad_core::action::ActionConfig::load("config/actions.yml") {
+    match bitcat_core::action::ActionConfig::load("config/actions.yml") {
         Ok(cfg) => tracing::info!(actions = cfg.actions.len(), "已重载 config/actions.yml"),
         Err(e) => tracing::warn!(error = %e, "重载 config/actions.yml 失败"),
     }
-    match ai_pad_core::panel_action::PanelActionConfig::load("config/panel_action.yml") {
+    match bitcat_core::panel_action::PanelActionConfig::load("config/panel_action.yml") {
         Ok(cfg) => {
             tracing::info!(
                 actions = cfg.actions.len(),
@@ -296,7 +296,7 @@ fn ws_reload_config(app: &AppHandle) {
         }
         Err(e) => tracing::warn!(error = %e, "重载 config/panel_action.yml 失败"),
     }
-    let _ = ai_pad_core::prompts::PromptsConfig::load();
+    let _ = bitcat_core::prompts::PromptsConfig::load();
     tracing::info!("已重载 config/prompts.yml");
 
     let ws: tauri::State<'_, SharedWindowState> = app.state();

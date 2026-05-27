@@ -1,5 +1,5 @@
 [package]
-name = "ai-pad-core"
+name = "bitcat-core"
 version = "0.1.6"
 edition = "2024"
 

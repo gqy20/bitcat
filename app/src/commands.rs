@@ -1,5 +1,5 @@
-use ai_pad_core::bridge::PetStateName;
-use ai_pad_core::pet::Pet;
+use bitcat_core::bridge::PetStateName;
+use bitcat_core::pet::Pet;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -60,7 +60,7 @@ pub struct PetStatus {
 // ---- 纯逻辑函数（可脱离 Tauri 独立测试）----
 
 pub fn set_state(pet: &mut Pet, state: PetStateName) -> PetStatus {
-    let ps: ai_pad_core::pet::PetState = state.into();
+    let ps: bitcat_core::pet::PetState = state.into();
     pet.set_state(ps);
     snapshot(pet, &None)
 }
@@ -132,7 +132,7 @@ pub fn cmd_get_status(shared: tauri::State<'_, SharedPet>) -> Result<PetStatus, 
 /// 前端表现播放器结束时回报，用于精确复位后端表现状态。
 #[tauri::command]
 pub fn cmd_performance_finished(session_id: u64, reason: Option<String>) -> Result<(), String> {
-    ai_pad_core::performance::stop_performance(session_id, reason.as_deref().unwrap_or("finished"));
+    bitcat_core::performance::stop_performance(session_id, reason.as_deref().unwrap_or("finished"));
     info!(
         session_id,
         reason = reason.as_deref().unwrap_or("finished"),
@@ -660,11 +660,11 @@ mod tests {
     #[test]
     fn test_set_state_idle_to_talk() {
         let mut pet = test_pet();
-        assert_eq!(pet.state, ai_pad_core::pet::PetState::Idle);
+        assert_eq!(pet.state, bitcat_core::pet::PetState::Idle);
 
         let status = set_state(&mut pet, PetStateName::Talk);
         assert_eq!(status.state, "talk");
-        assert_eq!(pet.state, ai_pad_core::pet::PetState::Talk);
+        assert_eq!(pet.state, bitcat_core::pet::PetState::Talk);
     }
 
     #[test]
@@ -693,7 +693,7 @@ mod tests {
     fn test_walk_to_updates_target() {
         let mut pet = test_pet();
         let status = walk_to(&mut pet, 200.0);
-        assert_eq!(pet.state, ai_pad_core::pet::PetState::Walk);
+        assert_eq!(pet.state, bitcat_core::pet::PetState::Walk);
         assert_eq!(pet.target_x, Some(200.0));
         assert_eq!(status.state, "walk");
     }
@@ -762,10 +762,10 @@ mod tests {
     fn test_auto_idle_timeout() {
         let mut pet = test_pet();
         set_state(&mut pet, PetStateName::Walk);
-        assert_eq!(pet.state, ai_pad_core::pet::PetState::Walk);
+        assert_eq!(pet.state, bitcat_core::pet::PetState::Walk);
 
         tick(&mut pet, 3000);
-        assert_eq!(pet.state, ai_pad_core::pet::PetState::Idle);
+        assert_eq!(pet.state, bitcat_core::pet::PetState::Idle);
     }
 
     // ===== 舞蹈命令测试 =====
@@ -773,11 +773,11 @@ mod tests {
     #[test]
     fn test_play_dance_serializes_dance_def_for_emit() {
         // 验证 DanceDef 可以被序列化为 emit payload
-        let def = ai_pad_core::dance::DanceDef {
+        let def = bitcat_core::dance::DanceDef {
             name: "test".into(),
             loop_: true,
-            steps: vec![ai_pad_core::dance::DanceStep {
-                action: ai_pad_core::dance::DanceAction::Jump,
+            steps: vec![bitcat_core::dance::DanceStep {
+                action: bitcat_core::dance::DanceAction::Jump,
                 duration_ms: 300,
                 repeat: 1,
             }],
@@ -791,24 +791,24 @@ mod tests {
     #[test]
     fn test_play_dance_unknown_name_returns_err() {
         // 不存在的舞蹈名应返回错误
-        let result = ai_pad_core::dance::load_dance("nonexistent_dance_xyz");
+        let result = bitcat_core::dance::load_dance("nonexistent_dance_xyz");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_performance_finished_resets_performing_state() {
-        let session = ai_pad_core::performance::start_performance(
-            ai_pad_core::performance::PerformanceKind::ChoreographedDance,
+        let session = bitcat_core::performance::start_performance(
+            bitcat_core::performance::PerformanceKind::ChoreographedDance,
         );
         cmd_performance_finished(session.id, Some("finished".into())).unwrap();
-        assert!(!ai_pad_core::performance::is_performing());
+        assert!(!bitcat_core::performance::is_performing());
     }
 }
 
 // ---- Tauri IPC 集成测试 (Mock Runtime) ----
 // 测试命令通过 IPC 层的序列化/反序列化和 State 提取
 //
-// 运行: cargo test -p ai-pad-app --features ipc-tests -- commands::ipc_tests
+// 运行: cargo test -p bitcat-app --features ipc-tests -- commands::ipc_tests
 // 需要: WebView2 Evergreen Runtime (CI 已预装，本地可能需要手动安装)
 // Windows 本地缺少 WebView2 时会报 STATUS_ENTRYPOINT_NOT_FOUND
 

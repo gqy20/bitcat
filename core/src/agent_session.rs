@@ -809,12 +809,12 @@ mod tests {
         let mut session = event("abc", AgentStatus::ToolRunning, 1000).into_session();
         session.tool_name = Some("Bash".into());
         session.tool_input_preview =
-            Some(r#"{"command":"cargo nextest run -p ai-pad-core"}"#.into());
+            Some(r#"{"command":"cargo nextest run -p bitcat-core"}"#.into());
         let view = AgentSessionView::from_session(&session, 6100);
         assert_eq!(view.display.tone, "active");
         assert_eq!(view.display.action_label, "Shell");
         assert_eq!(view.display.headline, "正在运行");
-        assert_eq!(view.display.detail, "cargo nextest run -p ai-pad-core");
+        assert_eq!(view.display.detail, "cargo nextest run -p bitcat-core");
     }
 
     #[test]

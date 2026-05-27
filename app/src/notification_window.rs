@@ -5,7 +5,7 @@
 //! small IPC actions; event producers pass structured payloads in.
 //! The frontend renders the payload and decides when to fade out.
 
-use ai_pad_core::{
+use bitcat_core::{
     app_settings::AppSettings, reminder::ReminderRecord,
     reminder_personalizer::ReminderNotificationCopy,
 };
@@ -259,15 +259,15 @@ pub async fn cmd_notification_action(
     if let Some(id) = reminder_id {
         match action.as_str() {
             "complete" => {
-                ai_pad_core::reminder::complete_reminder_with_source(&id, "notification")?;
+                bitcat_core::reminder::complete_reminder_with_source(&id, "notification")?;
                 reminder_changed = true;
             }
             "snooze_10" => {
-                ai_pad_core::reminder::snooze_reminder_with_source(&id, 10, "notification")?;
+                bitcat_core::reminder::snooze_reminder_with_source(&id, 10, "notification")?;
                 reminder_changed = true;
             }
             "cancel" => {
-                ai_pad_core::reminder::cancel_reminder_with_source(&id, "notification")?;
+                bitcat_core::reminder::cancel_reminder_with_source(&id, "notification")?;
                 reminder_changed = true;
             }
             "dismiss" => {}

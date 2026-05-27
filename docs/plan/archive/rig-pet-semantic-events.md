@@ -306,7 +306,7 @@ pub struct MemoryCandidate {
 1. 新增 `core/src/pet_event.rs`。
 2. 在 `core/src/lib.rs` 导出 `pet_event`。
 3. 修改 `app/src/gamepad.rs`：
-   - 使用 `ai_pad_core::pet_event::PetEvent`。
+   - 使用 `bitcat_core::pet_event::PetEvent`。
    - 删除本地旧 `PetEvent` 结构。
    - 替换 `commands_to_events()`。
 4. 修改 `app/frontend/js/pet.js`：

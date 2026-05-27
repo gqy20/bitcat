@@ -317,8 +317,8 @@ rg -n "debug!\(len = .*chunk" app\src core\src
 
 ```powershell
 cargo fmt --check
-cargo test -p ai-pad-core
-$env:CMAKE_POLICY_VERSION_MINIMUM="3.5"; cargo check -p ai-pad-app
+cargo test -p bitcat-core
+$env:CMAKE_POLICY_VERSION_MINIMUM="3.5"; cargo check -p bitcat-app
 ```
 
 ---
@@ -347,9 +347,9 @@ info!(input_tokens, output_tokens, cache_tokens, "token usage recorded");
 长期可按模块 target 过滤：
 
 ```text
-ai_pad_core::agent=debug
-ai_pad_app::screenshot=trace
-ai_pad_core::memory=debug
+bitcat_core::agent=debug
+bitcat_app::screenshot=trace
+bitcat_core::memory=debug
 ```
 
 这要求日志消息本身保持简短，字段保持稳定。

@@ -19,10 +19,10 @@ cargo clippy --workspace -- -D warnings
 echo '[pre-push] (3/3) cargo nextest run (core, skip proptest)'
 # 需要 cargo-nextest，未装时回退到 cargo test
 if command -v cargo-nextest >/dev/null 2>&1; then
-    PROPTEST_CASES=32 cargo nextest run -p ai-pad-core -E 'not test(/prop_/)'
+    PROPTEST_CASES=32 cargo nextest run -p bitcat-core -E 'not test(/prop_/)'
 else
     echo '[pre-push] cargo-nextest 未安装，回退到 cargo test（较慢）'
-    cargo test -p ai-pad-core
+    cargo test -p bitcat-core
 fi
 
 echo '[pre-push] 全部通过 ✓'

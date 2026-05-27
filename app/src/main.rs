@@ -2,7 +2,7 @@
 //!
 //! 负责解析 `--debug` 标志决定是否分配控制台窗口、初始化 tracing
 //! 日志（stderr 带颜色 + 文件按日滚动）、安装 panic/native crash
-//! 诊断，并调用 `ai_pad_app_lib::run()` 启动 Tauri 事件循环。
+//! 诊断，并调用 `bitcat_app_lib::run()` 启动 Tauri 事件循环。
 //!
 //! ## unsafe 安全不变性
 //!
@@ -37,8 +37,8 @@ fn main() {
     // ── 日志双写初始化 ──
     // 文件层：~/.bitcat/logs/app.log.YYYY-MM-DD，按日期滚动。
     // stderr 层：带颜色输出，方便终端实时查看。
-    // 两层共享同一个 EnvFilter，默认级别 ai_pad_app=info, ai_pad_core=debug。
-    let log_dir = ai_pad_core::logging::log_dir()
+    // 两层共享同一个 EnvFilter，默认级别 bitcat_app=info, bitcat_core=debug。
+    let log_dir = bitcat_core::logging::log_dir()
         .unwrap_or_else(|_| std::path::PathBuf::from(".bitcat-logs"));
     let _ = std::fs::create_dir_all(&log_dir);
     let native_crash_handler =
@@ -47,7 +47,7 @@ fn main() {
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
 
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| "ai_pad_app=info,ai_pad_core=debug".into());
+        .unwrap_or_else(|_| "bitcat_app=info,bitcat_core=debug".into());
 
     // 单次 .init()：stderr(带颜色) + 文件(无颜色)，统一本地时间。
     tracing_subscriber::registry()
@@ -74,11 +74,11 @@ fn main() {
         Err(e) => tracing::warn!(error = %e, "native crash handler install failed"),
     }
     log_startup_diagnostics(debug);
-    ai_pad_app_lib::lifecycle::record_lifecycle_event("startup", None);
+    bitcat_app_lib::lifecycle::record_lifecycle_event("startup", None);
 
     // ── 启动 Tauri ──
-    ai_pad_app_lib::run();
-    ai_pad_app_lib::lifecycle::record_lifecycle_event("tauri-run-returned", None);
+    bitcat_app_lib::run();
+    bitcat_app_lib::lifecycle::record_lifecycle_event("tauri-run-returned", None);
     tracing::info!("tauri run returned");
 }
 
@@ -89,7 +89,7 @@ fn log_startup_diagnostics(debug_console: bool) {
     let cwd = std::env::current_dir()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|e| format!("<unavailable: {e}>"));
-    let log_dir = ai_pad_core::logging::log_dir()
+    let log_dir = bitcat_core::logging::log_dir()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|e| format!("<unavailable: {e}>"));
     let profile = if cfg!(debug_assertions) {
@@ -97,8 +97,8 @@ fn log_startup_diagnostics(debug_console: bool) {
     } else {
         "release"
     };
-    let cleanup = ai_pad_core::logging::log_dir().and_then(|dir| {
-        ai_pad_core::logging::cleanup_old_logs(&dir, std::time::Duration::from_secs(14 * 24 * 3600))
+    let cleanup = bitcat_core::logging::log_dir().and_then(|dir| {
+        bitcat_core::logging::cleanup_old_logs(&dir, std::time::Duration::from_secs(14 * 24 * 3600))
     });
     match cleanup {
         Ok(removed) if removed > 0 => tracing::info!(removed, "old log cleanup completed"),

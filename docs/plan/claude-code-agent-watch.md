@@ -55,8 +55,8 @@ Phase 1 的主体已经落地：`core/src/agent_session.rs`、`core/src/claude_c
 
 已验证：
 
-- `cargo test -p ai-pad-core agent_`
-- `cargo test -p ai-pad-core claude_code`
+- `cargo test -p bitcat-core agent_`
+- `cargo test -p bitcat-core claude_code`
 
 尚未验证：
 

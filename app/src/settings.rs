@@ -7,18 +7,18 @@
 //! 鍔犺浇蹇収鏃剁敤鍗犱綅绗︿唬鏇跨湡瀹?Key锛岄槻姝?WebView2 DevTools 娉勯湶鍑瘉銆?//!
 //! 涓庝互涓嬫ā鍧椾氦浜掞細`ai_config`锛圓I 閰嶇疆鍔犺浇锛夈€乣action`锛堟寜閿粦瀹氾級銆?//! `prompts`锛堟彁绀鸿瘝锛夈€乣user_profile`锛堢敤鎴风敾鍍忥級銆乣app_settings`锛堟寔涔呭寲锛夈€乣token_tracker`锛堢敤閲忕粺璁★級銆?
 use crate::commands::SharedWindowState;
-use ai_pad_core::action::{ActionConfig, ActionDef, Defaults};
-use ai_pad_core::app_settings::{
+use bitcat_core::action::{ActionConfig, ActionDef, Defaults};
+use bitcat_core::app_settings::{
     AgentWatchSettings, AiOverride, AppSettings, AppearanceSettings, StorageSettings,
 };
-use ai_pad_core::memory::{LongTermMemory, LongTermReviewEntry};
-use ai_pad_core::prompts::PromptsConfig;
-use ai_pad_core::reminder::{ListRemindersArgs, ReminderRecord, ReminderSchedule};
-use ai_pad_core::token_tracker::{
+use bitcat_core::memory::{LongTermMemory, LongTermReviewEntry};
+use bitcat_core::prompts::PromptsConfig;
+use bitcat_core::reminder::{ListRemindersArgs, ReminderRecord, ReminderSchedule};
+use bitcat_core::token_tracker::{
     load_sessions, read_usage_records, token_sessions_path, token_usage_path, TokenRecord,
     TokenSession, TokenTotals,
 };
-use ai_pad_core::user_profile::UserProfile;
+use bitcat_core::user_profile::UserProfile;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -140,7 +140,7 @@ pub struct AboutInfo {
 #[derive(Debug, Serialize)]
 pub struct StorageView {
     pub settings: StorageSettings,
-    pub paths: ai_pad_core::storage::StoragePaths,
+    pub paths: bitcat_core::storage::StoragePaths,
 }
 
 #[derive(Debug, Serialize)]
@@ -356,13 +356,13 @@ pub async fn cmd_settings_close(app: AppHandle) -> Result<(), String> {
 /// Frontend debug logging bridge.
 #[tauri::command]
 pub async fn cmd_settings_log(msg: String) -> Result<(), String> {
-    if !ai_pad_core::logging::frontend_log_allowed(
+    if !bitcat_core::logging::frontend_log_allowed(
         "settings",
         std::time::Duration::from_millis(120),
     ) {
         return Ok(());
     }
-    let preview = ai_pad_core::logging::log_preview(&msg, 80);
+    let preview = bitcat_core::logging::log_preview(&msg, 80);
     info!(
         msg_chars = msg.chars().count(),
         msg_preview = %preview,
@@ -377,7 +377,7 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
     let overlay = AppSettings::load();
 
     // AI effective锛氬皾璇曞姞杞斤紝澶辫触鍒欑敤榛樿鍗犱綅
-    let (effective, has_key) = match ai_pad_core::ai_config::AiConfig::load() {
+    let (effective, has_key) = match bitcat_core::ai_config::AiConfig::load() {
         Ok(cfg) => {
             let mt = cfg.max_tokens();
             let has_key = !cfg.api_key.is_empty();
@@ -407,12 +407,12 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
     });
     let prompts_cfg = PromptsConfig::load();
 
-    let app_settings_path = ai_pad_core::app_settings::settings_path()
+    let app_settings_path = bitcat_core::app_settings::settings_path()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|| "<unknown>".into());
 
     // Read buttons.yml to expose the complete configurable button catalog.
-    let button_catalog = match ai_pad_core::config::ButtonConfig::load("config/buttons.yml") {
+    let button_catalog = match bitcat_core::config::ButtonConfig::load("config/buttons.yml") {
         Ok(btn_cfg) => {
             let mut items: Vec<ButtonCatalogItem> = btn_cfg
                 .buttons
@@ -449,7 +449,7 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
         agent_watch: overlay.agent_watch,
         storage: StorageView {
             settings: overlay.storage,
-            paths: ai_pad_core::storage::storage_paths()?,
+            paths: bitcat_core::storage::storage_paths()?,
         },
         about: AboutInfo {
             version: env!("CARGO_PKG_VERSION").to_string(),
@@ -568,7 +568,7 @@ pub async fn cmd_get_memory_review(limit: Option<usize>) -> Result<MemoryReviewV
 pub async fn cmd_get_reminders(
     include_inactive: Option<bool>,
 ) -> Result<ReminderReviewView, String> {
-    let reminders = ai_pad_core::reminder::list_reminders(&ListRemindersArgs {
+    let reminders = bitcat_core::reminder::list_reminders(&ListRemindersArgs {
         include_inactive: include_inactive.unwrap_or(true),
     })?;
     Ok(reminder_review_view(reminders))
@@ -576,19 +576,19 @@ pub async fn cmd_get_reminders(
 
 #[tauri::command]
 pub async fn cmd_cancel_reminder(id: String) -> Result<ReminderReviewView, String> {
-    ai_pad_core::reminder::cancel_reminder_with_source(&id, "settings")?;
+    bitcat_core::reminder::cancel_reminder_with_source(&id, "settings")?;
     cmd_get_reminders(Some(true)).await
 }
 
 #[tauri::command]
 pub async fn cmd_delete_reminder(id: String) -> Result<ReminderReviewView, String> {
-    ai_pad_core::reminder::delete_reminder_with_source(&id, "settings")?;
+    bitcat_core::reminder::delete_reminder_with_source(&id, "settings")?;
     cmd_get_reminders(Some(true)).await
 }
 
 #[tauri::command]
 pub async fn cmd_complete_reminder(id: String) -> Result<ReminderReviewView, String> {
-    ai_pad_core::reminder::complete_reminder_with_source(&id, "settings")?;
+    bitcat_core::reminder::complete_reminder_with_source(&id, "settings")?;
     cmd_get_reminders(Some(true)).await
 }
 
@@ -597,7 +597,7 @@ pub async fn cmd_snooze_reminder(
     id: String,
     minutes: Option<u32>,
 ) -> Result<ReminderReviewView, String> {
-    ai_pad_core::reminder::snooze_reminder_with_source(&id, minutes.unwrap_or(10), "settings")?;
+    bitcat_core::reminder::snooze_reminder_with_source(&id, minutes.unwrap_or(10), "settings")?;
     cmd_get_reminders(Some(true)).await
 }
 
@@ -636,12 +636,12 @@ fn reminder_review_view(reminders: Vec<ReminderRecord>) -> ReminderReviewView {
     let total_entries = reminders.len();
     let active_count = reminders
         .iter()
-        .filter(|r| r.status == ai_pad_core::reminder::ReminderStatus::Active)
+        .filter(|r| r.status == bitcat_core::reminder::ReminderStatus::Active)
         .count();
-    let events_path = ai_pad_core::reminder::reminder_events_path()
+    let events_path = bitcat_core::reminder::reminder_events_path()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|e| format!("<unavailable: {e}>"));
-    let store_path = ai_pad_core::reminder::reminder_store_path()
+    let store_path = bitcat_core::reminder::reminder_store_path()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|e| format!("<unavailable: {e}>"));
     ReminderReviewView {
@@ -1082,7 +1082,7 @@ mod tests {
             agent_watch: AgentWatchSettings::default(),
             storage: StorageView {
                 settings: StorageSettings::default(),
-                paths: ai_pad_core::storage::storage_paths().unwrap(),
+                paths: bitcat_core::storage::storage_paths().unwrap(),
             },
             about: AboutInfo {
                 version: "0.0.0".into(),

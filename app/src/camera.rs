@@ -4,11 +4,11 @@
 //! JPEG data URL、节流、业务避让、Vision 调用和独立目录持久化。
 //! 这样可以保持 app 层平台集成清晰，并复用 core 的结构化视觉分析与记录格式。
 
-use ai_pad_core::app_settings::AppSettings;
-use ai_pad_core::camera_observation::CameraObservationRecord;
-use ai_pad_core::prompts::{PromptsConfig, VisionPromptConfig};
-use ai_pad_core::vision::{self, VisionConfig};
 use base64::Engine;
+use bitcat_core::app_settings::AppSettings;
+use bitcat_core::camera_observation::CameraObservationRecord;
+use bitcat_core::prompts::{PromptsConfig, VisionPromptConfig};
+use bitcat_core::vision::{self, VisionConfig};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -155,7 +155,7 @@ async fn analyze_camera_frame(
     height: u32,
     settings: AppSettings,
 ) -> Result<(), String> {
-    if ai_pad_core::performance::blocks_screenshot_observation() {
+    if bitcat_core::performance::blocks_screenshot_observation() {
         debug!("camera observation skipped while performance is active");
         return Ok(());
     }
@@ -173,7 +173,7 @@ async fn analyze_camera_frame(
 
     let jpeg = decode_jpeg_data_url(&data_url)?;
     let b64 = base64::engine::general_purpose::STANDARD.encode(&jpeg);
-    let ai_config = ai_pad_core::ai_config::AiConfig::load()?;
+    let ai_config = bitcat_core::ai_config::AiConfig::load()?;
     let prompts = PromptsConfig::load();
     let prompt_cfg = VisionPromptConfig {
         prompt: prompts.camera.prompt,
@@ -191,7 +191,7 @@ async fn analyze_camera_frame(
         jpeg_size: jpeg.len(),
         saved_frame: settings.appearance.camera_save_frames,
     };
-    let path = ai_pad_core::camera_observation::save_camera_observation(&jpeg, &record)?;
+    let path = bitcat_core::camera_observation::save_camera_observation(&jpeg, &record)?;
     info!(
         path = ?path,
         width,

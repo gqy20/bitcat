@@ -7,8 +7,8 @@
 //! 只需扩展 [`Action`] 枚举和 `dispatch` 的 match 分支。
 //! 各输入源通过 [`ActionSource`] 标记来源，便于日志审计和问题排查。
 
-use ai_pad_core::action::ActionDef;
-use ai_pad_core::logging::log_preview;
+use bitcat_core::action::ActionDef;
+use bitcat_core::logging::log_preview;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use tauri::AppHandle;
@@ -218,7 +218,7 @@ impl ActionBus {
                 terminal,
             } => {
                 info!(?source, action = "Launch", program = %program, "action dispatch");
-                if let Err(e) = ai_pad_core::action::launch_program(
+                if let Err(e) = bitcat_core::action::launch_program(
                     program,
                     args,
                     workdir,
@@ -247,7 +247,7 @@ impl ActionBus {
             Action::Hotkey(keys) => {
                 info!(?source, action = "Hotkey", keys = ?keys, "action dispatch");
                 let refs: Vec<&str> = keys.iter().map(|s| s.as_str()).collect();
-                if let Err(e) = ai_pad_core::hotkey::trigger_hotkey(&refs, 0.02) {
+                if let Err(e) = bitcat_core::hotkey::trigger_hotkey(&refs, 0.02) {
                     warn!(error = %e, "hotkey action failed");
                 }
             }
@@ -328,17 +328,17 @@ fn open_chat_impl(app: &AppHandle) {
 
 /// 播放指定名称的舞蹈动画，先校验舞蹈文件存在再发起播放请求。
 fn play_dance_impl(dance_name: String) {
-    if ai_pad_core::dance::load_dance(&dance_name).is_err() {
+    if bitcat_core::dance::load_dance(&dance_name).is_err() {
         warn!(dance = %dance_name, "dance action target missing");
         return;
     }
 
-    let req = ai_pad_core::dance::PlayDanceRequest {
+    let req = bitcat_core::dance::PlayDanceRequest {
         name: dance_name,
         loops: Some(1),
         duration_ms: None,
     };
-    if let Err(e) = ai_pad_core::dance::request_play_dance(req) {
+    if let Err(e) = bitcat_core::dance::request_play_dance(req) {
         warn!(error = %e, "request_play_dance failed");
     }
 }
@@ -348,7 +348,7 @@ fn play_dance_impl(dance_name: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ai_pad_core::action::ActionDef;
+    use bitcat_core::action::ActionDef;
 
     fn def(ty: &str) -> ActionDef {
         ActionDef {

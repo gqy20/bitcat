@@ -1,5 +1,5 @@
 use crate::commands::{self, SharedWindowState};
-use ai_pad_core::app_settings::{AppSettings, WindowPosition};
+use bitcat_core::app_settings::{AppSettings, WindowPosition};
 use tauri::{LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 use tracing::{info, warn};
 

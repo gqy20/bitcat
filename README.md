@@ -550,7 +550,7 @@ Voice 同步采用 **mpsc channel 握手**：后端发 flush → 前端 invoke �
 
 ```bash
 # env var 控制：启动 2 秒后自动弹面板，并模拟方向键事件
-BITCAT_DEBUG=1 cargo run -p ai-pad-app -- --debug
+BITCAT_DEBUG=1 cargo run -p bitcat-app -- --debug
 ```
 
 前端日志通过 `cmd_panel_log` 命令转发到后端 stderr，方便无 DevTools 时排查。

@@ -45,5 +45,5 @@ pub fn write_lifecycle_event(
             .ok()
             .map(|path| path.display().to_string()),
     };
-    ai_pad_core::logging::append_jsonl("lifecycle.jsonl", &record).map(|_| ())
+    bitcat_core::logging::append_jsonl("lifecycle.jsonl", &record).map(|_| ())
 }

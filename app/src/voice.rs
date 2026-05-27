@@ -141,7 +141,7 @@ pub fn open_voice_capture(app: &AppHandle) -> Result<(), String> {
     {
         if let Ok(hwnd) = window.hwnd() {
             let hwnd_raw = hwnd.0 as isize;
-            if let Err(e) = ai_pad_core::hotkey::force_foreground(hwnd_raw) {
+            if let Err(e) = bitcat_core::hotkey::force_foreground(hwnd_raw) {
                 warn!(error = %e, "[voice] force_foreground 失败");
             }
         }

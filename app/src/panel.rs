@@ -18,7 +18,7 @@ const GAP: f64 = 10.0;
 
 /// 获取面板渲染所需的布局和按钮列表。
 #[tauri::command]
-pub async fn cmd_get_panel_actions() -> Result<ai_pad_core::panel_action::PanelViewModel, String> {
+pub async fn cmd_get_panel_actions() -> Result<bitcat_core::panel_action::PanelViewModel, String> {
     let config = load_panel_config()?;
     Ok(config.to_view_model())
 }
@@ -125,7 +125,7 @@ pub async fn cmd_execute_panel_action(id: String, app: AppHandle) -> Result<(), 
         "launch" => {
             let program = action_def.program.as_deref().ok_or("缺少 program")?;
             let args = action_def.args.as_deref().unwrap_or("");
-            let result = ai_pad_core::action::launch_program(
+            let result = bitcat_core::action::launch_program(
                 program,
                 args,
                 &action_def.workdir,
@@ -159,10 +159,10 @@ pub async fn cmd_execute_panel_action(id: String, app: AppHandle) -> Result<(), 
 /// 调试用：前端通过此命令把日志转发到后端 stderr
 #[tauri::command]
 pub async fn cmd_panel_log(msg: String) -> Result<(), String> {
-    if !ai_pad_core::logging::frontend_log_allowed("panel", std::time::Duration::from_millis(120)) {
+    if !bitcat_core::logging::frontend_log_allowed("panel", std::time::Duration::from_millis(120)) {
         return Ok(());
     }
-    let preview = ai_pad_core::logging::log_preview(&msg, 80);
+    let preview = bitcat_core::logging::log_preview(&msg, 80);
     info!(
         msg_chars = msg.chars().count(),
         msg_preview = %preview,
@@ -205,8 +205,8 @@ fn hide_panel(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-fn load_panel_config() -> Result<ai_pad_core::panel_action::PanelActionConfig, String> {
-    ai_pad_core::panel_action::PanelActionConfig::load(PANEL_CONFIG_PATH)
+fn load_panel_config() -> Result<bitcat_core::panel_action::PanelActionConfig, String> {
+    bitcat_core::panel_action::PanelActionConfig::load(PANEL_CONFIG_PATH)
         .map_err(|e| format!("加载 {PANEL_CONFIG_PATH} 失败: {e}"))
 }
 
@@ -329,7 +329,7 @@ mod tests {
 
     #[test]
     fn test_load_panel_actions_from_yml() {
-        let config = ai_pad_core::panel_action::PanelActionConfig::load(PANEL_CONFIG_PATH).unwrap();
+        let config = bitcat_core::panel_action::PanelActionConfig::load(PANEL_CONFIG_PATH).unwrap();
         assert_eq!(config.defaults.width, 480);
         assert_eq!(config.defaults.height, 360);
         assert_eq!(config.defaults.columns, 2);
@@ -342,7 +342,7 @@ mod tests {
 
     #[test]
     fn test_panel_actions_are_builtin_games() {
-        let config = ai_pad_core::panel_action::PanelActionConfig::load(PANEL_CONFIG_PATH).unwrap();
+        let config = bitcat_core::panel_action::PanelActionConfig::load(PANEL_CONFIG_PATH).unwrap();
         for action_id in ["game", "memory", "catch", "battle", "gomoku"] {
             let action = config.actions.get(action_id).unwrap();
             assert_eq!(
@@ -354,7 +354,7 @@ mod tests {
 
     #[test]
     fn test_unknown_action_errors() {
-        let config = ai_pad_core::panel_action::PanelActionConfig::load(PANEL_CONFIG_PATH).unwrap();
+        let config = bitcat_core::panel_action::PanelActionConfig::load(PANEL_CONFIG_PATH).unwrap();
         assert!(config.actions.get("nonexistent").is_none());
     }
 }

@@ -255,13 +255,13 @@ pub async fn cmd_agent_watch_port() -> Result<u16, String> {
 /// Frontend diagnostic bridge for the Agent Watch window.
 #[tauri::command]
 pub async fn cmd_agent_watch_log(msg: String) -> Result<(), String> {
-    if !ai_pad_core::logging::frontend_log_allowed(
+    if !bitcat_core::logging::frontend_log_allowed(
         "agent-watch",
         std::time::Duration::from_millis(120),
     ) {
         return Ok(());
     }
-    let preview = ai_pad_core::logging::log_preview(&msg, 120);
+    let preview = bitcat_core::logging::log_preview(&msg, 120);
     warn!(
         msg_chars = msg.chars().count(),
         msg_preview = %preview,

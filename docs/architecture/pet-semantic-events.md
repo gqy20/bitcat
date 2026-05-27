@@ -168,8 +168,8 @@ Recommended verification after touching this path:
 
 ```powershell
 cargo run -p xtask -- test-core
-cargo check -p ai-pad-app
-cargo nextest run -p ai-pad-app
+cargo check -p bitcat-app
+cargo nextest run -p bitcat-app
 cd app/frontend && npx vitest run
 ```
 

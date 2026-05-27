@@ -4,14 +4,14 @@
 //! 的 `AgentSession` 快照，并通过宠物事件总线发出低频提醒。它不直接处理
 //! hook 安装，也不向 Claude Code 回写权限决策，第一版保持只读观察。
 
-use ai_pad_core::agent_nudge::{AgentNudge, AgentNudgeDecision, AgentNudgeKind, AgentNudgePolicy};
-use ai_pad_core::agent_session::{
+use bitcat_core::agent_nudge::{AgentNudge, AgentNudgeDecision, AgentNudgeKind, AgentNudgePolicy};
+use bitcat_core::agent_session::{
     apply_session_event, sort_sessions, AgentSession, AgentSessionEvent, AgentSessionView,
     AgentSource,
 };
-use ai_pad_core::app_settings::{AgentWatchSettings, AppSettings};
-use ai_pad_core::claude_code::ClaudeHookEvent;
-use ai_pad_core::pet_event::PetEvent;
+use bitcat_core::app_settings::{AgentWatchSettings, AppSettings};
+use bitcat_core::claude_code::ClaudeHookEvent;
+use bitcat_core::pet_event::PetEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -571,10 +571,10 @@ fn evaluate_nudge(
 }
 
 fn low_priority_nudge_is_gated(app: &AppHandle, nudge: &AgentNudge) -> bool {
-    if nudge.kind != ai_pad_core::agent_nudge::AgentNudgeKind::AwayWhileWorking {
+    if nudge.kind != bitcat_core::agent_nudge::AgentNudgeKind::AwayWhileWorking {
         return false;
     }
-    if ai_pad_core::performance::blocks_screenshot_observation() {
+    if bitcat_core::performance::blocks_screenshot_observation() {
         return true;
     }
     if crate::game::is_game_busy(app) {
@@ -623,7 +623,7 @@ fn nudge_uses_notification(kind: AgentNudgeKind, session: &AgentSession) -> bool
 }
 
 fn is_tool_level_error(session: &AgentSession) -> bool {
-    session.status == ai_pad_core::agent_session::AgentStatus::Error
+    session.status == bitcat_core::agent_session::AgentStatus::Error
         && session
             .tool_name
             .as_deref()
@@ -788,7 +788,7 @@ struct AgentWatchEventLogRecord {
 }
 
 impl AgentWatchEventLogRecord {
-    fn from_event(seq: u64, event: &ai_pad_core::agent_session::AgentSessionEvent) -> Self {
+    fn from_event(seq: u64, event: &bitcat_core::agent_session::AgentSessionEvent) -> Self {
         Self {
             seq,
             at_ms: event.at_ms,
@@ -833,11 +833,11 @@ fn write_nudge_log(record: AgentNudgeLogRecord) {
 }
 
 pub fn append_jsonl<T: Serialize>(file_name: &str, value: &T) -> Result<(), String> {
-    ai_pad_core::logging::append_jsonl(file_name, value).map(|_| ())
+    bitcat_core::logging::append_jsonl(file_name, value).map(|_| ())
 }
 
 pub fn log_dir() -> Option<PathBuf> {
-    ai_pad_core::logging::log_dir().ok()
+    bitcat_core::logging::log_dir().ok()
 }
 
 pub fn now_ms() -> u64 {
@@ -945,7 +945,7 @@ pub async fn cmd_open_agent_workspace(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ai_pad_core::agent_session::{AgentSource, AgentStatus};
+    use bitcat_core::agent_session::{AgentSource, AgentStatus};
 
     #[test]
     fn snapshot_sorts_and_marks_primary() {
@@ -1059,7 +1059,7 @@ mod tests {
             session_id: "wait".into(),
             kind: AgentNudgeKind::WaitingForUser,
             message: "long legacy message".into(),
-            mood: ai_pad_core::pet_event::PetMood::Confused,
+            mood: bitcat_core::pet_event::PetMood::Confused,
             ttl_ms: 12_000,
             use_tts: false,
         };
@@ -1101,7 +1101,7 @@ mod tests {
             session_id: "wait".into(),
             kind: AgentNudgeKind::WaitingForUser,
             message: "legacy message".into(),
-            mood: ai_pad_core::pet_event::PetMood::Confused,
+            mood: bitcat_core::pet_event::PetMood::Confused,
             ttl_ms: 12_000,
             use_tts: false,
         };
@@ -1158,7 +1158,7 @@ mod tests {
             session_id: "done".into(),
             kind: AgentNudgeKind::TaskDone,
             message: "legacy message".into(),
-            mood: ai_pad_core::pet_event::PetMood::Happy,
+            mood: bitcat_core::pet_event::PetMood::Happy,
             ttl_ms: 8_000,
             use_tts: false,
         };

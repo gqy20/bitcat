@@ -20,7 +20,7 @@
 
 ```powershell
 $env:CMAKE_POLICY_VERSION_MINIMUM="3.5"
-cargo check -p ai-pad-app
+cargo check -p bitcat-app
 ```
 
 ## AI 没响应

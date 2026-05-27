@@ -28,10 +28,10 @@ fn main() -> Result<()> {
         Some("prepare-exe") => prepare_exe_cmd(parse_prepare_exe_args(args.collect())?),
         Some("clean-dist") => clean_dist(),
         Some("test") => run_nextest(["--workspace"], None),
-        Some("test-core") => run_nextest(["-p", "ai-pad-core"], None),
-        Some("test-app") => run_nextest(["-p", "ai-pad-app"], None),
+        Some("test-core") => run_nextest(["-p", "bitcat-core"], None),
+        Some("test-app") => run_nextest(["-p", "bitcat-app"], None),
         Some("test-fast") => run_nextest(
-            ["-p", "ai-pad-core", "-E", "not test(/prop_/)"],
+            ["-p", "bitcat-core", "-E", "not test(/prop_/)"],
             Some(("PROPTEST_CASES", "32")),
         ),
         Some("-h") | Some("--help") | None => {
@@ -88,12 +88,10 @@ fn parse_prepare_exe_args(args: Vec<String>) -> Result<PathBuf> {
 fn prepare_exe_cmd(out_dir: PathBuf) -> Result<()> {
     let repo_root = env::current_dir()?;
     let out_dir = repo_root.join(out_dir);
-    let cargo_exe = out_dir.join("ai-pad-app.exe");
     let bitcat_exe = out_dir.join("bitcat.exe");
-    if !cargo_exe.is_file() {
-        return Err(format!("executable not found: {}", cargo_exe.display()).into());
+    if !bitcat_exe.is_file() {
+        return Err(format!("executable not found: {}", bitcat_exe.display()).into());
     }
-    fs::copy(&cargo_exe, &bitcat_exe)?;
     println!("Prepared executable: {}", bitcat_exe.display());
     Ok(())
 }

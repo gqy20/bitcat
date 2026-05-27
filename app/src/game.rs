@@ -3,10 +3,10 @@
 //! 本模块负责创建全屏透明 game 窗口、保存当前 `GameDef`、接收前端结束回调，
 //! 并把游戏结果同步回宠物状态。实际游戏逻辑运行在前端 `game_engine.js`，
 //! core crate 只提供可序列化配置和参数边界。
-use ai_pad_core::bridge::PetStateName;
-use ai_pad_core::gomoku_ai::{GomokuAiMove, GomokuCommentary, GomokuPoint};
-use ai_pad_core::minigame::{validate_game_def, GameDef, MinigameType};
-use ai_pad_core::pet_event::{PetEvent, PetMode, PetMood};
+use bitcat_core::bridge::PetStateName;
+use bitcat_core::gomoku_ai::{GomokuAiMove, GomokuCommentary, GomokuPoint};
+use bitcat_core::minigame::{validate_game_def, GameDef, MinigameType};
+use bitcat_core::pet_event::{PetEvent, PetMode, PetMood};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::Write;
@@ -553,10 +553,10 @@ fn event_source_preview(event: &BattlePetEventPayload) -> String {
 /// Forward frontend game logs into Rust tracing.
 #[tauri::command]
 pub fn cmd_game_log(msg: String) -> Result<(), String> {
-    if !ai_pad_core::logging::frontend_log_allowed("game", std::time::Duration::from_millis(120)) {
+    if !bitcat_core::logging::frontend_log_allowed("game", std::time::Duration::from_millis(120)) {
         return Ok(());
     }
-    let preview = ai_pad_core::logging::log_preview(&msg, 120);
+    let preview = bitcat_core::logging::log_preview(&msg, 120);
     info!(
         msg_chars = msg.chars().count(),
         msg_preview = %preview,
@@ -571,10 +571,10 @@ pub async fn cmd_gomoku_ai_move(
     board: Vec<Vec<u8>>,
     last_move: Option<GomokuPoint>,
 ) -> Result<GomokuAiMove, String> {
-    let ai_config = ai_pad_core::ai_config::AiConfig::load()?;
+    let ai_config = bitcat_core::ai_config::AiConfig::load()?;
     let mut last_error = None;
     for attempt in 1..=2 {
-        match ai_pad_core::gomoku_ai::choose_ai_move(&ai_config, &board, last_move).await {
+        match bitcat_core::gomoku_ai::choose_ai_move(&ai_config, &board, last_move).await {
             Ok(mv) => return Ok(mv),
             Err(e) => {
                 warn!(
@@ -595,14 +595,14 @@ pub async fn cmd_gomoku_commentary(
     board: Vec<Vec<u8>>,
     last_move: Option<GomokuPoint>,
 ) -> Result<GomokuCommentary, String> {
-    let ai_config = ai_pad_core::ai_config::AiConfig::load()?;
-    ai_pad_core::gomoku_ai::comment_position(&ai_config, &board, last_move).await
+    let ai_config = bitcat_core::ai_config::AiConfig::load()?;
+    bitcat_core::gomoku_ai::comment_position(&ai_config, &board, last_move).await
 }
 
 /// Persist one completed Gomoku session for later replay and analysis.
 #[tauri::command]
 pub fn cmd_gomoku_record_game(record: Value) -> Result<(), String> {
-    let dir = ai_pad_core::storage::data_dir()?
+    let dir = bitcat_core::storage::data_dir()?
         .join("games")
         .join("gomoku");
     std::fs::create_dir_all(&dir).map_err(|e| format!("create gomoku log dir failed: {e}"))?;
@@ -621,7 +621,7 @@ pub fn cmd_gomoku_record_game(record: Value) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{event_source_preview, map_battle_pet_events, BattlePetEventPayload};
-    use ai_pad_core::pet_event::{PetEvent, PetMood};
+    use bitcat_core::pet_event::{PetEvent, PetMood};
 
     #[test]
     fn battle_event_preview_keeps_structured_fields() {

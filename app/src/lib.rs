@@ -235,15 +235,15 @@ pub fn run() {
             // 消费 core 发来的 PlayDanceRequest，序列化 DanceDef 后以统一 performance 事件
             // 推送给 pet 窗口。会话状态由 core::performance 维护，供 bubble/screenshot 避让。
             let (dance_tx, mut dance_rx) =
-                tokio::sync::mpsc::unbounded_channel::<ai_pad_core::dance::PlayDanceRequest>();
-            if let Err(e) = ai_pad_core::dance::set_play_dance_sender(dance_tx) {
+                tokio::sync::mpsc::unbounded_channel::<bitcat_core::dance::PlayDanceRequest>();
+            if let Err(e) = bitcat_core::dance::set_play_dance_sender(dance_tx) {
                 warn!(error = %e, "注入 play_dance sender 失败");
             }
             let dance_app = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(req) = dance_rx.recv().await {
                     let name = req.name.clone();
-                    let def = match ai_pad_core::dance::load_dance(&name) {
+                    let def = match bitcat_core::dance::load_dance(&name) {
                         Ok(d) => d,
                         Err(e) => {
                             warn!(error = %e, dance = %name, "加载舞蹈失败");
@@ -281,8 +281,8 @@ pub fn run() {
                         }
                     }
 
-                    let session = ai_pad_core::performance::start_performance(
-                        ai_pad_core::performance::PerformanceKind::ChoreographedDance,
+                    let session = bitcat_core::performance::start_performance(
+                        bitcat_core::performance::PerformanceKind::ChoreographedDance,
                     );
                     let payload = serde_json::json!({
                         "session_id": session.id,
@@ -295,12 +295,12 @@ pub fn run() {
                     }
                     if let Err(e) = dance_app.emit("performance-start", &payload) {
                         warn!(error = %e, dance = %name, "emit performance-start 失败");
-                        ai_pad_core::performance::stop_performance(session.id, "emit_failed");
+                        bitcat_core::performance::stop_performance(session.id, "emit_failed");
                         continue;
                     }
-                    ai_pad_core::performance::update_phase(
+                    bitcat_core::performance::update_phase(
                         session.id,
-                        ai_pad_core::performance::PerformancePhase::Active,
+                        bitcat_core::performance::PerformancePhase::Active,
                     );
                     info!(
                         session_id = session.id,
@@ -316,7 +316,7 @@ pub fn run() {
                         let guard_name = name.clone();
                         tauri::async_runtime::spawn(async move {
                             tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
-                            ai_pad_core::performance::stop_performance(session_id, "max_duration");
+                            bitcat_core::performance::stop_performance(session_id, "max_duration");
                             debug!(
                                 session_id,
                                 dance = %guard_name,
@@ -393,7 +393,7 @@ pub fn run() {
             // ── 全局热键：actions.yml 键盘别名 ──
             // 批量注册 actions.yml 里 keyboard_shortcut 字段声明的热键，
             // 通过 ActionBus 以 Keyboard source 分发对应 Action。
-            match ai_pad_core::action::ActionConfig::load("config/actions.yml") {
+            match bitcat_core::action::ActionConfig::load("config/actions.yml") {
                 Ok(cfg) => {
                     let mut registered = 0usize;
                     for (name, def) in &cfg.actions {

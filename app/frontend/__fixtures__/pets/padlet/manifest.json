@@ -796,7 +796,7 @@
   },
   "metadata": {
     "generatedFrom": [
-      "app/frontend/tools/generate-ai-pad-original-packs.cjs"
+      "app/frontend/tools/generate-bitcat-original-packs.cjs"
     ],
     "assetClass": "bitcat-original",
     "qualityTier": "generated",
