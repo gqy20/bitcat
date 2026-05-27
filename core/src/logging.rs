@@ -19,21 +19,8 @@ static LOG_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 static FRONTEND_LOG_GATE: OnceLock<Mutex<HashMap<String, SystemTime>>> = OnceLock::new();
 
 /// Return the canonical BitCat log directory.
-///
-/// Resolution order is explicit Windows profile, generic HOME, then the
-/// platform-specific home directory reported by `dirs`.
 pub fn log_dir() -> Result<PathBuf, String> {
-    let home = std::env::var_os("USERPROFILE")
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME")
-                .filter(|v| !v.is_empty())
-                .map(PathBuf::from)
-        })
-        .or_else(dirs::home_dir)
-        .ok_or_else(|| "unable to resolve home directory".to_string())?;
-    Ok(home.join(".bitcat").join("logs"))
+    Ok(crate::storage::data_dir()?.join("logs"))
 }
 
 /// Append a serializable record to a JSONL file under the canonical log dir.

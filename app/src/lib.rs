@@ -167,6 +167,7 @@ pub fn run() {
             settings::cmd_settings_save_prompts,
             settings::cmd_settings_save_user,
             settings::cmd_settings_save_appearance,
+            settings::cmd_settings_save_storage,
             settings::cmd_settings_save_agent_watch,
             settings::cmd_settings_reset,
             settings::cmd_settings_apply,

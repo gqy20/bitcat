@@ -150,10 +150,7 @@ pub struct CancelReminderArgs {
 
 /// Return the reminder store path under the user's data directory.
 pub fn reminder_store_path() -> Result<PathBuf, String> {
-    let dir = dirs::data_dir()
-        .ok_or_else(|| "unable to determine user data directory".to_string())?
-        .join("bitcat")
-        .join("reminders");
+    let dir = crate::storage::app_data_dir()?.join("reminders");
     Ok(dir.join("reminders.json"))
 }
 

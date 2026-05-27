@@ -331,6 +331,20 @@
               </div>
               <input id="a-camera-save" type="checkbox" />
             </div>
+            <div class="setting-row">
+              <div class="setting-copy">
+                <label for="a-storage-data">本地数据目录</label>
+                <span>留空使用默认 ~\.bitcat；存放 logs、memory、screenshots 和 camera。</span>
+              </div>
+              <input id="a-storage-data" type="text" placeholder="C:\\Users\\you\\.bitcat" spellcheck="false" />
+            </div>
+            <div class="setting-row">
+              <div class="setting-copy">
+                <label for="a-storage-app-data">应用数据目录</label>
+                <span>留空使用默认 %APPDATA%\bitcat；存放 dances 和 reminders。</span>
+              </div>
+              <input id="a-storage-app-data" type="text" placeholder="C:\\Users\\you\\AppData\\Roaming\\bitcat" spellcheck="false" />
+            </div>
           </div>
 
           <div class="section-panel pet-assets-panel">
@@ -627,6 +641,8 @@
           <details class="quiet-details about-details" open>
             <summary>本机文件</summary>
             <div class="file-line"><span>app_settings.json</span><code id="about-settings-path">-</code></div>
+            <div class="file-line"><span>data dir</span><code id="about-data-dir">-</code></div>
+            <div class="file-line"><span>app data dir</span><code id="about-app-data-dir">-</code></div>
             <div class="file-line"><span>actions.yml</span><code id="about-actions-hint">-</code></div>
             <div class="file-line"><span>prompts.yml</span><code id="about-prompts-hint">-</code></div>
           </details>

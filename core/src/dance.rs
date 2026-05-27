@@ -128,7 +128,9 @@ pub fn validate_dance_def(def: &DanceDef) -> Result<(), String> {
 
 /// 返回舞蹈存储目录 ~/.bitcat/dances/
 pub fn dance_dir() -> Option<PathBuf> {
-    dirs::data_dir().map(|d| d.join("bitcat").join("dances"))
+    crate::storage::app_data_dir()
+        .map(|dir| dir.join("dances"))
+        .ok()
 }
 
 /// 返回项目内置舞蹈目录 config/dances/

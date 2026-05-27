@@ -1,11 +1,11 @@
-//! ai-pad 专属应用配置覆盖层。
+//! BitCat application settings overlay.
 //!
-//! 位置：`dirs::config_dir()/ai-pad/app_settings.json`
+//! The settings file lives at `dirs::config_dir()/bitcat/app_settings.json`.
+//! Runtime data folders are configurable, but this file stays fixed so BitCat
+//! can find preferences before resolving storage paths.
 //!
-//! - `ai` 段：作为 `~/.claude/settings.json` 的覆盖层（ai-pad 层，不回写 claude settings）
-//! - `appearance` 段：ai-pad 独有的外观/行为配置
-//!
-//! 设计原则：`~/.claude/settings.json` 只读不写；ai-pad 自己的修改全部落在此文件。
+//! BitCat does not write back to `~/.claude/settings.json`; local overrides are
+//! persisted here.
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -24,6 +24,8 @@ pub struct AppSettings {
     pub appearance: AppearanceSettings,
     #[serde(default)]
     pub agent_watch: AgentWatchSettings,
+    #[serde(default)]
+    pub storage: StorageSettings,
 }
 
 /// AI 服务配置覆盖字段（api_key / base_url / model / max_tokens），均为可选
@@ -60,6 +62,15 @@ pub struct AgentWatchSettings {
     pub remote_view_enabled: bool,
     #[serde(default = "default_true")]
     pub remote_install_enabled: bool,
+}
+
+/// Local storage folder overrides.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct StorageSettings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_data_dir: Option<String>,
 }
 
 /// 外观与行为设置：置顶、折叠、TTS、全局快捷键、截图间隔等
@@ -316,6 +327,10 @@ mod tests {
                 remote_view_enabled: false,
                 remote_install_enabled: false,
             },
+            storage: StorageSettings {
+                data_dir: Some("C:\\Users\\alice\\.bitcat".into()),
+                app_data_dir: Some("C:\\Users\\alice\\AppData\\Roaming\\bitcat".into()),
+            },
         };
         let json = serde_json::to_string_pretty(&s).unwrap();
         let restored: AppSettings = serde_json::from_str(&json).unwrap();
@@ -334,6 +349,10 @@ mod tests {
         assert!(restored.agent_watch.use_tts);
         assert!(!restored.agent_watch.remote_view_enabled);
         assert!(!restored.agent_watch.remote_install_enabled);
+        assert_eq!(
+            restored.storage.data_dir.as_deref(),
+            Some("C:\\Users\\alice\\.bitcat")
+        );
     }
 
     #[test]
@@ -344,6 +363,7 @@ mod tests {
         assert!(s.ai.model.is_none());
         assert_eq!(s.appearance, AppearanceSettings::default());
         assert_eq!(s.agent_watch, AgentWatchSettings::default());
+        assert_eq!(s.storage, StorageSettings::default());
     }
 
     #[test]

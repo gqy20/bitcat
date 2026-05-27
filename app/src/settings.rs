@@ -8,7 +8,9 @@
 //! 涓庝互涓嬫ā鍧椾氦浜掞細`ai_config`锛圓I 閰嶇疆鍔犺浇锛夈€乣action`锛堟寜閿粦瀹氾級銆?//! `prompts`锛堟彁绀鸿瘝锛夈€乣user_profile`锛堢敤鎴风敾鍍忥級銆乣app_settings`锛堟寔涔呭寲锛夈€乣token_tracker`锛堢敤閲忕粺璁★級銆?
 use crate::commands::SharedWindowState;
 use ai_pad_core::action::{ActionConfig, ActionDef, Defaults};
-use ai_pad_core::app_settings::{AgentWatchSettings, AiOverride, AppSettings, AppearanceSettings};
+use ai_pad_core::app_settings::{
+    AgentWatchSettings, AiOverride, AppSettings, AppearanceSettings, StorageSettings,
+};
 use ai_pad_core::memory::{LongTermMemory, LongTermReviewEntry};
 use ai_pad_core::prompts::PromptsConfig;
 use ai_pad_core::reminder::{ListRemindersArgs, ReminderRecord, ReminderSchedule};
@@ -84,6 +86,7 @@ pub struct SettingsSnapshot {
     pub prompts: PromptsConfig,
     pub appearance: AppearanceSettings,
     pub agent_watch: AgentWatchSettings,
+    pub storage: StorageView,
     pub about: AboutInfo,
     /// Complete configurable button catalog, ordered by button index.
     pub button_catalog: Vec<ButtonCatalogItem>,
@@ -132,6 +135,12 @@ pub struct AboutInfo {
     pub app_settings_path: String,
     pub actions_yml_hint: String,
     pub prompts_yml_hint: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct StorageView {
+    pub settings: StorageSettings,
+    pub paths: ai_pad_core::storage::StoragePaths,
 }
 
 #[derive(Debug, Serialize)]
@@ -262,6 +271,14 @@ pub struct AgentWatchInput {
     pub remote_install_enabled: bool,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct StorageInput {
+    #[serde(default)]
+    pub data_dir: Option<String>,
+    #[serde(default)]
+    pub app_data_dir: Option<String>,
+}
+
 fn default_screenshot_interval_sec() -> u64 {
     30
 }
@@ -279,6 +296,12 @@ fn default_repeat_nudge_after_min() -> u64 {
 }
 fn default_true() -> bool {
     true
+}
+
+fn normalize_storage_path(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().trim_matches('"').to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn token_session_view(session: &TokenSession) -> TokenSessionView {
@@ -424,6 +447,10 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
         prompts: prompts_cfg,
         appearance: overlay.appearance,
         agent_watch: overlay.agent_watch,
+        storage: StorageView {
+            settings: overlay.storage,
+            paths: ai_pad_core::storage::storage_paths()?,
+        },
         about: AboutInfo {
             version: env!("CARGO_PKG_VERSION").to_string(),
             app_settings_path,
@@ -457,7 +484,10 @@ pub async fn cmd_get_token_stats(model: Option<String>) -> Result<TokenStatsView
             .unwrap_or(true)
     }));
     let models = model_usage_options(today_records.iter().copied());
-    let sessions = load_sessions(&sessions_path)?;
+    let sessions = load_sessions(&sessions_path).unwrap_or_else(|e| {
+        warn!(error = %e, path = ?sessions_path, "failed to load token sessions; totals still use JSONL");
+        Default::default()
+    });
     let recent_sessions = sessions
         .sessions
         .iter()
@@ -943,6 +973,19 @@ pub async fn cmd_settings_save_appearance(
     Ok(())
 }
 
+/// Save local storage folder overrides.
+#[tauri::command]
+pub async fn cmd_settings_save_storage(payload: StorageInput) -> Result<(), String> {
+    let mut s = AppSettings::load();
+    s.storage = StorageSettings {
+        data_dir: normalize_storage_path(payload.data_dir),
+        app_data_dir: normalize_storage_path(payload.app_data_dir),
+    };
+    s.save()?;
+    info!(storage = ?s.storage, "storage settings saved");
+    Ok(())
+}
+
 /// Save Claude Code Agent watch settings.
 #[tauri::command]
 pub async fn cmd_settings_save_agent_watch(payload: AgentWatchInput) -> Result<(), String> {
@@ -981,6 +1024,11 @@ pub async fn cmd_settings_reset(category: String) -> Result<(), String> {
         "agent_watch" => {
             let mut s = AppSettings::load();
             s.agent_watch = AgentWatchSettings::default();
+            s.save()?;
+        }
+        "storage" => {
+            let mut s = AppSettings::load();
+            s.storage = StorageSettings::default();
             s.save()?;
         }
         "ai" => {
@@ -1032,6 +1080,10 @@ mod tests {
             prompts: PromptsConfig::default(),
             appearance: AppearanceSettings::default(),
             agent_watch: AgentWatchSettings::default(),
+            storage: StorageView {
+                settings: StorageSettings::default(),
+                paths: ai_pad_core::storage::storage_paths().unwrap(),
+            },
             about: AboutInfo {
                 version: "0.0.0".into(),
                 app_settings_path: "".into(),

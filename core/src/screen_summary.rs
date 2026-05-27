@@ -176,9 +176,7 @@ impl Default for ScreenSummaryConfig {
 // ---- 存储路径 ----
 
 fn summary_file_path() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
-    Ok(home
-        .join(".bitcat")
+    Ok(crate::storage::data_dir()?
         .join("memory")
         .join("screen_summary.json"))
 }

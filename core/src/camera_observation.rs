@@ -26,8 +26,7 @@ impl CameraObservationRecord {
 
 /// 返回 `~/.bitcat/camera/` 目录。
 pub fn camera_base_dir() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
-    Ok(home.join(".bitcat").join("camera"))
+    Ok(crate::storage::data_dir()?.join("camera"))
 }
 
 /// 确保当天摄像头观察目录存在。

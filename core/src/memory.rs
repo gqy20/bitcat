@@ -90,9 +90,7 @@ impl Default for MemoryConfig {
 
 /// 返回短期记忆文件路径 `~/.bitcat/memory/chat_summary.json`。
 fn memory_file_path() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
-    Ok(home
-        .join(".bitcat")
+    Ok(crate::storage::data_dir()?
         .join("memory")
         .join("chat_summary.json"))
 }
@@ -314,8 +312,9 @@ pub struct LongTermReviewEntry {
 
 /// 返回长期记忆文件路径 `~/.bitcat/memory/long_term.jsonl`。
 fn long_term_file_path() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
-    Ok(home.join(".bitcat").join("memory").join("long_term.jsonl"))
+    Ok(crate::storage::data_dir()?
+        .join("memory")
+        .join("long_term.jsonl"))
 }
 
 impl LongTermMemory {
@@ -755,8 +754,9 @@ struct ProfileAggregation {
 
 /// 返回用户画像文件路径 `~/.bitcat/memory/profile.json`。
 fn profile_file_path() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
-    Ok(home.join(".bitcat").join("memory").join("profile.json"))
+    Ok(crate::storage::data_dir()?
+        .join("memory")
+        .join("profile.json"))
 }
 
 impl ProfileStore {

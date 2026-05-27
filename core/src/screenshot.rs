@@ -282,8 +282,7 @@ impl ScreenshotRecord {
 
 /// 返回 `~/.bitcat/screenshots/` 路径。
 pub fn screenshot_base_dir() -> Result<std::path::PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "无法获取 HOME 目录".to_string())?;
-    Ok(home.join(".bitcat").join("screenshots"))
+    Ok(crate::storage::data_dir()?.join("screenshots"))
 }
 
 /// 确保当天日期子目录存在并返回其路径（如 `~/.bitcat/screenshots/2025-06-01/`）。

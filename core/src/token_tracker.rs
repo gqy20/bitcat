@@ -311,6 +311,7 @@ pub fn load_sessions(path: &Path) -> Result<TokenSessions, String> {
     }
 
     let content = fs::read_to_string(path).map_err(|e| format!("读取 token 会话失败: {e}"))?;
+    let content = content.trim_start_matches('\u{feff}');
     serde_json::from_str(&content).map_err(|e| format!("解析 token 会话失败: {e}"))
 }
 
@@ -487,6 +488,17 @@ mod tests {
         assert_eq!(store.sessions[0].session_id, "session-2");
         assert_eq!(store.sessions[0].screen_summary_count, 1);
         assert_eq!(store.sessions[0].screen_summary_total_tokens, 15);
+    }
+
+    #[test]
+    fn load_sessions_accepts_utf8_bom() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("token_sessions.json");
+        fs::write(&path, "\u{feff}{\"sessions\":[]}").unwrap();
+
+        let store = load_sessions(&path).unwrap();
+
+        assert!(store.sessions.is_empty());
     }
 
     #[test]

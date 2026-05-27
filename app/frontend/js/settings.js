@@ -95,6 +95,15 @@ async function mockInvoke(command) {
         camera_save_frames: false,
         pet_asset_url: "",
       },
+      storage: {
+        settings: { data_dir: null, app_data_dir: null },
+        paths: {
+          data_dir: "C:\\Users\\you\\.bitcat",
+          app_data_dir: "C:\\Users\\you\\AppData\\Roaming\\bitcat",
+          default_data_dir: "C:\\Users\\you\\.bitcat",
+          default_app_data_dir: "C:\\Users\\you\\AppData\\Roaming\\bitcat",
+        },
+      },
       agent_watch: {
         enabled: false,
         away_nudge_enabled: true,
@@ -516,12 +525,29 @@ function renderAppearance(a) {
   $("a-ss-bubble").checked = a.screenshot_show_bubble !== false;
   $("a-camera-enabled").checked = !!a.camera_observation_enabled;
   $("a-camera-save").checked = !!a.camera_save_frames;
+  renderStorage(SNAPSHOT?.storage);
   renderPetAssetPicker();
   renderPetAssetChoice(a.pet_asset_url || "");
   updateOverviewAppearance(a);
 
   ["a-top","a-collapsed","a-tts","a-notify-sound","a-notify-sound-reminder","a-notify-sound-agent","a-notify-sound-skip-tts","a-reminder-ai","a-ss-bubble","a-camera-enabled","a-camera-save"].forEach(id => { $(id).onchange = () => markDirty("appearance"); });
-  ["a-shortcut","a-ss-interval","a-reminder-ai-timeout","a-pet-asset"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
+  ["a-shortcut","a-ss-interval","a-reminder-ai-timeout","a-pet-asset","a-storage-data","a-storage-app-data"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
+}
+
+function renderStorage(storage) {
+  const settings = storage?.settings || {};
+  const paths = storage?.paths || {};
+  $("a-storage-data").value = settings.data_dir || "";
+  $("a-storage-data").placeholder = paths.default_data_dir || "";
+  $("a-storage-app-data").value = settings.app_data_dir || "";
+  $("a-storage-app-data").placeholder = paths.default_app_data_dir || "";
+}
+
+function collectStorage() {
+  return {
+    data_dir: $("a-storage-data").value.trim() || null,
+    app_data_dir: $("a-storage-app-data").value.trim() || null,
+  };
 }
 
 function collectAppearance() {
@@ -786,6 +812,8 @@ function collectAgentWatch() {
 function renderAbout(a) {
   $("about-version").textContent = a.version;
   $("about-settings-path").textContent = a.app_settings_path;
+  $("about-data-dir").textContent = SNAPSHOT?.storage?.paths?.data_dir || "-";
+  $("about-app-data-dir").textContent = SNAPSHOT?.storage?.paths?.app_data_dir || "-";
   $("about-actions-hint").textContent = a.actions_yml_hint;
   $("about-prompts-hint").textContent = a.prompts_yml_hint;
 }
@@ -1327,6 +1355,7 @@ async function saveAll() {
     }
     if (dirty.appearance) {
       await invoke("cmd_settings_save_appearance", { payload: collectAppearance() });
+      await invoke("cmd_settings_save_storage", { payload: collectStorage() });
       clearDirty("appearance");
     }
     if (dirty.agent_watch) {

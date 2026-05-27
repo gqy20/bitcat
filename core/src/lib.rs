@@ -64,6 +64,7 @@ pub mod screen_summary;
 pub mod screenshot;
 #[cfg(test)]
 mod screenshot_tests;
+pub mod storage;
 pub mod token_tracker;
 pub mod tool_events;
 pub mod tools;
