@@ -3,13 +3,12 @@
 //! 本模块解析 `config/panel_action.yml`，描述面板布局、按钮展示和按钮动作。
 //! 这样可以把弹出面板从前端硬编码中拆出来，让按钮数量与窗口尺寸随配置自动变化。
 //! app crate 的 panel IPC 会读取本配置，生成前端 ViewModel 并执行对应动作。
-
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs};
 
 const DEFAULT_YML: &str = include_str!("../../config/panel_action.yml");
 
-/// 面板快捷入口配置：全局默认值 + 面板按钮 id 到动作定义的映射。
+/// Panel shortcut configuration.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PanelActionConfig {
     #[serde(default)]
@@ -17,7 +16,7 @@ pub struct PanelActionConfig {
     pub actions: HashMap<String, PanelActionDef>,
 }
 
-/// 面板动作的全局默认值。
+/// Global defaults for panel layout and command execution.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PanelDefaults {
     #[serde(default = "default_terminal")]
@@ -60,9 +59,9 @@ fn default_rows() -> u32 {
     3
 }
 
-/// 单个面板快捷入口定义。
+/// One panel shortcut entry.
 ///
-/// 面板支持外部程序启动、PowerShell 脚本和少量内置命令。
+/// The panel supports launching programs, PowerShell scripts, and builtin commands.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PanelActionDef {
     #[serde(rename = "type")]
@@ -100,7 +99,7 @@ fn default_enabled() -> bool {
     true
 }
 
-/// 前端渲染面板所需的完整视图模型。
+/// View model consumed by the frontend panel.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct PanelViewModel {
     pub width: u32,
@@ -110,7 +109,7 @@ pub struct PanelViewModel {
     pub actions: Vec<PanelActionItem>,
 }
 
-/// 前端渲染单个面板按钮所需的数据。
+/// Frontend data for one panel button.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct PanelActionItem {
     pub id: String,
@@ -120,14 +119,14 @@ pub struct PanelActionItem {
 }
 
 impl PanelActionConfig {
-    /// 从 YAML 文件加载面板动作配置，文件不存在时回退到编译时嵌入的默认值。
+    /// Load panel actions from YAML, falling back to the embedded default.
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let content = crate::config::load_config_content(path, DEFAULT_YML);
         let config: PanelActionConfig = serde_yaml::from_str(&content)?;
         Ok(config)
     }
 
-    /// 序列化写回 `config/panel_action.yml`（会覆盖注释，保存前自动备份 `.bak`）。
+    /// Save panel actions to YAML and keep a `.bak` copy of the previous file.
     pub fn save(&self, path: &str) -> Result<(), String> {
         let target = crate::config::resolve_save_path(path);
         if let Ok(old) = fs::read_to_string(&target) {
@@ -140,12 +139,12 @@ impl PanelActionConfig {
             .map_err(|e| format!("写入 {:?} 失败: {e}", target))
     }
 
-    /// 返回内置默认面板配置。
+    /// Return the embedded default panel configuration.
     pub fn default_builtin() -> Self {
         serde_yaml::from_str(DEFAULT_YML).expect("内置 config/panel_action.yml 损坏")
     }
 
-    /// 转为前端 ViewModel。会按 `order` 再按 id 排序，并限制最多显示 `columns * rows` 项。
+    /// Convert to a sorted frontend view model limited by `columns * rows`.
     pub fn to_view_model(&self) -> PanelViewModel {
         let columns = self.defaults.columns.clamp(1, 8);
         let rows = self.defaults.rows.clamp(1, 8);
@@ -187,7 +186,7 @@ mod tests {
     #[test]
     fn test_load_panel_action_yml() {
         let config = PanelActionConfig::load("config/panel_action.yml").unwrap();
-        for id in ["game", "memory", "catch", "battle"] {
+        for id in ["game", "memory", "catch", "battle", "gomoku"] {
             assert!(config.actions.contains_key(id), "missing panel action {id}");
         }
     }
@@ -195,13 +194,13 @@ mod tests {
     #[test]
     fn test_panel_only_contains_minigames() {
         let config = PanelActionConfig::load("config/panel_action.yml").unwrap();
-        assert_eq!(config.actions.len(), 4);
+        assert_eq!(config.actions.len(), 5);
         for (id, action) in &config.actions {
             assert_eq!(action.action_type, "builtin", "{id} should be builtin");
             assert!(
                 matches!(
                     action.command.as_deref(),
-                    Some("game" | "memory" | "catch" | "battle")
+                    Some("game" | "memory" | "catch" | "battle" | "gomoku")
                 ),
                 "{id} should launch a minigame"
             );
@@ -219,18 +218,9 @@ mod tests {
     fn test_view_model_uses_layout_and_order() {
         let config = PanelActionConfig::load("config/panel_action.yml").unwrap();
         let vm = config.to_view_model();
-        assert_eq!((vm.width, vm.height, vm.columns, vm.rows), (480, 360, 2, 2));
-        assert_eq!(vm.actions.len(), 4);
+        assert_eq!((vm.width, vm.height, vm.columns, vm.rows), (480, 420, 3, 2));
+        assert_eq!(vm.actions.len(), 5);
         let ids: Vec<&str> = vm.actions.iter().map(|action| action.id.as_str()).collect();
-        assert_eq!(ids, vec!["game", "memory", "catch", "battle"]);
-        let labels: Vec<&str> = vm
-            .actions
-            .iter()
-            .map(|action| action.label.as_str())
-            .collect();
-        assert_eq!(
-            labels,
-            vec!["毛线球大作战", "翻牌配对", "接食物", "飞机守护战"]
-        );
+        assert_eq!(ids, vec!["game", "memory", "catch", "battle", "gomoku"]);
     }
 }

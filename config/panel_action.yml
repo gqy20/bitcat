@@ -4,8 +4,8 @@
 defaults:
   terminal: powershell
   width: 480
-  height: 360
-  columns: 2
+  height: 420
+  columns: 3
   rows: 2
 
 actions:
@@ -36,3 +36,10 @@ actions:
     order: 40
     type: builtin
     command: battle
+
+  gomoku:
+    label: AI 五子棋
+    icon: "G"
+    order: 50
+    type: builtin
+    command: gomoku

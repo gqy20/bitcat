@@ -49,6 +49,8 @@ pub enum Action {
     PlayCatchDefault,
     /// 启动默认守护召唤战
     PlayBattleDefault,
+    /// Start the built-in AI Gomoku mode.
+    PlayGomokuDefault,
     /// 立即截图 + Vision 分析
     ScreenshotNow,
     /// 启动程序（launch 动作）
@@ -192,6 +194,12 @@ impl ActionBus {
                 info!(?source, action = "PlayBattleDefault", "action dispatch");
                 if let Err(e) = crate::game::start_default_battle(app) {
                     warn!(error = %e, "play battle action failed");
+                }
+            }
+            Action::PlayGomokuDefault => {
+                info!(?source, action = "PlayGomokuDefault", "action dispatch");
+                if let Err(e) = crate::game::start_default_gomoku(app) {
+                    warn!(error = %e, "play gomoku action failed");
                 }
             }
             Action::ScreenshotNow => {
@@ -368,6 +376,7 @@ mod tests {
             Action::PlayMemoryDefault,
             Action::PlayCatchDefault,
             Action::PlayBattleDefault,
+            Action::PlayGomokuDefault,
             Action::ScreenshotNow,
             Action::Launch {
                 program: "code".into(),

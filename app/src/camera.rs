@@ -66,6 +66,13 @@ pub fn refresh_camera_window(app: &AppHandle) {
 
 /// 请求摄像头窗口在当前周期采样一次。
 pub fn request_camera_capture(app: &AppHandle) {
+    if crate::game::is_game_busy(app) {
+        debug!(
+            phase = crate::game::game_phase(app),
+            "camera observation capture skipped while game is busy"
+        );
+        return;
+    }
     if !AppSettings::load().appearance.camera_observation_enabled {
         return;
     }
@@ -104,6 +111,13 @@ pub async fn cmd_camera_frame(
     width: u32,
     height: u32,
 ) -> Result<(), String> {
+    if crate::game::is_game_busy(&app) {
+        debug!(
+            phase = crate::game::game_phase(&app),
+            "camera frame dropped while game is busy"
+        );
+        return Ok(());
+    }
     let settings = AppSettings::load();
     if !settings.appearance.camera_observation_enabled {
         return Ok(());

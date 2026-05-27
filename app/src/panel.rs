@@ -93,6 +93,17 @@ pub async fn cmd_execute_panel_action(id: String, app: AppHandle) -> Result<(), 
                 );
                 Ok(())
             }
+            "gomoku" => {
+                hide_panel(&app)?;
+                crate::action_bus::ActionBus::dispatch(
+                    &app,
+                    crate::action_bus::Action::PlayGomokuDefault,
+                    crate::action_bus::ActionSource::Frontend {
+                        cmd: "cmd_execute_panel_action:gomoku".into(),
+                    },
+                );
+                Ok(())
+            }
             "settings" => {
                 crate::settings::toggle_settings(&app);
                 hide_panel(&app)?;
@@ -324,7 +335,7 @@ mod tests {
         assert_eq!(config.defaults.columns, 2);
         assert_eq!(config.defaults.rows, 2);
 
-        for action_id in ["game", "memory", "catch", "battle"] {
+        for action_id in ["game", "memory", "catch", "battle", "gomoku"] {
             assert!(config.actions.contains_key(action_id));
         }
     }
@@ -332,7 +343,7 @@ mod tests {
     #[test]
     fn test_panel_actions_are_builtin_games() {
         let config = ai_pad_core::panel_action::PanelActionConfig::load(PANEL_CONFIG_PATH).unwrap();
-        for action_id in ["game", "memory", "catch", "battle"] {
+        for action_id in ["game", "memory", "catch", "battle", "gomoku"] {
             let action = config.actions.get(action_id).unwrap();
             assert_eq!(
                 action.action_type, "builtin",

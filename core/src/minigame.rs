@@ -15,6 +15,7 @@ pub enum MinigameType {
     Memory,
     Catch,
     Battle,
+    Gomoku,
 }
 
 /// 网格尺寸配置。
@@ -221,6 +222,43 @@ impl GameDef {
         }
     }
 
+    /// Built-in Gomoku preset. The frontend owns the board interaction, while
+    /// Rust validates the game envelope and asks the AI for each response move.
+    pub fn default_gomoku() -> Self {
+        Self {
+            game_type: MinigameType::Gomoku,
+            title: "AI 五子棋".into(),
+            grid: GameGrid {
+                width: 15,
+                height: 15,
+                cell_size: 36,
+            },
+            player: PlayerConfig {
+                speed_ms: 0,
+                initial_length: 0,
+            },
+            rules: GameRules {
+                walls_kill: false,
+                self_kill: false,
+                food_count: 0,
+                speed_ramp: 1.0,
+                win_length: 5,
+            },
+            theme: GameTheme {
+                head: "cat".into(),
+                body: "dot".into(),
+                food: "fish".into(),
+                trail_alpha: 0.55,
+            },
+            dialogue: GameDialogue {
+                start: "和 BitCat 下五子棋".into(),
+                win: "你连成五子".into(),
+                lose: "BitCat 连成五子".into(),
+            },
+            battle: None,
+        }
+    }
+
     /// 内置守护召唤战预设。
     pub fn default_battle() -> Self {
         Self {
@@ -295,6 +333,7 @@ pub fn validate_game_def(def: &GameDef) -> Result<(), String> {
         MinigameType::Memory => validate_memory(def),
         MinigameType::Catch => validate_catch(def),
         MinigameType::Battle => validate_battle(def),
+        MinigameType::Gomoku => validate_gomoku(def),
     }
 }
 
@@ -368,6 +407,20 @@ fn validate_catch(def: &GameDef) -> Result<(), String> {
     ensure_range("rules.food_count", def.rules.food_count, 1, 5)?;
     if !(0.70..=1.00).contains(&def.rules.speed_ramp) {
         return Err("rules.speed_ramp must be within 0.70..=1.00".into());
+    }
+    Ok(())
+}
+
+fn validate_gomoku(def: &GameDef) -> Result<(), String> {
+    validate_common_game_fields(def)?;
+    ensure_range("grid.width", def.grid.width, 9, 19)?;
+    ensure_range("grid.height", def.grid.height, 9, 19)?;
+    ensure_range("grid.cell_size", def.grid.cell_size, 16, 80)?;
+    if def.grid.width != def.grid.height {
+        return Err("gomoku board must be square".into());
+    }
+    if def.rules.win_length != 5 {
+        return Err("gomoku win_length must be 5".into());
     }
     Ok(())
 }
@@ -494,6 +547,11 @@ mod tests {
     #[test]
     fn default_catch_is_valid() {
         assert!(validate_game_def(&GameDef::default_catch()).is_ok());
+    }
+
+    #[test]
+    fn default_gomoku_is_valid() {
+        assert!(validate_game_def(&GameDef::default_gomoku()).is_ok());
     }
 
     #[test]

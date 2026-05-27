@@ -1,13 +1,13 @@
-//! 迷你游戏窗口与生命周期管理。
-//!
-//! 本模块负责创建全屏透明 game 窗口、保存当前 `GameDef`、接收前端结束回调，
-//! 并把游戏结果同步回宠物状态。实际游戏逻辑运行在前端 `game_engine.js`，
-//! core crate 只提供可序列化配置和参数边界。
-
+//! 杩蜂綘娓告垙绐楀彛涓庣敓鍛藉懆鏈熺鐞嗐€?//!
+//! 鏈ā鍧楄礋璐ｅ垱寤哄叏灞忛€忔槑 game 绐楀彛銆佷繚瀛樺綋鍓?`GameDef`銆佹帴鏀跺墠绔粨鏉熷洖璋冿紝
+//! 骞舵妸娓告垙缁撴灉鍚屾鍥炲疇鐗╃姸鎬併€傚疄闄呮父鎴忛€昏緫杩愯鍦ㄥ墠绔?`game_engine.js`锛?//! core crate 鍙彁渚涘彲搴忓垪鍖栭厤缃拰鍙傛暟杈圭晫銆?
 use ai_pad_core::bridge::PetStateName;
+use ai_pad_core::gomoku_ai::{GomokuAiMove, GomokuPoint};
 use ai_pad_core::minigame::{validate_game_def, GameDef, MinigameType};
 use ai_pad_core::pet_event::{PetEvent, PetMode, PetMood};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
@@ -17,7 +17,7 @@ use windows_sys::Win32::Foundation::POINT;
 #[cfg(windows)]
 use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
-/// 游戏窗口共享状态。
+/// Shared state for the game window lifecycle.
 pub struct SharedGame {
     pub starting: AtomicBool,
     pub active: AtomicBool,
@@ -26,14 +26,14 @@ pub struct SharedGame {
     pub hidden_windows: Mutex<Vec<String>>,
 }
 
-/// Game 窗口内的逻辑坐标，用于透明覆盖层判断鼠标是否命中热点区域。
+/// Logical cursor position inside the transparent game window.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct GameCursorPosition {
     pub x: f64,
     pub y: f64,
 }
 
-/// Battle 前端上报给桌宠事件总线的语义事件。
+/// Semantic battle event emitted by the frontend for pet reactions.
 #[derive(Debug, Clone, Deserialize)]
 pub struct BattlePetEventPayload {
     pub kind: String,
@@ -61,19 +61,19 @@ impl Default for SharedGame {
     }
 }
 
-/// 当前是否有游戏正在占用输入。
+/// Return whether a game is currently capturing input.
 pub fn is_game_active(app: &AppHandle) -> bool {
     let state: tauri::State<'_, SharedGame> = app.state();
     state.active.load(Ordering::SeqCst)
 }
 
-/// 当前是否处于游戏启动或运行阶段。
+/// Return whether a game is starting or actively running.
 pub fn is_game_busy(app: &AppHandle) -> bool {
     let state: tauri::State<'_, SharedGame> = app.state();
     state.starting.load(Ordering::SeqCst) || state.active.load(Ordering::SeqCst)
 }
 
-/// 当前游戏生命周期阶段，供日志和截图观察门控使用。
+/// Return the current game lifecycle phase for logging and observation guards.
 pub fn game_phase(app: &AppHandle) -> &'static str {
     let state: tauri::State<'_, SharedGame> = app.state();
     if state.starting.load(Ordering::SeqCst) {
@@ -85,12 +85,12 @@ pub fn game_phase(app: &AppHandle) -> &'static str {
     }
 }
 
-/// 启动内置 Snake 游戏，供 ActionBus 和 IPC 共用。
+/// Start the built-in Snake mode.
 pub fn start_default_game(app: &AppHandle) -> Result<(), String> {
     start_game(app, GameDef::default_snake())
 }
 
-/// 启动内置守护召唤战，复用同一个透明 game 窗口。
+/// Start the built-in battle mode.
 pub fn start_default_battle(app: &AppHandle) -> Result<(), String> {
     start_game(app, GameDef::default_battle())
 }
@@ -105,7 +105,12 @@ pub fn start_default_catch(app: &AppHandle) -> Result<(), String> {
     start_game(app, GameDef::default_catch())
 }
 
-/// 返回当前游戏类型，供输入层决定手柄按钮语义。
+/// Start the built-in AI Gomoku mode.
+pub fn start_default_gomoku(app: &AppHandle) -> Result<(), String> {
+    start_game(app, GameDef::default_gomoku())
+}
+
+/// Return the current game type for gamepad input routing.
 pub fn current_game_type(app: &AppHandle) -> Option<MinigameType> {
     let state: tauri::State<'_, SharedGame> = app.state();
     state
@@ -115,7 +120,7 @@ pub fn current_game_type(app: &AppHandle) -> Option<MinigameType> {
         .and_then(|current| current.as_ref().map(|def| def.game_type))
 }
 
-/// 应用启动时预创建游戏窗口，避免从面板 IPC 回调里临时创建 WebView。
+/// Precreate the game window during app startup.
 pub fn precreate_game_window(app: &AppHandle) -> Result<(), String> {
     if app.get_webview_window("game").is_some() {
         return Ok(());
@@ -126,7 +131,7 @@ pub fn precreate_game_window(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 启动指定游戏定义。
+/// Start a game from a validated definition.
 pub fn start_game(app: &AppHandle, def: GameDef) -> Result<(), String> {
     validate_game_def(&def)?;
     let overlay_mode = matches!(def.game_type, MinigameType::Battle);
@@ -155,7 +160,7 @@ pub fn start_game(app: &AppHandle, def: GameDef) -> Result<(), String> {
                     *current = None;
                 }
                 let _ = set_pet_state(&app, PetStateName::Idle);
-                warn!(startup_id, title = %title, "[game] 启动超时，已解除 starting 状态");
+                warn!(startup_id, title = %title, "[game] startup timed out");
             }
         });
     }
@@ -164,7 +169,7 @@ pub fn start_game(app: &AppHandle, def: GameDef) -> Result<(), String> {
 
     info!(startup_id, "[game] set pet state begin");
     if let Err(e) = set_pet_state(app, PetStateName::GamePlay) {
-        warn!(error = %e, "[game] 设置宠物 GamePlay 失败");
+        warn!(error = %e, "[game] set pet GamePlay failed");
     }
     info!(startup_id, "[game] set pet state done");
 
@@ -214,7 +219,7 @@ pub fn start_game(app: &AppHandle, def: GameDef) -> Result<(), String> {
         }
         restore_companion_windows(app);
         let _ = set_pet_state(app, PetStateName::Idle);
-        warn!(error = %e, "[game] 启动失败，已回滚游戏状态");
+        warn!(error = %e, "[game] start failed, state rolled back");
         return Err(e);
     }
 
@@ -252,7 +257,7 @@ fn position_fullscreen_on_monitor(app: &AppHandle, window: &tauri::WebviewWindow
         .or_else(|| window.primary_monitor().ok().flatten());
 
     let Some(monitor) = monitor else {
-        warn!("[game] 无法获取 monitor，使用默认窗口尺寸");
+        warn!("[game] monitor unavailable, using current window size");
         return;
     };
 
@@ -267,7 +272,7 @@ fn configure_game_input_capture(window: &tauri::WebviewWindow, enabled: bool) {
         warn!(
             error = %e,
             enabled,
-            "[game] 设置游戏窗口鼠标捕获失败"
+            "[game] set cursor capture failed"
         );
     }
 }
@@ -287,7 +292,7 @@ fn hide_companion_windows(app: &AppHandle, overlay_mode: bool) -> Vec<String> {
             continue;
         }
         if let Err(e) = window.hide() {
-            warn!(error = %e, label, "[game] 隐藏辅助窗口失败");
+            warn!(error = %e, label, "[game] hide companion window failed");
             continue;
         }
         hidden.push(label.to_string());
@@ -307,7 +312,7 @@ fn restore_companion_windows(app: &AppHandle) {
     for label in labels {
         if let Some(window) = app.get_webview_window(&label) {
             if let Err(e) = window.show() {
-                warn!(error = %e, label = %label, "[game] 恢复辅助窗口失败");
+                warn!(error = %e, label = %label, "[game] restore companion window failed");
             }
         }
     }
@@ -329,14 +334,14 @@ fn set_pet_state(app: &AppHandle, state: PetStateName) -> Result<(), String> {
     Ok(())
 }
 
-/// 前端请求启动默认游戏。
+/// Frontend request to start the built-in Snake mode.
 #[tauri::command]
 pub fn cmd_start_game(app: AppHandle) -> Result<(), String> {
     info!("[game] cmd_start_game invoked");
     start_default_game(&app)
 }
 
-/// 前端请求启动内置守护召唤战。
+/// Frontend request to start the built-in battle mode.
 #[tauri::command]
 pub fn cmd_start_battle(app: AppHandle) -> Result<(), String> {
     info!("[game] cmd_start_battle invoked");
@@ -357,23 +362,30 @@ pub fn cmd_start_catch(app: AppHandle) -> Result<(), String> {
     start_default_catch(&app)
 }
 
-/// 前端或后续 AI 工具请求按配置启动游戏。
+/// Frontend request to start the built-in AI Gomoku mode.
+#[tauri::command]
+pub fn cmd_start_gomoku(app: AppHandle) -> Result<(), String> {
+    info!("[game] cmd_start_gomoku invoked");
+    start_default_gomoku(&app)
+}
+
+/// Frontend or AI request to start a game from a definition.
 #[tauri::command]
 pub fn cmd_start_game_with_def(app: AppHandle, def: GameDef) -> Result<(), String> {
     info!(title = %def.title, "[game] cmd_start_game_with_def invoked");
     start_game(&app, def)
 }
 
-/// 游戏窗口初始化时读取当前配置。
+/// Return the current game definition to the game window.
 #[tauri::command]
 pub fn cmd_get_current_game(shared: tauri::State<'_, SharedGame>) -> Result<GameDef, String> {
     let current = shared.current_def.lock().map_err(|e| e.to_string())?;
     current
         .clone()
-        .ok_or_else(|| "当前没有活动游戏".to_string())
+        .ok_or_else(|| "褰撳墠娌℃湁娲诲姩娓告垙".to_string())
 }
 
-/// 切换 game 窗口是否接管鼠标。Battle 覆盖层默认透传，只在热点区域临时捕获。
+/// Toggle whether the game window captures mouse events.
 #[tauri::command]
 pub fn cmd_game_set_input_capture(app: AppHandle, enabled: bool) -> Result<(), String> {
     let Some(window) = app.get_webview_window("game") else {
@@ -383,7 +395,7 @@ pub fn cmd_game_set_input_capture(app: AppHandle, enabled: bool) -> Result<(), S
     Ok(())
 }
 
-/// 读取鼠标在 game 窗口中的逻辑坐标，供透明覆盖层前端做热点命中判断。
+/// Read the logical cursor position inside the game window.
 #[tauri::command]
 pub fn cmd_game_cursor_position(app: AppHandle) -> Result<GameCursorPosition, String> {
     let Some(window) = app.get_webview_window("game") else {
@@ -414,12 +426,12 @@ fn current_cursor_position_physical() -> Result<(i32, i32), String> {
     Err("game cursor polling is only supported on Windows".to_string())
 }
 
-/// 游戏结束回调。result 支持 win / lose / cancel。
+/// Finish the game and restore hidden companion windows.
 #[tauri::command]
 pub fn cmd_game_end(app: AppHandle, result: String, score: u32) -> Result<(), String> {
     let normalized = result.trim().to_ascii_lowercase();
     if !matches!(normalized.as_str(), "win" | "lose" | "cancel") {
-        return Err(format!("未知游戏结果: {result}"));
+        return Err(format!("unknown game result: {result}"));
     }
 
     let state: tauri::State<'_, SharedGame> = app.state();
@@ -441,16 +453,16 @@ pub fn cmd_game_end(app: AppHandle, result: String, score: u32) -> Result<(), St
     };
     if let Some(pet_state) = pet_state {
         if let Err(e) = set_pet_state(&app, pet_state) {
-            warn!(error = %e, "[game] 设置结束宠物状态失败");
+            warn!(error = %e, "[game] set final pet state failed");
         }
     }
     restore_companion_windows(&app);
 
-    info!(result = %normalized, score, "[game] 已结束");
+    info!(result = %normalized, score, "[game] ended");
     Ok(())
 }
 
-/// Battle 前端在低频语义节点上回传桌宠表现事件。
+/// Receive a low-frequency battle event for pet reactions.
 #[tauri::command]
 pub fn cmd_battle_pet_event(app: AppHandle, event: BattlePetEventPayload) -> Result<(), String> {
     let kind = normalized_battle_event_kind(&event);
@@ -471,7 +483,7 @@ fn normalized_battle_event_kind(event: &BattlePetEventPayload) -> String {
 fn map_battle_pet_events(event: &BattlePetEventPayload) -> Result<Vec<PetEvent>, String> {
     let mapped = match normalized_battle_event_kind(event).as_str() {
         "start" => vec![PetEvent::ShowBubble {
-            text: "传送门打开了，帮我一起打！".into(),
+            text: "Battle started.".into(),
         }],
         "attack" => vec![PetEvent::React {
             mood: PetMood::Focused,
@@ -485,33 +497,33 @@ fn map_battle_pet_events(event: &BattlePetEventPayload) -> Result<Vec<PetEvent>,
         }],
         "guard" => vec![PetEvent::React {
             mood: PetMood::Caring,
-            speech: Some("护住了！".into()),
+            speech: Some("Guarded.".into()),
             ttl_ms: Some(1_800),
         }],
         "interrupt" => vec![PetEvent::React {
             mood: PetMood::Excited,
-            speech: Some("打断成功！".into()),
+            speech: Some("Interrupted.".into()),
             ttl_ms: Some(3_000),
         }],
         "pet_hit" => {
             let low_hp = event.hp_ratio.is_some_and(|hp| hp <= 0.35);
             vec![PetEvent::React {
                 mood: PetMood::Confused,
-                speech: low_hp.then(|| "有点危险...".into()),
+                speech: low_hp.then(|| "Low HP.".into()),
                 ttl_ms: Some(if low_hp { 3_000 } else { 1_400 }),
             }]
         }
         "win" => vec![PetEvent::React {
             mood: PetMood::Happy,
-            speech: Some("赢啦！".into()),
+            speech: Some("Win!".into()),
             ttl_ms: Some(8_000),
         }],
         "lose" => vec![PetEvent::React {
             mood: PetMood::Confused,
-            speech: Some("呜...下次再练。".into()),
+            speech: Some("Try again.".into()),
             ttl_ms: Some(8_000),
         }],
-        other => return Err(format!("未知战斗宠物事件: {other}")),
+        other => return Err(format!("unknown battle pet event: {other}")),
     };
     Ok(mapped)
 }
@@ -536,7 +548,7 @@ fn event_source_preview(event: &BattlePetEventPayload) -> String {
     parts.join(" ")
 }
 
-/// 前端调试日志桥接。
+/// Forward frontend game logs into Rust tracing.
 #[tauri::command]
 pub fn cmd_game_log(msg: String) -> Result<(), String> {
     if !ai_pad_core::logging::frontend_log_allowed("game", std::time::Duration::from_millis(120)) {
@@ -548,6 +560,35 @@ pub fn cmd_game_log(msg: String) -> Result<(), String> {
         msg_preview = %preview,
         "[game-js]"
     );
+    Ok(())
+}
+
+/// Request one Gomoku response move from the configured AI model.
+#[tauri::command]
+pub async fn cmd_gomoku_ai_move(
+    board: Vec<Vec<u8>>,
+    last_move: Option<GomokuPoint>,
+) -> Result<GomokuAiMove, String> {
+    let ai_config = ai_pad_core::ai_config::AiConfig::load()?;
+    ai_pad_core::gomoku_ai::choose_ai_move(&ai_config, &board, last_move).await
+}
+
+/// Persist one completed Gomoku session for later replay and analysis.
+#[tauri::command]
+pub fn cmd_gomoku_record_game(record: Value) -> Result<(), String> {
+    let dir = ai_pad_core::storage::data_dir()?
+        .join("games")
+        .join("gomoku");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create gomoku log dir failed: {e}"))?;
+    let path = dir.join("sessions.jsonl");
+    let line = serde_json::to_string(&record).map_err(|e| format!("serialize gomoku log: {e}"))?;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| format!("open gomoku log {:?} failed: {e}", path))?;
+    writeln!(file, "{line}").map_err(|e| format!("write gomoku log {:?} failed: {e}", path))?;
+    info!(path = ?path, "[gomoku] session recorded");
     Ok(())
 }
 
@@ -588,7 +629,7 @@ mod tests {
             map_battle_pet_events(&event).unwrap(),
             vec![PetEvent::React {
                 mood: PetMood::Confused,
-                speech: Some("有点危险...".into()),
+                speech: Some("Low HP.".into()),
                 ttl_ms: Some(3_000),
             }]
         );

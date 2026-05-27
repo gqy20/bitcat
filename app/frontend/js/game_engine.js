@@ -2004,41 +2004,51 @@
     if (kind === 'ready') {
       overlay.classList.remove('hidden');
       overlayTitle.textContent = engine.config.dialogue.start;
-      if (engine instanceof BattleEngine) {
-        overlayText.textContent = 'Move ship - A / Space fire - X/Y skills - L1 / Shift shield';
+      if (typeof engine.readyText === 'function') {
+        overlayText.textContent = engine.readyText();
+      } else if (engine instanceof BattleEngine) {
+        overlayText.textContent = '??????A / ?????X/Y ???L1 / Shift ??';
       } else if (engine instanceof MemoryEngine) {
-        overlayText.textContent = 'Move cursor · Enter / A flip';
+        overlayText.textContent = '????????Enter / A ??';
       } else if (engine instanceof CatchEngine) {
-        overlayText.textContent = 'Left / Right to catch · miss 5 and lose';
+        overlayText.textContent = '??????????? 5 ????';
       } else if (engine instanceof SnakeEngine) {
-        overlayText.textContent = 'Arrow keys / WASD to steer - hold A / Space / Enter to boost';
+        overlayText.textContent = '??? / WASD ??????? A / ?? / Enter ??';
       } else {
-        overlayText.textContent = 'Arrow keys / WASD to start';
+        overlayText.textContent = '??? / WASD ??';
       }
     } else if (kind === 'paused') {
       overlay.classList.remove('hidden');
-      overlayTitle.textContent = '暂停';
-      overlayText.textContent = 'P 或 Start 继续';
+      overlayTitle.textContent = '??';
+      overlayText.textContent = '? P ? Start ??';
     } else if (kind === 'win') {
       overlay.classList.remove('hidden');
       overlayTitle.textContent = engine.config.dialogue.win;
-      overlayText.textContent = `奖励 ${engine.score} · Enter / A 再来一次 · Esc / B 退出`;
+      overlayText.textContent = typeof engine.endText === 'function'
+        ? engine.endText(kind)
+        : `?? ${engine.score}?Enter / A ?????Esc / B ??`;
       overlayActions.classList.remove('hidden');
     } else if (kind === 'lose') {
       overlay.classList.remove('hidden');
       overlayTitle.textContent = engine.config.dialogue.lose;
-      overlayText.textContent = `奖励 ${engine.score} · Enter / A 再来一次 · Esc / B 退出`;
+      overlayText.textContent = typeof engine.endText === 'function'
+        ? engine.endText(kind)
+        : `?? ${engine.score}?Enter / A ?????Esc / B ??`;
       overlayActions.classList.remove('hidden');
     } else if (kind === 'cancel') {
       overlay.classList.remove('hidden');
-      overlayTitle.textContent = '已退出';
-      overlayText.textContent = `奖励 ${engine.score}`;
+      overlayTitle.textContent = '???';
+      overlayText.textContent = typeof engine.endText === 'function' ? engine.endText(kind) : `?? ${engine.score}`;
     } else {
       overlay.classList.add('hidden');
     }
   }
 
   function createEngine(config) {
+    const external = window.BitCatGames && window.BitCatGames[config && config.game_type];
+    if (external) {
+      return external(config, { invoke, log, restartGame, closeEndedGame, clamp });
+    }
     switch (config && config.game_type) {
       case 'battle':
         return new BattleEngine(config);
@@ -2089,7 +2099,9 @@
   function updateHud() {
     titleEl.textContent = engine.config.title;
     scoreEl.textContent = String(engine.score);
-    lengthEl.textContent = engine instanceof BattleEngine
+    lengthEl.textContent = typeof engine.hudText === 'function'
+      ? engine.hudText()
+      : engine instanceof BattleEngine
       ? `${engine.pet.hp}/${engine.pet.maxHp} HP - ${engine.score}/${engine.targetScore}${engine.combo > 1 ? ` x${engine.combo}` : ''}`
       : engine instanceof MemoryEngine
         ? `${engine.matched.size}/${engine.cards.length} · ${engine.moves} moves${engine.combo > 1 ? ` x${engine.combo}` : ''}`
@@ -2224,7 +2236,7 @@
     });
     window.addEventListener('resize', resizeCanvas);
     canvas.addEventListener('pointerdown', (e) => {
-      if (!(engine instanceof BattleEngine)) return;
+      if (!(engine instanceof BattleEngine) && typeof engine.handlePointer !== 'function') return;
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;

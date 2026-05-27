@@ -47,6 +47,7 @@ pub mod claude_code;
 pub mod config;
 pub mod dance;
 pub mod device;
+pub mod gomoku_ai;
 pub mod hotkey;
 pub mod logging;
 pub mod memory;

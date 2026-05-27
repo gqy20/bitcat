@@ -54,12 +54,12 @@ body {
 }
 
 .stats #score::before {
-  content: "Score ";
+  content: "得分 ";
   opacity: 0.72;
 }
 
 .stats #length::before {
-  content: "Len ";
+  content: "";
   opacity: 0.72;
 }
 

@@ -1053,6 +1053,18 @@ pub fn do_screenshot_now(app: &tauri::AppHandle) -> Result<String, String> {
         .try_lock()
         .map_err(|_| "已有截图分析正在进行中，请稍后再试".to_string())?;
 
+    if crate::game::is_game_busy(app) {
+        let description = format!(
+            "screen_observation_paused:game_{}",
+            crate::game::game_phase(app)
+        );
+        tracing::info!(
+            phase = crate::game::game_phase(app),
+            "manual screenshot skipped while game is busy"
+        );
+        return Ok(description);
+    }
+
     let config = ScreenshotConfig::default();
     let ai_config = ai_pad_core::ai_config::AiConfig::load()?;
     emit_screenshot_observing(app);
