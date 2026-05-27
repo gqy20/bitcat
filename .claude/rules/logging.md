@@ -17,7 +17,7 @@ outside tests.
 
 Never write raw user text, AI output, prompts, shell commands, file contents, API
 responses, or frontend forwarded messages directly to a log line. Use character
-counts plus `ai_pad_core::logging::log_preview()`.
+counts plus `bitcat_core::logging::log_preview()`.
 
 ```rust
 let preview = log_preview(&reply, 80);
