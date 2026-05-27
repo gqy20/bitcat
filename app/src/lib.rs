@@ -3,7 +3,7 @@
 //! 本模块是整个桌宠应用的运行入口。它负责创建 Tauri 窗口（pet / bubble /
 //! panel / voice / settings）、注册 IPC 命令、加载 `.env` 与配置文件，
 //! 并 spawn 手柄轮询、聊天循环、截图观察、气泡跟随等多个后台线程。
-//! 核心业务逻辑全部在 `ai-pad-core` crate 中，app 只做胶水和平台集成。
+//! 核心业务逻辑全部在 core crate 中，app 只做胶水和平台集成。
 //!
 //! 与 core crate 的交互点：调用 `bridge`、`agent`、`memory`、`action`、
 //! `dance`、`vision` 等模块的公共 API，把它们的输出通过 Tauri emit 推送到前端。

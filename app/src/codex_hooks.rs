@@ -1,6 +1,6 @@
 //! Codex hook 安装器。
 //!
-//! 本模块写入 ai-pad 自己的 PowerShell hook 脚本，并把只读 command hook 合并到
+//! 本模块写入 BitCat 自己的 PowerShell hook 脚本，并把只读 command hook 合并到
 //! `~/.codex/config.toml`。Codex hook payload 与 Claude Code hook payload 高度同构，
 //! 因此脚本只负责加一层 source envelope 后转发给现有 Agent Watch TCP monitor。
 

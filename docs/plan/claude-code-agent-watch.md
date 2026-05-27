@@ -346,7 +346,7 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
 
 1. 读取并解析 settings JSON，解析失败时直接返回错误，不覆盖。
 2. 写入前创建带时间戳备份，例如 `settings.bitcat-backup-20260515-143000.json`。
-3. 只增删 ai-pad 自己标记的 hook，不改动其他 hook。
+3. 只增删 BitCat 自己标记的 hook，不改动其他 hook。
 4. 写入使用临时文件 + rename。
 5. hook 脚本里端口、版本、安装来源写明注释，方便用户人工检查。
 
@@ -457,7 +457,7 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
 - `Working` 持续超过 30 秒后，只提示一次“可以先去做点别的”；8 分钟冷却内不重复提示。
 - 如果低优先级提醒被聊天/游戏/表演/锁屏门控挡住，不应消耗离屏提醒冷却。
 - `Stop` 后，同一 session 只提示一次完成。
-- `StopFailure` 应进入异常提醒；`PostToolUseFailure` 不应打断用户，只记录并继续 working；`PermissionDenied` 进入 waiting。`SubagentStopFailure` 不是有效 Claude Code event，安装器只负责清理旧版 ai-pad 配置中误写的该事件。
+- `StopFailure` 应进入异常提醒；`PostToolUseFailure` 不应打断用户，只记录并继续 working；`PermissionDenied` 进入 waiting。`SubagentStopFailure` 不是有效 Claude Code event，安装器只负责清理旧版 BitCat 配置中误写的该事件。
 - chat 输入中、舞蹈/游戏中、显示器关闭/会话锁定时，不弹低优先级离屏提醒。
 - `make test-core` 通过；前端新增逻辑有 Vitest 覆盖。
 

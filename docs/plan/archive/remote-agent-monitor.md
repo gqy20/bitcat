@@ -169,7 +169,7 @@ struct AgentHookEnvelope {
 
 4. 安装 Claude Code hooks（如果检测到）
    - 读 ~/.claude/settings.json
-   - 合并 ai-pad 条目（逻辑镜像 claude_hooks.rs 的 ensure_ai_pad_hooks）
+   - 合并 BitCat 条目（逻辑镜像 claude_hooks.rs 的 ensure_ai_pad_hooks）
    - command 用 "bash $SENDER_PATH"
    - 标记 ai_pad_marker = "bitcat-remote-watch"
    - 备份原文件 → atomic write

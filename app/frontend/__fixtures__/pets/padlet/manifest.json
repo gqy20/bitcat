@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "id": "padlet",
   "displayName": "Padlet",
-  "description": "An original AI-Pad handheld terminal companion for agent status and desktop feedback.",
+  "description": "An original BitCat handheld terminal companion for agent status and desktop feedback.",
   "render": {
     "mode": "sheet",
     "displayWidth": 74,
@@ -798,10 +798,10 @@
     "generatedFrom": [
       "app/frontend/tools/generate-ai-pad-original-packs.cjs"
     ],
-    "assetClass": "ai-pad-original",
+    "assetClass": "bitcat-original",
     "qualityTier": "generated",
     "style": "handheld terminal companion with glass screen face",
-    "recommendedUse": "default AI-Pad companion and status feedback",
+    "recommendedUse": "default BitCat companion and status feedback",
     "releaseTier": "builtin-candidate",
     "optimizedFor": "smooth-scaled desktop pet window",
     "frameLabels": [

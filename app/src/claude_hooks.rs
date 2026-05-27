@@ -1,7 +1,7 @@
 //! Claude Code hook 安装器。
 //!
-//! 本模块只写入 ai-pad 自己的 PowerShell hook 脚本，并在 `~/.claude/settings.json`
-//! 中合并带有 ai-pad 标记的 hook 配置。写入前会备份 settings，失败时不覆盖，
+//! 本模块只写入 BitCat 自己的 PowerShell hook 脚本，并在 `~/.claude/settings.json`
+//! 中合并带有 BitCat 标记的 hook 配置。写入前会备份 settings，失败时不覆盖，
 //! 确保用户已有 Claude Code 配置仍可人工恢复。
 
 use crate::agent_monitor::DEFAULT_AGENT_MONITOR_PORT;

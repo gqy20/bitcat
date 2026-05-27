@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "id": "hackmark",
   "displayName": "Hackmark",
-  "description": "A geek-styled animated terminal mark for compact AI-Pad status feedback.",
+  "description": "A geek-styled animated terminal mark for compact BitCat status feedback.",
   "render": {
     "mode": "sheet",
     "displayWidth": 74,

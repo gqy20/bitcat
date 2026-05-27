@@ -259,7 +259,7 @@ panel → cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle
 
 第一阶段不直接控制 Agent，只做可靠观察。目标是本地识别当前有哪些 AI 编码工具在运行、它们在哪个项目目录、最近是否有 token/文件/命令活动、是否进入等待用户输入状态。
 
-当前 Claude Code / Codex 只读 hook MVP 已落地（2026-05-16 起，2026-05-22 更新）：`core` 侧已有 `AgentSession` / `ClaudeHookEvent` / `AgentNudgePolicy`，`app` 侧已有本地 TCP monitor、Claude/Codex hook installer、settings 集成、审计 JSONL、独立 `agent-watch` 浮动任务栈和统一顶部通知。Remote Agent Watch LAN ingest/viewer MVP 已归档，用户侧说明在 `docs/guide/remote-agent-watch.md`。它可以作为 E1/E2 的第一版基础。失败生命周期要分级处理：`StopFailure` 这类会话级失败才异常提醒，`PostToolUseFailure` 是 Claude Code 自我修复中的常见中间态，只记录并继续 working；`PermissionDenied` 进入 waiting，而不是按异常打扰。`SubagentStopFailure` 不是当前 Claude Code 支持的 hook event，只作为旧版 ai-pad 配置的 Hook Doctor 清理对象。
+当前 Claude Code / Codex 只读 hook MVP 已落地（2026-05-16 起，2026-05-22 更新）：`core` 侧已有 `AgentSession` / `ClaudeHookEvent` / `AgentNudgePolicy`，`app` 侧已有本地 TCP monitor、Claude/Codex hook installer、settings 集成、审计 JSONL、独立 `agent-watch` 浮动任务栈和统一顶部通知。Remote Agent Watch LAN ingest/viewer MVP 已归档，用户侧说明在 `docs/guide/remote-agent-watch.md`。它可以作为 E1/E2 的第一版基础。失败生命周期要分级处理：`StopFailure` 这类会话级失败才异常提醒，`PostToolUseFailure` 是 Claude Code 自我修复中的常见中间态，只记录并继续 working；`PermissionDenied` 进入 waiting，而不是按异常打扰。`SubagentStopFailure` 不是当前 Claude Code 支持的 hook event，只作为旧版 BitCat 配置的 Hook Doctor 清理对象。
 
 建议监听源：
 
