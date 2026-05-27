@@ -39,6 +39,33 @@ pub struct GomokuAiMove {
     /// Optional short table-talk shown in the HUD.
     #[serde(default)]
     pub message: Option<String>,
+    /// Short visible reasoning summary for the game sidebar.
+    #[serde(default)]
+    pub thought: Option<String>,
+}
+
+/// Structured board commentary returned by a separate low-frequency request.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
+pub struct GomokuCommentary {
+    /// One-sentence summary of the current position.
+    pub summary: String,
+    /// Current side with the practical initiative.
+    pub advantage: GomokuAdvantage,
+    /// Two or three concrete points that matter in the position.
+    #[serde(default)]
+    pub key_points: Vec<String>,
+    /// Short suggestion for the human player.
+    #[serde(default)]
+    pub suggestion: Option<String>,
+}
+
+/// Side assessment for Gomoku commentary.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum GomokuAdvantage {
+    Human,
+    Ai,
+    Balanced,
 }
 
 impl GomokuAiMove {
@@ -46,6 +73,10 @@ impl GomokuAiMove {
         self.message = self
             .message
             .map(|s| s.trim().chars().take(24).collect::<String>())
+            .filter(|s| !s.is_empty());
+        self.thought = self
+            .thought
+            .map(|s| s.trim().chars().take(72).collect::<String>())
             .filter(|s| !s.is_empty());
         self
     }
@@ -55,6 +86,24 @@ impl GomokuAiMove {
             x: self.x,
             y: self.y,
         }
+    }
+}
+
+impl GomokuCommentary {
+    fn sanitized(mut self) -> Self {
+        self.summary = self.summary.trim().chars().take(80).collect();
+        self.key_points = self
+            .key_points
+            .into_iter()
+            .map(|s| s.trim().chars().take(42).collect::<String>())
+            .filter(|s| !s.is_empty())
+            .take(3)
+            .collect();
+        self.suggestion = self
+            .suggestion
+            .map(|s| s.trim().chars().take(60).collect::<String>())
+            .filter(|s| !s.is_empty());
+        self
     }
 }
 
@@ -126,6 +175,57 @@ pub async fn choose_ai_move(
     Ok(selected)
 }
 
+/// Ask the configured model for a short board commentary for the sidebar.
+pub async fn comment_position(
+    ai_config: &AiConfig,
+    board: &[Vec<u8>],
+    last_move: Option<GomokuPoint>,
+) -> Result<GomokuCommentary, String> {
+    validate_board(board)?;
+    if let Some(point) = last_move {
+        validate_point(point)?;
+    }
+
+    let http_client = rig::http_client::ReqwestClient::builder()
+        .no_proxy()
+        .build()
+        .map_err(|e| format!("failed to create Gomoku commentary HTTP client: {e}"))?;
+    let client = anthropic::Client::builder()
+        .api_key(&ai_config.api_key)
+        .base_url(&ai_config.base_url)
+        .http_client(http_client)
+        .build()
+        .map_err(|e| format!("failed to create Gomoku commentary client: {e}"))?;
+
+    let extractor = client
+        .extractor::<GomokuCommentary>(ai_config.model.as_str())
+        .preamble(GOMOKU_COMMENTARY_PREAMBLE)
+        .max_tokens(320)
+        .retries(1)
+        .build();
+
+    let input = build_commentary_prompt(board, last_move);
+    let start = std::time::Instant::now();
+    let response = extractor
+        .extract_with_usage(input)
+        .await
+        .map_err(|e| format!("failed to extract Gomoku commentary: {e}"))?;
+    let elapsed = start.elapsed();
+
+    record_token_usage(
+        &TokenRecord::new(
+            new_session_id(),
+            TokenCategory::Chat,
+            ai_config.model.clone(),
+            TokenUsage::from(response.usage),
+        )
+        .with_extra("gomoku_commentary".to_string())
+        .with_elapsed_ms(elapsed.as_millis() as u64),
+    );
+
+    Ok(response.data.sanitized())
+}
+
 /// Validate the frontend board snapshot before it reaches the model.
 pub fn validate_board(board: &[Vec<u8>]) -> Result<(), String> {
     if board.len() != BOARD_SIZE {
@@ -183,6 +283,18 @@ pub fn has_five(board: &[Vec<u8>], stone: u8) -> bool {
 }
 
 fn build_prompt(board: &[Vec<u8>], last_move: Option<GomokuPoint>) -> String {
+    build_position_prompt(board, last_move, true)
+}
+
+fn build_commentary_prompt(board: &[Vec<u8>], last_move: Option<GomokuPoint>) -> String {
+    build_position_prompt(board, last_move, false)
+}
+
+fn build_position_prompt(
+    board: &[Vec<u8>],
+    last_move: Option<GomokuPoint>,
+    include_decision_guidance: bool,
+) -> String {
     let board_lines = board
         .iter()
         .map(|row| {
@@ -206,6 +318,18 @@ fn build_prompt(board: &[Vec<u8>], last_move: Option<GomokuPoint>) -> String {
     let ai_forks = fork_points(board, AI);
     let human_forks = fork_points(board, HUMAN);
     let candidates = candidate_points(board);
+    let decision_guidance = if include_decision_guidance {
+        "\nDecision guidance:\n\
+1. Treat the tactical facts as exact legal candidate lists, not as commands.\n\
+2. If your immediate winning points is not empty, usually choose the best one, but compare all listed choices.\n\
+3. Otherwise, if human immediate winning points is not empty, choose the strongest block from that list.\n\
+4. Otherwise, compare your fork points and human fork points; create a double threat when safe, or neutralize the human's strongest double-threat candidate.\n\
+5. Otherwise, choose a recommended candidate that extends your line or blocks the strongest human line.\n\
+Choose one empty point for O."
+    } else {
+        "\nCommentary guidance:\n\
+Explain the position for the human in Chinese. Mention concrete threats or candidate areas only when visible in the facts."
+    };
 
     format!(
         "{last}\n\
@@ -218,14 +342,7 @@ Tactical facts:\n\
 - Human immediate winning points that must be blocked: {}\n\
 - Your fork points that create multiple next-turn wins: {}\n\
 - Human fork points that must be occupied or neutralized: {}\n\
-- Recommended candidate points near existing stones: {}\n\
-Decision guidance:\n\
-1. Treat the tactical facts as exact legal candidate lists, not as commands.\n\
-2. If your immediate winning points is not empty, usually choose the best one, but compare all listed choices.\n\
-3. Otherwise, if human immediate winning points is not empty, choose the strongest block from that list.\n\
-4. Otherwise, compare your fork points and human fork points; create a double threat when safe, or neutralize the human's strongest double-threat candidate.\n\
-5. Otherwise, choose a recommended candidate that extends your line or blocks the strongest human line.\n\
-Choose one empty point for O.",
+- Recommended candidate points near existing stones: {}{}",
         format_points(&human_stones),
         format_points(&ai_stones),
         format_points(&ai_wins),
@@ -233,6 +350,7 @@ Choose one empty point for O.",
         format_points(&ai_forks),
         format_points(&human_forks),
         format_points(&candidates),
+        decision_guidance,
     )
 }
 
@@ -416,11 +534,21 @@ fn format_points(points: &[GomokuPoint]) -> String {
 
 const GOMOKU_PREAMBLE: &str = "\
 You are BitCat playing Gomoku as O against the human X on a 15x15 board.
-Coordinates are zero-based: x is column 0..14 from left to right, y is row 0..14 from top to bottom.
+Coordinates are zero-based internally: x is column 0..14 from left to right, y is row 0..14 from top to bottom.
 Choose exactly one empty cell. Five in a row wins horizontally, vertically, or diagonally.
 Prefer legal tactical moves: win immediately if possible, otherwise block the human's immediate five, otherwise build your strongest line.
 Trust the tactical facts in the user input. They are computed from the board and should override vague visual impressions.
-The optional message should be short Chinese table-talk, at most 24 Chinese characters.";
+For the structured x and y fields, always return zero-based internal coordinates.
+The optional message should be short Chinese table-talk, at most 24 Chinese characters.
+The optional thought should be a visible Chinese decision summary for the sidebar, at most 72 Chinese characters. Do not reveal hidden chain-of-thought; summarize the strategic reason for this move.
+If message or thought mentions coordinates, use player-facing display coordinates: display = internal + 1.";
+
+const GOMOKU_COMMENTARY_PREAMBLE: &str = "\
+You are a calm Chinese Gomoku commentator for BitCat.
+Use the exact board facts from the user input. Do not invent invisible threats.
+Return concise Chinese commentary that makes the position more interesting for the human player.
+The board facts use zero-based internal coordinates, but your visible commentary must use player-facing display coordinates: display = internal + 1.
+Avoid long analysis; this is a sidebar note, not a lesson.";
 
 #[cfg(test)]
 mod tests {

@@ -29,6 +29,10 @@
       this.startedAt = new Date().toISOString();
       this.finishedAt = null;
       this.recorded = false;
+      this.aiThoughts = [];
+      this.commentaries = [];
+      this.commentaryLoading = false;
+      this.lastCommentaryMove = 0;
     }
 
     getState() {
@@ -127,7 +131,7 @@
       this.message = 'BitCat 正在读棋。';
       try {
         const move = await this.host.invoke('cmd_gomoku_ai_move', {
-          board: this.board,
+          board: cloneBoard(this.board),
           lastMove,
         });
         if (this.state !== 'playing') return;
@@ -135,6 +139,7 @@
           throw new Error('AI returned an invalid or occupied move');
         }
         this.place(move.x, move.y, AI);
+        this.attachAiThought(move);
         this.message = move.message || '轮到你了。';
         if (hasFive(this.board, AI)) {
           this.score = Math.max(0, 100 - this.moves.length);
@@ -144,7 +149,9 @@
         if (this.isFull()) {
           this.score = 50;
           this.finish('win', '棋盘已满，平局。');
+          return;
         }
+        this.maybeRequestCommentary();
       } catch (e) {
         this.errorText = String(e);
         this.finish('lose', 'AI 落子失败。');
@@ -152,6 +159,55 @@
       } finally {
         this.aiThinking = false;
       }
+    }
+
+    attachAiThought(move) {
+      const current = this.lastMove;
+      if (!current || current.stone !== AI) return;
+      current.ai_message = move.message ? normalizeDisplayCoordinates(move.message) : null;
+      current.ai_thought = normalizeDisplayCoordinates(move.thought || move.message || '这手先稳住局势。');
+      this.aiThoughts.push({
+        move: current.move,
+        x: current.x,
+        y: current.y,
+        text: current.ai_thought,
+      });
+      this.aiThoughts = this.aiThoughts.slice(-8);
+    }
+
+    maybeRequestCommentary() {
+      if (!this.host.invoke || this.commentaryLoading || this.state !== 'playing') return;
+      if (this.moves.length < 4 || this.moves.length % 2 !== 0) return;
+      if (this.lastCommentaryMove === this.moves.length) return;
+      const requestedMove = this.moves.length;
+      this.lastCommentaryMove = requestedMove;
+      this.commentaryLoading = true;
+      const lastMove = this.lastMove ? { x: this.lastMove.x, y: this.lastMove.y } : null;
+      this.host
+        .invoke('cmd_gomoku_commentary', {
+          board: cloneBoard(this.board),
+          lastMove,
+        })
+        .then((commentary) => {
+          if (!commentary) return;
+          this.commentaries.push({
+            move: requestedMove,
+            summary: normalizeDisplayCoordinates(commentary.summary || ''),
+            advantage: commentary.advantage || 'balanced',
+            key_points: Array.isArray(commentary.key_points)
+              ? commentary.key_points.map((point) => normalizeDisplayCoordinates(point))
+              : [],
+            suggestion: normalizeDisplayCoordinates(commentary.suggestion || ''),
+            created_at: new Date().toISOString(),
+          });
+          this.commentaries = this.commentaries.slice(-5);
+        })
+        .catch((e) => {
+          this.host.log && this.host.log(`gomoku commentary failed: ${e}`);
+        })
+        .finally(() => {
+          this.commentaryLoading = false;
+        });
     }
 
     place(x, y, stone) {
@@ -199,7 +255,11 @@
           stone: move.stone,
           x: move.x,
           y: move.y,
+          ai_message: move.ai_message ? normalizeDisplayCoordinates(move.ai_message) : null,
+          ai_thought: move.ai_thought ? normalizeDisplayCoordinates(move.ai_thought) : null,
         })),
+        ai_thoughts: this.aiThoughts,
+        commentaries: this.commentaries,
       };
       if (this.host.invoke) {
         this.host.invoke('cmd_gomoku_record_game', { record }).catch((e) => {
@@ -235,6 +295,7 @@
     drawGomokuBackdrop(ctx, metrics);
     drawBoardSurface(ctx, board);
     drawCoordinates(ctx, board);
+    drawSidePanels(ctx, metrics, board, engine);
 
     ctx.strokeStyle = 'rgba(70, 48, 28, 0.72)';
     ctx.lineWidth = Math.max(1, board.gap * 0.018);
@@ -273,7 +334,8 @@
 
   function boardMetrics(metrics) {
     const maxByHeight = metrics.height - 164;
-    const maxByWidth = metrics.width - 160;
+    const sideReserve = metrics.width >= 1180 ? 560 : metrics.width >= 980 ? 420 : 160;
+    const maxByWidth = metrics.width - sideReserve;
     const clamped = clamp(Math.min(maxByHeight, maxByWidth), 420, Math.min(metrics.width, metrics.height) - 64);
     const x = Math.floor((metrics.width - clamped) / 2);
     const y = Math.floor((metrics.height - clamped) / 2) - 8;
@@ -328,6 +390,140 @@
       ctx.stroke();
     }
     ctx.restore();
+  }
+
+  function drawSidePanels(ctx, metrics, board, engine) {
+    if (metrics.width < 940) return;
+    const gap = 24;
+    const panelW = Math.min(250, Math.max(180, (metrics.width - board.size) / 2 - gap * 1.5));
+    const panelH = Math.min(board.size, 560);
+    const y = board.y + Math.max(0, (board.size - panelH) / 2);
+    const leftX = Math.max(18, board.x - gap - panelW);
+    const rightX = Math.min(metrics.width - panelW - 18, board.x + board.size + gap);
+    drawThoughtPanel(ctx, leftX, y, panelW, panelH, engine);
+    drawCommentaryPanel(ctx, rightX, y, panelW, panelH, engine);
+  }
+
+  function drawInfoPanelFrame(ctx, x, y, w, h, title) {
+    ctx.save();
+    roundRect(ctx, x, y, w, h, 8);
+    ctx.fillStyle = 'rgba(12, 17, 22, 0.76)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = '#f7fbff';
+    ctx.font = '800 15px "Microsoft YaHei", "Segoe UI", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(title, x + 16, y + 14);
+    ctx.restore();
+  }
+
+  function drawThoughtPanel(ctx, x, y, w, h, engine) {
+    drawInfoPanelFrame(ctx, x, y, w, h, 'BitCat 的思考');
+    const items = engine.aiThoughts || [];
+    ctx.save();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    if (!items.length) {
+      ctx.fillStyle = 'rgba(226, 235, 242, 0.62)';
+      ctx.font = '600 13px "Microsoft YaHei", "Segoe UI", sans-serif';
+      wrapText(ctx, '等我落子后，这里会记录每一手的想法。', x + 16, y + 48, w - 32, 20, 3);
+      ctx.restore();
+      return;
+    }
+    let cy = y + 48;
+    items.slice(-7).forEach((item) => {
+      ctx.fillStyle = 'rgba(232, 196, 114, 0.95)';
+      ctx.font = '800 12px "Microsoft YaHei", "Segoe UI", sans-serif';
+      ctx.fillText(`第 ${item.move} 手  (${item.x + 1}, ${item.y + 1})`, x + 16, cy);
+      cy += 19;
+      ctx.fillStyle = 'rgba(230, 238, 245, 0.82)';
+      ctx.font = '600 12px "Microsoft YaHei", "Segoe UI", sans-serif';
+      cy += wrapText(ctx, item.text || '这手先稳住局势。', x + 16, cy, w - 32, 18, 3) + 12;
+    });
+    ctx.restore();
+  }
+
+  function drawCommentaryPanel(ctx, x, y, w, h, engine) {
+    drawInfoPanelFrame(ctx, x, y, w, h, '局势点评');
+    const latest = engine.commentaries && engine.commentaries[engine.commentaries.length - 1];
+    ctx.save();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    let cy = y + 48;
+    if (!latest) {
+      ctx.fillStyle = 'rgba(226, 235, 242, 0.62)';
+      ctx.font = '600 13px "Microsoft YaHei", "Segoe UI", sans-serif';
+      wrapText(ctx, engine.commentaryLoading ? '正在观察棋势。' : '满两回合后，我会隔一手点评一次。', x + 16, cy, w - 32, 20, 4);
+      ctx.restore();
+      return;
+    }
+    ctx.fillStyle = advantageColor(latest.advantage);
+    ctx.font = '800 12px "Microsoft YaHei", "Segoe UI", sans-serif';
+    ctx.fillText(`${advantageLabel(latest.advantage)} · 第 ${latest.move} 手`, x + 16, cy);
+    cy += 24;
+    ctx.fillStyle = '#f7fbff';
+    ctx.font = '700 13px "Microsoft YaHei", "Segoe UI", sans-serif';
+    cy += wrapText(ctx, latest.summary || '局势仍在展开。', x + 16, cy, w - 32, 20, 4) + 12;
+    const points = latest.key_points || [];
+    points.slice(0, 3).forEach((point) => {
+      ctx.fillStyle = 'rgba(230, 238, 245, 0.76)';
+      ctx.font = '600 12px "Microsoft YaHei", "Segoe UI", sans-serif';
+      cy += wrapText(ctx, `· ${point}`, x + 16, cy, w - 32, 18, 2) + 6;
+    });
+    if (latest.suggestion) {
+      cy += 6;
+      ctx.fillStyle = 'rgba(232, 196, 114, 0.92)';
+      ctx.font = '700 12px "Microsoft YaHei", "Segoe UI", sans-serif';
+      wrapText(ctx, latest.suggestion, x + 16, cy, w - 32, 18, 3);
+    }
+    if (engine.commentaryLoading) {
+      ctx.fillStyle = 'rgba(226, 235, 242, 0.5)';
+      ctx.font = '600 11px "Microsoft YaHei", "Segoe UI", sans-serif';
+      ctx.fillText('更新点评中...', x + 16, y + h - 28);
+    }
+    ctx.restore();
+  }
+
+  function advantageLabel(advantage) {
+    if (advantage === 'human') return '黑棋主动';
+    if (advantage === 'ai') return '白棋主动';
+    return '势均力敌';
+  }
+
+  function advantageColor(advantage) {
+    if (advantage === 'human') return 'rgba(245, 248, 251, 0.94)';
+    if (advantage === 'ai') return 'rgba(232, 196, 114, 0.94)';
+    return 'rgba(132, 206, 168, 0.94)';
+  }
+
+  function wrapText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
+    const chars = String(text || '').split('');
+    let line = '';
+    let lines = 0;
+    let cy = y;
+    for (const ch of chars) {
+      const next = line + ch;
+      if (line && ctx.measureText(next).width > maxWidth) {
+        lines += 1;
+        if (lines >= maxLines) {
+          ctx.fillText(`${line.slice(0, Math.max(0, line.length - 1))}…`, x, cy);
+          return lines * lineHeight;
+        }
+        ctx.fillText(line, x, cy);
+        cy += lineHeight;
+        line = ch;
+      } else {
+        line = next;
+      }
+    }
+    if (line) {
+      ctx.fillText(line, x, cy);
+      lines += 1;
+    }
+    return Math.max(lineHeight, lines * lineHeight);
   }
 
   function drawCoordinates(ctx, board) {
@@ -509,6 +705,21 @@
 
   function inBounds(x, y) {
     return Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0 && x < BOARD_SIZE && y < BOARD_SIZE;
+  }
+
+  function cloneBoard(board) {
+    return board.map((row) => row.slice());
+  }
+
+  function normalizeDisplayCoordinates(text) {
+    return String(text || '').replace(/\((\d{1,2}),\s*(\d{1,2})\)/g, (match, rawX, rawY) => {
+      const x = Number(rawX);
+      const y = Number(rawY);
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= BOARD_SIZE || y >= BOARD_SIZE) {
+        return match;
+      }
+      return `(${x + 1}, ${y + 1})`;
+    });
   }
 
   function clamp(n, min, max) {

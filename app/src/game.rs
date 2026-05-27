@@ -1,8 +1,10 @@
-//! 杩蜂綘娓告垙绐楀彛涓庣敓鍛藉懆鏈熺鐞嗐€?//!
-//! 鏈ā鍧楄礋璐ｅ垱寤哄叏灞忛€忔槑 game 绐楀彛銆佷繚瀛樺綋鍓?`GameDef`銆佹帴鏀跺墠绔粨鏉熷洖璋冿紝
-//! 骞舵妸娓告垙缁撴灉鍚屾鍥炲疇鐗╃姸鎬併€傚疄闄呮父鎴忛€昏緫杩愯鍦ㄥ墠绔?`game_engine.js`锛?//! core crate 鍙彁渚涘彲搴忓垪鍖栭厤缃拰鍙傛暟杈圭晫銆?
+//! 迷你游戏窗口与生命周期管理。
+//!
+//! 本模块负责创建全屏透明 game 窗口、保存当前 `GameDef`、接收前端结束回调，
+//! 并把游戏结果同步回宠物状态。实际游戏逻辑运行在前端 `game_engine.js`，
+//! core crate 只提供可序列化配置和参数边界。
 use ai_pad_core::bridge::PetStateName;
-use ai_pad_core::gomoku_ai::{GomokuAiMove, GomokuPoint};
+use ai_pad_core::gomoku_ai::{GomokuAiMove, GomokuCommentary, GomokuPoint};
 use ai_pad_core::minigame::{validate_game_def, GameDef, MinigameType};
 use ai_pad_core::pet_event::{PetEvent, PetMode, PetMood};
 use serde::{Deserialize, Serialize};
@@ -570,7 +572,31 @@ pub async fn cmd_gomoku_ai_move(
     last_move: Option<GomokuPoint>,
 ) -> Result<GomokuAiMove, String> {
     let ai_config = ai_pad_core::ai_config::AiConfig::load()?;
-    ai_pad_core::gomoku_ai::choose_ai_move(&ai_config, &board, last_move).await
+    let mut last_error = None;
+    for attempt in 1..=2 {
+        match ai_pad_core::gomoku_ai::choose_ai_move(&ai_config, &board, last_move).await {
+            Ok(mv) => return Ok(mv),
+            Err(e) => {
+                warn!(
+                    attempt,
+                    error = %e,
+                    "[gomoku] AI move extraction failed"
+                );
+                last_error = Some(e);
+            }
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "gomoku ai move failed".to_string()))
+}
+
+/// Request a short Gomoku position commentary from the configured AI model.
+#[tauri::command]
+pub async fn cmd_gomoku_commentary(
+    board: Vec<Vec<u8>>,
+    last_move: Option<GomokuPoint>,
+) -> Result<GomokuCommentary, String> {
+    let ai_config = ai_pad_core::ai_config::AiConfig::load()?;
+    ai_pad_core::gomoku_ai::comment_position(&ai_config, &board, last_move).await
 }
 
 /// Persist one completed Gomoku session for later replay and analysis.

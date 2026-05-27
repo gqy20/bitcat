@@ -97,6 +97,7 @@ pub fn run() {
             game::cmd_game_set_input_capture,
             game::cmd_battle_pet_event,
             game::cmd_gomoku_ai_move,
+            game::cmd_gomoku_commentary,
             game::cmd_gomoku_record_game,
             game::cmd_game_log,
             panel::cmd_show_panel,
