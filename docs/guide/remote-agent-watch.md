@@ -49,7 +49,7 @@ The installer:
 - wraps hook payloads as `{ "source", "machine", "payload" }`;
 - sends the envelope to the Windows monitor.
 
-The sender is intentionally best-effort: it uses a short network timeout and exits successfully even when the Windows monitor is unreachable, so it does not block Claude Code or Codex. When the monitor is down, the sender records that state locally and skips network work until the next probe window. Defaults are `AI_PAD_PROBE_INTERVAL_SEC=45` and `AI_PAD_CONNECT_TIMEOUT_SEC=1`.
+The sender is intentionally best-effort: it uses a short network timeout and exits successfully even when the Windows monitor is unreachable, so it does not block Claude Code or Codex. When the monitor is down, the sender records that state locally and skips network work until the next probe window. Defaults are `BITCAT_PROBE_INTERVAL_SEC=45` and `BITCAT_CONNECT_TIMEOUT_SEC=1`.
 
 After installation, the script sends one self-test envelope to the Windows monitor. This should make the remote device appear in Agent Watch immediately when port `5342` is reachable. You can opt out with `--no-self-test`.
 
@@ -72,7 +72,7 @@ open the hook review UI:
 Then review each BitCat hook. Enter every hook item and press `T` to trust it. The commands should point at the installed sender, for example:
 
 ```bash
-AI_PAD_SOURCE=codex bash ~/.bitcat/hooks/sender.sh
+BITCAT_SOURCE=codex bash ~/.bitcat/hooks/sender.sh
 ```
 
 After all hooks are trusted, return to Codex and submit another prompt or trigger a tool call. The Windows Agent Watch view should then show the remote Codex session. This trust step is required by Codex and is not bypassed by the installer.

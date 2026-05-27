@@ -26,10 +26,12 @@ EXE_NAME    = bitcat.exe
 
 build:
 	cargo build
+	cargo run -p xtask -- prepare-exe --out-dir "$(DEBUG_DIR)"
 	cargo run -p xtask -- copy-config --out-dir "$(DEBUG_DIR)"
 
 release:
 	cargo build --release
+	cargo run -p xtask -- prepare-exe --out-dir "$(RELEASE_DIR)"
 	cargo run -p xtask -- copy-config --out-dir "$(RELEASE_DIR)"
 
 # ══════════════════════════════════════

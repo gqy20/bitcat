@@ -95,7 +95,7 @@ Agent 看管页可以修复 Claude Code / Codex hook。修复操作会写入 Bit
 - Claude Code：`~/.claude/settings.json`
 - Codex：`$CODEX_HOME/config.toml` 或 `~/.codex/config.toml`
 
-修复是可重复执行的，只清理带 BitCat `ai_pad_marker` 的 hook，不会改动用户或其他工具写入的 hook。详细规则见 [Agent Watch Hooks](agent-watch-hooks.md)。
+修复是可重复执行的，只清理带 BitCat `bitcat_marker` 的 hook，不会改动用户或其他工具写入的 hook。详细规则见 [Agent Watch Hooks](agent-watch-hooks.md)。
 
 ## config/actions.yml
 

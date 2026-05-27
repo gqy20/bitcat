@@ -376,7 +376,7 @@ let should_run = matches!(trust, HookTrust::Managed | HookTrust::Trusted);
 
 当前设置页的 Codex 按钮不再只是追加配置，而是执行可重复的检查与修复：
 
-- 只清理带 `ai_pad_marker = "bitcat-codex-watch"` 的 BitCat hook；
+- 只清理带 `bitcat_marker = "bitcat-codex-watch"` 的 BitCat hook；
 - 保留用户或其他工具写入的 hook，即使它们在同一个 event/matcher 下；
 - 旧版本生成的重复 BitCat hook 会先移除，再写入当前标准 hook；
 - 旧的无效事件名下如果只剩 BitCat hook，会被移除；

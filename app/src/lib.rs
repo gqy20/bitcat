@@ -485,9 +485,9 @@ pub fn run() {
             });
 
             // ── Debug 辅助 ──
-            // AI_PAD_DEBUG=1 时自动弹出 panel 并模拟导航操作，用于开发调试。
+            // BITCAT_DEBUG=1 时自动弹出 panel 并模拟导航操作，用于开发调试。
             camera::refresh_camera_window(app.handle());
-            if std::env::var("AI_PAD_DEBUG").is_ok() {
+            if std::env::var("BITCAT_DEBUG").is_ok() {
                 let dbg_app = app.handle().clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_secs(2));

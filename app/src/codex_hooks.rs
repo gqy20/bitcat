@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use tauri_plugin_opener::OpenerExt;
 use toml_edit::{value, ArrayOfTables, DocumentMut, Item, Table};
 
-const AI_PAD_HOOK_MARKER: &str = "bitcat-codex-watch";
+const BITCAT_HOOK_MARKER: &str = "bitcat-codex-watch";
 
 #[derive(Debug, Clone, Copy)]
 struct HookSpec {
@@ -73,7 +73,7 @@ pub fn install_codex_hooks() -> Result<String, String> {
 
     let config_path = config_path()?;
     let mut doc = read_config_toml(&config_path)?;
-    ensure_ai_pad_hooks(&mut doc, &script_path, &mut report)?;
+    ensure_bitcat_hooks(&mut doc, &script_path, &mut report)?;
     backup_if_exists(&config_path)?;
     atomic_write(&config_path, &doc.to_string())?;
 
@@ -89,20 +89,20 @@ fn read_config_toml(path: &PathBuf) -> Result<DocumentMut, String> {
         .map_err(|e| format!("解析 Codex config.toml 失败，已停止写入: {e}"))
 }
 
-fn ensure_ai_pad_hooks(
+fn ensure_bitcat_hooks(
     doc: &mut DocumentMut,
     script_path: &Path,
     report: &mut HookRepairReport,
 ) -> Result<(), String> {
     let hooks = ensure_table(&mut doc["hooks"])?;
-    remove_invalid_ai_pad_events(hooks, report);
-    let hook = ai_pad_hook(script_path);
+    remove_invalid_bitcat_events(hooks, report);
+    let hook = bitcat_hook(script_path);
     let mut cleaned_events = HashSet::new();
 
     for spec in hook_specs() {
         let groups = ensure_array_of_tables(&mut hooks[spec.event_name])?;
         if cleaned_events.insert(spec.event_name) {
-            report.removed += remove_ai_pad_hooks(groups);
+            report.removed += remove_bitcat_hooks(groups);
         }
         let group = ensure_hook_group(groups, spec.matcher);
         let hooks = ensure_array_of_tables(&mut group["hooks"])?;
@@ -156,7 +156,7 @@ fn valid_hook_event(event_name: &str) -> bool {
         .any(|spec| spec.event_name == event_name)
 }
 
-fn remove_invalid_ai_pad_events(hooks: &mut Table, report: &mut HookRepairReport) {
+fn remove_invalid_bitcat_events(hooks: &mut Table, report: &mut HookRepairReport) {
     let invalid_events = hooks
         .iter()
         .filter_map(|(event_name, _)| {
@@ -171,7 +171,7 @@ fn remove_invalid_ai_pad_events(hooks: &mut Table, report: &mut HookRepairReport
         let Some(groups) = hooks[&event_name].as_array_of_tables_mut() else {
             continue;
         };
-        let removed = remove_ai_pad_hooks(groups);
+        let removed = remove_bitcat_hooks(groups);
         report.removed += removed;
         if removed > 0 && groups.is_empty() {
             hooks.remove(&event_name);
@@ -179,7 +179,7 @@ fn remove_invalid_ai_pad_events(hooks: &mut Table, report: &mut HookRepairReport
     }
 }
 
-fn ai_pad_hook(script_path: &Path) -> Table {
+fn bitcat_hook(script_path: &Path) -> Table {
     let script = script_path.to_string_lossy().replace('\\', "\\\\");
     let mut hook = Table::new();
     hook["type"] = value("command");
@@ -190,7 +190,7 @@ fn ai_pad_hook(script_path: &Path) -> Table {
         "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"{script}\""
     ));
     hook["timeout"] = value(5);
-    hook["ai_pad_marker"] = value(AI_PAD_HOOK_MARKER);
+    hook["bitcat_marker"] = value(BITCAT_HOOK_MARKER);
     hook
 }
 
@@ -210,17 +210,17 @@ fn ensure_array_of_tables(item: &mut Item) -> Result<&mut ArrayOfTables, String>
         .ok_or_else(|| "Codex hook 配置节点不是 array of tables，已停止写入".to_string())
 }
 
-fn remove_ai_pad_hooks(groups: &mut ArrayOfTables) -> usize {
+fn remove_bitcat_hooks(groups: &mut ArrayOfTables) -> usize {
     let mut removed = 0;
     for group in groups.iter_mut() {
         if let Some(hooks) = group["hooks"].as_array_of_tables_mut() {
             let mut kept = ArrayOfTables::new();
             for hook in hooks.iter() {
                 if hook
-                    .get("ai_pad_marker")
+                    .get("bitcat_marker")
                     .and_then(Item::as_value)
                     .and_then(|v| v.as_str())
-                    != Some(AI_PAD_HOOK_MARKER)
+                    != Some(BITCAT_HOOK_MARKER)
                 {
                     kept.push(hook.clone());
                 } else {
@@ -268,7 +268,7 @@ fn matcher_matches(value: Option<&Item>, expected: Option<&str>) -> bool {
 
 fn hook_script(port: u16) -> String {
     format!(
-        r#"# {AI_PAD_HOOK_MARKER}
+        r#"# {BITCAT_HOOK_MARKER}
 # Installed by BitCat. Read-only: sends Codex hook JSON to local BitCat monitor.
 [Console]::InputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -287,7 +287,7 @@ function Get-Field($obj, [string[]]$names) {{
   return $null
 }}
 
-function Write-AiPadHookLog([string]$status, [string]$detail) {{
+function Write-BitCatHookLog([string]$status, [string]$detail) {{
   try {{
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
     if ((Test-Path $logFile) -and ((Get-Item $logFile).Length -gt 1048576)) {{
@@ -328,9 +328,9 @@ try {{
   $client.Client.Shutdown([System.Net.Sockets.SocketShutdown]::Send)
   $stream.Dispose()
   $client.Dispose()
-  Write-AiPadHookLog "sent" "127.0.0.1:{port}"
+  Write-BitCatHookLog "sent" "127.0.0.1:{port}"
 }} catch {{
-  Write-AiPadHookLog "failed" $_.Exception.GetType().Name
+  Write-BitCatHookLog "failed" $_.Exception.GetType().Name
   # Keep Codex hooks non-blocking for the user.
   exit 0
 }}
@@ -406,13 +406,13 @@ command = "echo keep"
 [[hooks.PreToolUse.hooks]]
 type = "command"
 command = "old"
-ai_pad_marker = "bitcat-codex-watch"
+bitcat_marker = "bitcat-codex-watch"
 "#
         .parse::<DocumentMut>()
         .unwrap();
 
         let mut report = HookRepairReport::default();
-        ensure_ai_pad_hooks(
+        ensure_bitcat_hooks(
             &mut doc,
             &PathBuf::from("C:\\x\\bitcat-codex-hook.ps1"),
             &mut report,
@@ -421,7 +421,7 @@ ai_pad_marker = "bitcat-codex-watch"
         let rendered = doc.to_string();
         assert_eq!(rendered.matches("echo keep").count(), 1);
         assert_eq!(
-            rendered.matches(AI_PAD_HOOK_MARKER).count(),
+            rendered.matches(BITCAT_HOOK_MARKER).count(),
             hook_specs().len()
         );
         assert!(rendered.contains("[[hooks.UserPromptSubmit]]"));
@@ -432,7 +432,7 @@ ai_pad_marker = "bitcat-codex-watch"
     }
 
     #[test]
-    fn removes_only_ai_pad_hooks_from_invalid_events() {
+    fn removes_only_bitcat_hooks_from_invalid_events() {
         let mut doc = r#"
 [hooks]
 
@@ -445,12 +445,12 @@ command = "echo keep"
 [[hooks.OldEvent.hooks]]
 type = "command"
 command = "old"
-ai_pad_marker = "bitcat-codex-watch"
+bitcat_marker = "bitcat-codex-watch"
 "#
         .parse::<DocumentMut>()
         .unwrap();
         let mut report = HookRepairReport::default();
-        ensure_ai_pad_hooks(
+        ensure_bitcat_hooks(
             &mut doc,
             &PathBuf::from("C:\\x\\bitcat-codex-hook.ps1"),
             &mut report,

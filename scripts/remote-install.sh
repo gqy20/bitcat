@@ -102,14 +102,14 @@ set -euo pipefail
 MACHINE="${MACHINE}"
 HOSTS="${HOSTS}"
 PORT="${PORT}"
-SOURCE="\${AI_PAD_SOURCE:-claude_code}"
+SOURCE="\${BITCAT_SOURCE:-claude_code}"
 STATE_DIR="${HOOK_DIR}/state"
 STATE_FILE="\${STATE_DIR}/monitor-state"
 LOG_DIR="${HOOK_DIR}/logs"
 LOG_FILE="\${LOG_DIR}/agent-hook-bridge.jsonl"
-PROBE_INTERVAL_SEC="\${AI_PAD_PROBE_INTERVAL_SEC:-45}"
-CONNECT_TIMEOUT_SEC="\${AI_PAD_CONNECT_TIMEOUT_SEC:-1}"
-LOG_MAX_BYTES="\${AI_PAD_HOOK_LOG_MAX_BYTES:-1048576}"
+PROBE_INTERVAL_SEC="\${BITCAT_PROBE_INTERVAL_SEC:-45}"
+CONNECT_TIMEOUT_SEC="\${BITCAT_CONNECT_TIMEOUT_SEC:-1}"
+LOG_MAX_BYTES="\${BITCAT_HOOK_LOG_MAX_BYTES:-1048576}"
 
 raw=\$(cat || true)
 if [ -z "\$raw" ]; then exit 0; fi
@@ -295,18 +295,18 @@ try:
 except Exception:
     root = {}
 hooks = root.setdefault("hooks", {})
-hook = {"type": "command", "command": f'AI_PAD_SOURCE=claude_code bash "{sender}"', "ai_pad_marker": marker}
+hook = {"type": "command", "command": f'BITCAT_SOURCE=claude_code bash "{sender}"', "bitcat_marker": marker}
 removed = 0
 for event, groups in list(hooks.items()):
     if not isinstance(groups, list):
         continue
     before = len(groups)
-    groups[:] = [g for g in groups if not (isinstance(g, dict) and g.get("ai_pad_marker") in known_markers)]
+    groups[:] = [g for g in groups if not (isinstance(g, dict) and g.get("bitcat_marker") in known_markers)]
     removed += before - len(groups)
     for group in groups:
         if isinstance(group, dict) and isinstance(group.get("hooks"), list):
             before_hooks = len(group["hooks"])
-            group["hooks"] = [h for h in group["hooks"] if not (isinstance(h, dict) and h.get("ai_pad_marker") in known_markers)]
+            group["hooks"] = [h for h in group["hooks"] if not (isinstance(h, dict) and h.get("bitcat_marker") in known_markers)]
             removed += before_hooks - len(group["hooks"])
     hooks[event] = [g for g in groups if not (isinstance(g, dict) and g.get("hooks") == [])]
     if hooks[event] == []:
@@ -360,36 +360,36 @@ install_codex() {
 [[hooks.UserPromptSubmit]]
 [[hooks.UserPromptSubmit.hooks]]
 type = "command"
-command = "AI_PAD_SOURCE=codex bash ${SENDER}"
-commandLinux = "AI_PAD_SOURCE=codex bash ${SENDER}"
+command = "BITCAT_SOURCE=codex bash ${SENDER}"
+commandLinux = "BITCAT_SOURCE=codex bash ${SENDER}"
 timeout = 5
-ai_pad_marker = "${MARKER}"
+bitcat_marker = "${MARKER}"
 
 [[hooks.PreToolUse]]
 matcher = "*"
 [[hooks.PreToolUse.hooks]]
 type = "command"
-command = "AI_PAD_SOURCE=codex bash ${SENDER}"
-commandLinux = "AI_PAD_SOURCE=codex bash ${SENDER}"
+command = "BITCAT_SOURCE=codex bash ${SENDER}"
+commandLinux = "BITCAT_SOURCE=codex bash ${SENDER}"
 timeout = 5
-ai_pad_marker = "${MARKER}"
+bitcat_marker = "${MARKER}"
 
 [[hooks.PostToolUse]]
 matcher = "*"
 [[hooks.PostToolUse.hooks]]
 type = "command"
-command = "AI_PAD_SOURCE=codex bash ${SENDER}"
-commandLinux = "AI_PAD_SOURCE=codex bash ${SENDER}"
+command = "BITCAT_SOURCE=codex bash ${SENDER}"
+commandLinux = "BITCAT_SOURCE=codex bash ${SENDER}"
 timeout = 5
-ai_pad_marker = "${MARKER}"
+bitcat_marker = "${MARKER}"
 
 [[hooks.Stop]]
 [[hooks.Stop.hooks]]
 type = "command"
-command = "AI_PAD_SOURCE=codex bash ${SENDER}"
-commandLinux = "AI_PAD_SOURCE=codex bash ${SENDER}"
+command = "BITCAT_SOURCE=codex bash ${SENDER}"
+commandLinux = "BITCAT_SOURCE=codex bash ${SENDER}"
 timeout = 5
-ai_pad_marker = "${MARKER}"
+bitcat_marker = "${MARKER}"
 
 # ${MARKER} end
 EOF
@@ -410,10 +410,10 @@ hooks = root.get("hooks", {})
 for event, groups in list(hooks.items()):
     if not isinstance(groups, list):
         continue
-    groups[:] = [g for g in groups if not (isinstance(g, dict) and g.get("ai_pad_marker") in known_markers)]
+    groups[:] = [g for g in groups if not (isinstance(g, dict) and g.get("bitcat_marker") in known_markers)]
     for group in groups:
         if isinstance(group, dict) and isinstance(group.get("hooks"), list):
-            group["hooks"] = [h for h in group["hooks"] if not (isinstance(h, dict) and h.get("ai_pad_marker") in known_markers)]
+            group["hooks"] = [h for h in group["hooks"] if not (isinstance(h, dict) and h.get("bitcat_marker") in known_markers)]
     hooks[event] = [g for g in groups if not (isinstance(g, dict) and g.get("hooks") == [])]
 with open(path, "w", encoding="utf-8") as f:
     json.dump(root, f, indent=2, ensure_ascii=False)
@@ -455,9 +455,9 @@ send_self_test() {
   fi
   cwd="$(pwd 2>/dev/null || printf '%s' "$HOME")"
   if command -v python3 >/dev/null 2>&1; then
-    envelope="$(AI_PAD_SOURCE="$test_source" MACHINE="$MACHINE" CWD="$cwd" python3 - <<'PY' 2>/dev/null || true
+    envelope="$(BITCAT_SOURCE="$test_source" MACHINE="$MACHINE" CWD="$cwd" python3 - <<'PY' 2>/dev/null || true
 import json, os
-source = os.environ.get("AI_PAD_SOURCE", "codex")
+source = os.environ.get("BITCAT_SOURCE", "codex")
 machine = os.environ.get("MACHINE", "remote")
 cwd = os.environ.get("CWD", "")
 print(json.dumps({

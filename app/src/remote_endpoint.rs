@@ -107,7 +107,7 @@ fn build_remote_install_command(ips: &[String], view_port: u16, monitor_port: u1
     }
     let hosts = ips.join(" ");
     format!(
-        "AI_PAD_SCRIPT=; for h in {hosts}; do AI_PAD_SCRIPT=$(curl -fsSL \"http://$h:{view_port}/remote-install.sh\") && printf '%s\\n' \"$AI_PAD_SCRIPT\" | bash -s -- --hosts \"{hosts}\" --port {monitor_port} && break; done"
+        "BITCAT_SCRIPT=; for h in {hosts}; do BITCAT_SCRIPT=$(curl -fsSL \"http://$h:{view_port}/remote-install.sh\") && printf '%s\\n' \"$BITCAT_SCRIPT\" | bash -s -- --hosts \"{hosts}\" --port {monitor_port} && break; done"
     )
 }
 

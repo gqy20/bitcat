@@ -25,6 +25,7 @@ fn main() -> Result<()> {
     match args.next().as_deref() {
         Some("package-portable") => package_portable(parse_package_args(args.collect())?),
         Some("copy-config") => copy_config_cmd(parse_copy_config_args(args.collect())?),
+        Some("prepare-exe") => prepare_exe_cmd(parse_prepare_exe_args(args.collect())?),
         Some("clean-dist") => clean_dist(),
         Some("test") => run_nextest(["--workspace"], None),
         Some("test-core") => run_nextest(["-p", "ai-pad-core"], None),
@@ -67,6 +68,36 @@ fn copy_config_cmd(out_dir: PathBuf) -> Result<()> {
     Ok(())
 }
 
+fn parse_prepare_exe_args(args: Vec<String>) -> Result<PathBuf> {
+    let mut out_dir = None;
+    let mut iter = args.into_iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--out-dir" => out_dir = Some(PathBuf::from(required_value(&mut iter, "--out-dir")?)),
+            "-h" | "--help" => {
+                print_help();
+                std::process::exit(0);
+            }
+            _ => return Err(format!("unknown prepare-exe option: {arg}").into()),
+        }
+    }
+
+    out_dir.ok_or_else(|| "prepare-exe requires --out-dir <path>".into())
+}
+
+fn prepare_exe_cmd(out_dir: PathBuf) -> Result<()> {
+    let repo_root = env::current_dir()?;
+    let out_dir = repo_root.join(out_dir);
+    let cargo_exe = out_dir.join("ai-pad-app.exe");
+    let bitcat_exe = out_dir.join("bitcat.exe");
+    if !cargo_exe.is_file() {
+        return Err(format!("executable not found: {}", cargo_exe.display()).into());
+    }
+    fs::copy(&cargo_exe, &bitcat_exe)?;
+    println!("Prepared executable: {}", bitcat_exe.display());
+    Ok(())
+}
+
 fn clean_dist() -> Result<()> {
     let repo_root = env::current_dir()?;
     for entry in fs::read_dir(&repo_root)? {
@@ -75,7 +106,7 @@ fn clean_dist() -> Result<()> {
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        if (name.starts_with("bitcat-") || name.starts_with("ai-pad-")) && name.ends_with(".zip") {
+        if name.starts_with("bitcat-") && name.ends_with(".zip") {
             fs::remove_file(path)?;
         }
     }
@@ -157,7 +188,7 @@ fn required_value(iter: &mut impl Iterator<Item = String>, name: &str) -> Result
 fn package_portable(options: PackageOptions) -> Result<()> {
     let repo_root = env::current_dir()?;
     let release_dir = repo_root.join(&options.release_dir);
-    let exe = release_dir.join("ai-pad-app.exe");
+    let exe = release_dir.join("bitcat.exe");
     if !exe.is_file() {
         return Err(format!("executable not found: {}", exe.display()).into());
     }
@@ -296,6 +327,7 @@ fn print_help() {
 xtask commands:
   package-portable [options]
   copy-config --out-dir <path>
+  prepare-exe --out-dir <path>
   clean-dist
   test | test-core | test-app | test-fast
 

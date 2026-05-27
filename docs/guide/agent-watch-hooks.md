@@ -30,7 +30,7 @@ On each repair, BitCat:
 - removes old BitCat hooks from invalid event names, such as the removed `SubagentStopFailure` event;
 - installs the current standard hook set.
 
-The repair is marker-scoped. It only removes or replaces hooks containing `ai_pad_marker`. User hooks and hooks installed by other tools are preserved, including hooks that share the same event or matcher.
+The repair is marker-scoped. It only removes or replaces hooks containing `bitcat_marker`. User hooks and hooks installed by other tools are preserved, including hooks that share the same event or matcher.
 
 If the surrounding config shape is unsafe to edit, for example `hooks.PreToolUse` is not an array in Claude settings, repair stops with an error instead of rewriting the file.
 

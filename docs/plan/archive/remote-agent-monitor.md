@@ -164,14 +164,14 @@ struct AgentHookEnvelope {
    - 到 --host:--port 的网络连通性（timeout 2s 测试）
 
 3. 生成 sender.sh → ~/.bitcat/hooks/sender.sh
-   - 注入 AI_PAD_HOST, AI_PAD_PORT, AI_PAD_MACHINE, AI_PAD_SOURCE
+   - 注入 BITCAT_HOST, BITCAT_PORT, BITCAT_MACHINE, BITCAT_SOURCE
    - chmod +x
 
 4. 安装 Claude Code hooks（如果检测到）
    - 读 ~/.claude/settings.json
-   - 合并 BitCat 条目（逻辑镜像 claude_hooks.rs 的 ensure_ai_pad_hooks）
+   - 合并 BitCat 条目（逻辑镜像 claude_hooks.rs 的 ensure_bitcat_hooks）
    - command 用 "bash $SENDER_PATH"
-   - 标记 ai_pad_marker = "bitcat-remote-watch"
+   - 标记 bitcat_marker = "bitcat-remote-watch"
    - 备份原文件 → atomic write
 
 5. 安装 Codex hooks（如果检测到）
@@ -224,7 +224,7 @@ exit 0
 #### 2.3 Hook 配置合并逻辑
 
 与 `claude_hooks.rs` / `codex_hooks.rs` 保持一致的合并策略：
-- 只操作带 `ai_pad_marker = "bitcat-remote-watch"` 的条目
+- 只操作带 `bitcat_marker = "bitcat-remote-watch"` 的条目
 - 保留用户已有 hook
 - 备份原文件
 - atomic write（写 tmp → rename）
@@ -235,7 +235,7 @@ Claude Code settings.json 中每个事件的 command 形式：
 {
   "type": "command",
   "command": "bash /home/user/.bitcat/hooks/sender.sh",
-  "ai_pad_marker": "bitcat-remote-watch"
+  "bitcat_marker": "bitcat-remote-watch"
 }
 ```
 
@@ -250,7 +250,7 @@ type = "command"
 command = "bash /home/user/.bitcat/hooks/sender.sh"
 commandLinux = "bash /home/user/.bitcat/hooks/sender.sh"
 timeout = 5
-ai_pad_marker = "bitcat-remote-watch"
+bitcat_marker = "bitcat-remote-watch"
 ```
 
 ### Step 3：前端 Agent Watch 加设备标识（JS/CSS，~30 行）

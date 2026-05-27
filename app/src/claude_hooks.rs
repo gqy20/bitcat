@@ -10,7 +10,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tauri_plugin_opener::OpenerExt;
 
-const AI_PAD_HOOK_MARKER: &str = "bitcat-claude-code-watch";
+const BITCAT_HOOK_MARKER: &str = "bitcat-claude-code-watch";
 const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
 
 #[derive(Debug, Clone, Copy)]
@@ -74,7 +74,7 @@ pub fn install_claude_code_hooks() -> Result<String, String> {
 
     let settings_path = settings_path()?;
     let mut settings = read_settings_json(&settings_path)?;
-    ensure_ai_pad_hooks(&mut settings, &script_path, &mut report)?;
+    ensure_bitcat_hooks(&mut settings, &script_path, &mut report)?;
     backup_if_exists(&settings_path)?;
     atomic_write(
         &settings_path,
@@ -117,7 +117,7 @@ fn head_bytes_hex(bytes: &[u8]) -> String {
         .join("")
 }
 
-fn ensure_ai_pad_hooks(
+fn ensure_bitcat_hooks(
     settings: &mut Value,
     script_path: &Path,
     report: &mut HookRepairReport,
@@ -132,8 +132,8 @@ fn ensure_ai_pad_hooks(
     }
     let hooks_obj = hooks.as_object_mut().unwrap();
 
-    remove_invalid_ai_pad_events(hooks_obj, report);
-    let hook = ai_pad_hook(script_path);
+    remove_invalid_bitcat_events(hooks_obj, report);
+    let hook = bitcat_hook(script_path);
     let mut cleaned_events = HashSet::new();
     for spec in hook_specs() {
         let entry = hooks_obj
@@ -147,7 +147,7 @@ fn ensure_ai_pad_hooks(
         }
         let arr = entry.as_array_mut().unwrap();
         if cleaned_events.insert(spec.event_name) {
-            report.removed += remove_ai_pad_hooks(arr);
+            report.removed += remove_bitcat_hooks(arr);
         }
         let group = ensure_hook_group(arr, spec.matcher);
         let hooks = group
@@ -249,7 +249,7 @@ fn valid_hook_event(event_name: &str) -> bool {
         .any(|spec| spec.event_name == event_name)
 }
 
-fn remove_invalid_ai_pad_events(
+fn remove_invalid_bitcat_events(
     hooks_obj: &mut serde_json::Map<String, Value>,
     report: &mut HookRepairReport,
 ) {
@@ -262,7 +262,7 @@ fn remove_invalid_ai_pad_events(
         let Some(groups) = hooks_obj.get_mut(&event_name).and_then(Value::as_array_mut) else {
             continue;
         };
-        let removed = remove_ai_pad_hooks(groups);
+        let removed = remove_bitcat_hooks(groups);
         report.removed += removed;
         if removed > 0 && groups.is_empty() {
             hooks_obj.remove(&event_name);
@@ -270,26 +270,26 @@ fn remove_invalid_ai_pad_events(
     }
 }
 
-fn ai_pad_hook(script_path: &Path) -> Value {
+fn bitcat_hook(script_path: &Path) -> Value {
     let script = script_path.to_string_lossy().replace('\\', "/");
     json!({
         "type": "command",
         "command": format!("powershell.exe -NoProfile -ExecutionPolicy Bypass -File '{script}'"),
-        "ai_pad_marker": AI_PAD_HOOK_MARKER
+        "bitcat_marker": BITCAT_HOOK_MARKER
     })
 }
 
-fn remove_ai_pad_hooks(groups: &mut Vec<Value>) -> usize {
+fn remove_bitcat_hooks(groups: &mut Vec<Value>) -> usize {
     let before_groups = groups.len();
     groups.retain(|item| {
-        item.get("ai_pad_marker").and_then(Value::as_str) != Some(AI_PAD_HOOK_MARKER)
+        item.get("bitcat_marker").and_then(Value::as_str) != Some(BITCAT_HOOK_MARKER)
     });
     let mut removed = before_groups.saturating_sub(groups.len());
     for group in groups.iter_mut() {
         if let Some(hooks) = group.get_mut("hooks").and_then(Value::as_array_mut) {
             let before_hooks = hooks.len();
             hooks.retain(|item| {
-                item.get("ai_pad_marker").and_then(Value::as_str) != Some(AI_PAD_HOOK_MARKER)
+                item.get("bitcat_marker").and_then(Value::as_str) != Some(BITCAT_HOOK_MARKER)
             });
             removed += before_hooks.saturating_sub(hooks.len());
         }
@@ -341,7 +341,7 @@ fn matcher_matches(value: Option<&Value>, expected: Option<&str>) -> bool {
 
 fn hook_script(port: u16) -> String {
     format!(
-        r#"# {AI_PAD_HOOK_MARKER}
+        r#"# {BITCAT_HOOK_MARKER}
 # Installed by BitCat. Read-only: sends Claude Code hook JSON to local BitCat monitor.
 [Console]::InputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -360,7 +360,7 @@ function Get-Field($obj, [string[]]$names) {{
   return $null
 }}
 
-function Write-AiPadHookLog([string]$status, [string]$detail) {{
+function Write-BitCatHookLog([string]$status, [string]$detail) {{
   try {{
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
     if ((Test-Path $logFile) -and ((Get-Item $logFile).Length -gt 1048576)) {{
@@ -401,9 +401,9 @@ try {{
   $client.Client.Shutdown([System.Net.Sockets.SocketShutdown]::Send)
   $stream.Dispose()
   $client.Dispose()
-  Write-AiPadHookLog "sent" "127.0.0.1:{port}"
+  Write-BitCatHookLog "sent" "127.0.0.1:{port}"
 }} catch {{
-  Write-AiPadHookLog "failed" $_.Exception.GetType().Name
+  Write-BitCatHookLog "failed" $_.Exception.GetType().Name
   # Keep Claude Code hooks non-blocking for the user.
   exit 0
 }}
@@ -472,10 +472,10 @@ mod tests {
                     {
                         "hooks": [
                             {"type": "command", "command": "echo keep"},
-                            {"type": "command", "command": "old", "ai_pad_marker": AI_PAD_HOOK_MARKER}
+                            {"type": "command", "command": "old", "bitcat_marker": BITCAT_HOOK_MARKER}
                         ]
                     },
-                    {"type": "command", "command": "old-flat", "ai_pad_marker": AI_PAD_HOOK_MARKER}
+                    {"type": "command", "command": "old-flat", "bitcat_marker": BITCAT_HOOK_MARKER}
                 ],
                 "PreToolUse": [
                     {
@@ -488,7 +488,7 @@ mod tests {
             }
         });
         let mut report = HookRepairReport::default();
-        ensure_ai_pad_hooks(
+        ensure_bitcat_hooks(
             &mut settings,
             &PathBuf::from("C:\\x\\bitcat-hook.ps1"),
             &mut report,
@@ -499,7 +499,7 @@ mod tests {
         let stop_hooks = stop[0]["hooks"].as_array().unwrap();
         assert_eq!(stop_hooks.len(), 2);
         assert_eq!(stop_hooks[0]["command"], "echo keep");
-        assert_eq!(stop_hooks[1]["ai_pad_marker"], AI_PAD_HOOK_MARKER);
+        assert_eq!(stop_hooks[1]["bitcat_marker"], BITCAT_HOOK_MARKER);
         let pre_tool = settings["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(pre_tool.len(), 1);
         assert_eq!(pre_tool[0]["matcher"], "*");
@@ -521,24 +521,24 @@ mod tests {
     }
 
     #[test]
-    fn removes_only_ai_pad_hooks_from_invalid_events() {
+    fn removes_only_bitcat_hooks_from_invalid_events() {
         let mut settings = json!({
             "hooks": {
                 "SubagentStopFailure": [
                     {
                         "hooks": [
                             {"type": "command", "command": "echo keep"},
-                            {"type": "command", "command": "old", "ai_pad_marker": AI_PAD_HOOK_MARKER}
+                            {"type": "command", "command": "old", "bitcat_marker": BITCAT_HOOK_MARKER}
                         ]
                     }
                 ],
                 "TotallyUnknown": [
-                    {"type": "command", "command": "old-flat", "ai_pad_marker": AI_PAD_HOOK_MARKER}
+                    {"type": "command", "command": "old-flat", "bitcat_marker": BITCAT_HOOK_MARKER}
                 ]
             }
         });
         let mut report = HookRepairReport::default();
-        ensure_ai_pad_hooks(
+        ensure_bitcat_hooks(
             &mut settings,
             &PathBuf::from("C:\\x\\bitcat-hook.ps1"),
             &mut report,
@@ -555,7 +555,7 @@ mod tests {
     #[test]
     fn read_settings_json_accepts_utf8_bom() {
         let path = std::env::temp_dir().join(format!(
-            "ai-pad-claude-settings-bom-{}-{}.json",
+            "bitcat-claude-settings-bom-{}-{}.json",
             std::process::id(),
             chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
@@ -574,7 +574,7 @@ mod tests {
     #[test]
     fn read_settings_json_reports_head_bytes_for_invalid_json() {
         let path = std::env::temp_dir().join(format!(
-            "ai-pad-claude-settings-invalid-{}-{}.json",
+            "bitcat-claude-settings-invalid-{}-{}.json",
             std::process::id(),
             chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));

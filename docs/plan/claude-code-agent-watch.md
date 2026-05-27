@@ -39,7 +39,7 @@ Phase 1 的主体已经落地：`core/src/agent_session.rs`、`core/src/claude_c
 
 与 Claude Code 官方 hook 文档对齐的部分：
 
-- hook 配置采用 `hooks.EventName[] -> { matcher?, hooks: [...] }` 的嵌套结构，保留用户已有 hook，并用 `ai_pad_marker` 去重。
+- hook 配置采用 `hooks.EventName[] -> { matcher?, hooks: [...] }` 的嵌套结构，保留用户已有 hook，并用 `bitcat_marker` 去重。
 - hook stdin JSON 使用 `session_id` / `hook_event_name` / `cwd` 等字段进入内部 `AgentSessionEvent`，不会把完整工具输入或完整对话落盘。
 - PowerShell 脚本显式设置 UTF-8 stdin/stdout，发送 TCP 后执行 socket shutdown，避免 Rust 端 `read_to_string` 卡住。
 - 第一版保持只读观察，不回写权限批准结果。
@@ -395,8 +395,8 @@ Agent 看管涉及修改用户的 `~/.claude/settings.json` 和发出主动提�
 5. 新增 `app/src/claude_hooks.rs`
    - 写入 `~/.claude/hooks/bitcat-hook.ps1`。
    - 合并 `~/.claude/settings.json` 时遵循 Claude Code 的嵌套 hooks schema：`event -> [{ matcher?, hooks: [...] }]`。
-   - 安装入口已升级为 Hook Doctor：重复点击会检查并修复 BitCat 自己写入的 hook，清理旧版/重复/无效事件里的 `ai_pad_marker = "bitcat-claude-code-watch"`，再写入当前标准配置。
-   - 只增删带 `ai_pad_marker` 的桌宠 hook，不覆盖用户或其他工具的 hook；如果配置结构异常到无法安全合并，则返回错误而不是强改。
+   - 安装入口已升级为 Hook Doctor：重复点击会检查并修复 BitCat 自己写入的 hook，清理旧版/重复/无效事件里的 `bitcat_marker = "bitcat-claude-code-watch"`，再写入当前标准配置。
+   - 只增删带 `bitcat_marker` 的桌宠 hook，不覆盖用户或其他工具的 hook；如果配置结构异常到无法安全合并，则返回错误而不是强改。
    - 合并更新 `~/.claude/settings.json` 的 hook 配置。
    - PowerShell 脚本必须：
      - 设置 `[Console]::InputEncoding = [System.Text.Encoding]::UTF8`
