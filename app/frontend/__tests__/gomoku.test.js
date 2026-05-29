@@ -40,6 +40,13 @@ class GomokuEngine {
     this.aiThinking = false;
     this.invoke = invoke;
     this.recorded = false;
+    this.startedAt = new Date().toISOString();
+    this.startedAtMs = Date.now();
+    this.lastMoveAtMs = this.startedAtMs;
+    this.finishedAt = null;
+    this.finishedAtMs = null;
+    this.record = null;
+    this.pendingAiTiming = null;
   }
 
   playHuman(x, y) {
@@ -54,6 +61,7 @@ class GomokuEngine {
 
   async askAiMove(lastMove) {
     this.aiThinking = true;
+    this.pendingAiTiming = { started_at: new Date().toISOString(), started_ms: Date.now() };
     try {
       const move = await this.invoke('cmd_gomoku_ai_move', { board: this.board, lastMove });
       if (this.board[move.y][move.x] !== EMPTY) throw new Error('occupied');
@@ -69,28 +77,69 @@ class GomokuEngine {
       if (hasFive(this.board, AI)) this.state = 'lose';
     } finally {
       this.aiThinking = false;
+      this.pendingAiTiming = null;
     }
   }
 
   place(x, y, stone) {
+    const nowMs = Date.now();
+    const turnElapsedMs = Math.max(0, nowMs - this.lastMoveAtMs);
     this.board[y][x] = stone;
-    this.moves.push({ x, y, stone, move: this.moves.length + 1 });
+    this.lastMoveAtMs = nowMs;
+    this.moves.push({
+      x,
+      y,
+      stone,
+      move: this.moves.length + 1,
+      played_at: new Date(nowMs).toISOString(),
+      elapsed_ms: Math.max(0, nowMs - this.startedAtMs),
+      turn_elapsed_ms: turnElapsedMs,
+    });
   }
 
   attachAiThought(move) {
     const current = this.moves[this.moves.length - 1];
     current.ai_message = move.message || null;
     current.ai_thought = move.thought || move.message || null;
+    if (this.pendingAiTiming) {
+      const finishedMs = Date.now();
+      current.ai_started_at = this.pendingAiTiming.started_at;
+      current.ai_finished_at = new Date(finishedMs).toISOString();
+      current.ai_elapsed_ms = Math.max(0, finishedMs - this.pendingAiTiming.started_ms);
+    }
     this.aiThoughts.push({
       move: current.move,
       x: current.x,
       y: current.y,
+      played_at: current.played_at,
+      elapsed_ms: current.elapsed_ms,
+      turn_elapsed_ms: current.turn_elapsed_ms,
       text: current.ai_thought,
+      ai_elapsed_ms: current.ai_elapsed_ms || null,
     });
   }
 
   finish(result) {
     this.state = result;
+    this.finishedAt = new Date().toISOString();
+    this.finishedAtMs = Date.now();
+    this.record = {
+      started_at: this.startedAt,
+      finished_at: this.finishedAt,
+      duration_ms: Math.max(0, this.finishedAtMs - this.startedAtMs),
+      result,
+      moves: this.moves.map((move) => ({
+        move: move.move,
+        x: move.x,
+        y: move.y,
+        played_at: move.played_at,
+        elapsed_ms: move.elapsed_ms,
+        turn_elapsed_ms: move.turn_elapsed_ms,
+        ai_started_at: move.ai_started_at || null,
+        ai_finished_at: move.ai_finished_at || null,
+        ai_elapsed_ms: Number.isFinite(move.ai_elapsed_ms) ? move.ai_elapsed_ms : null,
+      })),
+    };
     this.recorded = true;
   }
 }
@@ -156,5 +205,21 @@ describe('GomokuEngine rules', () => {
 
     expect(engine.state).toBe('win');
     expect(engine.recorded).toBe(true);
+  });
+
+  it('records game and per-move timing fields', async () => {
+    const engine = new GomokuEngine(async () => ({ x: 8, y: 7, thought: '连接右侧。' }));
+
+    await engine.playHuman(7, 7);
+    engine.finish('cancel');
+
+    expect(engine.record.duration_ms).toBeGreaterThanOrEqual(0);
+    expect(engine.record.moves[0].played_at).toMatch(/T/);
+    expect(engine.record.moves[0].elapsed_ms).toBeGreaterThanOrEqual(0);
+    expect(engine.record.moves[0].turn_elapsed_ms).toBeGreaterThanOrEqual(0);
+    expect(engine.record.moves[1].ai_started_at).toMatch(/T/);
+    expect(engine.record.moves[1].ai_finished_at).toMatch(/T/);
+    expect(engine.record.moves[1].ai_elapsed_ms).toBeGreaterThanOrEqual(0);
+    expect(engine.aiThoughts[0].played_at).toMatch(/T/);
   });
 });

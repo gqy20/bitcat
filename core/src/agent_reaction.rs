@@ -19,8 +19,6 @@ const MAX_SPEECH_CHARS: usize = 160;
 const MAX_MEMORY_CANDIDATES: usize = 5;
 const MAX_MEMORY_TEXT_CHARS: usize = 180;
 const MAX_MEMORY_REASON_CHARS: usize = 160;
-const MAX_MEMORY_KIND_CHARS: usize = 32;
-const MAX_MEMORY_TTL_CHARS: usize = 24;
 const MAX_TAGS: usize = 6;
 const MAX_TAG_CHARS: usize = 24;
 const MIN_MEMORY_CONFIDENCE: u8 = 3;
@@ -51,18 +49,64 @@ pub struct MemoryCandidate {
     /// Confidence that this is worth saving long-term, from 1..=5.
     #[serde(default = "default_memory_confidence")]
     pub confidence: u8,
-    /// Candidate type, such as preference/profile/project/constraint/relationship/other.
+    /// Candidate type, constrained to the prompt's accepted labels.
     #[serde(default)]
-    pub kind: String,
+    pub kind: MemoryCandidateKind,
     /// Lifetime hint: stable/evolving/temporary. Temporary candidates are dropped.
     #[serde(default)]
-    pub ttl_hint: String,
+    pub ttl_hint: MemoryTtlHint,
     /// Short reason explaining why the model thinks this is durable memory.
     #[serde(default)]
     pub reason: String,
     /// Short English or Chinese tags.
     #[serde(default)]
     pub tags: Vec<String>,
+}
+
+/// Category for a durable memory candidate.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryCandidateKind {
+    Preference,
+    Profile,
+    Project,
+    Constraint,
+    Relationship,
+    #[default]
+    Other,
+}
+
+impl MemoryCandidateKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Preference => "preference",
+            Self::Profile => "profile",
+            Self::Project => "project",
+            Self::Constraint => "constraint",
+            Self::Relationship => "relationship",
+            Self::Other => "other",
+        }
+    }
+}
+
+/// Lifetime hint for a memory candidate.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryTtlHint {
+    #[default]
+    Stable,
+    Evolving,
+    Temporary,
+}
+
+impl MemoryTtlHint {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stable => "stable",
+            Self::Evolving => "evolving",
+            Self::Temporary => "temporary",
+        }
+    }
 }
 
 impl AgentReaction {
@@ -107,8 +151,8 @@ impl MemoryCandidate {
             text,
             importance,
             confidence: 5,
-            kind: "other".to_string(),
-            ttl_hint: "stable".to_string(),
+            kind: MemoryCandidateKind::Other,
+            ttl_hint: MemoryTtlHint::Stable,
             reason: "explicitly requested memory".to_string(),
             tags,
         }
@@ -118,13 +162,11 @@ impl MemoryCandidate {
         self.text = truncate_chars(self.text.trim(), MAX_MEMORY_TEXT_CHARS);
         self.importance = self.importance.min(5);
         self.confidence = self.confidence.min(5);
-        self.kind = normalize_label(&self.kind, MAX_MEMORY_KIND_CHARS);
-        self.ttl_hint = normalize_label(&self.ttl_hint, MAX_MEMORY_TTL_CHARS);
         self.reason = truncate_chars(self.reason.trim(), MAX_MEMORY_REASON_CHARS);
         if self.text.is_empty()
             || self.importance < 3
             || self.confidence < MIN_MEMORY_CONFIDENCE
-            || self.ttl_hint == "temporary"
+            || self.ttl_hint == MemoryTtlHint::Temporary
         {
             return None;
         }
@@ -222,16 +264,6 @@ fn normalize_tag(tag: &str) -> String {
         .to_lowercase()
 }
 
-fn normalize_label(label: &str, max_chars: usize) -> String {
-    label
-        .trim()
-        .chars()
-        .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
-        .take(max_chars)
-        .collect::<String>()
-        .to_lowercase()
-}
-
 fn truncate_chars(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         s.to_string()
@@ -292,8 +324,14 @@ mod tests {
             vec!["memory", "preference"]
         );
         assert_eq!(reaction.memory_candidates[0].confidence, 5);
-        assert_eq!(reaction.memory_candidates[0].kind, "other");
-        assert_eq!(reaction.memory_candidates[0].ttl_hint, "stable");
+        assert_eq!(
+            reaction.memory_candidates[0].kind,
+            MemoryCandidateKind::Other
+        );
+        assert_eq!(
+            reaction.memory_candidates[0].ttl_hint,
+            MemoryTtlHint::Stable
+        );
         assert_eq!(reaction.followups, vec!["next step"]);
     }
 
@@ -307,8 +345,8 @@ mod tests {
                     text: "User asked for a one-off reminder".into(),
                     importance: 4,
                     confidence: 5,
-                    kind: "other".into(),
-                    ttl_hint: "temporary".into(),
+                    kind: MemoryCandidateKind::Other,
+                    ttl_hint: MemoryTtlHint::Temporary,
                     reason: "one-off task".into(),
                     tags: vec!["reminder".into()],
                 },
@@ -316,8 +354,8 @@ mod tests {
                     text: "User may like dashboards".into(),
                     importance: 4,
                     confidence: 2,
-                    kind: "preference".into(),
-                    ttl_hint: "evolving".into(),
+                    kind: MemoryCandidateKind::Preference,
+                    ttl_hint: MemoryTtlHint::Evolving,
                     reason: "uncertain inference".into(),
                     tags: vec!["preference".into()],
                 },

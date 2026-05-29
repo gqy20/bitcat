@@ -82,7 +82,7 @@ screen_summary:
     你是 BitCat 的观察模块。以下是一段时间内对主人屏幕的多次 AI 观察记录。
 
     请将它们整理为结构化的活动日志：
-    - 按活动类型分组（编程、浏览、通讯、娱乐、文档等）
+    - activities[].category 必须直接使用 schema 枚举值之一：coding、browsing、communication、entertainment、documents、other；不要输出中文分类名
     - 每组列出时间段和具体活动
     - 合并重复的观察（如连续多次看到同一应用，合并为时间段范围）
     - 优先使用 confirmed 字段；inferred 只能作为低置信活动概括；risks 包含 media_metadata / small_text 时，不要把歌名、歌手、文件名当作确定事实

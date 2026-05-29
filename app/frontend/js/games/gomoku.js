@@ -27,12 +27,17 @@
       this.errorText = '';
       this.sessionId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
       this.startedAt = new Date().toISOString();
+      this.startedAtMs = Date.now();
+      this.lastMoveAtMs = this.startedAtMs;
       this.finishedAt = null;
+      this.finishedAtMs = null;
       this.recorded = false;
+      this.pendingAiTiming = null;
       this.aiThoughts = [];
       this.commentaries = [];
       this.commentaryLoading = false;
       this.lastCommentaryMove = 0;
+      this.activeRecommendation = null;
     }
 
     getState() {
@@ -88,6 +93,11 @@
       if (this.state !== 'playing' || this.aiThinking) return true;
       const metrics = this.lastMetrics;
       if (!metrics) return true;
+      const recommendation = this.recommendationFromPixel(x, y, metrics);
+      if (recommendation) {
+        this.focusRecommendation(recommendation);
+        return true;
+      }
       const cell = this.pointFromPixel(x, y, metrics);
       if (!cell) return true;
       this.cursor = cell;
@@ -129,6 +139,10 @@
       }
       this.aiThinking = true;
       this.message = 'BitCat 正在读棋。';
+      this.pendingAiTiming = {
+        started_at: new Date().toISOString(),
+        started_ms: Date.now(),
+      };
       try {
         const move = await this.host.invoke('cmd_gomoku_ai_move', {
           board: cloneBoard(this.board),
@@ -158,19 +172,36 @@
         this.host.log && this.host.log(`gomoku ai failed: ${e}`);
       } finally {
         this.aiThinking = false;
+        this.pendingAiTiming = null;
       }
     }
 
     attachAiThought(move) {
       const current = this.lastMove;
       if (!current || current.stone !== AI) return;
-      current.ai_message = move.message ? normalizeDisplayCoordinates(move.message) : null;
-      current.ai_thought = normalizeDisplayCoordinates(move.thought || move.message || '这手先稳住局势。');
+      current.ai_message = move.message || null;
+      current.ai_thought = move.thought || move.line_summary || move.message || '这手先稳住局势。';
+      current.ai_lookahead = normalizeLookahead(move);
+      current.ai_reason = move.reason || null;
+      current.ai_risk = move.risk || null;
+      if (this.pendingAiTiming) {
+        const finishedMs = Date.now();
+        current.ai_started_at = this.pendingAiTiming.started_at;
+        current.ai_finished_at = new Date(finishedMs).toISOString();
+        current.ai_elapsed_ms = Math.max(0, finishedMs - this.pendingAiTiming.started_ms);
+      }
       this.aiThoughts.push({
         move: current.move,
         x: current.x,
         y: current.y,
+        played_at: current.played_at,
+        elapsed_ms: current.elapsed_ms,
+        turn_elapsed_ms: current.turn_elapsed_ms,
         text: current.ai_thought,
+        reason: current.ai_reason,
+        risk: current.ai_risk,
+        lookahead: current.ai_lookahead,
+        ai_elapsed_ms: current.ai_elapsed_ms || null,
       });
       this.aiThoughts = this.aiThoughts.slice(-8);
     }
@@ -192,12 +223,15 @@
           if (!commentary) return;
           this.commentaries.push({
             move: requestedMove,
-            summary: normalizeDisplayCoordinates(commentary.summary || ''),
+            summary: commentary.summary || '',
             advantage: commentary.advantage || 'balanced',
             key_points: Array.isArray(commentary.key_points)
-              ? commentary.key_points.map((point) => normalizeDisplayCoordinates(point))
+              ? commentary.key_points.map((point) => formatCommentaryPoint(point)).filter(Boolean)
               : [],
-            suggestion: normalizeDisplayCoordinates(commentary.suggestion || ''),
+            recommendations: Array.isArray(commentary.recommendations)
+              ? commentary.recommendations.map((item) => normalizeRecommendation(item)).filter(Boolean)
+              : [],
+            suggestion: commentary.suggestion || '',
             created_at: new Date().toISOString(),
           });
           this.commentaries = this.commentaries.slice(-5);
@@ -212,7 +246,18 @@
 
     place(x, y, stone) {
       this.board[y][x] = stone;
-      this.lastMove = { x, y, stone, move: this.moves.length + 1 };
+      const nowMs = Date.now();
+      const turnElapsedMs = Math.max(0, nowMs - this.lastMoveAtMs);
+      this.lastMove = {
+        x,
+        y,
+        stone,
+        move: this.moves.length + 1,
+        played_at: new Date(nowMs).toISOString(),
+        elapsed_ms: Math.max(0, nowMs - this.startedAtMs),
+        turn_elapsed_ms: turnElapsedMs,
+      };
+      this.lastMoveAtMs = nowMs;
       this.moves.push(this.lastMove);
       playMoveSound(stone);
       this.logEvent('move', {
@@ -220,6 +265,9 @@
         side: stone === HUMAN ? 'human' : 'ai',
         x,
         y,
+        played_at: this.lastMove.played_at,
+        elapsed_ms: this.lastMove.elapsed_ms,
+        turn_elapsed_ms: this.lastMove.turn_elapsed_ms,
       });
     }
 
@@ -227,6 +275,7 @@
       this.state = result;
       this.message = message || this.message;
       this.finishedAt = this.finishedAt || new Date().toISOString();
+      this.finishedAtMs = this.finishedAtMs || Date.now();
       playFinishSound(result);
       this.recordGame(result);
     }
@@ -243,6 +292,7 @@
         session_id: this.sessionId,
         started_at: this.startedAt,
         finished_at: this.finishedAt || new Date().toISOString(),
+        duration_ms: Math.max(0, (this.finishedAtMs || Date.now()) - this.startedAtMs),
         result,
         score: this.score,
         message: this.message,
@@ -255,8 +305,17 @@
           stone: move.stone,
           x: move.x,
           y: move.y,
-          ai_message: move.ai_message ? normalizeDisplayCoordinates(move.ai_message) : null,
-          ai_thought: move.ai_thought ? normalizeDisplayCoordinates(move.ai_thought) : null,
+          played_at: move.played_at || null,
+          elapsed_ms: Number.isFinite(move.elapsed_ms) ? move.elapsed_ms : null,
+          turn_elapsed_ms: Number.isFinite(move.turn_elapsed_ms) ? move.turn_elapsed_ms : null,
+          ai_message: move.ai_message || null,
+          ai_thought: move.ai_thought || null,
+          ai_reason: move.ai_reason || null,
+          ai_risk: move.ai_risk || null,
+          ai_lookahead: move.ai_lookahead || null,
+          ai_started_at: move.ai_started_at || null,
+          ai_finished_at: move.ai_finished_at || null,
+          ai_elapsed_ms: Number.isFinite(move.ai_elapsed_ms) ? move.ai_elapsed_ms : null,
         })),
         ai_thoughts: this.aiThoughts,
         commentaries: this.commentaries,
@@ -286,6 +345,20 @@
       if (Math.hypot(px - ix, py - iy) > board.gap * 0.48) return null;
       return { x, y };
     }
+
+    recommendationFromPixel(px, py, metrics) {
+      const layout = this.lastCommentaryLayout || [];
+      return layout.find((item) => px >= item.x && px <= item.x + item.w && py >= item.y && py <= item.y + item.h)?.recommendation || null;
+    }
+
+    focusRecommendation(recommendation) {
+      if (!recommendation || !Array.isArray(recommendation.coord)) return;
+      const [x, y] = recommendation.coord;
+      if (!inBounds(x, y)) return;
+      this.cursor = { x, y };
+      this.activeRecommendation = { x, y };
+      this.message = recommendation.text || '已跳到推荐点。';
+    }
   }
 
   function drawBoard(ctx, metrics, engine) {
@@ -295,6 +368,7 @@
     drawGomokuBackdrop(ctx, metrics);
     drawBoardSurface(ctx, board);
     drawCoordinates(ctx, board);
+    engine.lastCommentaryLayout = [];
     drawSidePanels(ctx, metrics, board, engine);
 
     ctx.strokeStyle = 'rgba(70, 48, 28, 0.72)';
@@ -325,6 +399,7 @@
       }
     }
 
+    drawCommentaryMarkers(ctx, board, engine);
     drawCursor(ctx, board, engine.cursor);
     if (engine.lastMove) drawLastMove(ctx, board, engine.lastMove);
     drawStatusPanel(ctx, metrics, board, engine);
@@ -395,8 +470,9 @@
   function drawSidePanels(ctx, metrics, board, engine) {
     if (metrics.width < 940) return;
     const gap = 24;
-    const panelW = Math.min(250, Math.max(180, (metrics.width - board.size) / 2 - gap * 1.5));
-    const panelH = Math.min(board.size, 560);
+    const availableSide = Math.max(180, (metrics.width - board.size) / 2 - gap * 1.2);
+    const panelW = Math.min(360, availableSide);
+    const panelH = Math.min(board.size + 36, metrics.height - 96);
     const y = board.y + Math.max(0, (board.size - panelH) / 2);
     const leftX = Math.max(18, board.x - gap - panelW);
     const rightX = Math.min(metrics.width - panelW - 18, board.x + board.size + gap);
@@ -413,7 +489,7 @@
     ctx.lineWidth = 1;
     ctx.stroke();
     ctx.fillStyle = '#f7fbff';
-    ctx.font = '800 15px "Microsoft YaHei", "Segoe UI", sans-serif';
+    ctx.font = '800 17px "Microsoft YaHei", "Segoe UI", sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillText(title, x + 16, y + 14);
@@ -428,22 +504,41 @@
     ctx.textBaseline = 'top';
     if (!items.length) {
       ctx.fillStyle = 'rgba(226, 235, 242, 0.62)';
-      ctx.font = '600 13px "Microsoft YaHei", "Segoe UI", sans-serif';
-      wrapText(ctx, '等我落子后，这里会记录每一手的想法。', x + 16, y + 48, w - 32, 20, 3);
+      ctx.font = '600 15px "Microsoft YaHei", "Segoe UI", sans-serif';
+      wrapText(ctx, '等我落子后，这里会记录每一手的想法。', x + 16, y + 50, w - 32, 22, 3);
       ctx.restore();
       return;
     }
-    let cy = y + 48;
-    items.slice(-7).forEach((item) => {
+    let cy = y + 52;
+    items.slice(-4).forEach((item) => {
       ctx.fillStyle = 'rgba(232, 196, 114, 0.95)';
-      ctx.font = '800 12px "Microsoft YaHei", "Segoe UI", sans-serif';
-      ctx.fillText(`第 ${item.move} 手  (${item.x + 1}, ${item.y + 1})`, x + 16, cy);
-      cy += 19;
+      ctx.font = '800 14px "Microsoft YaHei", "Segoe UI", sans-serif';
+      ctx.fillText(`第 ${item.move} 手  ${formatCoord([item.x, item.y])}${item.ai_elapsed_ms ? ` · ${formatDuration(item.ai_elapsed_ms)}` : ''}`, x + 16, cy);
+      cy += 22;
+      const line = formatThoughtLine(item);
+      if (line) {
+        ctx.fillStyle = 'rgba(132, 206, 168, 0.9)';
+        ctx.font = '800 13px "Microsoft YaHei", "Segoe UI", sans-serif';
+        cy += wrapText(ctx, line, x + 16, cy, w - 32, 18, 3) + 6;
+      }
       ctx.fillStyle = 'rgba(230, 238, 245, 0.82)';
-      ctx.font = '600 12px "Microsoft YaHei", "Segoe UI", sans-serif';
-      cy += wrapText(ctx, item.text || '这手先稳住局势。', x + 16, cy, w - 32, 18, 3) + 12;
+      ctx.font = '600 14px "Microsoft YaHei", "Segoe UI", sans-serif';
+      cy += wrapText(ctx, item.text || '这手先稳住局势。', x + 16, cy, w - 32, 21, 5) + 14;
     });
     ctx.restore();
+  }
+
+  function formatThoughtLine(item) {
+    const parts = [];
+    if (item.reason) parts.push(moveReasonLabel(item.reason));
+    if (item.risk) parts.push(moveRiskLabel(item.risk));
+    const lookahead = item.lookahead || {};
+    const replies = [];
+    if (lookahead.black_best_reply) replies.push(`黑棋 ${formatCoord(lookahead.black_best_reply)}`);
+    if (lookahead.white_followup) replies.push(`白棋 ${formatCoord(lookahead.white_followup)}`);
+    if (replies.length) parts.push(`预读 ${replies.join(' → ')}`);
+    if (lookahead.line_eval) parts.push(lineEvalLabel(lookahead.line_eval));
+    return parts.filter(Boolean).join(' · ');
   }
 
   function drawCommentaryPanel(ctx, x, y, w, h, engine) {
@@ -452,32 +547,49 @@
     ctx.save();
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    let cy = y + 48;
+    let cy = y + 52;
     if (!latest) {
+      engine.lastCommentaryLayout = [];
       ctx.fillStyle = 'rgba(226, 235, 242, 0.62)';
-      ctx.font = '600 13px "Microsoft YaHei", "Segoe UI", sans-serif';
-      wrapText(ctx, engine.commentaryLoading ? '正在观察棋势。' : '满两回合后，我会隔一手点评一次。', x + 16, cy, w - 32, 20, 4);
+      ctx.font = '600 15px "Microsoft YaHei", "Segoe UI", sans-serif';
+      wrapText(ctx, engine.commentaryLoading ? '正在观察棋势。' : '满两回合后，我会隔一手点评一次。', x + 16, cy, w - 32, 22, 4);
       ctx.restore();
       return;
     }
     ctx.fillStyle = advantageColor(latest.advantage);
-    ctx.font = '800 12px "Microsoft YaHei", "Segoe UI", sans-serif';
+    ctx.font = '800 14px "Microsoft YaHei", "Segoe UI", sans-serif';
     ctx.fillText(`${advantageLabel(latest.advantage)} · 第 ${latest.move} 手`, x + 16, cy);
-    cy += 24;
+    cy += 27;
     ctx.fillStyle = '#f7fbff';
-    ctx.font = '700 13px "Microsoft YaHei", "Segoe UI", sans-serif';
-    cy += wrapText(ctx, latest.summary || '局势仍在展开。', x + 16, cy, w - 32, 20, 4) + 12;
+    ctx.font = '700 15px "Microsoft YaHei", "Segoe UI", sans-serif';
+    cy += wrapText(ctx, latest.summary || '局势仍在展开。', x + 16, cy, w - 32, 22, 5) + 14;
+    const bottom = y + h - 42;
+    const recommendations = latest.recommendations || [];
+    recommendations.slice(0, 3).forEach((item) => {
+      if (cy >= bottom) return;
+      const rowY = cy;
+      const label = `${recommendationPriorityLabel(item.priority)} ${recommendationReasonLabel(item.reason)} ${formatCoord(item.coord)} ${item.text || ''}`.trim();
+      ctx.fillStyle = recommendationColor(item.priority);
+      ctx.font = '800 14px "Microsoft YaHei", "Segoe UI", sans-serif';
+      const maxLines = Math.max(1, Math.min(5, Math.floor((bottom - cy) / 21)));
+      const used = wrapText(ctx, `→ ${label}`, x + 16, cy, w - 32, 21, maxLines);
+      engine.lastCommentaryLayout.push({ x: x + 10, y: rowY - 3, w: w - 20, h: used + 6, recommendation: item });
+      cy += used + 8;
+    });
     const points = latest.key_points || [];
     points.slice(0, 3).forEach((point) => {
+      if (cy >= bottom) return;
       ctx.fillStyle = 'rgba(230, 238, 245, 0.76)';
-      ctx.font = '600 12px "Microsoft YaHei", "Segoe UI", sans-serif';
-      cy += wrapText(ctx, `· ${point}`, x + 16, cy, w - 32, 18, 2) + 6;
+      ctx.font = '600 14px "Microsoft YaHei", "Segoe UI", sans-serif';
+      const maxLines = Math.max(1, Math.min(5, Math.floor((bottom - cy) / 21)));
+      cy += wrapText(ctx, `· ${point}`, x + 16, cy, w - 32, 21, maxLines) + 7;
     });
-    if (latest.suggestion) {
+    if (latest.suggestion && cy < bottom) {
       cy += 6;
       ctx.fillStyle = 'rgba(232, 196, 114, 0.92)';
-      ctx.font = '700 12px "Microsoft YaHei", "Segoe UI", sans-serif';
-      wrapText(ctx, latest.suggestion, x + 16, cy, w - 32, 18, 3);
+      ctx.font = '700 14px "Microsoft YaHei", "Segoe UI", sans-serif';
+      const maxLines = Math.max(2, Math.floor((bottom - cy) / 21));
+      wrapText(ctx, latest.suggestion, x + 16, cy, w - 32, 21, maxLines);
     }
     if (engine.commentaryLoading) {
       ctx.fillStyle = 'rgba(226, 235, 242, 0.5)';
@@ -497,6 +609,149 @@
     if (advantage === 'human') return 'rgba(245, 248, 251, 0.94)';
     if (advantage === 'ai') return 'rgba(232, 196, 114, 0.94)';
     return 'rgba(132, 206, 168, 0.94)';
+  }
+
+  function formatCommentaryPoint(point) {
+    if (!point) return '';
+    if (typeof point === 'string') return point;
+    const side = commentarySideLabel(point.side);
+    const kind = commentaryKindLabel(point.kind);
+    const coord = Array.isArray(point.coord) && point.coord.length === 2 ? `(${Number(point.coord[0]) + 1}, ${Number(point.coord[1]) + 1})` : '';
+    const text = point.text || '';
+    return [side, kind, coord, text].filter(Boolean).join(' ');
+  }
+
+  function normalizeRecommendation(item) {
+    if (!item || !Array.isArray(item.coord) || item.coord.length !== 2) return null;
+    const x = Number(item.coord[0]);
+    const y = Number(item.coord[1]);
+    if (!inBounds(x, y)) return null;
+    return {
+      coord: [x, y],
+      priority: item.priority || 'interesting',
+      reason: item.reason || 'stabilize',
+      text: item.text || '',
+    };
+  }
+
+  function normalizeLookahead(lookahead) {
+    if (!lookahead || !Array.isArray(lookahead.lookahead_candidate) || lookahead.lookahead_candidate.length !== 2) return null;
+    return {
+      candidate: normalizeCoord(lookahead.lookahead_candidate),
+      black_best_reply: normalizeCoord(lookahead.black_best_reply),
+      white_followup: normalizeCoord(lookahead.white_followup),
+      line_eval: lookahead.line_eval || null,
+    };
+  }
+
+  function normalizeCoord(coord) {
+    if (!Array.isArray(coord) || coord.length !== 2) return null;
+    const x = Number(coord[0]);
+    const y = Number(coord[1]);
+    return inBounds(x, y) ? [x, y] : null;
+  }
+
+  function drawCommentaryMarkers(ctx, board, engine) {
+    const latest = engine.commentaries && engine.commentaries[engine.commentaries.length - 1];
+    const recommendations = latest && Array.isArray(latest.recommendations) ? latest.recommendations : [];
+    if (!recommendations.length) return;
+    ctx.save();
+    recommendations.slice(0, 3).forEach((item, index) => {
+      const [gx, gy] = item.coord || [];
+      if (!inBounds(gx, gy)) return;
+      const x = board.left + gx * board.gap;
+      const y = board.top + gy * board.gap;
+      const active = engine.activeRecommendation && engine.activeRecommendation.x === gx && engine.activeRecommendation.y === gy;
+      const r = board.gap * (active ? 0.5 : 0.42);
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.strokeStyle = recommendationColor(item.priority);
+      ctx.lineWidth = active ? 3 : 2;
+      ctx.setLineDash(item.reason === 'block' ? [5, 4] : []);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = recommendationColor(item.priority);
+      ctx.font = `800 ${Math.max(10, board.gap * 0.28)}px "Microsoft YaHei", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(index + 1), x, y);
+    });
+    ctx.restore();
+  }
+
+  function formatCoord(coord) {
+    return Array.isArray(coord) && coord.length === 2 ? `(${Number(coord[0]) + 1}, ${Number(coord[1]) + 1})` : '';
+  }
+
+  function recommendationPriorityLabel(priority) {
+    if (priority === 'urgent') return '急所';
+    if (priority === 'best') return '首选';
+    return '可选';
+  }
+
+  function recommendationReasonLabel(reason) {
+    if (reason === 'win') return '成五';
+    if (reason === 'block') return '防守';
+    if (reason === 'fork') return '造双';
+    if (reason === 'extend') return '延伸';
+    return '稳形';
+  }
+
+  function moveReasonLabel(reason) {
+    if (reason === 'win_now') return '成五';
+    if (reason === 'block_immediate_win') return '挡冲五';
+    if (reason === 'create_fork') return '造双';
+    if (reason === 'block_fork') return '挡双';
+    if (reason === 'desperate_block') return '强防';
+    return '布局';
+  }
+
+  function moveRiskLabel(risk) {
+    if (risk === 'safe') return '安全';
+    if (risk === 'allows_human_single_threat') return '留单威胁';
+    if (risk === 'allows_human_fork') return '防双风险';
+    if (risk === 'forced_loss') return '败势';
+    return '';
+  }
+
+  function lineEvalLabel(evalLabel) {
+    if (evalLabel === 'white_win') return '白棋胜势';
+    if (evalLabel === 'stable') return '局面稳定';
+    if (evalLabel === 'dangerous') return '仍有危险';
+    if (evalLabel === 'losing') return '难以挽回';
+    return '变化未明';
+  }
+
+  function formatDuration(ms) {
+    if (!Number.isFinite(ms)) return '';
+    if (ms < 1000) return `${Math.max(0, Math.round(ms))}ms`;
+    if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  function recommendationColor(priority) {
+    if (priority === 'urgent') return 'rgba(238, 106, 86, 0.96)';
+    if (priority === 'best') return 'rgba(232, 196, 114, 0.96)';
+    return 'rgba(96, 190, 214, 0.92)';
+  }
+
+  function commentarySideLabel(side) {
+    if (side === 'black') return '黑棋';
+    if (side === 'white') return '白棋';
+    if (side === 'both') return '双方';
+    return '';
+  }
+
+  function commentaryKindLabel(kind) {
+    if (kind === 'immediate_win') return '冲五';
+    if (kind === 'fork') return '双威胁';
+    if (kind === 'block') return '防守点';
+    if (kind === 'extension') return '延伸';
+    if (kind === 'shape') return '棋形';
+    return '';
   }
 
   function wrapText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
@@ -606,7 +861,8 @@
     ctx.strokeStyle = 'rgba(255,255,255,0.08)';
     ctx.stroke();
 
-    const turnText = engine.aiThinking ? 'BitCat 思考中' : '轮到你落子';
+    const totalMs = Math.max(0, (engine.finishedAtMs || Date.now()) - engine.startedAtMs);
+    const turnText = `${engine.aiThinking ? 'BitCat 思考中' : '轮到你落子'} · 第 ${engine.moves.length} 手 · 本局 ${formatDuration(totalMs)}`;
     ctx.fillStyle = '#f7fbff';
     ctx.font = '800 15px "Microsoft YaHei", "Segoe UI", sans-serif';
     ctx.textAlign = 'left';
@@ -709,17 +965,6 @@
 
   function cloneBoard(board) {
     return board.map((row) => row.slice());
-  }
-
-  function normalizeDisplayCoordinates(text) {
-    return String(text || '').replace(/\((\d{1,2}),\s*(\d{1,2})\)/g, (match, rawX, rawY) => {
-      const x = Number(rawX);
-      const y = Number(rawY);
-      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= BOARD_SIZE || y >= BOARD_SIZE) {
-        return match;
-      }
-      return `(${x + 1}, ${y + 1})`;
-    });
   }
 
   function clamp(n, min, max) {
