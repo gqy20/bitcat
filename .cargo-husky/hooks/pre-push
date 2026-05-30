@@ -1,12 +1,12 @@
 #!/bin/sh
 #
-# pre-push hook: 推送前跑更严格的检查，拦截明显问题�?
-# - fmt 检�?
-# - clippy 零警�?
-# - 快速单测（�?core，跳�?proptest，约 20s�?
+# pre-push hook: run stricter checks before pushing.
+# - fmt check
+# - clippy with warnings denied
+# - fast core tests, skipping proptest
 #
-# 跳过 hook：git push --no-verify
-# 完全禁用 cargo-husky 安装：CARGO_HUSKY_DONT_INSTALL_HOOKS=true cargo test
+# Skip once with: git push --no-verify
+# Disable cargo-husky install with: CARGO_HUSKY_DONT_INSTALL_HOOKS=true cargo test
 
 set -e
 
@@ -17,13 +17,11 @@ echo '[pre-push] (2/3) cargo clippy --workspace -- -D warnings'
 cargo clippy --workspace -- -D warnings
 
 echo '[pre-push] (3/3) cargo nextest run (core, skip proptest)'
-# 需�?cargo-nextest，未装时回退�?cargo test
 if command -v cargo-nextest >/dev/null 2>&1; then
     PROPTEST_CASES=32 cargo nextest run -p bitcat-core -E 'not test(/prop_/)'
 else
-    echo '[pre-push] cargo-nextest 未安装，回退�?cargo test（较慢）'
+    echo '[pre-push] cargo-nextest is not installed; falling back to cargo test'
     cargo test -p bitcat-core
 fi
 
-echo '[pre-push] 全部通过 �?
-
+echo '[pre-push] all checks passed'
