@@ -1089,7 +1089,13 @@ pub fn run_ai_chat(
         String::new()
     };
     let long_term_ctx = match core.long_term.lock() {
-        Ok(g) => g.retrieve(msg, long_term_budget_chars),
+        Ok(g) => g.retrieve_with(
+            &bitcat_core::memory::LongTermMemoryQuery {
+                text: msg.to_string(),
+                ..Default::default()
+            },
+            long_term_budget_chars,
+        ),
         Err(e) => {
             warn!(error = %e, "long_term 锁中毒，跳过上下文");
             return;

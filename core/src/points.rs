@@ -598,17 +598,17 @@ pub fn award(kind: PointsEventKind, extra: Option<&str>) {
     let record = PointsEventRecord::new(kind, extra);
 
     // 1. 追加 JSONL 明细（审计用途）
-    if let Ok(path) = points_events_path() {
-        if let Err(e) = crate::logging::append_jsonl_path(&path, &record) {
-            warn!(error = %e, "points event jsonl write failed");
-        }
+    if let Ok(path) = points_events_path()
+        && let Err(e) = crate::logging::append_jsonl_path(&path, &record)
+    {
+        warn!(error = %e, "points event jsonl write failed");
     }
 
     // 2. 更新聚合状态（原子写入）
-    if let Ok(path) = points_state_path() {
-        if let Err(e) = update_state(&path, &record) {
-            warn!(error = %e, "points state update failed");
-        }
+    if let Ok(path) = points_state_path()
+        && let Err(e) = update_state(&path, &record)
+    {
+        warn!(error = %e, "points state update failed");
     }
 }
 
@@ -617,10 +617,10 @@ pub fn award(kind: PointsEventKind, extra: Option<&str>) {
 /// app 层会在合适的时机通过 `award()` 批量同步状态。
 pub fn record_event(kind: PointsEventKind, extra: Option<&str>) {
     let record = PointsEventRecord::new(kind, extra);
-    if let Ok(path) = points_events_path() {
-        if let Err(e) = crate::logging::append_jsonl_path(&path, &record) {
-            warn!(error = %e, "points event record failed");
-        }
+    if let Ok(path) = points_events_path()
+        && let Err(e) = crate::logging::append_jsonl_path(&path, &record)
+    {
+        warn!(error = %e, "points event record failed");
     }
 }
 
@@ -783,7 +783,7 @@ fn load_state(path: &Path) -> Result<PointsState, String> {
     }
     let content = fs::read_to_string(path).map_err(|e| format!("读取积分状态失败: {e}"))?;
     let content = content.trim_start_matches('\u{feff}');
-    serde_json::from_str(&content).map_err(|e| format!("解析积分状态失败: {e}"))
+    serde_json::from_str(content).map_err(|e| format!("解析积分状态失败: {e}"))
 }
 
 fn save_state(path: &Path, state: &PointsState) -> Result<(), String> {
@@ -802,7 +802,7 @@ pub fn read_recent_events(limit: usize) -> Result<Vec<PointsEventRecord>, String
     use std::io::BufRead;
     let reader = std::io::BufReader::new(file);
     let mut events: Vec<PointsEventRecord> = Vec::new();
-    for line in reader.lines().flatten() {
+    for line in reader.lines().map_while(Result::ok) {
         if let Ok(record) = serde_json::from_str::<PointsEventRecord>(&line) {
             events.push(record);
         }
@@ -1070,7 +1070,7 @@ mod tests {
         use std::io::BufRead;
         let reader = std::io::BufReader::new(file);
         let mut all_events: Vec<PointsEventRecord> = Vec::new();
-        for line in reader.lines().flatten() {
+        for line in reader.lines().map_while(Result::ok) {
             if let Ok(record) = serde_json::from_str::<PointsEventRecord>(&line) {
                 all_events.push(record);
             }

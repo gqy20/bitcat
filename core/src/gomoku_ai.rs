@@ -132,20 +132,15 @@ pub enum GomokuMoveRisk {
 }
 
 /// Coarse two-ply evaluation label for a candidate line.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GomokuLineEval {
     WhiteWin,
     Stable,
+    #[default]
     Unclear,
     Dangerous,
     Losing,
-}
-
-impl Default for GomokuLineEval {
-    fn default() -> Self {
-        Self::Unclear
-    }
 }
 
 #[derive(Debug, Serialize)]
@@ -268,35 +263,25 @@ pub enum GomokuCommentaryKind {
 }
 
 /// Priority labels accepted by commentary recommendations.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GomokuRecommendationPriority {
     Best,
     Urgent,
+    #[default]
     Interesting,
 }
 
-impl Default for GomokuRecommendationPriority {
-    fn default() -> Self {
-        Self::Interesting
-    }
-}
-
 /// Tactical reason labels accepted by commentary recommendations.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GomokuRecommendationReason {
     Win,
     Block,
     Fork,
     Extend,
+    #[default]
     Stabilize,
-}
-
-impl Default for GomokuRecommendationReason {
-    fn default() -> Self {
-        Self::Stabilize
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -638,7 +623,7 @@ pub async fn comment_position(
             })?;
     let elapsed = start.elapsed();
     let commentary = complete_commentary(board, response.commentary.clone().sanitized())?;
-    validate_commentary(board, &commentary).map_err(|e| {
+    validate_commentary(board, &commentary).inspect_err(|e| {
         record_gomoku_commentary_raw_event(
             "commentary_validation_error",
             ai_config.model.as_str(),
@@ -662,7 +647,6 @@ pub async fn comment_position(
             1,
             Some(e.as_str()),
         );
-        e
     })?;
     record_gomoku_commentary_raw_event(
         "commentary_success",
@@ -1802,9 +1786,9 @@ fn build_position_prompt(
         .iter()
         .map(|row| {
             row.iter()
-                .map(|cell| match cell {
-                    &HUMAN => 'B',
-                    &AI => 'W',
+                .map(|cell| match *cell {
+                    HUMAN => 'B',
+                    AI => 'W',
                     _ => '.',
                 })
                 .collect::<String>()
@@ -1886,9 +1870,9 @@ Tactical facts:\n\
 
 fn list_stones(board: &[Vec<u8>], stone: u8) -> Vec<GomokuPoint> {
     let mut points = Vec::new();
-    for y in 0..BOARD_SIZE {
-        for x in 0..BOARD_SIZE {
-            if board[y][x] == stone {
+    for (y, row) in board.iter().enumerate().take(BOARD_SIZE) {
+        for (x, cell) in row.iter().enumerate().take(BOARD_SIZE) {
+            if *cell == stone {
                 points.push(GomokuPoint { x, y });
             }
         }
@@ -2213,9 +2197,9 @@ fn human_fork_replies(board_after_ai: &[Vec<u8>]) -> Vec<HumanForkReply> {
 
 fn empty_points(board: &[Vec<u8>]) -> Vec<GomokuPoint> {
     let mut points = Vec::new();
-    for y in 0..BOARD_SIZE {
-        for x in 0..BOARD_SIZE {
-            if board[y][x] == 0 {
+    for (y, row) in board.iter().enumerate().take(BOARD_SIZE) {
+        for (x, cell) in row.iter().enumerate().take(BOARD_SIZE) {
+            if *cell == 0 {
                 points.push(GomokuPoint { x, y });
             }
         }
