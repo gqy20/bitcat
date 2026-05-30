@@ -331,8 +331,8 @@ mod tests {
     fn test_load_panel_actions_from_yml() {
         let config = bitcat_core::panel_action::PanelActionConfig::load(PANEL_CONFIG_PATH).unwrap();
         assert_eq!(config.defaults.width, 480);
-        assert_eq!(config.defaults.height, 360);
-        assert_eq!(config.defaults.columns, 2);
+        assert_eq!(config.defaults.height, 420);
+        assert_eq!(config.defaults.columns, 3);
         assert_eq!(config.defaults.rows, 2);
 
         for action_id in ["game", "memory", "catch", "battle", "gomoku"] {

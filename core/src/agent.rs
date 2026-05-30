@@ -40,7 +40,7 @@ use rig::tool::Tool;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tracing::{debug, info, instrument, trace};
+use tracing::{debug, info, instrument, trace, warn};
 
 /// AI Agent 多轮工具调用的最大回合数。
 ///
@@ -116,6 +116,197 @@ pub enum AgentStreamEvent {
 pub enum AgentStreamStatus {
     AiWriting,
     ToolPreparing,
+}
+
+/// 对话流错误分类：区分可恢复（已有部分回复）和致命错误。
+///
+/// 设计参考 gomoku_ai.rs 的 retry-with-feedback 模式，但适配流式对话场景——
+/// 对话有副作用工具（shell、create_reminder），不能像五子棋那样盲目 retry，
+/// 因此重点放在**错误分类 + 可恢复错误的 fallback + 诊断日志**。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ChatError {
+    /// 可恢复的流错误：模型已输出部分内容后异常终止（如 SSE [DONE]）。
+    /// 调用方可选择使用已累积的文本作为部分回复。
+    RecoverableStream {
+        reason: String,
+        original: String,
+        accumulated_chars: usize,
+        chunk_count: u32,
+        tool_call_count: u32,
+    },
+    /// 致命错误：网络、认证、限流、max_turns 等，无法从已有内容恢复。
+    Fatal {
+        reason: String,
+        original: String,
+        accumulated_chars: usize,
+        tool_call_count: u32,
+    },
+}
+
+impl ChatError {
+    /// 短错误类别标识，用于结构化日志字段。
+    pub fn short_kind(&self) -> &'static str {
+        match self {
+            Self::RecoverableStream { .. } => "recoverable",
+            Self::Fatal { .. } => "fatal",
+        }
+    }
+
+    /// 是否为可恢复错误（有累积文本时可 fallback 到 Ok）。
+    pub fn is_recoverable(&self) -> bool {
+        matches!(self, Self::RecoverableStream { .. })
+    }
+
+    /// 原始 rig 错误文本，用于诊断日志（需用 log_preview 截断后再输出）。
+    pub fn original_message(&self) -> &str {
+        match self {
+            Self::RecoverableStream { original, .. } | Self::Fatal { original, .. } => original,
+        }
+    }
+
+    /// 已累积的字符数（用于判断是否有足够内容 fallback）。
+    pub fn accumulated_chars(&self) -> usize {
+        match self {
+            Self::RecoverableStream {
+                accumulated_chars, ..
+            }
+            | Self::Fatal {
+                accumulated_chars, ..
+            } => *accumulated_chars,
+        }
+    }
+
+    /// 兼容旧 `Result<String, String>` 调用点的快速序列化。
+    ///
+    /// 新代码应优先用 `match` 解析 enum 以获得结构化信息；此方法仅供
+    /// 尚未迁移的调用点做最小改动适配。
+    pub fn to_display_string(&self) -> String {
+        match self {
+            Self::RecoverableStream {
+                reason,
+                accumulated_chars,
+                ..
+            } => {
+                format!("AI 流错误(可恢复,{reason},{accumulated_chars}字符)")
+            }
+            Self::Fatal { reason, .. } => format!("AI 流错误({reason})"),
+        }
+    }
+}
+
+impl std::fmt::Display for ChatError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.to_display_string())
+    }
+}
+
+/// 将 rig 原始流错误字符串分类为 [`ChatError`]。
+///
+/// 分类策略基于错误文本的特征匹配（不依赖 rig 内部错误类型枚举，
+/// 因为 rig 的 `StreamingError` 通过 `format!` 转成字符串后丢失了类型信息）。
+///
+/// # 分类规则
+///
+/// | 特征 | 分类 | 说明 |
+/// |------|------|------|
+/// | `[DONE]` / `failed to parse json` + `data:` | `RecoverableStream(sse_parse)` | glm-5v-turbo 多轮 round 2 常见 |
+/// | `MaxTurn` / `max_turn` | `Fatal(max_turns)` | rig 多轮超限 |
+/// | timeout / connection / socket / network / dns / eof | `Fatal(network)` | 网络/连接类 |
+/// | unauthorized / 401 / 403 / authentication / api_key | `Fatal(auth)` | 认证/权限 |
+/// | rate_limit / 429 / too many requests | `Fatal(rate_limit)` | 限流 |
+/// | 未知 + accumulated > 20 字符 | `RecoverableStream(unknown_with_content)` | 倾向视为可恢复 |
+/// | 其他 | `Fatal(unknown)` | 默认致命 |
+fn classify_stream_error(
+    raw: &str,
+    accumulated_chars: usize,
+    chunk_count: u32,
+    tool_call_count: u32,
+) -> ChatError {
+    let lower = raw.to_lowercase();
+
+    // [DONE] / SSE parse — glm-5v-turbo 在多轮 tool result 后直接发 [DONE] 关闭流
+    if lower.contains("[done]")
+        || (lower.contains("failed to parse json") && lower.contains("data:"))
+    {
+        return ChatError::RecoverableStream {
+            reason: "sse_parse".into(),
+            original: raw.to_string(),
+            accumulated_chars,
+            chunk_count,
+            tool_call_count,
+        };
+    }
+
+    // MaxTurns — rig 内部多轮超限
+    if lower.contains("maxturn") || lower.contains("max_turn") {
+        return ChatError::Fatal {
+            reason: "max_turns".into(),
+            original: raw.to_string(),
+            accumulated_chars,
+            tool_call_count,
+        };
+    }
+
+    // 网络 / 连接
+    if lower.contains("timeout")
+        || lower.contains("connection")
+        || lower.contains("socket")
+        || lower.contains("network")
+        || lower.contains("dns")
+        || lower.contains("eof")
+    {
+        return ChatError::Fatal {
+            reason: "network".into(),
+            original: raw.to_string(),
+            accumulated_chars,
+            tool_call_count,
+        };
+    }
+
+    // 认证 / 权限
+    if lower.contains("unauthorized")
+        || lower.contains("401")
+        || lower.contains("403")
+        || lower.contains("authentication")
+        || lower.contains("api_key")
+    {
+        return ChatError::Fatal {
+            reason: "auth".into(),
+            original: raw.to_string(),
+            accumulated_chars,
+            tool_call_count,
+        };
+    }
+
+    // 限流
+    if lower.contains("rate_limit") || lower.contains("429") || lower.contains("too many requests")
+    {
+        return ChatError::Fatal {
+            reason: "rate_limit".into(),
+            original: raw.to_string(),
+            accumulated_chars,
+            tool_call_count,
+        };
+    }
+
+    // 默认：如果已有大量文本累积，倾向视为可恢复（模型说了些话但没正常结束）
+    if accumulated_chars > 20 {
+        return ChatError::RecoverableStream {
+            reason: "unknown_with_content".into(),
+            original: raw.to_string(),
+            accumulated_chars,
+            chunk_count,
+            tool_call_count,
+        };
+    }
+
+    ChatError::Fatal {
+        reason: "unknown".into(),
+        original: raw.to_string(),
+        accumulated_chars,
+        tool_call_count,
+    }
 }
 
 const TOOL_FAILURE_STOP_PREFIX: &str = "tool_failure_stop:";
@@ -337,17 +528,25 @@ impl PetAgent {
 
     /// 一次性对话（非流式），等待模型返回完整回复。
     /// 适用于不需要实时显示中间结果的场景。
-    pub async fn chat(&self, message: &str) -> Result<String, String> {
+    pub async fn chat(&self, message: &str) -> Result<String, ChatError> {
         self.agent
             .prompt(message)
             .max_turns(MAX_AGENT_TURNS)
             .await
-            .map_err(|e| format!("AI 对话失败: {e}"))
+            .map_err(|e| {
+                let raw = e.to_string();
+                classify_stream_error(&raw, 0, 0, 0)
+            })
     }
 
     /// 流式对话：文本和工具调用都通过结构化事件发出，返回累积的完整回复。
+    ///
+    /// 错误处理策略：
+    /// - 可恢复错误（如 SSE `[DONE]`）+ 已有累积文本 → 返回 `Ok(accumulated)` 而非报错
+    /// - 致命错误（网络、认证等）→ 返回 `Err(ChatError::Fatal)` 供调用方生成友好消息
+    /// - 每条错误都输出结构化诊断日志（session_id / error_kind / accumulated_chars 等）
     #[instrument(skip(self, message, on_event), fields(msg_chars = message.chars().count()))]
-    pub async fn chat_stream<F>(&self, message: &str, mut on_event: F) -> Result<String, String>
+    pub async fn chat_stream<F>(&self, message: &str, mut on_event: F) -> Result<String, ChatError>
     where
         F: FnMut(AgentStreamEvent),
     {
@@ -421,6 +620,18 @@ impl PetAgent {
                         )
                         .with_extra(format!("turn={final_response_count}")),
                     );
+
+                    // 兜底：某些 provider 可能在 FinalResponse 中才暴露完整文本，
+                    // 或 multi-turn 末轮的文本仅出现在此处。安全追加（去重）。
+                    let final_text = res.response();
+                    if !final_text.is_empty() && !accumulated.ends_with(final_text) {
+                        info!(
+                            final_text_chars = final_text.len(),
+                            "appending final response text"
+                        );
+                        accumulated.push_str(final_text);
+                    }
+
                     info!(
                         chars = res.response().len(),
                         input_tokens = usage.input_tokens,
@@ -455,7 +666,12 @@ impl PetAgent {
                         );
                         on_event(AgentStreamEvent::Tool { event });
                         if let Some(message) = stop_message {
-                            return Err(message);
+                            return Err(ChatError::Fatal {
+                                reason: "tool_failure_stop".into(),
+                                original: message,
+                                accumulated_chars: accumulated.chars().count(),
+                                tool_call_count,
+                            });
                         }
                     } else {
                         debug!(internal_call_id, "tool result without planned event");
@@ -464,7 +680,45 @@ impl PetAgent {
                 Ok(other) => {
                     debug!(item = ?other, "其他 stream item");
                 }
-                Err(e) => return Err(format!("AI 流错误: {e}")),
+                Err(e) => {
+                    let error_str = e.to_string();
+                    let acc_chars = accumulated.chars().count();
+
+                    // 分类错误
+                    let classified =
+                        classify_stream_error(&error_str, acc_chars, chunk_count, tool_call_count);
+
+                    // 结构化诊断日志（每条错误都记录，方便后续复盘）
+                    warn!(
+                        session_id = %session_id,
+                        error_kind = %classified.short_kind(),
+                        error_reason = %match &classified {
+                            ChatError::RecoverableStream { reason, .. } | ChatError::Fatal { reason, .. } => reason.as_str(),
+                        },
+                        error_original = %crate::logging::log_preview(&error_str, 200),
+                        accumulated_chars = acc_chars,
+                        chunk_count,
+                        tool_call_count,
+                        final_response_count,
+                        "chat stream error"
+                    );
+
+                    // 可恢复错误 + 有累积文本 → 返回已有内容而非报错
+                    if classified.is_recoverable() && !accumulated.is_empty() {
+                        info!(
+                            recovered_chars = acc_chars,
+                            reason = %match &classified {
+                                ChatError::RecoverableStream { reason, .. } => reason.as_str(),
+                                _ => unreachable!(),
+                            },
+                            "recovering from stream error, returning accumulated text"
+                        );
+                        return Ok(accumulated);
+                    }
+
+                    // 致命错误或无累积文本 → 返回分类后的结构化错误
+                    return Err(classified);
+                }
             }
         }
         info!(
@@ -792,6 +1046,7 @@ define_tool_sync!(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::*;
 
     #[test]
     fn test_preamble_is_non_empty() {
@@ -1025,5 +1280,192 @@ mod tests {
         let result = RecentScreenshotsTool.call(args).await.unwrap();
         assert!(result.success);
         assert!(!result.output.is_empty());
+    }
+
+    // ---- classify_stream_error 测试 ----
+
+    #[test]
+    fn test_classify_done_error_is_recoverable() {
+        let err = "CompletionError: ResponseError: Failed to parse JSON: expected value at line 1 column 2 (Data: [DONE])";
+        let classified = classify_stream_error(err, 100, 15, 2);
+        assert!(classified.is_recoverable());
+        match classified {
+            ChatError::RecoverableStream {
+                reason,
+                accumulated_chars,
+                chunk_count,
+                tool_call_count,
+                ..
+            } => {
+                assert_eq!(reason, "sse_parse");
+                assert_eq!(accumulated_chars, 100);
+                assert_eq!(chunk_count, 15);
+                assert_eq!(tool_call_count, 2);
+            }
+            other => panic!("expected RecoverableStream, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_max_turns_is_fatal() {
+        let err = "PromptError: MaxTurnError: (reached max turn limit: 16)";
+        let classified = classify_stream_error(err, 0, 0, 5);
+        assert!(!classified.is_recoverable());
+        match classified {
+            ChatError::Fatal {
+                reason,
+                tool_call_count,
+                ..
+            } => {
+                assert_eq!(reason, "max_turns");
+                assert_eq!(tool_call_count, 5);
+            }
+            other => panic!("expected Fatal(max_turns), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_network_error_is_fatal() {
+        let err = "CompletionError: ProviderError: SSE Error: connection refused";
+        let classified = classify_stream_error(err, 10, 3, 1);
+        assert!(!classified.is_recoverable());
+        match classified {
+            ChatError::Fatal { reason, .. } => assert_eq!(reason, "network"),
+            other => panic!("expected Fatal(network), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_timeout_is_fatal() {
+        let err = "CompletionError: RequestError: timeout while waiting for response";
+        let classified = classify_stream_error(err, 0, 0, 0);
+        assert!(!classified.is_recoverable());
+        match classified {
+            ChatError::Fatal { reason, .. } => assert_eq!(reason, "network"),
+            other => panic!("expected Fatal(network) for timeout, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_auth_error_is_fatal() {
+        let err = "CompletionError: RequestError: unauthorized (401)";
+        let classified = classify_stream_error(err, 0, 0, 0);
+        assert!(!classified.is_recoverable());
+        match classified {
+            ChatError::Fatal { reason, .. } => assert_eq!(reason, "auth"),
+            other => panic!("expected Fatal(auth), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_rate_limit_is_fatal() {
+        let err = "CompletionError: RequestError: rate limit exceeded (429)";
+        let classified = classify_stream_error(err, 50, 8, 3);
+        assert!(!classified.is_recoverable());
+        match classified {
+            ChatError::Fatal {
+                reason,
+                accumulated_chars,
+                ..
+            } => {
+                assert_eq!(reason, "rate_limit");
+                assert_eq!(accumulated_chars, 50);
+            }
+            other => panic!("expected Fatal(rate_limit), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_unknown_with_content_is_recoverable() {
+        let err = "some weird error we haven't seen before";
+        // 有 >20 字符累积 → 倾向可恢复
+        let classified = classify_stream_error(err, 100, 10, 0);
+        assert!(classified.is_recoverable());
+        match classified {
+            ChatError::RecoverableStream { reason, .. } => {
+                assert_eq!(reason, "unknown_with_content");
+            }
+            other => panic!("expected RecoverableStream(unknown_with_content), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classify_unknown_no_content_is_fatal() {
+        let err = "some weird error";
+        // 无累积文本 → 默认致命
+        let classified = classify_stream_error(err, 5, 1, 0);
+        assert!(!classified.is_recoverable());
+        match classified {
+            ChatError::Fatal { reason, .. } => assert_eq!(reason, "unknown"),
+            other => panic!("expected Fatal(unknown), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_chat_error_display_format() {
+        let err = ChatError::RecoverableStream {
+            reason: "sse_parse".into(),
+            original: "[DONE] error".into(),
+            accumulated_chars: 42,
+            chunk_count: 5,
+            tool_call_count: 1,
+        };
+        let display = format!("{err}");
+        assert!(display.contains("可恢复"));
+        assert!(display.contains("sse_parse"));
+        assert!(display.contains("42"));
+
+        let fatal = ChatError::Fatal {
+            reason: "network".into(),
+            original: "connection refused".into(),
+            accumulated_chars: 0,
+            tool_call_count: 0,
+        };
+        let display = format!("{fatal}");
+        assert!(display.contains("network"));
+        assert!(!display.contains("可恢复"));
+    }
+
+    #[test]
+    fn test_chat_error_short_kind() {
+        let rec = ChatError::RecoverableStream {
+            reason: "test".into(),
+            original: String::new(),
+            accumulated_chars: 0,
+            chunk_count: 0,
+            tool_call_count: 0,
+        };
+        assert_eq!(rec.short_kind(), "recoverable");
+
+        let fat = ChatError::Fatal {
+            reason: "test".into(),
+            original: String::new(),
+            accumulated_chars: 0,
+            tool_call_count: 0,
+        };
+        assert_eq!(fat.short_kind(), "fatal");
+    }
+
+    #[rstest] // 需要 rstest crate（项目已有依赖）
+    #[case("[DONE]", 50, true)]
+    #[case("failed to parse json: expected value (Data: [DONE])", 30, true)]
+    #[case("MaxTurnError: reached max turn limit", 0, false)]
+    #[case("connection refused", 0, false)]
+    #[case("timeout after 30s", 0, false)]
+    #[case("unauthorized: 401", 0, false)]
+    #[case("rate_limit: 429 too many requests", 0, false)]
+    #[case("totally unknown error", 100, true)] // >20 chars → recoverable
+    #[case("totally unknown error", 0, false)] // ≤20 chars → fatal
+    fn test_classify_roundtrip(
+        #[case] error_msg: &str,
+        #[case] acc_chars: usize,
+        #[case] expect_recoverable: bool,
+    ) {
+        let classified = classify_stream_error(error_msg, acc_chars, 0, 0);
+        assert_eq!(
+            classified.is_recoverable(),
+            expect_recoverable,
+            "error={error_msg:?}, acc={acc_chars}"
+        );
     }
 }

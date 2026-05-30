@@ -18,7 +18,9 @@ use crate::pet_event_bus::SharedPetEventBus;
 use crate::tts;
 use crate::voice;
 use bitcat_core::action::{ActionConfig, ActionDef};
-use bitcat_core::agent::{parse_tool_failure_stop, AgentStreamEvent, PetAgent, ToolPhase};
+use bitcat_core::agent::{
+    parse_tool_failure_stop, AgentStreamEvent, ChatError, PetAgent, ToolPhase,
+};
 use bitcat_core::agent_reaction::{extract_agent_reaction, fallback_agent_reaction};
 use bitcat_core::bridge::{handle_button_press, PetCommand};
 use bitcat_core::device::button_name;
@@ -1336,14 +1338,45 @@ pub fn run_ai_chat(
             }
         }
         Err(e) => {
-            let user_reply = if let Some((tool_name, detail)) = parse_tool_failure_stop(&e) {
+            // 结构化诊断日志（完整信息写入日志，不暴露给用户）
+            warn!(
+                model = %agent.config.model,
+                error_kind = %e.short_kind(),
+                error_reason = %match &e {
+                    ChatError::RecoverableStream { reason, .. } | ChatError::Fatal { reason, .. } => reason.as_str(),
+                },
+                error_original = %log_preview(e.original_message(), 300),
+                accumulated = e.accumulated_chars(),
+                "{log_prefix} AI 对话流错误"
+            );
+
+            // 工具连续失败走独立分支（结构化错误，优先级高于 ChatError 分类）
+            // 注意：tool_failure_stop 格式是 "tool_failure_stop:name:detail"，不是 ChatError
+            let user_reply = if let Some((tool_name, detail)) =
+                parse_tool_failure_stop(&e.to_string())
+            {
                 if tool_name == "create_reminder" {
                     format!("喵呜，提醒没有创建成功：{detail}")
                 } else {
                     format!("工具 {tool_name} 没有完成：{detail}")
                 }
             } else {
-                format!("AI 对话失败: {e}")
+                // 根据 ChatError 分类生成用户友好消息
+                match &e {
+                    ChatError::RecoverableStream { .. } => {
+                        // 部分恢复：模型说了些话但没说完
+                        "喵…好像信号不太好，我说了一半断掉了 😿".to_string()
+                    }
+                    ChatError::Fatal { reason, .. } => match reason.as_str() {
+                        "network" => "喵呜，连不上 AI 服务器了，网络是不是有问题？🐱💦".to_string(),
+                        "auth" => "喵！API 密钥好像有问题，检查一下配置？😿".to_string(),
+                        "rate_limit" => "喵…请求太频繁了，稍等一下再试吧 😸".to_string(),
+                        "max_turns" => {
+                            "喵！这个问题太复杂了，我转了好几圈都没转出来 🌀".to_string()
+                        }
+                        _ => "喵呜，出了点问题，稍后再试试？😿".to_string(),
+                    },
+                }
             };
             let _ = bubble::append_bubble_chunk(app, &user_reply);
             let _ = bubble::finalize_bubble(app);
@@ -1364,7 +1397,6 @@ pub fn run_ai_chat(
                     refresh: true,
                 },
             );
-            warn!(model = %agent.config.model, error = %e, "{log_prefix} AI 错误");
         }
     }
 }
