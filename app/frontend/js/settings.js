@@ -819,7 +819,7 @@ function renderAbout(a) {
 }
 
 async function loadUsageDiagnostics() {
-  await Promise.all([loadTokenStats(), loadPetEventLog(), loadResourceUsage()]);
+  await Promise.all([loadTokenStats(), loadPetEventLog(), loadResourceUsage(), loadPointsState()]);
 }
 
 async function loadResourceUsage() {
@@ -1650,6 +1650,144 @@ function shortText(value, limit) {
 function repairMojibake(value) {
   if (value === "姝ｅ湪瑙傚療灞忓箷...") return "正在观察屏幕...";
   return value;
+}
+
+// ─── 积分与成就系统渲染 ───
+
+const POINTS_CATEGORY_LABELS = {
+  Chat: "对话", Memory: "记忆", Routine: "日常",
+  Fun: "娱乐", Observation: "观察", Bond: "互动", Daily: "每日",
+};
+
+async function loadPointsState() {
+  try {
+    const view = await invoke("cmd_get_points_state");
+    renderPointsLevel(view.state);
+    renderPointsBreakdown(view.state);
+    renderAchievements(view.achievements, view.state);
+    renderPointsEvents(view.recent_events);
+  } catch (e) {
+    log("加载积分状态失败: " + e);
+  }
+}
+
+function renderPointsLevel(state) {
+  const el = (id) => document.getElementById(id);
+  const lv = el("points-level");
+  const title = el("points-level-title");
+  const total = el("points-total");
+  const fill = el("points-exp-fill");
+  const expText = el("points-exp-text");
+  const streak = el("points-streak");
+  const longestStreak = el("points-longest-streak");
+
+  if (lv) lv.textContent = state.level || 1;
+  if (title) title.textContent = state.level_title || "-";
+  if (total) total.textContent = formatNumber(state.total_points || 0);
+
+  const expIn = state.experience_in_current || 0;
+  const expNext = state.experience_to_next || 1;
+  const pct = expNext > 0 ? Math.min(100, Math.round((expIn / expNext) * 100)) : 100;
+  if (fill) fill.style.width = pct + "%";
+  if (expText) expText.textContent = `${formatNumber(expIn)} / ${formatNumber(expNext)}`;
+  if (streak) streak.textContent = state.current_streak_days || 0;
+  if (longestStreak) longestStreak.textContent = state.longest_streak_days || 0;
+}
+
+function renderPointsBreakdown(state) {
+  const container = document.getElementById("points-breakdown");
+  if (!container) return;
+
+  const cats = state.categories || {};
+  const catTotals = state.category_totals || {};
+
+  const items = [
+    ["Chat", "chats", cats.chats || 0],
+    ["Memory", "memories", cats.memories || 0],
+    ["Routine", "reminders_completed", cats.reminders_completed || 0],
+    ["Fun", "games_played", (cats.games_played || 0) + (cats.games_won || 0)],
+    ["Observation", "screenshots", (cats.screenshots || 0) + (cats.camera_obs || 0)],
+    ["Bond", "praises", cats.praises || 0],
+    ["Daily", "login_days", cats.login_days || 0],
+  ];
+
+  container.innerHTML = items
+    .filter(([, , v]) => v > 0)
+    .map(
+      ([key, , value]) =>
+        `<div class="points-cat-item">
+          <span class="points-cat-value">${value}</span>
+          <span class="points-cat-label">${POINTS_CATEGORY_LABELS[key] || key}</span>
+        </div>`
+    )
+    .join("") || '<div style="color:var(--text-faint);padding:12px;text-align:center">还没有积分记录，开始和猫猫互动吧！</div>';
+}
+
+function renderAchievements(achievements, state) {
+  const grid = document.getElementById("achievements-grid");
+  const countEl = document.getElementById("achievement-count");
+  if (!grid) return;
+
+  const unlockedIds = new Set(state.achievements || []);
+  const unlockedCount = achievements.filter((a) => a.unlocked).length;
+
+  if (countEl) countEl.textContent = unlockedCount;
+
+  grid.innerHTML = achievements
+    .map((a) => {
+      const cls = a.unlocked ? "achievement-badge unlocked" : "achievement-badge locked";
+      const icon = a.unlocked || !a.hidden ? a.icon : "?";
+      return `<div class="${cls}" title="${escapeHtml(a.description)}">
+        <span class="achievement-icon">${icon}</span>
+        <span class="achievement-name">${escapeHtml(a.name)}</span>
+        ${a.unlocked ? `<span class="achievement-bonus">+${a.points_reward}</span>` : ""}
+      </div>`;
+    })
+    .join("");
+}
+
+function renderPointsEvents(events) {
+  const box = document.getElementById("points-events");
+  if (!box) return;
+
+  if (!events || events.length === 0) {
+    box.innerHTML =
+      '<div style="color:var(--text-faint);padding:12px;text-align:center">还没有积分事件。开始和猫猫互动吧！</div>';
+    return;
+  }
+
+  box.innerHTML = events
+    .map((ev) => {
+      // 后端 serde rename: kind → event_kind, points → points_awarded
+      const kindLabel = eventKindLabel(ev.event_kind);
+      const pts = ev.points_awarded;
+      return `<div class="points-event">
+        <span class="points-event-kind">${kindLabel}</span>
+        <strong>+${pts}</strong>
+        <span></span>
+        <span class="points-event-time">${formatDateTime(ev.timestamp)}</span>
+      </div>`;
+    })
+    .join("");
+}
+
+/// 将后端 PointsEventKind 枚举名映射为中文显示标签。
+function eventKindLabel(kind) {
+  const map = {
+    ChatCompleted: "对话完成",
+    VoiceChat: "语音对话",
+    MemoryCreated: "记忆创建",
+    ReminderCreated: "创建提醒",
+    ReminderCompleted: "完成提醒",
+    DancePerformed: "观看舞蹈",
+    GamePlayed: "游戏一局",
+    GameWon: "游戏胜利",
+    ScreenshotObserved: "截图观察",
+    CameraObserved: "摄像头观察",
+    PetPraised: "夸奖宠物",
+    DailyLogin: "每日登录",
+  };
+  return map[kind] || kind || "-";
 }
 
 document.addEventListener("DOMContentLoaded", () => {

@@ -135,6 +135,10 @@ pub fn precreate_game_window(app: &AppHandle) -> Result<(), String> {
 
 /// Start a game from a validated definition.
 pub fn start_game(app: &AppHandle, def: GameDef) -> Result<(), String> {
+    bitcat_core::points::award(
+        bitcat_core::points::PointsEventKind::GamePlayed,
+        Some(&def.title),
+    );
     validate_game_def(&def)?;
     let overlay_mode = matches!(def.game_type, MinigameType::Battle);
 
@@ -449,7 +453,10 @@ pub fn cmd_game_end(app: AppHandle, result: String, score: u32) -> Result<(), St
     }
 
     let pet_state = match normalized.as_str() {
-        "win" => Some(PetStateName::GameWin),
+        "win" => {
+            bitcat_core::points::award(bitcat_core::points::PointsEventKind::GameWon, None);
+            Some(PetStateName::GameWin)
+        }
         "lose" => Some(PetStateName::GameLose),
         _ => Some(PetStateName::Idle),
     };

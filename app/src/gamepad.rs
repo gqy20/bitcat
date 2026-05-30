@@ -61,7 +61,10 @@ pub fn process_button(button_index: u32) -> Vec<PetEvent> {
     match button_index {
         11 => events.push(PetEvent::ai_thinking()),
         10 => events.push(PetEvent::set_mode(PetMode::Sleep)),
-        0 => events.push(PetEvent::react(PetMood::Happy)),
+        0 => {
+            events.push(PetEvent::react(PetMood::Happy));
+            bitcat_core::points::award(bitcat_core::points::PointsEventKind::PetPraised, None);
+        }
         _ => {}
     }
     if let Some(cmd) = pet_cmd {
@@ -767,6 +770,10 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                             if let Some(ag) = agent_state.get_or_init() {
                                 let core: State<SharedChatCore> = app.state();
                                 run_ai_chat(&rt, ag, app, &text, "[voice]", &core);
+                                bitcat_core::points::award(
+                                    bitcat_core::points::PointsEventKind::VoiceChat,
+                                    None,
+                                );
                             } else {
                                 warn!("[voice] AI Agent 未初始化");
                             }
@@ -1271,6 +1278,7 @@ pub fn run_ai_chat(
                 reply_preview = %reply_preview,
                 "{prefix}AI chat completed"
             );
+            bitcat_core::points::award(bitcat_core::points::PointsEventKind::ChatCompleted, None);
             let reply_for_tts = reply.clone();
             let tts_on = bitcat_core::app_settings::AppSettings::load()
                 .appearance
@@ -1331,6 +1339,11 @@ pub fn run_ai_chat(
                     }
                     if let Err(e) = long_term.save() {
                         warn!(error = %e, "保存长期记忆候选失败");
+                    } else if !reaction.memory_candidates.is_empty() {
+                        bitcat_core::points::award(
+                            bitcat_core::points::PointsEventKind::MemoryCreated,
+                            Some(&format!("{} 条", reaction.memory_candidates.len())),
+                        );
                     }
                 } else {
                     warn!("long_term 锁中毒，跳过长期记忆候选写入");

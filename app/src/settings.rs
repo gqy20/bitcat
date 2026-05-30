@@ -1,4 +1,4 @@
-﻿//! 璁剧疆绐楀彛 IPC 鍛戒护闆嗭細鍓嶇璁剧疆鐣岄潰涓庡悗绔厤缃箣闂寸殑妗ユ銆?//!
+//! 璁剧疆绐楀彛 IPC 鍛戒护闆嗭細鍓嶇璁剧疆鐣岄潰涓庡悗绔厤缃箣闂寸殑妗ユ銆?//!
 //! 璁捐瑕佺偣锛堣 plan `Settings_UI_Design_Plan`锛夛細
 //! - `~/.claude/settings.json` 浠呰锛?*姘镐笉鍐欏叆**锛汚I 瑕嗙洊鍐欏叆 `app_settings.json`
 //! - config/actions.yml / config/prompts.yml / config/user.yml 灏卞湴鍐欏洖锛堟敞閲婁細琚鐩栵紝淇濆瓨鍓嶈嚜鍔ㄥ浠?`.bak`锛?//! - 淇濆瓨鍚庝粎 set 鍘熷瓙 flag锛岀敱 gamepad_loop 涓?tick 鑷姩 reload锛堝鐢ㄧ幇鏈夋満鍒讹級
@@ -604,6 +604,48 @@ pub async fn cmd_snooze_reminder(
 #[tauri::command]
 pub async fn cmd_get_resource_usage() -> Result<ResourceUsageView, String> {
     resource_usage_snapshot()
+}
+
+/// 返回积分与成就系统的完整状态，供设置页「用量与诊断」tab 展示。
+#[tauri::command]
+pub async fn cmd_get_points_state() -> Result<PointsStateView, String> {
+    let state = bitcat_core::points::load_points_state().unwrap_or_default();
+    let recent_events = bitcat_core::points::read_recent_events(20).unwrap_or_default();
+    let achievements = bitcat_core::points::achievement_views(&state);
+
+    let events_path = bitcat_core::points::points_events_path()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|e| format!("<unavailable: {e}>"));
+    let state_path = bitcat_core::points::points_state_path()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|e| format!("<unavailable: {e}>"));
+
+    Ok(PointsStateView {
+        generated_at: chrono::Local::now().to_rfc3339(),
+        state,
+        recent_events,
+        achievements,
+        paths: PointsPaths {
+            events_jsonl: events_path,
+            state_json: state_path,
+        },
+    })
+}
+
+/// 积分状态视图：聚合状态 + 最近事件 + 成就列表 + 文件路径。
+#[derive(Debug, Serialize)]
+pub struct PointsStateView {
+    pub generated_at: String,
+    pub state: bitcat_core::points::PointsState,
+    pub recent_events: Vec<bitcat_core::points::PointsEventRecord>,
+    pub achievements: Vec<bitcat_core::points::AchievementView>,
+    pub paths: PointsPaths,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PointsPaths {
+    pub events_jsonl: String,
+    pub state_json: String,
 }
 
 /// Delete one long-term memory entry by its stable id.

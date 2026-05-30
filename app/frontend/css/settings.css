@@ -2182,3 +2182,245 @@ input[type="checkbox"]:checked::after {
     justify-content: flex-start;
   }
 }
+
+/* ─── 积分与成就系统 ─── */
+
+.points-level-card {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 20px 22px;
+  background: linear-gradient(135deg, rgba(104, 214, 157, 0.06), rgba(126, 166, 216, 0.04));
+  border: 1px solid rgba(104, 214, 157, 0.15);
+  border-radius: var(--radius);
+  margin-bottom: 14px;
+}
+
+.points-level-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.points-level-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, rgba(104, 214, 157, 0.18), rgba(104, 214, 157, 0.08));
+  border: 2px solid rgba(104, 214, 157, 0.3);
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.points-level-number {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--cat-green);
+  line-height: 1;
+}
+
+.points-level-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.points-total {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.points-total strong {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--text-main);
+  font-family: var(--font-mono);
+  letter-spacing: -0.02em;
+}
+
+.points-total span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.points-exp-bar {
+  position: relative;
+  flex: 1;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 5px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.points-exp-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  border-radius: 5px;
+  background: linear-gradient(90deg, var(--cat-green), #7ea6d8);
+  transition: width 0.5s ease;
+}
+
+.points-exp-text {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.points-streak {
+  display: flex;
+  gap: 18px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.points-streak strong {
+  color: var(--sun-amber);
+  font-weight: 700;
+}
+
+/* 分类网格 */
+.points-categories {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 8px;
+  padding: 14px 18px;
+  background: rgba(23, 28, 36, 0.4);
+  border-radius: var(--radius-sm);
+  margin-bottom: 4px;
+}
+
+.points-cat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 4px;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s;
+}
+
+.points-cat-item:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.points-cat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.points-cat-value {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-main);
+  font-family: var(--font-mono);
+}
+
+/* 成就徽章 */
+.achievements-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.achievement-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 14px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-subtle);
+  background: rgba(23, 28, 36, 0.4);
+  text-align: center;
+  transition: transform 0.15s, border-color 0.15s;
+}
+
+.achievement-badge:hover {
+  transform: translateY(-1px);
+}
+
+.achievement-badge.unlocked {
+  border-color: rgba(217, 173, 99, 0.35);
+  background: linear-gradient(135deg, rgba(217, 173, 99, 0.08), rgba(217, 173, 99, 0.02));
+}
+
+.achievement-badge.locked {
+  opacity: 0.55;
+}
+
+.achievement-icon {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.achievement-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.achievement-bonus {
+  font-size: 10px;
+  color: var(--sun-amber);
+  font-weight: 600;
+}
+
+.achievement-badge.locked .achievement-name {
+  color: var(--text-faint);
+}
+
+/* 积分事件列表 */
+.points-events {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.points-event {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-sm);
+  background: rgba(23, 28, 36, 0.4);
+  font-size: 13px;
+}
+
+.points-event-kind {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.points-event strong {
+  color: var(--cat-green);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.points-event-time {
+  color: var(--text-faint);
+  font-size: 11px;
+  text-align: right;
+  font-family: var(--font-mono);
+}

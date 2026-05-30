@@ -200,6 +200,7 @@ async fn analyze_camera_frame(
         saved_frame = record.saved_frame,
         "camera observation saved"
     );
+    bitcat_core::points::award(bitcat_core::points::PointsEventKind::CameraObserved, None);
     *LAST_CAMERA_ANALYSIS.lock().unwrap() = Some(Instant::now());
     Ok(())
 }

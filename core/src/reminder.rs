@@ -173,7 +173,13 @@ pub fn save_reminders(reminders: &[ReminderRecord]) -> Result<(), String> {
 pub fn create_reminder(args: &CreateReminderArgs) -> Result<ReminderRecord, String> {
     let path = reminder_store_path()?;
     match create_reminder_in_path(&path, args, Local::now()) {
-        Ok(reminder) => Ok(reminder),
+        Ok(reminder) => {
+            crate::points::award(
+                crate::points::PointsEventKind::ReminderCreated,
+                Some(&reminder.title),
+            );
+            Ok(reminder)
+        }
         Err(e) => {
             record_reminder_failure("create_failed", Some("agent"), Some(e.clone()), None);
             Err(e)
@@ -275,6 +281,10 @@ fn complete_reminder_in_path(
     let updated = reminder.clone();
     save_reminders_to_path(path, &reminders)?;
     record_reminder_event("completed", &updated, None, Some(ui_source));
+    crate::points::award(
+        crate::points::PointsEventKind::ReminderCompleted,
+        Some(&updated.title),
+    );
     Ok(updated)
 }
 

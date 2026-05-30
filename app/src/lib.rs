@@ -161,6 +161,7 @@ pub fn run() {
             settings::cmd_get_memory_review,
             settings::cmd_get_reminders,
             settings::cmd_get_resource_usage,
+            settings::cmd_get_points_state,
             settings::cmd_delete_memory_entry,
             settings::cmd_cancel_reminder,
             settings::cmd_delete_reminder,
@@ -230,6 +231,9 @@ pub fn run() {
             // ── 系统托盘 ──
             shutdown::install_ctrlc_handler(app.handle().clone());
             tray::create_tray(app.handle())?;
+
+            // ── 积分系统：每日登录检测 ──
+            bitcat_core::points::check_daily_login();
 
             // ── 表现桥接线程 ──
             // 消费 core 发来的 PlayDanceRequest，序列化 DanceDef 后以统一 performance 事件
@@ -309,6 +313,7 @@ pub fn run() {
                         max_ms = ?max_ms,
                         "[performance-bridge] 已 emit performance-start"
                     );
+                    bitcat_core::points::award(bitcat_core::points::PointsEventKind::DancePerformed, Some(&name));
 
                     // 定时兜底复位会话：若有硬上限则到时关闭；无限循环只靠前端 stop 或下一次请求覆盖
                     if let Some(ms) = max_ms {

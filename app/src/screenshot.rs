@@ -1000,6 +1000,10 @@ fn analyze_and_save_monitor_frame(
                     "[{}] 视觉分析完成",
                     if resolutions.len() > 1 { format!("{}px", res_w) } else { String::new() }
                 );
+                bitcat_core::points::award(
+                    bitcat_core::points::PointsEventKind::ScreenshotObserved,
+                    None,
+                );
                 analysis
             }
             Err(e) => {

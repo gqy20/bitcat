@@ -58,6 +58,7 @@ pub mod performance;
 pub mod permission_hook;
 pub mod pet;
 pub mod pet_event;
+pub mod points;
 pub mod prompts;
 pub mod reminder;
 pub mod reminder_personalizer;

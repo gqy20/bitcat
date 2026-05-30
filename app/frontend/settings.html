@@ -618,6 +618,42 @@
             <div class="usage-block-title">宠物事件</div>
             <div id="pet-events" class="pet-events"></div>
           </div>
+
+          <!-- ===== 积分与成就 ===== -->
+          <div class="usage-block">
+            <div class="usage-block-title">🎮 互动积分</div>
+            <div class="points-level-card">
+              <div class="points-level-header">
+                <div class="points-level-badge">
+                  <span class="points-level-number" id="points-level">1</span>
+                  <span class="points-level-title" id="points-level-title">初识</span>
+                </div>
+                <div class="points-total">
+                  <strong id="points-total">0</strong>
+                  <span>总积分</span>
+                </div>
+              </div>
+              <div class="points-exp-bar">
+                <div class="points-exp-fill" id="points-exp-fill" style="width:0%"></div>
+                <span id="points-exp-text">0 / 50</span>
+              </div>
+              <div class="points-streak">
+                <span>连续 <strong id="points-streak">0</strong> 天 🔥</span>
+                <span>最长 <strong id="points-longest-streak">0</strong> 天</span>
+              </div>
+            </div>
+            <div class="points-categories" id="points-breakdown"></div>
+          </div>
+
+          <div class="usage-block">
+            <div class="usage-block-title">🏆 成就徽章 (<span id="achievement-count">0</span>/12)</div>
+            <div class="achievements-grid" id="achievements-grid"></div>
+          </div>
+
+          <div class="usage-block">
+            <div class="usage-block-title">📋 最近积分事件</div>
+            <div class="points-events" id="points-events"></div>
+          </div>
           <div id="usage-status" class="status-line"></div>
         </section>
 
