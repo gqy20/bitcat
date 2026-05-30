@@ -31,6 +31,7 @@
   const INPUT_ROW_H = 50;     // input-row extra height, including divider and spacing
   const CHAT_CONTROLS_H = 42;  // chat-controls extra height, including divider and spacing
   const AUTO_RESIZE_DEBOUNCE_MS = 140;
+  const LONG_REPLY_CHARS = 280;
   let hideTimer = null;
   let performanceHideTimer = null;
   let contentEl = null;
@@ -82,6 +83,23 @@
     document.body.classList.toggle('notice', bubbleMode === 'notice');
     document.body.classList.toggle('stream', bubbleMode === 'stream');
     document.body.classList.toggle('compose', bubbleMode === 'compose');
+  }
+
+  function setReadingMode(enabled) {
+    readingMode = !!enabled;
+    document.body.classList.toggle('reading-mode', readingMode);
+  }
+
+  function isReplyControlState(mode) {
+    return mode === 'reply' || mode === 'stopped';
+  }
+
+  function hasReplyText() {
+    return !!lastRawText;
+  }
+
+  function hasLongReplyText() {
+    return lastRawText && lastRawText.length > LONG_REPLY_CHARS;
   }
 
   const TOOL_STATUS_COPY = {
@@ -215,14 +233,14 @@
     var visible = mode !== 'hidden';
     chatControlsEl.style.display = visible ? 'flex' : 'none';
     if (stopBtnEl) stopBtnEl.style.display = mode === 'streaming' ? 'inline-flex' : 'none';
-    if (replyChipEl) replyChipEl.style.display = (mode === 'reply' || mode === 'stopped') ? 'inline-flex' : 'none';
+    if (replyChipEl) replyChipEl.style.display = isReplyControlState(mode) ? 'inline-flex' : 'none';
     if (readChipEl) {
-      var canRead = (mode === 'reply' || mode === 'stopped') && lastRawText && lastRawText.length > 280;
+      var canRead = isReplyControlState(mode) && hasLongReplyText();
       readChipEl.style.display = canRead ? 'inline-flex' : 'none';
       readChipEl.textContent = readingMode ? '收起' : '展开阅读';
     }
     if (copyChipEl) {
-      copyChipEl.style.display = (mode === 'reply' || mode === 'stopped') && lastRawText ? 'inline-flex' : 'none';
+      copyChipEl.style.display = isReplyControlState(mode) && hasReplyText() ? 'inline-flex' : 'none';
       if (copyChipEl.dataset.state !== 'copied') copyChipEl.textContent = '复制';
     }
     if (controlNoteEl) controlNoteEl.style.display = mode === 'stopped' ? 'inline-flex' : 'none';
@@ -470,6 +488,33 @@
       ? marked.parse(text) : escapeHtml(text);
   }
 
+  function renderComposeEmptyState() {
+    if (!bodyEl) return;
+    bodyEl.innerHTML = `
+      <div class="compose-empty">
+        <div class="compose-empty-title">想做点什么？</div>
+        <div class="compose-empty-subtitle">直接说就好，或者先选一个开头。</div>
+        <div class="compose-empty-actions">
+          <button class="compose-empty-chip" type="button" data-prompt="5分钟后提醒我">设个提醒</button>
+          <button class="compose-empty-chip" type="button" data-prompt="看看我最近在做什么">看看最近</button>
+          <button class="compose-empty-chip" type="button" data-prompt="继续刚才的话题">继续聊</button>
+        </div>
+      </div>`;
+  }
+
+  function maybeRenderComposeEmptyState() {
+    if (!bodyEl || lastRawText) return;
+    if (bodyEl.textContent && bodyEl.textContent.trim()) return;
+    renderComposeEmptyState();
+  }
+
+  function fillInputDraft(text) {
+    if (!inputEl) return;
+    inputEl.value = text || '';
+    inputEl.focus();
+    resetInputIdleTimer();
+  }
+
   function openAgentWatch() {
     if (!window.__TAURI__ || !window.__TAURI__.core) return;
     window.__TAURI__.core.invoke('cmd_agent_watch_refresh').catch(function(e) {
@@ -578,8 +623,7 @@
     hideInput('hide-bubble');
     resizeMode = 'auto';
     autoSizeStage = 'compact';
-    readingMode = false;
-    document.body.classList.remove('reading-mode');
+    setReadingMode(false);
     setManualSizeClass(false);
     if (autoResizeTimer) {
       clearTimeout(autoResizeTimer);
@@ -641,6 +685,7 @@
     inputRowEl.classList.add('visible');
     setBubbleMode('compose');
     clearHideTimer();
+    maybeRenderComposeEmptyState();
     ensureVisible({ applyUserPref: true });
     requestAnimationFrame(function() {
       if (inputEl) {
@@ -759,27 +804,22 @@
     }, 280);
   }
 
-  function getToolStatusText(payload) {
-    var label = payload && payload.label ? payload.label : '调用工具';
-    var phase = payload && payload.phase ? payload.phase : 'planned';
-    var kind = payload && payload.kind ? payload.kind : 'utility';
-    var toolName = payload && payload.tool_name ? String(payload.tool_name) : '';
-    if (TOOL_STATUS_COPY[toolName] && TOOL_STATUS_COPY[toolName][phase]) {
-      return TOOL_STATUS_COPY[toolName][phase];
-    }
+  function getPerformanceToolStatusText(payload, phase, toolName) {
     var isDanceTool = toolName === 'perform_dance' || toolName === 'play_dance';
-    if (kind === 'performance' && isDanceTool) {
-      if (phase === 'blocked') {
-        return '表演已拦截';
-      }
-      if (phase === 'failed') {
-        return '编舞失败';
-      }
-      if (phase === 'finished' || (payload && payload.tool_name === 'play_dance')) {
-        return '准备开跳';
-      }
-      return '正在编舞';
+    if (!isDanceTool) return null;
+    if (phase === 'blocked') {
+      return '表演已拦截';
     }
+    if (phase === 'failed') {
+      return '编舞失败';
+    }
+    if (phase === 'finished' || (payload && payload.tool_name === 'play_dance')) {
+      return '准备开跳';
+    }
+    return '正在编舞';
+  }
+
+  function getFallbackToolStatusText(label, phase) {
     if (phase === 'blocked') {
       return label + '已拦截';
     }
@@ -790,6 +830,21 @@
       return label + '完成';
     }
     return '准备' + label;
+  }
+
+  function getToolStatusText(payload) {
+    var label = payload && payload.label ? payload.label : '调用工具';
+    var phase = payload && payload.phase ? payload.phase : 'planned';
+    var kind = payload && payload.kind ? payload.kind : 'utility';
+    var toolName = payload && payload.tool_name ? String(payload.tool_name) : '';
+    if (TOOL_STATUS_COPY[toolName] && TOOL_STATUS_COPY[toolName][phase]) {
+      return TOOL_STATUS_COPY[toolName][phase];
+    }
+    if (kind === 'performance') {
+      var performanceText = getPerformanceToolStatusText(payload, phase, toolName);
+      if (performanceText) return performanceText;
+    }
+    return getFallbackToolStatusText(label, phase);
   }
 
   function clearToolStatus() {
@@ -845,8 +900,7 @@
     clearToolStatus();
     streaming = true;       // 标记流式开始
     cancelled = false;
-    readingMode = false;
-    document.body.classList.remove('reading-mode');
+    setReadingMode(false);
     setBubbleMode('stream');
     setChatControls('streaming');
     autoSizeStage = 'compact';
@@ -922,8 +976,7 @@
     clearToolStatus();
     resizeMode = 'auto';
     autoSizeStage = 'compact';
-    readingMode = false;
-    document.body.classList.remove('reading-mode');
+    setReadingMode(false);
     setBubbleMode('notice');
     hideChatControls();
     hideInput('notice');
@@ -1058,6 +1111,15 @@
         submitChat();
       });
     }
+    if (bodyEl) {
+      bodyEl.addEventListener('click', function(e) {
+        var chip = e.target && e.target.closest ? e.target.closest('.compose-empty-chip') : null;
+        if (!chip) return;
+        e.preventDefault();
+        e.stopPropagation();
+        fillInputDraft(chip.dataset.prompt || chip.textContent || '');
+      });
+    }
     if (replyChipEl) {
       replyChipEl.addEventListener('click', function(e) {
         e.preventDefault();
@@ -1069,8 +1131,7 @@
       readChipEl.addEventListener('click', function(e) {
         e.preventDefault();
         e.stopPropagation();
-        readingMode = !readingMode;
-        document.body.classList.toggle('reading-mode', readingMode);
+        setReadingMode(!readingMode);
         setChatControls(chatControlState === 'stopped' ? 'stopped' : 'reply');
         clearHideTimer();
         autoResize();

@@ -243,7 +243,13 @@ pub fn run() {
             if let Err(e) = bitcat_core::dance::set_play_dance_sender(dance_tx) {
                 warn!(error = %e, "注入 play_dance sender 失败");
             }
+            let (game_tx, mut game_rx) =
+                tokio::sync::mpsc::unbounded_channel::<bitcat_core::game_request::StartGameRequest>();
+            if let Err(e) = bitcat_core::game_request::set_start_game_sender(game_tx) {
+                warn!(error = %e, "注入 start_game sender 失败");
+            }
             let dance_app = app.handle().clone();
+            let game_app = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(req) = dance_rx.recv().await {
                     let name = req.name.clone();
@@ -331,6 +337,17 @@ pub fn run() {
                     }
                 }
                 warn!("[performance-bridge] channel 已关闭，消费任务退出");
+            });
+            tauri::async_runtime::spawn(async move {
+                while let Some(req) = game_rx.recv().await {
+                    let action = action_bus::action_for_start_game_kind(req.kind);
+                    action_bus::ActionBus::dispatch(
+                        &game_app,
+                        action,
+                        action_bus::ActionSource::Internal,
+                    );
+                }
+                warn!("[game-bridge] channel 已关闭，消费任务退出");
             });
 
             // ── 预创建窗口 ──

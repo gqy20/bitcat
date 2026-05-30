@@ -12,6 +12,7 @@
 use crate::action::launch_program;
 use crate::agent_reaction::MemoryCandidate;
 use crate::dance::{DanceDef, DanceStep};
+use crate::game_request::{StartGameKind, StartGameRequest, request_start_game};
 use crate::logging::log_preview;
 use crate::memory::{LongTermMemory, LongTermMemoryQuery};
 pub use crate::reminder::{CancelReminderArgs, CreateReminderArgs, ListRemindersArgs};
@@ -600,6 +601,13 @@ pub struct PlayDanceArgs {
     pub duration_ms: Option<u32>,
 }
 
+/// `start_game` 工具参数：要启动的内置小游戏类型。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct StartGameArgs {
+    /// 内置游戏类型。
+    pub kind: StartGameKind,
+}
+
 /// AI 播放已保存的舞蹈：校验舞蹈存在 → 通过事件通道通知 app 层 emit 到前端
 pub fn execute_play_dance(args: &PlayDanceArgs) -> ToolResult {
     debug!(
@@ -631,6 +639,30 @@ pub fn execute_play_dance(args: &PlayDanceArgs) -> ToolResult {
             ToolResult::ok(format!("已触发播放舞蹈「{}」（{}）", args.name, hint))
         }
         Err(e) => ToolResult::err(format!("触发播放失败: {e}")),
+    }
+}
+
+/// Ask the app layer to start one built-in game.
+pub fn execute_start_game(args: &StartGameArgs) -> ToolResult {
+    debug!(kind = ?args.kind, "AI starts built-in game");
+
+    let req = StartGameRequest { kind: args.kind };
+    match request_start_game(req) {
+        Ok(()) => ToolResult::ok(format!(
+            "已请求启动游戏: {}",
+            start_game_kind_label(args.kind)
+        )),
+        Err(e) => ToolResult::err(format!("启动游戏失败: {e}")),
+    }
+}
+
+fn start_game_kind_label(kind: StartGameKind) -> &'static str {
+    match kind {
+        StartGameKind::Snake => "snake",
+        StartGameKind::Memory => "memory",
+        StartGameKind::Catch => "catch",
+        StartGameKind::Battle => "battle",
+        StartGameKind::Gomoku => "gomoku",
     }
 }
 
@@ -1023,6 +1055,19 @@ mod tests {
         let args: PlayDanceArgs = serde_json::from_str(json).unwrap();
         assert_eq!(args.loops, Some(3));
         assert_eq!(args.duration_ms, Some(5000));
+    }
+
+    #[test]
+    fn start_game_args_deserialize() {
+        let json = r#"{"kind":"gomoku"}"#;
+        let args: StartGameArgs = serde_json::from_str(json).unwrap();
+        assert_eq!(args.kind, StartGameKind::Gomoku);
+    }
+
+    #[test]
+    fn start_game_args_reject_invalid_kind() {
+        let json = r#"{"kind":"pinball"}"#;
+        assert!(serde_json::from_str::<StartGameArgs>(json).is_err());
     }
 
     #[test]

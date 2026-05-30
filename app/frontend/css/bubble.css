@@ -30,15 +30,15 @@ html, body {
   left: 8px;
   right: 8px;
   bottom: 12px;
-  background: rgba(252, 253, 255, 0.94);
-  backdrop-filter: blur(16px) saturate(1.12);
-  -webkit-backdrop-filter: blur(16px) saturate(1.12);
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(10px) saturate(1.04);
+  -webkit-backdrop-filter: blur(10px) saturate(1.04);
   border-radius: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.1);
+  border: 1px solid rgba(15, 23, 42, 0.08);
   box-shadow:
-    0 16px 36px rgba(15, 23, 42, 0.18),
-    0 2px 8px rgba(15, 23, 42, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    0 10px 26px rgba(15, 23, 42, 0.13),
+    0 1px 3px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
   padding: 13px 15px;
   overflow: hidden;
   display: flex;
@@ -103,47 +103,51 @@ body.notice .bubble {
   border-radius: 18px;
   display: grid;
   align-items: center;
-  background: rgba(255, 253, 248, 0.96);
-  border-color: rgba(217, 119, 6, 0.24);
+  background: rgba(255, 255, 255, 0.97);
+  border-color: rgba(217, 119, 6, 0.16);
   box-shadow:
-    0 12px 30px rgba(15, 23, 42, 0.16),
-    0 0 0 1px rgba(217, 119, 6, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    0 9px 24px rgba(15, 23, 42, 0.12),
+    0 0 0 1px rgba(217, 119, 6, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 body.notice:has(.agent-toast.tone-waiting_for_user) .bubble,
 body.notice:has(.agent-toast.tone-task_error) .bubble {
   border-color: rgba(255, 207, 103, 0.58);
   box-shadow:
-    0 12px 30px rgba(15, 23, 42, 0.16),
-    0 0 0 1px rgba(255, 207, 103, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    0 9px 24px rgba(15, 23, 42, 0.12),
+    0 0 0 1px rgba(255, 207, 103, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 body.notice:has(.agent-toast.tone-task_done) .bubble {
   border-color: rgba(142, 230, 168, 0.58);
   box-shadow:
-    0 12px 30px rgba(15, 23, 42, 0.16),
-    0 0 0 1px rgba(142, 230, 168, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    0 9px 24px rgba(15, 23, 42, 0.12),
+    0 0 0 1px rgba(142, 230, 168, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 body.compose .bubble {
-  background: rgba(250, 252, 255, 0.97);
-  border-color: rgba(99, 102, 241, 0.18);
+  background: rgba(250, 252, 255, 0.98);
+  border-color: rgba(99, 102, 241, 0.16);
   box-shadow:
-    0 18px 42px rgba(15, 23, 42, 0.2),
-    0 0 0 1px rgba(99, 102, 241, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+    0 12px 30px rgba(15, 23, 42, 0.15),
+    0 0 0 1px rgba(99, 102, 241, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
 }
 
 body.stream .bubble {
-  background: rgba(252, 253, 255, 0.96);
+  background: rgba(255, 255, 255, 0.975);
 }
 
 body.reading-mode .bubble {
-  background: rgba(252, 253, 255, 0.98);
-  border-color: rgba(15, 23, 42, 0.12);
+  background: rgba(255, 255, 255, 0.985);
+  border-color: rgba(15, 23, 42, 0.1);
+  box-shadow:
+    0 18px 44px rgba(15, 23, 42, 0.18),
+    0 2px 8px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.84);
 }
 
 body.compose .content {
@@ -158,6 +162,57 @@ body.compose .content-body {
 
 body.compose .content-body p:last-child {
   color: #334155;
+}
+
+.compose-empty {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  padding-top: 2px;
+  color: #334155;
+}
+
+.compose-empty-title {
+  font-size: 13.5px;
+  line-height: 1.35;
+  font-weight: 700;
+  color: #182033;
+}
+
+.compose-empty-subtitle {
+  font-size: 12.2px;
+  line-height: 1.35;
+  color: #64748b;
+}
+
+.compose-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.compose-empty-chip {
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid rgba(99, 102, 241, 0.16);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.96);
+  color: rgba(67, 56, 202, 0.92);
+  cursor: pointer;
+  font: 650 12px/24px "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.12s ease;
+}
+
+.compose-empty-chip:hover,
+.compose-empty-chip:focus-visible {
+  border-color: rgba(99, 102, 241, 0.32);
+  background: #fff;
+  outline: none;
+}
+
+.compose-empty-chip:active {
+  transform: translateY(1px);
 }
 
 body.manual-size .content-body {
@@ -189,14 +244,14 @@ body.notice .content {
   width: 18px;
   height: 10px;
   clip-path: polygon(50% 100%, 0 0, 100% 0);
-  background: rgba(252, 253, 255, 0.94);
-  backdrop-filter: blur(16px) saturate(1.12);
-  -webkit-backdrop-filter: blur(16px) saturate(1.12);
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(10px) saturate(1.04);
+  -webkit-backdrop-filter: blur(10px) saturate(1.04);
   filter: none;
 }
 
 body.compose .bubble-arrow {
-  background: rgba(250, 252, 255, 0.97);
+  background: rgba(250, 252, 255, 0.98);
 }
 
 html.bubble-arrow-top .bubble-arrow {
@@ -570,7 +625,7 @@ body.show .content {
   padding: 0 10px;
   border: 1px solid rgba(99, 102, 241, 0.2);
   border-radius: 8px;
-  background: rgba(248, 250, 252, 0.88);
+  background: rgba(248, 250, 252, 0.96);
   color: rgba(67, 56, 202, 0.92);
   cursor: pointer;
   font: 650 12px/24px "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
@@ -645,7 +700,7 @@ body.notice .chat-controls {
   border-radius: 8px;
   padding: 0 11px;
   font-size: 12.8px;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.98);
   backdrop-filter: none;
   color: #182033;
   outline: none;
@@ -666,7 +721,7 @@ body.notice .chat-controls {
   padding: 0 13px;
   border: 1px solid rgba(67, 56, 202, 0.24);
   border-radius: 8px;
-  background: rgba(67, 56, 202, 0.94);
+  background: #5755d9;
   color: #fff;
   font-size: 11.8px;
   font-weight: 680;
@@ -679,7 +734,7 @@ body.notice .chat-controls {
 .input-row button:hover,
 .input-row button:focus-visible {
   border-color: rgba(67, 56, 202, 0.42);
-  background: rgba(55, 48, 163, 0.98);
+  background: #4f46d4;
   outline: none;
 }
 

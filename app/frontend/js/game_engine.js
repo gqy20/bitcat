@@ -2007,38 +2007,38 @@
       if (typeof engine.readyText === 'function') {
         overlayText.textContent = engine.readyText();
       } else if (engine instanceof BattleEngine) {
-        overlayText.textContent = '??????A / ?????X/Y ???L1 / Shift ??';
+        overlayText.textContent = '移动躲避，A 攻击，X/Y 技能，L1 / Shift 防御';
       } else if (engine instanceof MemoryEngine) {
-        overlayText.textContent = '????????Enter / A ??';
+        overlayText.textContent = '翻开卡牌，配对相同图案，Enter / A 确认';
       } else if (engine instanceof CatchEngine) {
-        overlayText.textContent = '??????????? 5 ????';
+        overlayText.textContent = '左右移动接住食物，漏掉 5 个就结束';
       } else if (engine instanceof SnakeEngine) {
-        overlayText.textContent = '??? / WASD ??????? A / ?? / Enter ??';
+        overlayText.textContent = '方向键 / WASD 移动，吃到食物变长，A / 空格 / Enter 开始';
       } else {
-        overlayText.textContent = '??? / WASD ??';
+        overlayText.textContent = '方向键 / WASD 移动';
       }
     } else if (kind === 'paused') {
       overlay.classList.remove('hidden');
-      overlayTitle.textContent = '??';
-      overlayText.textContent = '? P ? Start ??';
+      overlayTitle.textContent = '暂停';
+      overlayText.textContent = '按 P 或 Start 继续';
     } else if (kind === 'win') {
       overlay.classList.remove('hidden');
       overlayTitle.textContent = engine.config.dialogue.win;
       overlayText.textContent = typeof engine.endText === 'function'
         ? engine.endText(kind)
-        : `?? ${engine.score}?Enter / A ?????Esc / B ??`;
+        : `得分 ${engine.score}，Enter / A 再来一局，Esc / B 退出`;
       overlayActions.classList.remove('hidden');
     } else if (kind === 'lose') {
       overlay.classList.remove('hidden');
       overlayTitle.textContent = engine.config.dialogue.lose;
       overlayText.textContent = typeof engine.endText === 'function'
         ? engine.endText(kind)
-        : `?? ${engine.score}?Enter / A ?????Esc / B ??`;
+        : `得分 ${engine.score}，Enter / A 再来一局，Esc / B 退出`;
       overlayActions.classList.remove('hidden');
     } else if (kind === 'cancel') {
       overlay.classList.remove('hidden');
-      overlayTitle.textContent = '???';
-      overlayText.textContent = typeof engine.endText === 'function' ? engine.endText(kind) : `?? ${engine.score}`;
+      overlayTitle.textContent = '已退出';
+      overlayText.textContent = typeof engine.endText === 'function' ? engine.endText(kind) : `得分 ${engine.score}`;
     } else {
       overlay.classList.add('hidden');
     }

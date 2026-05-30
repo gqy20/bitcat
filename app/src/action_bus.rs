@@ -269,6 +269,17 @@ impl ActionBus {
 
 // ---- 私有实现（把既有 cmd 的业务逻辑抽到 Bus） ----
 
+/// Map an agent-facing game kind onto the existing app action variants.
+pub(crate) fn action_for_start_game_kind(kind: bitcat_core::game_request::StartGameKind) -> Action {
+    match kind {
+        bitcat_core::game_request::StartGameKind::Snake => Action::PlayGameDefault,
+        bitcat_core::game_request::StartGameKind::Memory => Action::PlayMemoryDefault,
+        bitcat_core::game_request::StartGameKind::Catch => Action::PlayCatchDefault,
+        bitcat_core::game_request::StartGameKind::Battle => Action::PlayBattleDefault,
+        bitcat_core::game_request::StartGameKind::Gomoku => Action::PlayGomokuDefault,
+    }
+}
+
 /// 将聊天文本写入 [`SharedPendingChat`]，由 [`chat_loop`](crate::gamepad::chat_loop) 消费。
 fn submit_chat_impl(app: &AppHandle, text: String) {
     let trimmed = text.trim().to_string();
@@ -396,6 +407,32 @@ mod tests {
             // Debug 不 panic
             let _ = format!("{a:?}");
         }
+    }
+
+    #[test]
+    fn start_game_kind_maps_to_actions() {
+        use bitcat_core::game_request::StartGameKind;
+
+        assert_eq!(
+            action_for_start_game_kind(StartGameKind::Snake),
+            Action::PlayGameDefault
+        );
+        assert_eq!(
+            action_for_start_game_kind(StartGameKind::Memory),
+            Action::PlayMemoryDefault
+        );
+        assert_eq!(
+            action_for_start_game_kind(StartGameKind::Catch),
+            Action::PlayCatchDefault
+        );
+        assert_eq!(
+            action_for_start_game_kind(StartGameKind::Battle),
+            Action::PlayBattleDefault
+        );
+        assert_eq!(
+            action_for_start_game_kind(StartGameKind::Gomoku),
+            Action::PlayGomokuDefault
+        );
     }
 
     #[test]

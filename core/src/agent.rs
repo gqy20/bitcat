@@ -26,7 +26,7 @@ use crate::tool_events::{ToolEventRecord, record_tool_event};
 use crate::tools::{
     self, CancelReminderArgs, ClipboardArgs, CreateReminderArgs, ForegroundArgs, GetTimeArgs,
     HotkeyArgs, LaunchArgs, ListRemindersArgs, PerformDanceArgs, PlayDanceArgs, ReadFileArgs,
-    RecentScreenshotsArgs, RememberArgs, SearchMemoryArgs, ShellArgs, ToolError,
+    RecentScreenshotsArgs, RememberArgs, SearchMemoryArgs, ShellArgs, StartGameArgs, ToolError,
 };
 use futures::StreamExt;
 use rig::agent::Agent;
@@ -334,6 +334,7 @@ fn tool_label(tool_name: &str) -> String {
         "force_foreground" => "切换窗口",
         "perform_dance" => "编排舞蹈",
         "play_dance" => "播放舞蹈",
+        "start_game" => "启动游戏",
         other => other,
     }
     .to_string()
@@ -341,7 +342,7 @@ fn tool_label(tool_name: &str) -> String {
 
 fn tool_kind(tool_name: &str) -> ToolKind {
     match tool_name {
-        "perform_dance" | "play_dance" => ToolKind::Performance,
+        "perform_dance" | "play_dance" | "start_game" => ToolKind::Performance,
         "launch_program" | "shell" | "send_hotkey" | "force_foreground" => ToolKind::System,
         _ => ToolKind::Utility,
     }
@@ -521,6 +522,7 @@ impl PetAgent {
             .tool(ForegroundTool)
             .tool(PerformDanceTool)
             .tool(PlayDanceTool)
+            .tool(StartGameTool)
             .build();
 
         Ok(Self { agent, config })
@@ -742,21 +744,15 @@ fn tool_schema<T: JsonSchema>() -> Value {
 struct ToolSpec {
     name: &'static str,
     description: &'static str,
-    summary: &'static str,
     guidance: &'static [&'static str],
 }
 
 impl ToolSpec {
-    fn to_prompt_line(self) -> String {
+    fn to_policy_line(self) -> Option<String> {
         if self.guidance.is_empty() {
-            format!("- {}：{}", self.name, self.summary)
+            None
         } else {
-            format!(
-                "- {}：{}；{}",
-                self.name,
-                self.summary,
-                self.guidance.join("；")
-            )
+            Some(format!("- {}：{}", self.name, self.guidance.join("；")))
         }
     }
 }
@@ -764,43 +760,36 @@ impl ToolSpec {
 const LAUNCH_TOOL: ToolSpec = ToolSpec {
     name: "launch_program",
     description: "启动一个程序或应用",
-    summary: "启动程序或应用",
     guidance: &[],
 };
 const SHELL_TOOL: ToolSpec = ToolSpec {
     name: "shell",
     description: "执行 PowerShell 命令并返回输出（30s 超时，输出截断至 8000 字符）",
-    summary: "执行 PowerShell 命令并返回输出",
     guidance: &["只在用户明确需要系统命令或文件/进程检查时使用"],
 };
 const READ_FILE_TOOL: ToolSpec = ToolSpec {
     name: "read_file",
     description: "读取文件内容，支持文本文件（超过 8000 字符自动截断）",
-    summary: "读取文本文件内容",
     guidance: &[],
 };
 const GET_TIME_TOOL: ToolSpec = ToolSpec {
     name: "get_time",
     description: "获取当前日期和时间",
-    summary: "获取当前日期和时间",
-    guidance: &["处理相对时间、今天/明天/整点提醒前先确认当前时间"],
+    guidance: &[],
 };
 const RECENT_SCREENSHOTS_TOOL: ToolSpec = ToolSpec {
     name: "recent_screenshots",
     description: "查询最近的截图视觉分析记录，了解用户最近在屏幕上做什么",
-    summary: "查询最近截图视觉分析记录",
-    guidance: &["用户问最近屏幕、刚才在做什么、观察到什么时使用"],
+    guidance: &[],
 };
 const SEARCH_MEMORY_TOOL: ToolSpec = ToolSpec {
     name: "search_memory",
     description: "Search grep-first long-term memory with text, tags, source, and importance filters.",
-    summary: "检索长期记忆",
-    guidance: &["用户问偏好、历史承诺、以前聊过什么时使用"],
+    guidance: &[],
 };
 const REMEMBER_TOOL: ToolSpec = ToolSpec {
     name: "remember",
     description: "Store an explicit durable long-term memory note with optional importance and tags.",
-    summary: "保存明确的长期记忆",
     guidance: &["只保存用户明确要求记住或确有长期价值的信息"],
 };
 const CREATE_REMINDER_DESC: &str = "Create a deterministic local reminder that will pop up later. Field rules are strict: \
@@ -812,7 +801,6 @@ Do not use daily for a single clock-time reminder. Do not put numbers in string 
 const CREATE_REMINDER_TOOL: ToolSpec = ToolSpec {
     name: "create_reminder",
     description: CREATE_REMINDER_DESC,
-    summary: "创建真实本地提醒",
     guidance: &[
         "几分钟/几小时后提醒我：schedule_kind=once，delay_minutes 用数字",
         "今天/明天/十点/晚上十点提醒我：schedule_kind=once，at=\"YYYY-MM-DD HH:MM\"",
@@ -824,44 +812,42 @@ const CREATE_REMINDER_TOOL: ToolSpec = ToolSpec {
 const LIST_REMINDERS_TOOL: ToolSpec = ToolSpec {
     name: "list_reminders",
     description: "List active reminders, or include inactive reminders when requested.",
-    summary: "列出提醒",
-    guidance: &["用户问提醒是否设好、有哪些提醒时使用"],
+    guidance: &[],
 };
 const CANCEL_REMINDER_TOOL: ToolSpec = ToolSpec {
     name: "cancel_reminder",
     description: "Cancel a reminder by id.",
-    summary: "取消提醒",
-    guidance: &["需要提醒 id，必要时先 list_reminders"],
+    guidance: &[],
 };
 const HOTKEY_TOOL: ToolSpec = ToolSpec {
     name: "send_hotkey",
     description: "模拟键盘快捷键组合（如 Alt+Tab 切窗口、Ctrl+C 复制）",
-    summary: "发送系统快捷键",
     guidance: &[],
 };
 const CLIPBOARD_TOOL: ToolSpec = ToolSpec {
     name: "read_clipboard",
     description: "读取系统剪贴板中的文本内容",
-    summary: "读取系统剪贴板文本",
     guidance: &[],
 };
 const FOREGROUND_TOOL: ToolSpec = ToolSpec {
     name: "force_foreground",
     description: "将指定窗口强制提到前台（需要窗口句柄 hwnd）",
-    summary: "将指定窗口提到前台",
-    guidance: &["需要窗口 hwnd"],
+    guidance: &[],
 };
 const PERFORM_DANCE_TOOL: ToolSpec = ToolSpec {
     name: "perform_dance",
     description: "编排并立即播放舞蹈。用户要跳舞/表演/庆祝时用。给完整 steps；动作限 jump/spin/wave/shake/idle，建议 3-8 步、每步 150-900ms。",
-    summary: "编排并立即播放新舞蹈",
-    guidance: &["用户要跳舞/表演/庆祝时优先使用，给完整 steps"],
+    guidance: &[],
 };
 const PLAY_DANCE_TOOL: ToolSpec = ToolSpec {
     name: "play_dance",
     description: "播放已保存舞蹈。即兴新舞用 perform_dance。",
-    summary: "播放已保存舞蹈",
-    guidance: &["即兴新舞用 perform_dance"],
+    guidance: &[],
+};
+const START_GAME_TOOL: ToolSpec = ToolSpec {
+    name: "start_game",
+    description: "启动内置小游戏。kind 只能是 snake、memory、catch、battle、gomoku；用户说玩游戏、来一局、下五子棋或玩贪吃蛇时使用。",
+    guidance: &[],
 };
 
 const TOOL_SPECS: &[ToolSpec] = &[
@@ -880,18 +866,21 @@ const TOOL_SPECS: &[ToolSpec] = &[
     FOREGROUND_TOOL,
     PERFORM_DANCE_TOOL,
     PLAY_DANCE_TOOL,
+    START_GAME_TOOL,
 ];
 
 fn build_tool_guide_prompt() -> String {
-    let mut prompt = String::from("[工具使用指南]\n");
+    let mut prompt = String::from("[工具使用政策]\n");
     prompt.push_str(
-        "你可以调用以下工具。需要执行动作时优先使用工具；工具失败时必须如实说明，不要假装成功。\n",
+        "工具的名称、用途和参数以原生 tool definition 为准，不要在系统提示词里另造参数。需要真实执行动作时使用工具；工具失败时必须如实说明，不要假装成功。系统操作类工具（shell、launch_program、send_hotkey、force_foreground）只在用户明确需要时使用。\n",
     );
     for spec in TOOL_SPECS {
-        prompt.push_str(&spec.to_prompt_line());
-        prompt.push('\n');
+        if let Some(line) = spec.to_policy_line() {
+            prompt.push_str(&line);
+            prompt.push('\n');
+        }
     }
-    prompt.push_str("[/工具使用指南]");
+    prompt.push_str("[/工具使用政策]");
     prompt
 }
 
@@ -1041,6 +1030,13 @@ define_tool_sync!(
     tools::execute_play_dance
 );
 
+define_tool_sync!(
+    StartGameTool,
+    START_GAME_TOOL,
+    StartGameArgs,
+    tools::execute_start_game
+);
+
 // ---- 测试 ----
 
 #[cfg(test)]
@@ -1059,20 +1055,23 @@ mod tests {
     #[test]
     fn test_tool_guide_prompt_includes_reminder_rules() {
         let guide = build_tool_guide_prompt();
-        assert!(guide.contains("[工具使用指南]"));
+        assert!(guide.contains("[工具使用政策]"));
+        assert!(guide.contains("tool definition"));
         assert!(guide.contains("create_reminder"));
         assert!(guide.contains("delay_minutes 用数字"));
         assert!(guide.contains("at=\"YYYY-MM-DD HH:MM\""));
         assert!(guide.contains("daily_time=\"HH:MM\""));
         assert!(guide.contains("创建失败必须告诉用户没有创建成功"));
+        assert!(!guide.contains("start_game"));
+        assert!(!guide.contains("perform_dance"));
     }
 
     #[test]
     fn test_agent_preamble_appends_tool_guide() {
         let preamble = build_agent_preamble("base prompt");
         assert!(preamble.starts_with("base prompt"));
-        assert!(preamble.contains("[工具使用指南]"));
-        assert!(preamble.contains("perform_dance"));
+        assert!(preamble.contains("[工具使用政策]"));
+        assert!(preamble.contains("工具失败时必须如实说明"));
     }
 
     #[test]
@@ -1226,6 +1225,18 @@ mod tests {
         assert!(props.get("name").is_some());
         let required = params.get("required").unwrap().as_array().unwrap();
         assert!(required.iter().any(|v| v == "name"));
+    }
+
+    #[tokio::test]
+    async fn test_start_game_tool_definition() {
+        let def = StartGameTool.definition(String::new()).await;
+        assert_eq!(def.name, "start_game");
+        assert!(def.description.contains("小游戏"));
+        let params = def.parameters.as_object().unwrap();
+        let props = params.get("properties").unwrap().as_object().unwrap();
+        assert!(props.get("kind").is_some());
+        let required = params.get("required").unwrap().as_array().unwrap();
+        assert!(required.iter().any(|v| v == "kind"));
     }
 
     #[tokio::test]
