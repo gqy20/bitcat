@@ -7,6 +7,7 @@
 | 文档 | 状态 | 下一步 |
 |------|------|--------|
 | [minigame-system.md](minigame-system.md) | Phase 1 已完成；内置游戏启动与 AI `start_game` 工具已落地 | 收敛 GameDef 持久化、分数持久化、AI 生成游戏配置；`perform_game` 仍是未来扩展 |
+| [game-direction-review-2026-05.md](game-direction-review-2026-05.md) | 新增，整理小游戏、训练场、RPG、3D 等游戏方向 | 优先验证 BitCat 语义化小游戏原型，避免直接跳到完整 RPG 或只复刻传统小游戏 |
 | [pet-asset-packaging.md](pet-asset-packaging.md) | 新增，承接 v2 宠物资源包发布策略 | 决定哪些资源内置、哪些做外部包；补资源包体积预算和用户目录加载 |
 | [progression-capability-unlock.md](progression-capability-unlock.md) | 积分/等级/成就第一片已落地；能力解锁主线仍活跃 | 把现有 `points` 体系与成长上下文、权限 gate、商店/每日任务计划对齐 |
 | [music-reactive-dance-research.md](music-reactive-dance-research.md) | 第一版可用，舞感状态机仍活跃 | 扩展音乐状态机、fake source 模式、后端特征字段和调参入口 |

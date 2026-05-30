@@ -515,6 +515,18 @@
     resetInputIdleTimer();
   }
 
+  function scrollToBottomSoon() {
+    if (!contentEl) return;
+    contentEl.scrollTop = contentEl.scrollHeight;
+    requestAnimationFrame(function() {
+      if (!contentEl) return;
+      contentEl.scrollTop = contentEl.scrollHeight;
+      requestAnimationFrame(function() {
+        if (contentEl) contentEl.scrollTop = contentEl.scrollHeight;
+      });
+    });
+  }
+
   function openAgentWatch() {
     if (!window.__TAURI__ || !window.__TAURI__.core) return;
     window.__TAURI__.core.invoke('cmd_agent_watch_refresh').catch(function(e) {
@@ -589,8 +601,9 @@
     hideTimer = setTimeout(hide, 8000);
   }
 
-  function setText(text) {
+  function setText(text, options) {
     if (!bodyEl) return;
+    options = options || {};
     var wasAtBottom = isNearBottom();
     lastRawText = text || '';
 
@@ -605,15 +618,15 @@
     // 兜底：如果没有正在轮询，强制 idle（即便 bubble-end 事件丢失也能收回光标）
     if (!pollTimer) setStreamingClass(false);
 
-    // 仅当用户未手动上滚 + 原本在底部时才跟底
-    if (!userScrolledUp && wasAtBottom) {
-      contentEl.scrollTop = contentEl.scrollHeight;
-    }
+    var shouldFollowBottom = options.forceScrollBottom || (!userScrolledUp && wasAtBottom);
     // 用户滚回底部 → 解锁
     if (isNearBottom()) {
       userScrolledUp = false;
     }
     autoResize();
+    if (shouldFollowBottom) {
+      scrollToBottomSoon();
+    }
   }
 
   function hide() {
@@ -769,6 +782,12 @@
         diag('submitChat ✗ cmd_submit_chat 失败: ' + (e && e.toString ? e.toString() : e));
         console.error('[chat] submit failed:', e);
       });
+  }
+
+  function submitPrompt(text) {
+    if (!inputEl) return;
+    inputEl.value = text || '';
+    submitChat();
   }
 
   function cancelChat() {
@@ -957,10 +976,10 @@
     clearToolStatus();
     setStreamingClass(false);
     if (finalText && finalText.length > 0) {
-      setText(finalText);
+      setText(finalText, { forceScrollBottom: true });
       ensureVisible();
     } else if (lastRawText) {
-      setText(lastRawText);
+      setText(lastRawText, { forceScrollBottom: true });
       ensureVisible();
     }
     if (lastRawText) {
@@ -981,7 +1000,7 @@
     hideChatControls();
     hideInput('notice');
     resizeBubbleWindow(260, MIN_H, true);
-    setText(text);
+    setText(text, { forceScrollBottom: true });
     ensureVisible();
     startHideTimer();
   }
@@ -1117,7 +1136,7 @@
         if (!chip) return;
         e.preventDefault();
         e.stopPropagation();
-        fillInputDraft(chip.dataset.prompt || chip.textContent || '');
+        submitPrompt(chip.dataset.prompt || chip.textContent || '');
       });
     }
     if (replyChipEl) {

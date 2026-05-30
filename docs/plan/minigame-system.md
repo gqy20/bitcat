@@ -441,6 +441,8 @@ AI 生成配置路径仍推迟到后续 Phase：
 
 目标：从"能玩内置游戏"扩展到可配置游戏系统，并为 AI 生成配置预留稳定入口。
 
+2026-05-30 补充：游戏方向已经在 [game-direction-review-2026-05.md](game-direction-review-2026-05.md) 做过一轮盘点。短期不要直接跳到完整 RPG / 3D，也不要只复刻传统休闲小游戏；更适合作为第 6 个内置玩法验证的是 **BitCat 语义化小游戏**，即把记忆、提醒、Agent Watch、宠物状态等项目资产投影成游戏目标，但不让小游戏拥有修改真实数据的权限。
+
 - 梳理已存在的 Memory / Catch / Battle / Gomoku 内置实现，补齐规则文档、测试矩阵和统一 preset 注册机制。
 - `config/minigames.yml` 增加三种游戏默认配置与难度预设。
 - `core/src/minigame.rs` 增加 `save_game()`、`load_game()`、`list_games()`，目录为 `~/.bitcat/games/`，格式优先 YAML，规则保持可人工审查。
@@ -482,6 +484,53 @@ AI 生成配置路径仍推迟到后续 Phase：
 - 用户说"来一局慢一点的毛线球小游戏"，AI 能生成 bounded `GameDef` 并启动。
 - AI 生成参数越界时被 `validate_game_def()` 拒绝或归一化，不影响桌面应用稳定性。
 - 工具测试覆盖无效配置、保存失败、通道未初始化等路径。
+
+### Phase 3C：语义化内置小游戏原型（建议新增）
+
+目标：在现有 5 个内置小游戏之后，验证一个更能体现 BitCat 项目特性的玩法，而不是只新增一个传统小游戏品类。
+
+推荐工作名：`invasion` / `桌面小怪入侵`。
+
+玩法核心：
+
+- 小怪尝试偷走游戏内目标物。
+- 目标物来自 BitCat 语义投影，而不是真实数据本身：
+  - `treat`：鱼干 / 零食 / 分数目标。
+  - `memory_shard`：长期记忆标签的抽象碎片，只显示 tag 或安全主题。
+  - `reminder_note`：提醒便签投影，只显示安全摘要和是否临近。
+  - `agent_task`：Agent Watch 等待任务投影，只显示数量或状态。
+- 玩家用方向键 / 手柄移动准星或角色，A / Space 拦截小怪。
+- BitCat 通过现有 `PetEvent` / `GamePlay` / 胜负状态参与表现。
+
+安全边界：
+
+- 小游戏只读安全摘要，不读取完整记忆正文。
+- “偷走”只影响本局分数、HUD 和宠物反应，不删除、取消或修改真实提醒、记忆、Agent 任务。
+- Rust 侧提供结构化 `GameContext` 或等价 IPC 命令，前端只消费脱敏后的游戏上下文。
+- 失败路径必须有诊断日志，但不能把敏感内容写进前端日志。
+
+建议 MVP 范围：
+
+- 新增 `MinigameType::Invasion` 和 `StartGameKind::Invasion`。
+- 新增 `GameDef::default_invasion()` 与校验。
+- 在 `game_engine.js` 新增 `InvasionEngine`，先做固定敌人类型和固定难度曲线。
+- 新增安全上下文 IPC：聚合鱼干数量、记忆 tags、提醒数量 / 临近状态、Agent Watch 等待数量。
+- 前端规则测试覆盖敌人生成、偷取、拦截、胜负和计分。
+
+暂不做：
+
+- 根据真实桌面截图生成地形。
+- AI 动态导演完整关卡。
+- 真实 pet 窗口参与物理碰撞。
+- 完整 Hub World / RPG 迁移。
+
+验收标准：
+
+- 用户能通过面板或 AI `start_game(kind)` 启动 `invasion`。
+- 没有真实提醒或记忆被小游戏修改。
+- 无记忆 / 无提醒 / 无 Agent Watch 任务时也能生成纯虚构目标并正常游玩。
+- 胜负、取消和分数能走现有 `cmd_game_end` 生命周期。
+- 玩法体验能明显体现“这是 BitCat 的游戏”，而不只是普通小游戏合集。
 
 ### Phase 4：体验打磨
 

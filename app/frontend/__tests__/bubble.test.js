@@ -730,3 +730,15 @@ describe('agent toast copy', () => {
     expect(sheet).toContain('font-weight: 680;');
   });
 });
+
+describe('bubble quick action contracts', () => {
+  it('preset compose chips submit immediately instead of only filling draft', () => {
+    expect(bubbleScript).toContain("submitPrompt(chip.dataset.prompt || chip.textContent || '')");
+  });
+
+  it('finalized replies force a bottom follow after rendering', () => {
+    expect(bubbleScript).toContain('function scrollToBottomSoon()');
+    expect(bubbleScript).toContain('setText(finalText, { forceScrollBottom: true })');
+    expect(bubbleScript).toContain('setText(text, { forceScrollBottom: true })');
+  });
+});
