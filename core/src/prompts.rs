@@ -49,7 +49,7 @@ fn default_long_term_max() -> usize {
     200
 }
 fn default_retrieve_budget() -> usize {
-    10_000
+    8_000
 }
 fn default_aggregation_interval() -> u32 {
     24

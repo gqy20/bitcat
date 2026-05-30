@@ -184,7 +184,7 @@ memory:
 
 memory_v2:
   long_term_max_entries: 200
-  retrieve_budget_chars: 10000
+  retrieve_budget_chars: 8000
 
 screen_summary:
   interval_min: 15

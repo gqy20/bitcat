@@ -66,6 +66,7 @@
 ~/.bitcat/memory/
 ├── chat_summary.json          # 当前滚动摘要，继续保留
 ├── long_term.jsonl            # 当前有效长期记忆 record，可 grep，deleted 软删除
+├── long_term.md               # 由 JSONL 派生的人类/rg 友好审查视图
 ├── daily/2026-05-13.md        # 可选：按天沉淀的人类可读摘要
 └── index/
     └── tags.json              # 可选：轻量标签索引，不是向量索引
@@ -111,3 +112,15 @@ MemorySearchQuery {
 3. 合并重复工具；
 4. 必要时用显式模式启用低频能力；
 5. dynamic tools 只作为 feature flag 实验，不作为默认架构。
+
+### 当前实现补充（2026-05-30）
+
+工具提示已从“schema description + prompt 工具清单双写”调整为“rig 原生工具定义为主，工具政策 prompt 为辅”。
+
+当前取舍：
+
+- 普通能力说明写在 `ToolDefinition.description` 和参数 schema 中，让模型通过 rig 原生工具机制理解工具。
+- `build_tool_guide_prompt()` 只保留高风险/容易误用的运行时政策，例如提醒创建失败必须如实说明、shell 权限边界、提醒时间字段要求。
+- `start_game(kind)` 按这个原则接入：模型通过工具名、description 和枚举 schema 了解可启动的内置游戏；Rust 只做枚举校验、请求转发和执行。
+
+这继续遵守“让模型理解意图，Rust 负责边界”的原则，也避免工具数量增加后 prompt 里出现第二份易过期的工具目录。

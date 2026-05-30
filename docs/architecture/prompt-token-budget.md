@@ -1,133 +1,73 @@
 # Prompt Token 预算分析
 
-> 统计日期：2026-05-13 | 基于源码默认值（`config/prompts.yml` + `core/src/agent.rs`）
+> 更新日期：2026-05-30
+> 基于当前源码：`config/prompts.yml`、`core/src/agent.rs`、`core/src/memory.rs`
 
 ## 概览
 
-| 模块 | 字符数 | 估算 Token | 占比 | 调用时机 |
-|------|--------|-----------|------|---------|
-| Agent Preamble (系统提示词) | 158 | ~45 | 4.8% | 每次对话必带 |
-| Vision Prompt (截图分析) | 220 | ~63 | 6.7% | 截图观察时 |
-| Vision Multi-Monitor 后缀 | 54 | ~15 | 1.6% | 多屏拼接时追加 |
-| Screen Summary Prompt (屏幕摘要) | 173 | ~49 | 5.3% | 摘要聚合时 |
-| **Tools (x10)** (工具定义) | 待用真实 tokenizer 复测 | 待用真实 tokenizer 复测 | 主要开销 | 每次对话必带 |
-| **总计** | **3,291** | **~940** | 100% | — |
+当前主对话固定上下文主要来自四块：
 
-> 注：舞蹈工具已从 `create_dance(name, mood)` 改为 `perform_dance(name, steps...)`，且 B4.4 已压缩舞蹈工具 description / schema 注释。下方旧统计仅作历史参考，实际 token 预算需重新跑脚本统计。
+| 模块 | 当前状态 | 估算 Token | 调用时机 |
+|------|----------|------------|----------|
+| Agent preamble | `config/prompts.yml` 的基础人格提示词 | 约 100-300 | 每次主对话 |
+| Tool definitions | rig 原生 `ToolDefinition` + JSON schema，共 16 个工具 | 约 6.2K-9.7K | 每次主对话 |
+| Tool policy | `build_tool_guide_prompt()` 只保留高风险/易误用规则 | 约 350-700 | 每次主对话 |
+| Memory/profile/screen context | 用户画像、短期记忆、长期记忆候选、截图摘要按预算注入 | 0-20K+ | 有内容时注入 |
 
-## 每次对话必带开销
+工具 schema 仍是固定开销的大头，但已经从“双写工具清单”调整为：
 
-**Preamble + Tools = 2,844 字符 ≈ 813 tokens**，占 max_tokens(256K) 的 **0.32%**
-
-这是每次 AI 对话的固定开销，与用户消息长度无关。
-
-## Tool 定义明细
-
-| 工具名 | 字符数 | 估算 Token | 说明 |
-|--------|--------|-----------|------|
-| `launch_program` | 358 | ~102 | 4 个参数：program/args/workdir/terminal |
-| `shell` | 222 | ~63 | 1 个参数：command |
-| `read_file` | 192 | ~55 | 1 个参数：path |
-| `get_time` | 185 | ~53 | 1 个可选参数：format (enum 3 值) |
-| `recent_screenshots` | 187 | ~53 | 1 个可选参数：count |
-| `send_hotkey` | 322 | ~92 | 2 个参数：keys(数组) + hold |
-| `read_clipboard` | 140 | ~40 | 无参数 |
-| `force_foreground` | 201 | ~57 | 1 个参数：hwnd |
-| `perform_dance` | 待重新统计 | 待重新统计 | 完整 steps schema，已压缩说明文本 |
-| `play_dance` | 待重新统计 | 待重新统计 | 3 个参数，已压缩 description |
-
-### 最胖的工具 Top 3
-
-1. **perform_dance** — description + steps schema 仍可能较长，B4.4 已先压缩文字，下一步需用真实 tokenizer 复测
-2. **play_dance** — B4.4 已压缩 description，下一步复测收益
-3. **launch_program** (102 tok) — 4 个参数字段，schema 较宽
-
-## 各模块原始内容
-
-### 1. Agent Preamble (`prompts.rs::DEFAULT_AGENT_PREAMBLE`)
-
-```
-你是 BitCat，一个住在电脑屏幕边缘的桌面 AI 伙伴。
-
-性格特点：
-- 活泼好奇，喜欢用 emoji
-- 偶尔调皮，但做事靠谱
-- 回答简洁，不说废话
-- 用中文交流
-
-你通过手柄和用户交互，可以帮用户：
-- 启动程序、执行命令
-- 查时间、读文件
-- 闲聊、讲笑话、提醒事项
-
-回答时保持角色感，像一只懂技术的猫。
+```text
+普通能力说明 -> 写在工具 description/schema 中，由 rig 原生工具定义承载
+额外行为政策 -> 写在工具政策 prompt 中，只保留高风险/容易误用规则
 ```
 
-**评价**：非常精简（158 字符 / 45 tok），人设清晰但不冗余。如果要增强角色感可以适当扩充，当前体量完全不是瓶颈。
+这样可以避免每个工具在 schema 和 prompt 里重复描述，也更贴合 rig 的设计：模型看工具时天然会看到工具名、description、参数 schema；prompt 只补足 schema 难以表达的运行时政策。
 
-### 2. Vision Prompt (`prompts.rs::DEFAULT_VISION_PROMPT`)
+## 当前工具集
 
-```
-你是 BitCat，一个住在电脑屏幕边缘的桌面 AI 伙伴。你刚刚看了一眼主人的屏幕。
+主 Agent 注册 16 个内置工具：
 
-严格遵守以下规则：
-1. 如果你无法看清文字、标签、文件名，必须说"看不清"，绝对不要猜测或编造
-2. 对于模糊的图标，只描述颜色和形状，用"看起来像是"而非"就是"
-3. 不要编造任何具体的名称、数字、文字内容
-4. 与其编造细节，不如诚实说"这个太小了喵~我看不太清"
-5. 回复控制在 80 字以内，语气活泼可爱，像猫的视角
+| 类别 | 工具 |
+|------|------|
+| 系统/文件 | `launch_program`、`shell`、`read_file`、`get_time` |
+| 观察/上下文 | `recent_screenshots`、`search_memory`、`remember` |
+| 提醒 | `create_reminder`、`list_reminders`、`cancel_reminder` |
+| 桌面操作 | `send_hotkey`、`read_clipboard`、`force_foreground` |
+| 表演/游戏 | `perform_dance`、`play_dance`、`start_game` |
 
-请描述你看到的屏幕内容。
-```
+`start_game` 是 2026-05-30 新增的低风险表演类工具，只接受内置枚举游戏类型，开销主要是一个小 schema，粗略约 300-600 tokens。
 
-**评价**：反幻觉规则完善（220 字符 / 63 tok），独立 API 调用不占用对话 context。
+## 记忆预算
 
-### 3. Screen Summary Prompt (`screen_summary.rs::DEFAULT_SCREEN_SUMMARY_PROMPT`)
+短期对话记忆由 `MemoryConfig` 控制：
 
-```
-你是 BitCat 的观察模块。以下是一段时间内对主人屏幕的多次 AI 观察记录。
+| 字段 | 当前默认值 | 说明 |
+|------|------------|------|
+| `max_context_chars` | `20000` | 注入短期记忆上下文的总字符预算 |
+| `max_user_chars` | `500` | 单条用户消息写入时截断 |
+| `max_reply_chars` | `1000` | 单条 AI 回复写入时截断 |
+| `max_entries` | `0` | 默认不按条数淘汰，由字符预算控制 |
 
-请将它们整理为结构化的活动日志：
-- 按活动类型分组（编程、浏览、通讯、娱乐、文档等）
-- 每组列出时间段和具体活动
-- 合并重复的观察（如连续多次看到同一应用，合并为时间段范围）
-- 保留关键细节（项目名、文件名、网站等能看清的信息）
-- 控制在 300 字以内
-```
+这次把单条截断从 user 100 / reply 200 提高到 user 500 / reply 1000，能显著保留上下文细节，但也意味着短期记忆更容易吃满 `max_context_chars`。实际 token 取决于中文/英文比例和对话密度，满预算时大致可能达到数千到一万多 tokens。
 
-**评价**：结构化聚合指令清晰（173 字符 / 49 tok），独立 API 调用。
+长期记忆仍坚持 grep-first：`search_memory` 或上下文拼接先用 text/tags/source/importance 等可解释条件筛候选，再交给模型判断语义相关性，不引入 embedding/vector DB 作为主线。当前自动长期记忆注入预算默认 `retrieve_budget_chars = 8000`；`search_memory` 工具按需检索默认允许更高预算，上限 `12000` 字符，并可额外指定返回条数。
 
-## 优化建议
+## 优化顺序
 
-### 高优先级（省 token 明显）
+当前不建议默认动态裁剪工具。更稳的顺序是：
 
-| 方案 | 预估节省 | 难度 |
-|------|---------|------|
-| 精简 `perform_dance` description / schema 文案 | 待测 | 低 |
-| 精简 `play_dance` description（语义移到参数 description） | ~25 tok | 低 |
-| 合并 `force_foreground` 到 `send_hotkey` 或 `shell`（hwnd 可通过 shell 获取） | ~57 tok | 中 |
-
-### 中优先级（架构改进）
-
-| 方案 | 预估节省 | 难度 |
-|------|---------|------|
-| 按场景动态注册工具子集（闲聊模式只注册 4-5 个） | ~200-400 tok | 高 |
-| 工具 description 中英双语改纯中文（当前已是中文，无需改动） | 0 | — |
-| `launch_program` 的 workdir/terminal 合并为一个 options 字符串 | ~20 tok | 低 |
-
-### 不建议优化
-
-- **Preamble**（45 tok）— 已经很精简，扩充反而能提升回复质量
-- **Vision Prompt**（63 tok）— 反幻觉规则每条都有价值，删减可能降低分析质量
-- **read_clipboard**（40 tok）— 已经是最小工具，无法再精简
+1. 继续用 token usage 日志和设置页统计观察真实消耗。
+2. 保持工具 description/schema 是普通能力说明的单一来源。
+3. 只把高风险规则、失败必须如实说明、提醒时间字段等放进工具政策 prompt。
+4. 对特别胖的 schema 做结构化压缩，而不是把说明复制到 prompt。
+5. 只有当真实统计显示固定工具开销成为主要瓶颈时，再评估能力包或 dynamic tools。
 
 ## 文件索引
 
-| 配置项 | 源文件 | 常量/字段 |
-|--------|--------|----------|
-| Agent Preamble | `core/src/prompts.rs` | `DEFAULT_AGENT_PREAMBLE` |
-| Vision Prompt | `core/src/prompts.rs` | `DEFAULT_VISION_PROMPT` |
-| Vision Multi | `core/src/prompts.rs` | `DEFAULT_VISION_PROMPT_MULTI` |
-| Screen Summary | `core/src/screen_summary.rs` | `DEFAULT_SCREEN_SUMMARY_PROMPT` |
-| Tool Definitions | `core/src/agent.rs` | `define_tool_sync!` / `define_tool_async!` 宏调用 |
-| Memory Config | `core/src/memory.rs` | `MemoryConfig`（数值配置，无提示词文本） |
+| 内容 | 文件 |
+|------|------|
+| Agent preamble / memory config 默认 YAML | `config/prompts.yml` |
+| Tool 注册与工具政策 prompt | `core/src/agent.rs` |
+| Tool 参数与执行逻辑 | `core/src/tools.rs` |
+| 短期/长期记忆预算与检索 | `core/src/memory.rs` |
+| Token 统计持久化 | `core/src/token_usage.rs` |

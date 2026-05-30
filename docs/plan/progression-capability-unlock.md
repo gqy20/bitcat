@@ -1,6 +1,6 @@
 # BitCat 成长与能力解锁实施计划
 
-状态：设计落地计划，未开始实现（2026-05-18 补充积分体系五层设计、商店、成就、每日任务、心情系统）
+状态：积分/等级/成就第一片已落地；能力解锁、商店、每日任务和心情系统仍未实现（2026-05-30 校准）
 前置调研：[core-gameplay-progression-research.md](../research/core-gameplay-progression-research.md)
 Steam 积分模式参考：Hades（多层货币）、Vampire Survivors（极简反馈）、Dead Cells（蓝图解锁）、Steam 成就系统、Tamagotchi（隐式状态）
 
@@ -24,10 +24,30 @@ Steam 积分模式参考：Hades（多层货币）、Vampire Survivors（极简�
   + 动态 stage overlay
   + 动态 capability context
   + 代码层权限 gate
-  + 本地 ProgressStore
+  + 本地 PointsStore / Progression overlay
 ```
 
 不要做 6 套完整系统提示词。阶段差异只作为短 overlay 注入对话上下文；真正的工具权限必须在 Rust 代码里硬拦。
+
+## 当前已落地的薄片（2026-05-30）
+
+当前实现不是本计划最初命名的 `ProgressStore`，而是先落了一个更窄的 `points` 体系：
+
+- `core/src/points.rs`：记录互动积分事件、等级、连续活跃天数、分类统计和 12 个内置成就。
+- 持久化：
+  - `~/.bitcat/logs/points_events.jsonl`：append-only 明细，便于 grep 和审计。
+  - `~/.bitcat/points_state.json`：聚合状态，原子写入。
+- 设置页已经通过 `cmd_get_points_state` 展示当前积分状态、最近事件和成就视图。
+- 已接入事件源包括：每日登录、文字/语音对话、长期记忆创建、提醒创建/完成、舞蹈、游戏启动/胜利、截图/摄像头观察、A 键夸奖宠物。
+
+这部分对应原计划中的“第一层 Bit/积分 + 第三层成就”的最小可见闭环。尚未落地：
+
+- 成长状态注入对话上下文。
+- `FeatureId`/能力 gate 与高风险工具授权。
+- 商店、库存、每日任务。
+- 隐式心情系统与可视化升级反馈。
+
+后续文档继续使用“成长/能力解锁”描述产品目标，但代码实现应优先复用并演进现有 `points` 模块，避免再平行新建一套重复账本。
 
 ## 当前代码落点
 
@@ -68,11 +88,13 @@ Steam 积分模式参考：Hades（多层货币）、Vampire Survivors（极简�
 
 ## 模块设计
 
-新增：
+原计划新增：
 
 ```text
 core/src/progression.rs
 ```
+
+当前已先以 `core/src/points.rs` 落地积分和成就薄片。若后续仍需要 `progression.rs`，它应该作为更高层的能力解锁/商店/每日任务编排模块，复用 `points` 的事件和状态，而不是重写积分账本。
 
 职责：
 
@@ -263,7 +285,7 @@ pub struct AgentPromptConfig {
 
 实现路径：
 
-1. `PermissionHook` 读取 `ProgressStore`。
+1. `PermissionHook` 读取现有 `points` 等级和未来 progression 授权状态。
 2. 对每个 tool_name 查询 `is_tool_allowed(tool_name)`。
 3. 不允许时返回稳定、可解释的 `ToolCallHookAction::Skip` reason。
 4. 保留现有 shell 危险命令检查。
@@ -669,9 +691,22 @@ happiness 钳位到 [0.0, 1.0]
 
 ## 实施阶段
 
-### Phase 0：数据与纯逻辑
+### Phase 0A：积分与成就薄片（已完成）
 
-- 新增 `core/src/progression.rs`。
+- 新增 `core/src/points.rs`，实现积分事件、等级阈值、分类统计、连续活跃和成就解锁。
+- `core/src/lib.rs` 导出 `points`。
+- `app/src/settings.rs` 暴露 `cmd_get_points_state`，设置页可读取积分状态、最近事件和成就视图。
+- app/core 多处 hook 调用 `points::award()`：启动、聊天、语音、记忆、提醒、舞蹈、游戏、观察和夸奖宠物。
+
+验收：
+
+- `core/src/points.rs` 内联单测覆盖分值、等级边界、序列化、成就解锁、分类映射和最近事件读取。
+- 积分明细为 JSONL，聚合状态为 JSON，符合可 grep、可人工审查的本地优先设计。
+
+### Phase 0B：成长数据与纯逻辑（活跃）
+
+- 评估是否新增 `core/src/progression.rs`；如新增，只负责能力解锁、商店、每日任务和心情编排。
+- 复用 `points` 事件/等级/成就，不复制积分流水。
 - 实现 load/save、事件奖励、等级计算、每日上限。
 - 实现 Bit 商店验证（购买 / 库存 / 余额扣除）。
 - 实现成就条件检查和解锁。
@@ -693,7 +728,7 @@ happiness 钳位到 [0.0, 1.0]
 
 ### Phase 1：接入聊天上下文
 
-- 在 `app/src/gamepad.rs` 加载 `ProgressStore`。
+- 在 `app/src/gamepad.rs` 加载现有 `points` 状态和未来 progression 授权状态。
 - 拼接 `[BitCat成长状态]` 到 `context_parts`。
 - 聊天成功后记录 `ProgressEvent::ChatCompleted`。
 - 升级时用 bubble 或 pet event 提示。
@@ -755,7 +790,7 @@ happiness 钳位到 [0.0, 1.0]
 
 core：
 
-- `ProgressStore` 序列化用 `insta::assert_yaml_snapshot!`。
+- `PointsState` / progression 授权状态序列化用 `insta::assert_yaml_snapshot!`。
 - 奖励规则用 `rstest` 参数化。
 - 日上限和等级边界用普通单测。
 - 权限映射测试覆盖每个 tool。
@@ -791,9 +826,9 @@ frontend：
 
 ## 推荐首个 PR 范围
 
-只做 Phase 0 + Phase 1：
+下一步建议只做 Phase 0B + Phase 1：
 
-- `core/src/progression.rs`
+- 评估新增 `core/src/progression.rs` 或扩展 `core/src/points.rs`
 - `core/src/lib.rs`
 - `core/src/prompts.rs` 和 `config/prompts.yml` 加 `stage_overlays`
 - `config/shop.yml`（15~20 个首版商品）
@@ -802,5 +837,5 @@ frontend：
 - `app/src/gamepad.rs` 注入成长上下文并记录聊天完成
 - 基础测试
 
-这个 PR 完成后，BitCat 就能在对话里表现出”当前阶段”，Bit / 默契 / 成就 / 每日任务的数据层就位，但还不动工具权限和设置页 UI，风险最低。
+这个 PR 完成后，BitCat 就能在对话里表现出”当前阶段”，并复用已落地的积分 / 等级 / 成就数据；每日任务和商店可以先只有配置和纯逻辑，不动工具权限和复杂设置页 UI，风险最低。
 

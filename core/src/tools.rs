@@ -46,7 +46,7 @@ pub fn truncate_chars(s: &str, max: usize) -> String {
 
 const SHELL_TIMEOUT_SECS: u64 = 30;
 const MAX_OUTPUT_CHARS: usize = 8000;
-const DEFAULT_MEMORY_TOOL_BUDGET_CHARS: usize = 1600;
+const DEFAULT_MEMORY_TOOL_BUDGET_CHARS: usize = 12_000;
 const DEFAULT_LONG_TERM_MEMORY_MAX_ENTRIES: usize = 200;
 
 // ---- Tool 参数定义 ----
@@ -142,6 +142,9 @@ pub struct SearchMemoryArgs {
     /// Character budget for returned memory context.
     #[serde(default)]
     pub limit_chars: Option<usize>,
+    /// Maximum number of memory entries to return. Defaults to 20.
+    #[serde(default)]
+    pub limit: Option<usize>,
 }
 
 /// `remember` tool arguments for explicitly adding a durable memory note.
@@ -320,8 +323,9 @@ pub fn execute_search_memory(args: &SearchMemoryArgs, store: &LongTermMemory) ->
     let budget = args
         .limit_chars
         .unwrap_or(DEFAULT_MEMORY_TOOL_BUDGET_CHARS)
-        .clamp(200, 4000);
-    let result = store.retrieve_with(
+        .clamp(200, DEFAULT_MEMORY_TOOL_BUDGET_CHARS);
+    let limit = args.limit.unwrap_or(20).clamp(1, 50);
+    let result = store.search_results_with(
         &LongTermMemoryQuery {
             text: query.to_string(),
             tags: normalize_memory_tags(&args.tags),
@@ -336,6 +340,7 @@ pub fn execute_search_memory(args: &SearchMemoryArgs, store: &LongTermMemory) ->
             min_importance: args.min_importance.map(|v| v.clamp(1, 5)),
         },
         budget,
+        limit,
     );
 
     if result.is_empty() {
@@ -847,6 +852,7 @@ mod tests {
                 source: Some("agent_reaction".into()),
                 min_importance: Some(4),
                 limit_chars: Some(500),
+                limit: None,
             },
             &store,
         );

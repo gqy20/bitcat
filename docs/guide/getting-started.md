@@ -100,6 +100,7 @@ $env:ANTHROPIC_MODEL="claude-sonnet-4-20250514"
 ├── memory/
 │   ├── chat_summary.json
 │   ├── long_term.jsonl
+│   ├── long_term.md
 │   └── profile.json
 ├── screenshots/YYYY-MM-DD/
 │   ├── HHMMSS.jpg

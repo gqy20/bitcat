@@ -6,9 +6,9 @@
 
 | 文档 | 状态 | 下一步 |
 |------|------|--------|
-| [minigame-system.md](minigame-system.md) | Phase 1 已完成，Phase 2/3 活跃 | 补 Memory/Catch、游戏配置、分数持久化、AI `perform_game` / `play_game` 工具 |
+| [minigame-system.md](minigame-system.md) | Phase 1 已完成；内置游戏启动与 AI `start_game` 工具已落地 | 收敛 GameDef 持久化、分数持久化、AI 生成游戏配置；`perform_game` 仍是未来扩展 |
 | [pet-asset-packaging.md](pet-asset-packaging.md) | 新增，承接 v2 宠物资源包发布策略 | 决定哪些资源内置、哪些做外部包；补资源包体积预算和用户目录加载 |
-| [progression-capability-unlock.md](progression-capability-unlock.md) | 设计落地计划，未开始实现 | 先做 ProgressStore + 对话成长上下文注入，再做工具权限 gate |
+| [progression-capability-unlock.md](progression-capability-unlock.md) | 积分/等级/成就第一片已落地；能力解锁主线仍活跃 | 把现有 `points` 体系与成长上下文、权限 gate、商店/每日任务计划对齐 |
 | [music-reactive-dance-research.md](music-reactive-dance-research.md) | 第一版可用，舞感状态机仍活跃 | 扩展音乐状态机、fake source 模式、后端特征字段和调参入口 |
 | [claude-code-agent-watch.md](claude-code-agent-watch.md) | Phase 1 + 本地/远程只读看管 MVP 已落地，Phase 2 活跃 | 补 JSONL watcher、PID 存活、结构化预览、panel 收敛和控制动作审计 |
 | [observation-hints.md](observation-hints.md) | 设计草案，未开始实现 | 先做 ObservationHint / ObservationHintStore，再接入截图观察和设置页审查 |
@@ -26,6 +26,8 @@
 | Agent Watch | 本地 Claude/Codex hook、Remote LAN ingest/viewer、浮动任务栈、顶部通知 | JSONL watcher、PID 存活检测、结构化工具预览、panel 收敛、已查看/静音/置顶 | [claude-code-agent-watch.md](claude-code-agent-watch.md) |
 | 工具运行时 | 生命周期事件、bubble 状态 UI、审计日志、首轮 schema 压缩 | 真实 token 统计驱动的 schema 预算、能力包/dynamic tools 是否值得启用 | [../roadmap.md](../roadmap.md) §B4 |
 | grep-first 记忆 | JSONL/id/软删除/search_memory 主链路 | 默认上下文瘦身、候选压缩、Agent Watch 项目摘要召回 | [../roadmap.md](../roadmap.md) §B5 |
+| AI 启动内置游戏 | `start_game(kind)` 工具、game request bridge、ActionBus 内置游戏映射 | GameDef 持久化、分数 JSONL、AI 生成/配置游戏参数 | [minigame-system.md](minigame-system.md) |
+| 积分与成就薄片 | `core/src/points.rs`、points JSONL/状态、设置页展示、对话/游戏/舞蹈/观察等奖励 hook | 能力解锁上下文、权限 gate、商店、每日任务、心情系统 | [progression-capability-unlock.md](progression-capability-unlock.md) |
 | v2 宠物资源包 | manifest loader、默认 `piggy`、多 pack catalog | bundle 体积预算、外部用户目录加载、资源诊断和发布分层 | [pet-asset-packaging.md](pet-asset-packaging.md) |
 | 音乐响应舞动 | WASAPI/fake source 到 sprite-only 音乐表演链路 | 舞感状态机、后端特征字段、调参入口、静音/强拍/高潮回落表现 | [music-reactive-dance-research.md](music-reactive-dance-research.md) |
 

@@ -148,19 +148,30 @@ AI 可通过 `perform_dance` Tool 直接提交完整舞蹈编排，前端实时�
 
 ## 迷你游戏
 
-面板可启动 4 个内置玩法：
+面板和 AI `start_game(kind)` 可启动 5 个内置玩法：
 
 - **毛线球大作战**：Snake 玩法，默认 48×32 加密网格，圆润连续身体渲染；前 20 个食物优先刷在中间区域，按住 A / Space / Enter 可加速，BOOST 吃到食物得分更高。
 - **翻牌配对**：Memory 配对玩法，方向键移动光标，A / Enter 翻牌；记录 flips / moves / misses，最终得分包含匹配分、combo 和通关效率奖励，翻牌越少分数越高。
 - **接食物**：Catch 玩法，半宽赛道、篮子造型和接住弹字反馈；连续接住会提高 combo 得分，漏掉会扣分、断 combo，累计失误 5 次失败。
 - **飞机守护战**：原守护战已改为飞行射击玩法，按住方向可持续移动，A / Space 发射，X/Y 技能，L1 防护；击杀有 combo、爆炸粒子和目标进度，漏怪/碰撞会扣生命值并扣分。
+- **五子棋**：棋盘落子玩法，AI 提供候选点、思路和局面讲解；结构化 commentary 会校验坐标、推荐点和战术标签，避免模型编造棋盘事实。
 
 1. 后端创建透明置顶 `game` 窗口并读取 `GameDef`
-2. 前端 `game_engine.js` 按 `game_type` 创建 Snake / Memory / Catch / Battle 引擎，运行网格逻辑、键盘/手柄方向输入和胜负判定
+2. 前端 `game_engine.js` 按 `game_type` 创建 Snake / Memory / Catch / Battle / Gomoku 引擎，运行网格逻辑、键盘/手柄方向输入和胜负判定
 3. 游戏期间宠物进入 `GamePlay` 状态，结束后按 win / lose / cancel 切换表现
 4. `GameDef` 会校验网格尺寸、速度、胜利长度、主题枚举和各模式专用边界，防止异常配置导致越界或卡死
 
-当前面板入口会通过 `ActionBus::PlayGameDefault` / `PlayMemoryDefault` / `PlayCatchDefault` / `PlayBattleDefault` 启动内置模式；底层 `start_game(GameDef)` / `cmd_start_game_with_def` 已能启动指定配置。AI 层 `perform_game` / `play_game` 工具还未注册，下一步会复用这条通道。
+当前面板入口会通过 `ActionBus::PlayGameDefault` / `PlayMemoryDefault` / `PlayCatchDefault` / `PlayBattleDefault` / `PlayGomokuDefault` 启动内置模式；AI 可通过 `start_game(kind)` 启动这些内置模式。底层 `start_game(GameDef)` / `cmd_start_game_with_def` 已能启动指定配置；未来 AI 生成完整自定义 GameDef 的 `perform_game` 还未注册。
+
+## 积分与成就
+
+BitCat 会把日常互动转成轻量积分、等级和成就：
+
+- 事件明细写入 `~/.bitcat/logs/points_events.jsonl`
+- 聚合状态写入 `~/.bitcat/points_state.json`
+- 设置页展示当前积分、等级、最近事件和成就列表
+
+已接入事件包括对话、语音、记忆创建、提醒创建/完成、舞蹈、游戏启动/胜利、截图/摄像头观察、每日登录和夸奖宠物。当前这是成长系统的第一片，能力解锁、商店、每日任务和心情系统仍在计划中。
 
 ## Agent Watch
 
@@ -208,7 +219,7 @@ Agent 可以调用提醒工具创建确定性的本地任务，例如“3 分钟
 
 - 对话结束后由 `AgentReaction.memory_candidates` 或 `remember` 工具写入长期记忆，Rust 只做 schema、长度、标签和重要度边界校验
 - 支持按 text/tag/source/min_importance 做 grep-first 候选召回，最多返回 20 条交给模型判断语义相关性
-- 持久化到 `~/.bitcat/memory/long_term.jsonl`，一行一条当前有效记录，包含稳定 `id` 和 `deleted` 软删除字段
+- 持久化到 `~/.bitcat/memory/long_term.jsonl`，一行一条当前有效记录，包含稳定 `id` 和 `deleted` 软删除字段；同步生成 `long_term.md`，方便人工审查和 `rg` 搜索
 
 ### AI 聚合画像
 
@@ -282,7 +293,7 @@ bitcat/
 │       ├── minigame.rs     # 迷你游戏 GameDef schema、内置模式与校验
 │       ├── tool_events.rs  # 工具运行时事件审计日志
 │       ├── token_tracker.rs # Token 用量 JSONL + session 聚合
-│       └── tools.rs        # AI Tool 实现（launch/shell/read_file/get_time/recent_screenshots/search_memory/remember/reminder/hotkey/clipboard/foreground/dance）
+│       └── tools.rs        # AI Tool 实现（launch/shell/read_file/get_time/recent_screenshots/search_memory/remember/reminder/hotkey/clipboard/foreground/dance/start_game）
 └── app/                    # Tauri 2.0 应用
     ├── tauri.conf.json     # 窗口、权限、withGlobalTauri
     ├── capabilities/
@@ -312,7 +323,7 @@ bitcat/
     └── frontend/           # 静态 HTML/JS/CSS + Vitest 前端测试
         ├── pet.html        # 宠物窗口（128×128 透明, Canvas 像素精灵 + 粒子 + 舞蹈播放器）
         ├── bubble.html     # 气泡窗口（流式文本 + Markdown + 毛玻璃）
-        ├── game.html       # 迷你游戏窗口（Snake / Memory / Catch / Battle）
+        ├── game.html       # 迷你游戏窗口（Snake / Memory / Catch / Battle / Gomoku）
         ├── agent_watch.html # Agent Watch 浮动任务栈窗口
         ├── notification.html # Agent Watch 与提醒共用通知窗口
         ├── camera.html     # 隐藏摄像头采样窗口
@@ -472,7 +483,7 @@ language: "zh-CN"         # 首选语言（空则自动判断）
 
 - max_tokens 统一 **256K**，可用 `ANTHROPIC_MAX_TOKENS` 环境变量覆盖
 - Agent 人设："BitCat" — 一个住在屏幕上的桌面 AI 伙伴，活泼好奇，用中文交流
-- 内置 **15 个 Tool**：
+- 内置 **16 个 Tool**：
 
 | Tool | 功能 |
 |------|------|
@@ -481,11 +492,14 @@ language: "zh-CN"         # 首选语言（空则自动判断）
 | `read_file` | 读取文件内容 |
 | `get_time` | 获取当前时间（支持格式/时区） |
 | `recent_screenshots` | 获取最近 N 条截图分析记录 |
-| `hotkey` | 发送键盘组合键（SendInput） |
-| `clipboard` | 读取剪贴板文本 |
-| `foreground` | 按标题聚焦窗口 |
+| `search_memory` | grep-first 检索长期记忆 |
+| `remember` | 显式写入长期记忆 |
+| `send_hotkey` | 发送键盘组合键（SendInput） |
+| `read_clipboard` | 读取剪贴板文本 |
+| `force_foreground` | 按标题聚焦窗口 |
 | `perform_dance` | AI 直接提交完整 DanceDef，保存并立即播放 |
 | `play_dance` | 播放已保存的舞蹈 |
+| `start_game` | 启动内置小游戏（snake/memory/catch/battle/gomoku） |
 | `create_reminder` | 创建一次性或重复提醒，写入本地提醒 store |
 | `list_reminders` | 查看当前提醒任务 |
 | `cancel_reminder` | 取消提醒 |
@@ -524,7 +538,7 @@ emit "voice-flush"        ──────►  voice.js 同步 textarea（voic
                               ◄───  invoke cmd_consume_bubble_text
                               ◄───  invoke cmd_voice_update_text
                               ◄───  invoke cmd_play_dance / cmd_settings_* / cmd_camera_frame
-                              ◄───  invoke cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle / cmd_screenshot_now
+                              ◄───  invoke cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle / cmd_start_gomoku / cmd_screenshot_now
                               ◄───  emit "voice-ready" (mpsc 握手完成)
 ```
 

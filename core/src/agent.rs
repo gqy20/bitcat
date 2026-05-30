@@ -176,28 +176,18 @@ impl ChatError {
             } => *accumulated_chars,
         }
     }
-
-    /// 兼容旧 `Result<String, String>` 调用点的快速序列化。
-    ///
-    /// 新代码应优先用 `match` 解析 enum 以获得结构化信息；此方法仅供
-    /// 尚未迁移的调用点做最小改动适配。
-    pub fn to_display_string(&self) -> String {
-        match self {
-            Self::RecoverableStream {
-                reason,
-                accumulated_chars,
-                ..
-            } => {
-                format!("AI 流错误(可恢复,{reason},{accumulated_chars}字符)")
-            }
-            Self::Fatal { reason, .. } => format!("AI 流错误({reason})"),
-        }
-    }
 }
 
 impl std::fmt::Display for ChatError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.to_display_string())
+        match self {
+            ChatError::RecoverableStream {
+                reason,
+                accumulated_chars,
+                ..
+            } => write!(f, "AI 流错误(可恢复,{reason},{accumulated_chars}字符)"),
+            ChatError::Fatal { reason, .. } => write!(f, "AI 流错误({reason})"),
+        }
     }
 }
 
@@ -872,7 +862,7 @@ const TOOL_SPECS: &[ToolSpec] = &[
 fn build_tool_guide_prompt() -> String {
     let mut prompt = String::from("[工具使用政策]\n");
     prompt.push_str(
-        "工具的名称、用途和参数以原生 tool definition 为准，不要在系统提示词里另造参数。需要真实执行动作时使用工具；工具失败时必须如实说明，不要假装成功。系统操作类工具（shell、launch_program、send_hotkey、force_foreground）只在用户明确需要时使用。\n",
+        "工具的名称、用途和参数以原生 tool definition 为准，不要在系统提示词里另造参数。需要真实执行动作时使用工具；工具失败时必须如实说明，不要假装成功。系统操作类工具（shell、launch_program、send_hotkey、force_foreground）只在用户明确需要时使用。用户提到过往偏好、项目背景或曾经说过的事，而当前上下文不足时，优先用 search_memory 检索，不要猜测。\n",
     );
     for spec in TOOL_SPECS {
         if let Some(line) = spec.to_policy_line() {

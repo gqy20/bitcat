@@ -71,10 +71,10 @@ AI 对话是 BitCat 的主能力。它会流式回复、调用工具、根据对
 
 ### 长期记忆
 
-- 主文件：`~/.bitcat/memory/long_term.jsonl`。
+- 主文件：`~/.bitcat/memory/long_term.jsonl`，同时生成 `long_term.md` 作为人工审查和 `rg` 搜索视图。
 - 一行一条记录，包含稳定 `id`、`created_at`、`summary`、`tags`、`importance`、`source`、`deleted`。
 - 写入来源：对话结束后的 `AgentReaction.memory_candidates`，或模型显式调用 `remember` 工具。
-- 检索方式：`search_memory` / `retrieve_with()` 按 text、tag、source、min_importance 做 grep-first 候选召回。
+- 检索方式：`search_memory` / `retrieve_with()` 按 text、tag、source、min_importance 做 grep-first 候选召回；自动注入预算默认 8000 字符，工具按需检索上限 12000 字符。
 - 设置页可查看最近条目并按 id 删除。
 
 项目明确不把 Embeddings / Vector RAG 作为记忆主线。需要召回历史时，先用可解释文本筛候选，再交给模型判断相关性。

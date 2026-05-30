@@ -12,7 +12,7 @@
 
 ### 为什么做这个
 
-当前桌宠已有完整的 AI Agent 管线（rig → Anthropic API → 流式回复 → bubble 渲染）和四个迷你游戏（Snake / Memory / Catch / Battle），但游戏和 AI 之间没有交集。这个计划把 **AI NPC 对话** 和 **AI 关卡生成** 组合进一个**俯视角网格 RPG**，让桌宠不只是桌面装饰，而是游戏世界的 AI 伙伴。
+当前桌宠已有完整的 AI Agent 管线（rig → Anthropic API → 流式回复 → bubble 渲染）和五个迷你游戏（Snake / Memory / Catch / Battle / Gomoku）。其中 AI 已可通过 `start_game(kind)` 启动内置游戏，Gomoku 也已有 AI 思路和结构化 commentary；但“游戏世界里的 AI NPC 对话”和“AI 关卡生成”还没有交集。这个计划把 **AI NPC 对话** 和 **AI 关卡生成** 组合进一个**俯视角网格 RPG**，让桌宠不只是桌面装饰，而是游戏世界的 AI 伙伴。
 
 ### 为什么选俯视角而不是横版
 

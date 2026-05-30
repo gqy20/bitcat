@@ -12,7 +12,7 @@
 | v2 宠物资源包系统（manifest + spritesheet + 设置页选择） | 已落地（2026-05-17）；默认 `piggy`，`cat/status/core/...` 可选 |
 | 语义宠物动画（非均匀帧时长 + 瞬态 repeat+fallback + idle variants） | 已有（2026-05-13 增强，2026-05-17 收敛到 v2 pack） |
 | AI 对话（Anthropic Claude via rig-core，流式输出） | 已有 |
-| 15 个内置工具（launch/shell/read_file/get_time/recent_screenshots/search_memory/remember/reminder/hotkey/clipboard/foreground/dance 等） | 已有 |
+| 16 个内置工具（launch/shell/read_file/get_time/recent_screenshots/search_memory/remember/reminder/hotkey/clipboard/foreground/dance/start_game 等） | 已有；工具说明以 rig schema 为主，prompt 只保留高风险政策 |
 | SDL2 手柄输入（8BitDo Micro） | 已有 |
 | 多窗口模型（pet / bubble / panel / voice / settings / game / agent-watch / notification / camera 等） | 已有 |
 | 截图观察 + 摄像头观察 + Vision API 分析 | 截图已默认启用；摄像头观察默认关闭，可在设置页开启 |
@@ -27,6 +27,9 @@
 | Token 追踪（JSONL 明细、会话汇总、按日查询） | 已落地 |
 | 设置页 Token 统计（今日消耗、最近会话、链路占比） | 已落地 |
 | Makefile 测试入口（通过 xtask 避免 PowerShell 语法问题） | 已落地 |
+| 积分/等级/成就薄片 | 已落地（2026-05-30）；points JSONL + 聚合状态 + 设置页展示 |
+| Bubble reader / 工具状态 UI | 已增强（2026-05-30）；阅读态、工具状态条和表演型工具退场体验已接入 |
+| AI 流错误分类与用户友好兜底 | 已落地（2026-05-30）；可恢复错误进入 fallback 文案，避免空白失败 |
 
 ## 源码确认的技术栈
 
@@ -84,7 +87,7 @@ Agent 管理线应优先复用现有栈：
 │  │          │  │ B5 文本记忆│  │          │  │          │   │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
 │                                                             │
-│  当前优先级：A2 Phase 2 → E2/E3 → Observation Hints → 资源包发布策略 → C1 → D1│
+│  当前优先级：A2 GameDef 持久化 → 成长上下文/权限 gate → E2/E3 → Observation Hints → C1 → D1│
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -106,20 +109,21 @@ Agent 管理线应优先复用现有栈：
 
 ### A2. 迷你游戏引擎
 
-Phase 1 已完成（提交 `a2105ff`）：新增全屏透明 `game` 窗口并加入默认游戏入口，内置 Snake 可通过键盘/手柄游玩，结束后联动 `GamePlay` / `GameWin` / `GameLose` 宠物状态。当前面板已收敛为 2×2 游戏启动器，默认入口是 Snake / Memory / Catch / Battle。
+Phase 1 已完成（提交 `a2105ff`）：新增全屏透明 `game` 窗口并加入默认游戏入口，内置 Snake 可通过键盘/手柄游玩，结束后联动 `GamePlay` / `GameWin` / `GameLose` 宠物状态。当前内置游戏入口已扩展为 Snake / Memory / Catch / Battle / Gomoku，AI 可通过 `start_game(kind)` 启动这些内置游戏。
 
 当前已落地的数据流：
 
 ```
-panel → cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle
+panel / AI start_game → ActionBus 内置游戏动作
+      → cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle / cmd_start_gomoku
       → app/src/game.rs 动态创建 game 窗口
-      → game.html / game_engine.js 运行 Snake / Memory / Catch / Battle
+      → game.html / game_engine.js 运行 Snake / Memory / Catch / Battle / Gomoku
       → cmd_game_end(result, score) → 关闭窗口 + 切换 pet 状态
 ```
 
-下一步继续复用 A1 的模式：模型通过工具提交结构化 `GameDef` → Rust validate / save → game 窗口运行游戏 → 结束联动 pet 状态。当前底层已经可以启动任意 `GameDef`：`cmd_start_game_with_def` / `start_game(GameDef)` 已落地，`ActionBus::PlayGameDefault` 和面板入口会启动默认 Snake。尚未完成的是把这个能力注册成 AI 可调用的 `play_game` / `perform_game` 工具，以及把生成的游戏配置持久化到用户目录。
+2026-05-30 增量：`start_game(kind)` 已作为 AI 工具注册，走 `core::game_request` bridge 到 app 的 ActionBus，只接受内置枚举，不生成代码。下一步继续复用 A1 的模式：模型通过未来 `perform_game` 提交结构化 `GameDef` → Rust validate / save → game 窗口运行游戏 → 结束联动 pet 状态。当前尚未完成的是 GameDef 持久化、用户自定义预设和分数 JSONL。
 
-四种原型游戏共享同一个 GameEngine 入口：
+五种原型游戏共享同一个 GameEngine 入口：
 
 | 游戏 | 操作 | 复杂度 |
 |------|------|--------|
@@ -127,6 +131,7 @@ panel → cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle
 | 翻牌配对（Memory） | 方向键移动 + A 翻牌 | 已落地 |
 | 接食物（Catch） | 方向键移动篮子 | 已落地 |
 | 飞机守护战（Battle） | 方向键移动，A 射击，X/Y/L1 技能 | 已落地 |
+| 五子棋（Gomoku） | 棋盘落子 + AI 思路/讲解 | 已落地；结构化 commentary 已稳定 |
 
 输入已改为游戏激活时独占：D-pad/A/B/Start 由 `gamepad_loop` 转发为 `game-input`，普通滚轮、宠物动作和面板动作暂停。胜利→`GameWin`，失败→`GameLose`，取消→`Idle`。
 
@@ -163,25 +168,25 @@ panel → cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle
 
 ### B4. 工具运行时与开销优化（谨慎，不做关键词意图识别）
 
-当前 15 个工具仍全量注册到每次对话，但 B4 第一阶段已经完成了更基础的运行时治理：工具调用不再混入 bubble 正文，而是通过结构化事件单独呈现；普通工具显示低干扰状态条，舞蹈这类表演型工具显示“正在编舞 / 准备开跳”并短暂退场；工具结果会写入 `~/.bitcat/logs/tool_events.jsonl`，用于后续统计成功率、耗时和拦截次数。
+当前 16 个工具仍全量注册到每次对话，但 B4 第一阶段已经完成了更基础的运行时治理：工具调用不再混入 bubble 正文，而是通过结构化事件单独呈现；普通工具显示低干扰状态条，舞蹈和 `start_game` 这类表演/互动型工具显示短提示并退场；工具结果会写入 `~/.bitcat/logs/tool_events.jsonl`，用于后续统计成功率、耗时和拦截次数。
 
-新的原则保持不变：**默认相信大模型自己选择工具，Rust 负责 schema、权限、生命周期事件、审计和体验呈现**。B4 现在已经足够支撑下一阶段游戏工具接入：未来 AI 层 `perform_game` / `play_game` 这类表演型或互动型工具应复用 `ToolKind::Performance` 或扩展出更精细的 kind，让 bubble 退到辅助位置，把主视觉交给 pet/panel/game 窗口；底层 `start_game(GameDef)` 已经存在，工具只需要接入这条通道。
+新的原则保持不变：**默认相信大模型自己选择工具，Rust 负责 schema、权限、生命周期事件、审计和体验呈现**。2026-05-30 已进一步减少“双写”：普通工具说明以 rig 原生 `ToolDefinition.description` 和参数 schema 为准，`build_tool_guide_prompt()` 只保留高风险/容易误用的工具政策。B4 现在已经足够支撑下一阶段游戏工具：未来 AI 层 `perform_game` 这类生成型工具应复用 `ToolKind::Performance` 或扩展出更精细的 kind，让 bubble 退到辅助位置，把主视觉交给 pet/panel/game 窗口。
 
 建议拆分：
 
 1. **B4.1 已完成：工具生命周期事件协议**：`planned / blocked / finished / failed` 已接入，携带 `tool_name`、`internal_call_id`、结果预览、耗时和结果状态。`allowed` 不做伪事件，除非以后把 `PermissionHook` 改为带事件 sink 的状态化 hook。
 2. **B4.2 已完成：bubble 表演型工具状态 UI**：普通工具显示安静状态条；`perform_dance` / `play_dance` 走“正在编舞 / 准备开跳 / bubble 退场”的舞台体验。
 3. **B4.3 已完成：工具事件审计日志**：`tool_events.jsonl` 记录成功率、失败/拦截、耗时和短结果预览，不记录大文本。
-4. **B4.4 已做首轮：schema/description 压缩**：已低风险压缩 `perform_dance` / `play_dance` 文案。真实 token 预算工具暂缓，等工具继续增长或真实日志显示固定 schema 成为瓶颈再做。
+4. **B4.4 已做两轮：schema/description 压缩 + 工具政策瘦身**：已低风险压缩 `perform_dance` / `play_dance` 文案，并移除 prompt 中的普通工具目录。真实 token 预算工具暂缓，等工具继续增长或真实日志显示固定 schema 成为瓶颈再做。
 5. **B4.5 暂缓：显式能力包 / dynamic_tools 实验**：当前不阻塞游戏部分。仅在真实数据证明必要时启用，必须 feature flag 可回滚。
 
-下一步主线建议：先做游戏部分。游戏工具应直接复用 B4 已完成的事件协议、UI 分层和审计日志；不要再引入关键词分类或额外小模型判断。
+下一步主线建议：先做 GameDef 持久化和成长权限部分。游戏工具应直接复用 B4 已完成的事件协议、UI 分层和审计日志；不要再引入关键词分类或额外小模型判断。
 
 详细设计：[plan/archive/rig-capability-roadmap.md](plan/archive/rig-capability-roadmap.md) §P1
 
 ### B5. grep-first 文本记忆检索
 
-长期记忆的 grep-first 主链路已落地：`LongTermMemory` 使用 `~/.bitcat/memory/long_term.jsonl`，一行一条当前有效 record，包含稳定 `id`、`created_at` 和 `deleted` 软删除字段；`record_candidate()` / `remember` 写入结构化候选，`retrieve_with()` 按 text/tag/source/min_importance 做可解释召回并最多返回 20 条候选，设置页按 id 审查和软删除。本项目仍不采用 Embeddings / Vector RAG；后续 B5 剩余工作是上下文瘦身和候选压缩：减少默认预塞长期记忆，让模型更多通过 `search_memory` 按需取候选，再自行判断语义相关性。
+长期记忆的 grep-first 主链路已落地：`LongTermMemory` 使用 `~/.bitcat/memory/long_term.jsonl`，一行一条当前有效 record，包含稳定 `id`、`created_at` 和 `deleted` 软删除字段，并同步生成 `long_term.md` 作为人类/rg 友好的审查视图；`record_candidate()` / `remember` 写入结构化候选，`retrieve_with()` 按 text/tag/source/min_importance 做可解释召回并最多返回 20 条候选，`search_memory` 支持按需指定返回条数和字符预算。本项目仍不采用 Embeddings / Vector RAG。2026-05-30 调整了短期记忆截断默认值：单条 user 500 字符、reply 1000 字符；自动长期记忆注入预算为 8000 字符，工具按需检索预算上限为 12000 字符。后续 B5 剩余工作是候选压缩和按需召回策略。
 
 详细取舍：[architecture/design-tradeoffs.md](architecture/design-tradeoffs.md)
 
@@ -197,6 +202,14 @@ panel → cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle
 4. **可诊断性**：提醒生命周期写入 `~/.bitcat/logs/reminder_events.jsonl`，字段保留 `reminder_id`、`source`、`ui_source`、`store_path` 和异常上下文。
 
 后续只保留打磨项：根据真实使用决定是否把 `complete_reminder` / `snooze_reminder` 也暴露给 Agent 工具；完善到期批量并发、费用门控和设置页的失败诊断。
+
+### B7. 积分 / 等级 / 成就薄片
+
+2026-05-30 已落地第一片：`core/src/points.rs` 记录互动积分、等级、连续活跃和 12 个内置成就，事件明细追加到 `~/.bitcat/logs/points_events.jsonl`，聚合状态写入 `~/.bitcat/points_state.json`，设置页展示当前状态、最近事件和成就视图。
+
+已接入的事件包括文字/语音对话、长期记忆创建、提醒创建/完成、舞蹈、游戏启动/胜利、截图/摄像头观察、每日登录和 A 键夸奖宠物。它对应 [plan/progression-capability-unlock.md](plan/progression-capability-unlock.md) 中“Bit/积分 + 成就”的最小闭环。
+
+后续不要平行新建重复账本。成长上下文、权限 gate、商店、每日任务和心情系统应复用 `points` 的事件和状态，再在更高层补 `Progression`/授权 overlay。
 
 ---
 
@@ -403,7 +416,8 @@ pet/bubble/panel ──→ E2 状态呈现与手柄操作
            └─────────────────────────────────────┘
                   ↓
 短期        ┌─────────────────────────────────────┐
-1-3天      │  A2 迷你游戏引擎 Phase 2              │  ← AI play_game/perform_game + Memory/Catch
+1-3天      │  A2 GameDef 持久化与分数 JSONL         │  ← start_game 已完成，perform_game 仍待做
+           │  B7 成长上下文 / 权限 gate             │  ← points 已有，补能力开关
            │  E2 Agent Watch panel 收敛             │  ← 已有浮动窗/顶部通知，补手柄工作流
            │  Observation Hints                     │  ← 让截图观察变成可复用提示资产
            └─────────────────────────────────────┘
@@ -467,17 +481,18 @@ A1+A2+E1/E2+C1 ──→ D1(Steam) MVP 差异化更完整
 | **B6** | 程序化提醒 + 顶部通知 + 提示音 | create/list/cancel、scheduler、notification island、AI personalizer 已完成；剩余费用/批量/更多动作工具打磨 | 0 | Done/P2 follow-up |
 | **E1** | AI 编码工具会话监听 | 本地 Claude/Codex hook + Remote LAN ingest/viewer MVP 已完成；剩余 JSONL watcher、PID 存活和端到端回归 | 0 | Done/P1 follow-up |
 | **E2** | 桌宠化 Agent 状态管理 | 独立浮动任务栈 + 顶部通知已完成；剩余 panel 收敛、已查看去重和手柄入口 | 0 | Done/P1 follow-up |
-| **A2** | 迷你游戏引擎 | Phase 1 已完成；`start_game(GameDef)` / `cmd_start_game_with_def` 已可启动任意 GameDef；Phase 2 待接 AI 工具 + Memory/Catch + 持久化 | 0 | P1 |
-| **B4** | 工具运行时与开销优化 | 生命周期事件、bubble UI、审计日志和首轮 schema 压缩已完成；动态能力包暂缓 | 0 | Done/P2 follow-up |
+| **A2** | 迷你游戏引擎 | Phase 1 已完成；Snake/Memory/Catch/Battle/Gomoku 可玩；AI `start_game(kind)` 已接入；Phase 2 待做 GameDef 持久化、分数 JSONL 和未来 `perform_game` | 0 | P1 |
+| **B4** | 工具运行时与开销优化 | 生命周期事件、bubble reader/tool UI、审计日志、schema 压缩和工具政策瘦身已完成；动态能力包暂缓 | 0 | Done/P2 follow-up |
 | **E3** | 远程/多工作区 Agent 管理 | ~400-800 行 | SSH 可选 | P2 |
 | **A3** | 内容扩展 | ~200-350 行/种 | 0 | P2，0.5-1 天/种 |
 | **B5** | grep-first 文本记忆 | JSONL/id/软删除/search_memory 主链路已完成；剩余上下文瘦身和候选压缩 | 0 | Done/P2 follow-up |
+| **B7** | 积分/等级/成就 | points 事件、等级、成就和设置页展示已完成；剩余成长上下文、权限 gate、商店/每日任务/心情 | 0 | Done/P1 follow-up |
 | **C1** | 3D 体素化 | ~1200-1800 行 | three.js | P3，4-8 天 |
 | **C2** | 动画增强 | ~300-500 行 | 0 | P3，1-3 天 |
 | **C3** | 3D 游戏生成 | ~700-1000 行 | cannon-es 等 | P3，3-6 天 |
 | **D1** | Steam 发布 | 集成工作 | Steamworks SDK | P4，2-5 天 |
 
-**当前可玩 Demo 的基础设施已超过原 MVP 预期；下一阶段最短路径是 A2 Phase 2 → E2/E3 → Observation Hints，让“AI 生成可玩内容”“看管其他 Agent”和“观察经验沉淀”进入同一套可审计闭环。**
+**当前可玩 Demo 的基础设施已超过原 MVP 预期；下一阶段最短路径是 A2 GameDef 持久化 → B7 成长权限 → E2/E3 → Observation Hints，让“AI 生成可玩内容”“成长激励”“看管其他 Agent”和“观察经验沉淀”进入同一套可审计闭环。**
 
 ### 当前打磨队列
 
@@ -489,6 +504,7 @@ A1+A2+E1/E2+C1 ──→ D1(Steam) MVP 差异化更完整
 | E1/E2 Agent Watch | 已支持本地/远程只读 hook、浮动任务栈和顶部通知 | 补 JSONL watcher、PID 存活检测、结构化 Write/Edit/Bash 预览、panel 收敛和已查看/静音/置顶 |
 | B4 工具运行时 | 生命周期事件、bubble UI 和审计日志已可用 | 用真实 token/工具日志决定 schema 预算和 dynamic tools，不做关键词意图识别 |
 | B5 记忆 | grep-first 长期记忆主链路已可用 | 减少默认预塞上下文；让 `search_memory` 按需召回后再由模型压缩判断 |
+| B7 积分与成就 | points JSONL、等级、成就和设置页展示已可用 | 接成长上下文、权限 gate、商店、每日任务和心情系统 |
 | Pet v2 assets | 内置 v2 pack 已可切换 | 明确 bundle vs 外部包边界、用户目录加载、资源诊断和 Steam/DLC 分层 |
 | 音乐响应舞动 | 第一版音乐模式可用 | 增强舞感状态机、fake source 诊断、节奏/静音/高潮回落表现 |
 
@@ -502,19 +518,21 @@ A1+A2+E1/E2+C1 ──→ D1(Steam) MVP 差异化更完整
 ├── games/               # AI 生成的游戏 (A2)
 ├── screenshots/         # 已有
 ├── camera/              # 摄像头观察记录（默认关闭，开启后写 analysis JSON/可选帧图片）
-├── memory/              # 已有：chat_summary.json + long_term.jsonl grep-first 记忆
+├── memory/              # 已有：chat_summary.json + long_term.jsonl/long_term.md grep-first 记忆
 ├── logs/
 │   ├── bitcat.YYYY-MM-DD.log
 │   ├── token_usage.jsonl    # Token 追踪行日志 (B2)
 │   ├── token_sessions.json  # 会话级汇总 (B2)
 │   ├── tool_events.jsonl    # 工具生命周期审计 (B4)
 │   ├── reminder_events.jsonl # 提醒生命周期与存储异常 (B6)
+│   ├── points_events.jsonl # 积分/成就事件明细 (B7)
 │   ├── agent_watch_events.jsonl # Agent Watch 原始归一事件 (E1/E2)
 │   ├── agent_watch_sessions.jsonl # Claude Code / Codex 等会话状态 (E1/E2)
 │   ├── agent_watch_nudges.jsonl # Agent Watch 提醒决策 (E1/E2)
 │   └── agent_actions.jsonl  # 桌宠触发的 Agent 控制动作 (E3)
 ├── reminders/
 │   └── reminders.json       # 程序化提醒 store (B6)
+├── points_state.json        # 积分、等级、连续活跃和成就聚合状态 (B7)
 ├── agents/
 │   ├── sessions.json        # 当前活跃 Agent 会话缓存 (E1/E2)
 │   └── connectors.yml       # 自定义工具/目录/hook 适配配置 (E1/E4)

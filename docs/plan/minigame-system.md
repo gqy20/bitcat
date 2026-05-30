@@ -1,10 +1,27 @@
 # 迷你游戏系统实现设计
 
-> 状态：Phase 1 已完成（2026-05-13，提交 `a2105ff`）
+> 状态：Phase 1 已完成（2026-05-13，提交 `a2105ff`）；内置游戏启动与 AI `start_game` 工具已完成（2026-05-30，提交 `d58dbd1`）
 > 关联文档：
 > - 产品定位：[gdd/core-gameplay.md](../gdd/core-gameplay.md) §八、Mini-Game 定位
 > - GameDef schema 历史草案：[plan/archive/structured-output-design.md](archive/structured-output-design.md) §3.2
 > - 路线图：[roadmap.md](../roadmap.md) §A2
+
+## 当前完成状态（2026-05-30）
+
+已完成的部分：
+
+- 全屏透明 `game` 窗口、基础生命周期、键盘/手柄输入隔离和宠物 `GamePlay`/胜负状态联动。
+- 内置游戏入口已从默认 Snake 扩展为 `snake`、`memory`、`catch`、`battle`、`gomoku`。
+- `ActionBus` 已提供内置游戏动作映射：`PlayGameDefault`、`PlayMemoryDefault`、`PlayCatchDefault`、`PlayBattleDefault`、`PlayGomokuDefault`。
+- AI 主 Agent 已注册 `start_game(kind)` 工具。该工具只接受内置枚举，不生成代码，不绕过 Rust 校验。
+- `core/src/game_request.rs` 提供与舞蹈请求类似的 app bridge：core 工具发出启动请求，app 层消费后走现有 ActionBus/game window 路径。
+- 积分系统已对游戏启动和胜利分别记录 `GamePlayed` / `GameWon`。
+
+仍未完成的部分：
+
+- AI 生成完整 `GameDef` / `perform_game` 仍是未来扩展，不属于当前 `start_game` 的职责。
+- 游戏配置持久化、用户自定义预设、分数 JSONL 仍未收敛。
+- Memory/Catch/Battle/Gomoku 的长期规则文档、分数口径和测试矩阵还需要补齐。
 
 ## 一、核心设计决策
 
@@ -243,11 +260,11 @@ Input: { type: 'direction' | 'confirm' | 'cancel' | 'pause', dx?, dy? }
       → 胜利可触发庆祝舞蹈
 ```
 
-AI 生成游戏配置的路径（Level 1）：
+AI 生成游戏配置的未来路径（Level 1）：
 
 ```
-用户聊天"我想玩个游戏"
-  → 普通对话 Agent 自行决定调用 play_game 工具
+用户聊天"我想玩个自定义小游戏"
+  → 普通对话 Agent 自行决定调用 perform_game 工具
   → 提交 GameDef 结构化参数（JsonSchema 约束）
   → Rust 验证 bounds → 保存到 ~/.bitcat/games/
   → 同上流程启动游戏
@@ -275,7 +292,7 @@ AI 生成游戏配置的路径（Level 1）：
 | `core/src/lib.rs` | `pub mod minigame` | 1 |
 | `core/src/pet.rs` | GamePlay / GameWin / GameLose 三状态 | 30 |
 | `core/src/prompts.rs` | 游戏生成提示词段 | 15 |
-| `core/src/agent.rs` | `generate_game` 方法 + `play_game` 工具 | 30 |
+| `core/src/agent.rs` | 未来 `perform_game` / 自定义 GameDef 工具注册 | 30 |
 | `app/src/lib.rs` | 注册游戏窗口 + game 模块 | 20 |
 | `app/src/commands.rs` | 4 个 IPC 命令 | 50 |
 | `app/src/gamepad.rs` | 游戏激活时输入转发 | 25 |
@@ -322,11 +339,21 @@ minigame.rs     ███████              180  (15%)
   → game.rs 关闭 game 窗口、清理 active、切换宠物 GameWin/GameLose
 ```
 
-AI 路径推迟到 Phase 2：
+当前 AI 内置启动路径：
 
 ```
-用户聊天"我想玩个游戏"
-  → 普通对话 Agent 自行决定调用 play_game / perform_game 工具
+用户聊天"来一局五子棋" / "玩个接东西"
+  → 普通对话 Agent 自行决定调用 start_game(kind)
+  → core::tools::execute_start_game 校验 kind 并发送 GameStartRequest
+  → app bridge 消费请求，映射到 ActionBus 内置游戏动作
+  → app/src/game.rs 启动对应内置游戏
+```
+
+AI 生成配置路径仍推迟到后续 Phase：
+
+```
+用户聊天"我想玩个自定义小游戏"
+  → 普通对话 Agent 自行决定调用 perform_game 工具
   → 工具提交 GameDef 参数
   → core::minigame validate + save_game
   → app bridge / ActionBus 触发启动游戏
@@ -410,11 +437,11 @@ AI 路径推迟到 Phase 2：
 3. 然后补 Snake 规则和键盘输入。
 4. 最后插入 `gamepad_loop` 独占转发与宠物状态联动。
 
-### Phase 2：体系补全（下一步）
+### Phase 2：体系补全（活跃）
 
-目标：从"能玩 Snake"扩展到可配置游戏系统，并接入 AI 工具。
+目标：从"能玩内置游戏"扩展到可配置游戏系统，并为 AI 生成配置预留稳定入口。
 
-- `game_engine.js` 增加 Memory 和 Catch，实现固定模板注册机制。
+- 梳理已存在的 Memory / Catch / Battle / Gomoku 内置实现，补齐规则文档、测试矩阵和统一 preset 注册机制。
 - `config/minigames.yml` 增加三种游戏默认配置与难度预设。
 - `core/src/minigame.rs` 增加 `save_game()`、`load_game()`、`list_games()`，目录为 `~/.bitcat/games/`，格式优先 YAML，规则保持可人工审查。
 - 新增分数持久化，目录为 `~/.bitcat/scores/`，采用 append-only JSONL，方便 `rg` 检索和人工排查。
@@ -426,12 +453,27 @@ AI 路径推迟到 Phase 2：
 - 分数能持久化并可按游戏名、日期、结果 grep。
 - 游戏配置非法时 Rust 侧拒绝启动，并给出可读错误。
 
-### Phase 3：AI 工具接入
+### Phase 3A：AI 启动内置游戏（已完成）
 
-目标：让普通对话 Agent 自行决定何时启动游戏，而不是 Rust 侧做关键词分类。
+目标：让普通对话 Agent 自行决定何时启动已有小游戏，而不是 Rust 侧做关键词分类。已在提交 `d58dbd1` 中完成。
+
+- `core/src/tools.rs` 增加 `start_game(kind)` 参数和执行逻辑。
+- `core/src/game_request.rs` 增加跨层请求通道，避免 core 直接依赖 app。
+- `core/src/agent.rs` 注册 `StartGameTool`，并归类为低风险表演类工具。
+- `app/src/lib.rs` 在启动时安装 game request bridge，消费请求并调用 ActionBus。
+- `app/src/action_bus.rs` 增加 `action_for_start_game_kind()`，将工具枚举映射到内置游戏动作。
+
+验收结果：
+
+- `cargo test -p bitcat-core start_game -- --nocapture` 通过。
+- `cargo test -p bitcat-app start_game_kind_maps_to_actions -- --nocapture` 通过。
+
+### Phase 3B：AI 生成游戏配置（未来）
+
+目标：让普通对话 Agent 生成或选择自定义游戏配置，而不是只启动内置枚举游戏。
 
 - `core/src/tools.rs` 增加 `perform_game`：AI 提交完整 `GameDef`，Rust validate 后保存，并通过 app 层已有 `start_game(GameDef)` 通道触发启动。
-- 增加 `play_game`：按已保存名称或内置预设启动；默认 Snake 的非 AI 启动路径已经由 `ActionBus::PlayGameDefault` / `cmd_start_game` 覆盖。
+- 可选增加 `play_game`：按已保存名称或内置预设启动；内置枚举启动已经由 `start_game(kind)` 覆盖，只有保存/命名预设成型后才需要这个工具。
 - `core/src/agent.rs` 注册游戏工具；`core/src/prompts.rs` 补充能力说明。
 - 不做 Rust 侧关键词匹配，不做小分类器；遵循现有原则，让模型在普通对话中自行选择工具。
 

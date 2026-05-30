@@ -69,10 +69,10 @@ fn default_max_context_chars() -> usize {
     20_000
 }
 fn default_max_user_chars() -> usize {
-    100
+    500
 }
 fn default_max_reply_chars() -> usize {
-    200
+    1000
 }
 
 impl Default for MemoryConfig {
@@ -317,6 +317,13 @@ fn long_term_file_path() -> Result<PathBuf, String> {
         .join("long_term.jsonl"))
 }
 
+/// 返回长期记忆的 Markdown 审查视图路径 `~/.bitcat/memory/long_term.md`。
+fn long_term_markdown_path() -> Result<PathBuf, String> {
+    Ok(crate::storage::data_dir()?
+        .join("memory")
+        .join("long_term.md"))
+}
+
 impl LongTermMemory {
     /// 从磁盘加载。文件不存在或损坏时返回空记忆。
     pub fn load() -> Self {
@@ -432,19 +439,41 @@ impl LongTermMemory {
         }
     }
 
-    /// 根据查询文本检索最相关的条目，在字符预算内拼接为注入文本
-    pub fn retrieve(&self, query: &str, budget_chars: usize) -> String {
-        self.retrieve_with(
-            &LongTermMemoryQuery {
-                text: query.to_string(),
-                ..Default::default()
-            },
+    /// 按文本、标签、来源和重要度过滤后检索长期记忆，并生成可注入 prompt 的文本。
+    pub fn retrieve_with(&self, query: &LongTermMemoryQuery, budget_chars: usize) -> String {
+        self.render_retrieval(
+            query,
             budget_chars,
+            20,
+            "[memory candidates]\n",
+            "[/memory candidates]\n",
         )
     }
 
-    /// 按文本、标签、来源和重要度过滤后检索长期记忆，并生成可注入 prompt 的文本。
-    pub fn retrieve_with(&self, query: &LongTermMemoryQuery, budget_chars: usize) -> String {
+    /// 按 rg 风格返回长期记忆搜索结果，供 `search_memory` 工具给模型按需检索。
+    pub fn search_results_with(
+        &self,
+        query: &LongTermMemoryQuery,
+        budget_chars: usize,
+        limit: usize,
+    ) -> String {
+        self.render_retrieval(
+            query,
+            budget_chars,
+            limit,
+            "[memory search results]\n",
+            "[/memory search results]\n",
+        )
+    }
+
+    fn render_retrieval(
+        &self,
+        query: &LongTermMemoryQuery,
+        budget_chars: usize,
+        max_results: usize,
+        header: &str,
+        footer: &str,
+    ) -> String {
         if self.entries.is_empty() {
             return String::new();
         }
@@ -467,9 +496,8 @@ impl LongTermMemory {
                 .cmp(&left.importance.unwrap_or(0))
                 .then_with(|| right.created_at.cmp(&left.created_at))
         });
-        candidates.truncate(20);
+        candidates.truncate(max_results);
 
-        let header = "[memory candidates]\n";
         let mut result = String::from(header);
         let mut used = header.chars().count();
         for idx in &candidates {
@@ -484,7 +512,7 @@ impl LongTermMemory {
         if result == header {
             return String::new();
         }
-        result.push_str("[/memory candidates]\n");
+        result.push_str(footer);
         result
     }
 
@@ -602,7 +630,18 @@ impl LongTermMemory {
             .map_err(|e| format!("写入临时文件失败: {e}"))?;
         tmp.persist(&path)
             .map_err(|e| format!("原子替换失败: {e}"))?;
-        debug!(path = ?path, "长期记忆已持久化");
+
+        let markdown_path = long_term_markdown_path()?;
+        let markdown = self.review_markdown(usize::MAX);
+        let mut md_tmp = tempfile::NamedTempFile::new_in(markdown_path.parent().unwrap())
+            .map_err(|e| format!("创建长期记忆 Markdown 临时文件失败: {e}"))?;
+        std::io::Write::write_all(&mut md_tmp, markdown.as_bytes())
+            .map_err(|e| format!("写入长期记忆 Markdown 失败: {e}"))?;
+        md_tmp
+            .persist(&markdown_path)
+            .map_err(|e| format!("原子替换长期记忆 Markdown 失败: {e}"))?;
+
+        debug!(path = ?path, markdown_path = ?markdown_path, "长期记忆已持久化");
         Ok(())
     }
 }
@@ -1031,7 +1070,13 @@ mod tests {
         );
         store.record_candidate(&candidate, "我们继续项目", "没问题", 10);
 
-        let ctx = store.retrieve("BitCat", 500);
+        let ctx = store.retrieve_with(
+            &LongTermMemoryQuery {
+                text: "BitCat".into(),
+                ..Default::default()
+            },
+            500,
+        );
 
         assert!(ctx.contains("用户正在开发 BitCat 桌面 AI 伙伴项目"));
         assert!(ctx.contains("tags=[project]"));
@@ -1223,8 +1268,8 @@ mod tests {
         let cfg = MemoryConfig::default();
         assert_eq!(cfg.max_entries, 0);
         assert_eq!(cfg.max_context_chars, 20_000);
-        assert_eq!(cfg.max_user_chars, 100);
-        assert_eq!(cfg.max_reply_chars, 200);
+        assert_eq!(cfg.max_user_chars, 500);
+        assert_eq!(cfg.max_reply_chars, 1000);
     }
 
     #[test]
@@ -1355,7 +1400,17 @@ mod tests {
         let store = LongTermMemory {
             entries: Vec::new(),
         };
-        assert!(store.retrieve("anything", 500).is_empty());
+        assert!(
+            store
+                .retrieve_with(
+                    &LongTermMemoryQuery {
+                        text: "anything".into(),
+                        ..Default::default()
+                    },
+                    500,
+                )
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1367,7 +1422,13 @@ mod tests {
         store.record("今天天气不错", "是呢，适合出门", 100);
         store.record("帮我提醒明天交 PR", "收到，明天会提醒的", 100);
 
-        let ctx = store.retrieve("BitCat 项目进展", 500);
+        let ctx = store.retrieve_with(
+            &LongTermMemoryQuery {
+                text: "BitCat 项目进展".into(),
+                ..Default::default()
+            },
+            500,
+        );
         assert!(ctx.contains("[memory candidates]"));
         assert!(ctx.contains("BitCat"));
         assert!(ctx.contains("[/memory candidates]"));
@@ -1385,7 +1446,13 @@ mod tests {
                 100,
             );
         }
-        let ctx = store.retrieve("消息", 200);
+        let ctx = store.retrieve_with(
+            &LongTermMemoryQuery {
+                text: "消息".into(),
+                ..Default::default()
+            },
+            200,
+        );
         assert!(ctx.chars().count() <= 250);
     }
 
@@ -1395,7 +1462,13 @@ mod tests {
             entries: Vec::new(),
         };
         store.record("今天天气不错", "是呢适合出门", 100);
-        let ctx = store.retrieve("量子力学研究进展", 500);
+        let ctx = store.retrieve_with(
+            &LongTermMemoryQuery {
+                text: "量子力学研究进展".into(),
+                ..Default::default()
+            },
+            500,
+        );
         assert!(ctx.is_empty());
     }
 

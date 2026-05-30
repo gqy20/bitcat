@@ -1,6 +1,6 @@
 # Pet Semantic Events Architecture
 
-> Updated: 2026-05-15  
+> Updated: 2026-05-30
 > Status: implemented through Phase 6
 
 This document describes the current semantic event pipeline that connects rig streaming, tool lifecycle events, final reactions, memory candidates, and the pet frontend.
@@ -151,6 +151,11 @@ The main Agent also exposes two semantic memory tools:
 - `search_memory`: grep-first retrieval with text, tags, source, importance, and character-budget filters.
 - `remember`: explicit long-term note creation with normalized tags and clamped importance.
 
+The main Agent also exposes low-risk performance tools:
+
+- `perform_dance` / `play_dance`: dance request bridge to the app layer.
+- `start_game`: starts one built-in minigame through `core::game_request` and the app `ActionBus`; it does not generate code or bypass game validation.
+
 ## Testing
 
 Relevant coverage:
@@ -161,6 +166,8 @@ Relevant coverage:
 - `core/src/agent_reaction.rs`: sanitization and fallback behavior.
 - `core/src/memory.rs`: JSONL candidate storage, filtered retrieval, review markdown, deletion by stable id.
 - `core/src/tools.rs`: `search_memory` and `remember` argument parsing and execution.
+- `core/src/tools.rs`: `start_game` argument parsing and request dispatch.
+- `app/src/action_bus.rs`: built-in game kind to action mapping.
 - `app/src/settings.rs`: memory review/delete IPC serialization.
 - `app/frontend/__tests__/pet.test.js`: notification mapping, reaction TTL, mode priority.
 
