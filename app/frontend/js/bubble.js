@@ -16,14 +16,20 @@
   const HIDE_ANIM_MS = 180;
   const MIN_H = 120;
   const READING_H = 220;
-  const EXPANDED_H = 320;
-  const MAX_H = 340;
+  const EXPANDED_H = 380;
+  const MAX_H = 420;
+  const READER_W = 420;
+  const READER_MAX_H = 520;
+  const STREAM_READING_W = 340;
+  const STREAM_EXPANDED_W = 400;
+  const COMPOSE_W = 320;
+  const NOTICE_W = 260;
   const MIN_W = 220;
   const MAX_W = 420;
   const ABS_MAX_H = 680;      // 用户手动拖拽时的绝对最大高度
   const PADDING_TOTAL = 50;   // body top(6) + bubble padding-top(14) + padding-bottom(14) + body bottom(12) + 余量(4)
-  const INPUT_ROW_H = 42;     // input-row 额外高度（含 padding-top:8）
-  const CHAT_CONTROLS_H = 34;  // chat-controls 额外高度（含 margin-top）
+  const INPUT_ROW_H = 50;     // input-row extra height, including divider and spacing
+  const CHAT_CONTROLS_H = 42;  // chat-controls extra height, including divider and spacing
   const AUTO_RESIZE_DEBOUNCE_MS = 140;
   let hideTimer = null;
   let performanceHideTimer = null;
@@ -41,6 +47,8 @@
   let collapseBtnEl = null;
   let chatControlsEl = null;
   let replyChipEl = null;
+  let readChipEl = null;
+  let copyChipEl = null;
   let stopBtnEl = null;
   let controlNoteEl = null;
   let isComposing = false;    // IME 组合状态标记
@@ -51,6 +59,8 @@
   let autoResizeTimer = null;
   let lastAutoResizeAt = 0;
   let bubbleMode = 'notice';     // 'notice' | 'stream' | 'compose'
+  let readingMode = false;
+  let chatControlState = 'hidden';
 
   // ---- Resize 状态 ----
   let resizeMode = 'auto';      // 'auto' | 'manual'
@@ -73,6 +83,87 @@
     document.body.classList.toggle('stream', bubbleMode === 'stream');
     document.body.classList.toggle('compose', bubbleMode === 'compose');
   }
+
+  const TOOL_STATUS_COPY = {
+    create_reminder: {
+      planned: '正在设置提醒',
+      finished: '提醒已设置',
+      failed: '提醒没设置成功',
+      blocked: '提醒设置被拦截',
+    },
+    list_reminders: {
+      planned: '正在查看提醒',
+      finished: '提醒列表已更新',
+      failed: '提醒列表读取失败',
+      blocked: '查看提醒被拦截',
+    },
+    cancel_reminder: {
+      planned: '正在取消提醒',
+      finished: '提醒已取消',
+      failed: '提醒取消失败',
+      blocked: '取消提醒被拦截',
+    },
+    shell: {
+      planned: '正在执行命令',
+      finished: '命令执行完了',
+      failed: '命令执行失败',
+      blocked: '命令被拦截',
+    },
+    read_file: {
+      planned: '正在看文件',
+      finished: '文件看完了',
+      failed: '文件读取失败',
+      blocked: '读取文件被拦截',
+    },
+    recent_screenshots: {
+      planned: '正在回看屏幕',
+      finished: '屏幕记录看完了',
+      failed: '屏幕记录读取失败',
+      blocked: '回看屏幕被拦截',
+    },
+    search_memory: {
+      planned: '正在找记忆',
+      finished: '找到了相关记忆',
+      failed: '记忆检索失败',
+      blocked: '检索记忆被拦截',
+    },
+    remember: {
+      planned: '正在记住这件事',
+      finished: '已经记住了',
+      failed: '保存记忆失败',
+      blocked: '保存记忆被拦截',
+    },
+    read_clipboard: {
+      planned: '正在看剪贴板',
+      finished: '剪贴板看完了',
+      failed: '剪贴板读取失败',
+      blocked: '读取剪贴板被拦截',
+    },
+    get_time: {
+      planned: '正在确认时间',
+      finished: '时间已确认',
+      failed: '时间读取失败',
+      blocked: '查看时间被拦截',
+    },
+    launch_program: {
+      planned: '正在启动程序',
+      finished: '程序已启动',
+      failed: '程序启动失败',
+      blocked: '启动程序被拦截',
+    },
+    send_hotkey: {
+      planned: '正在发送快捷键',
+      finished: '快捷键已发送',
+      failed: '快捷键发送失败',
+      blocked: '发送快捷键被拦截',
+    },
+    force_foreground: {
+      planned: '正在切换窗口',
+      finished: '窗口已切换',
+      failed: '窗口切换失败',
+      blocked: '切换窗口被拦截',
+    },
+  };
 
   function ensureVisible(options) {
     var opts = options || {};
@@ -113,17 +204,55 @@
 
   function startHideTimer() {
     clearHideTimer();
+    if (readingMode) return;
     hideTimer = setTimeout(hide, HIDE_AFTER_MS);
   }
 
   function setChatControls(state) {
     if (!chatControlsEl) return;
     var mode = state || 'hidden';
+    chatControlState = mode;
     var visible = mode !== 'hidden';
     chatControlsEl.style.display = visible ? 'flex' : 'none';
     if (stopBtnEl) stopBtnEl.style.display = mode === 'streaming' ? 'inline-flex' : 'none';
     if (replyChipEl) replyChipEl.style.display = (mode === 'reply' || mode === 'stopped') ? 'inline-flex' : 'none';
+    if (readChipEl) {
+      var canRead = (mode === 'reply' || mode === 'stopped') && lastRawText && lastRawText.length > 280;
+      readChipEl.style.display = canRead ? 'inline-flex' : 'none';
+      readChipEl.textContent = readingMode ? '收起' : '展开阅读';
+    }
+    if (copyChipEl) {
+      copyChipEl.style.display = (mode === 'reply' || mode === 'stopped') && lastRawText ? 'inline-flex' : 'none';
+      if (copyChipEl.dataset.state !== 'copied') copyChipEl.textContent = '复制';
+    }
     if (controlNoteEl) controlNoteEl.style.display = mode === 'stopped' ? 'inline-flex' : 'none';
+  }
+
+  function copyLastReply() {
+    if (!lastRawText) return;
+    var text = lastRawText;
+    var done = function() {
+      if (!copyChipEl) return;
+      copyChipEl.dataset.state = 'copied';
+      copyChipEl.textContent = '已复制';
+      setTimeout(function() {
+        if (!copyChipEl) return;
+        delete copyChipEl.dataset.state;
+        copyChipEl.textContent = '复制';
+      }, 1200);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(function() {});
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) {}
+      ta.remove();
+    }
   }
 
   function hideChatControls() {
@@ -135,9 +264,17 @@
     performanceHideTimer = setTimeout(hide, PERFORMANCE_HIDE_AFTER_MS);
   }
 
-  function syncCssWidth(width) {
+  function syncCssSize(width, height) {
     document.documentElement.style.width = width + 'px';
     document.body.style.width = width + 'px';
+    if (height) {
+      document.documentElement.style.minHeight = height + 'px';
+      document.body.style.minHeight = height + 'px';
+    }
+  }
+
+  function setManualSizeClass(enabled) {
+    document.body.classList.toggle('manual-size', !!enabled);
   }
 
   function repositionBubbleWindow() {
@@ -161,7 +298,7 @@
       .then(function() {
         currentWinW = targetW;
         currentWinH = targetH;
-        syncCssWidth(targetW);
+        syncCssSize(targetW, targetH);
         diag('resize: setSize ok w=' + targetW + ' h=' + targetH +
              ' shouldReposition=' + !!shouldReposition);
         if (shouldReposition) return repositionBubbleWindow();
@@ -184,6 +321,16 @@
     }
   }
 
+  function widthForStage(mode, stage, inputOpen) {
+    if (readingMode) return READER_W;
+    if (mode === 'notice') return NOTICE_W;
+    if (mode === 'compose' || inputOpen) return COMPOSE_W;
+    if (mode === 'stream') {
+      return stage === 'expanded' ? STREAM_EXPANDED_W : STREAM_READING_W;
+    }
+    return NOTICE_W;
+  }
+
   function chooseAutoSizeStage(neededH, options) {
     var opts = options || {};
     var currentStage = opts.currentStage || 'compact';
@@ -197,10 +344,12 @@
     }
 
     if (isStreaming && hasText) {
-      return 'reading';
+      if (currentStage === 'expanded' && neededH > READING_H - 12) return 'expanded';
+      return neededH > READING_H + 24 ? 'expanded' : 'reading';
     }
 
     if (inputOpen) {
+      if (currentStage === 'expanded' && neededH > READING_H - 12) return 'expanded';
       return neededH > READING_H + 24 ? 'expanded' : 'reading';
     }
 
@@ -251,16 +400,23 @@
     var contentH = contentEl.scrollHeight;
     var inputExtra = (inputRowEl && inputRowEl.style.display !== 'none') ? INPUT_ROW_H : 0;
     var controlsExtra = (chatControlsEl && chatControlsEl.style.display !== 'none') ? CHAT_CONTROLS_H : 0;
-    var neededH = Math.min(MAX_H, Math.max(MIN_H, contentH + PADDING_TOTAL + inputExtra + controlsExtra));
+    var rawNeededH = contentH + PADDING_TOTAL + inputExtra + controlsExtra;
+    var neededH = Math.min(MAX_H, Math.max(MIN_H, rawNeededH));
 
     // MANUAL 模式：以用户偏好为下界，绝对最大高度也放宽
     var targetW = 260;
-    if (resizeMode === 'manual' && userPrefSize) {
+    if (readingMode) {
+      neededH = Math.min(READER_MAX_H, Math.max(EXPANDED_H, rawNeededH));
+      targetW = READER_W;
+      autoSizeStage = 'expanded';
+    } else if (resizeMode === 'manual' && userPrefSize) {
       var manualSize = clampManualSize(userPrefSize.w, userPrefSize.h);
       neededH = manualSize.h;
       targetW = manualSize.w;
       autoSizeStage = 'manual';
+      setManualSizeClass(true);
     } else {
+      setManualSizeClass(false);
       var inputOpen = inputRowEl && inputRowEl.style.display !== 'none';
       autoSizeStage = chooseAutoSizeStage(neededH, {
         currentStage: autoSizeStage,
@@ -269,7 +425,9 @@
         inputOpen: inputOpen,
         mode: bubbleMode,
       });
-      neededH = Math.min(MAX_H, Math.max(MIN_H, heightForStage(autoSizeStage)));
+      var stageH = heightForStage(autoSizeStage);
+      neededH = Math.min(MAX_H, Math.max(MIN_H, stageH, rawNeededH));
+      targetW = widthForStage(bubbleMode, autoSizeStage, inputOpen);
     }
 
     var newH = Math.round(neededH);
@@ -420,6 +578,9 @@
     hideInput('hide-bubble');
     resizeMode = 'auto';
     autoSizeStage = 'compact';
+    readingMode = false;
+    document.body.classList.remove('reading-mode');
+    setManualSizeClass(false);
     if (autoResizeTimer) {
       clearTimeout(autoResizeTimer);
       autoResizeTimer = null;
@@ -603,6 +764,9 @@
     var phase = payload && payload.phase ? payload.phase : 'planned';
     var kind = payload && payload.kind ? payload.kind : 'utility';
     var toolName = payload && payload.tool_name ? String(payload.tool_name) : '';
+    if (TOOL_STATUS_COPY[toolName] && TOOL_STATUS_COPY[toolName][phase]) {
+      return TOOL_STATUS_COPY[toolName][phase];
+    }
     var isDanceTool = toolName === 'perform_dance' || toolName === 'play_dance';
     if (kind === 'performance' && isDanceTool) {
       if (phase === 'blocked') {
@@ -681,6 +845,8 @@
     clearToolStatus();
     streaming = true;       // 标记流式开始
     cancelled = false;
+    readingMode = false;
+    document.body.classList.remove('reading-mode');
     setBubbleMode('stream');
     setChatControls('streaming');
     autoSizeStage = 'compact';
@@ -756,6 +922,8 @@
     clearToolStatus();
     resizeMode = 'auto';
     autoSizeStage = 'compact';
+    readingMode = false;
+    document.body.classList.remove('reading-mode');
     setBubbleMode('notice');
     hideChatControls();
     hideInput('notice');
@@ -811,6 +979,8 @@
     collapseBtnEl = document.getElementById('collapseBtn');
     chatControlsEl = document.getElementById('chatControls');
     replyChipEl = document.getElementById('replyChip');
+    readChipEl = document.getElementById('readChip');
+    copyChipEl = document.getElementById('copyChip');
     stopBtnEl = document.getElementById('stopBtn');
     controlNoteEl = document.getElementById('controlNote');
 
@@ -895,6 +1065,29 @@
         showInput();
       });
     }
+    if (readChipEl) {
+      readChipEl.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        readingMode = !readingMode;
+        document.body.classList.toggle('reading-mode', readingMode);
+        setChatControls(chatControlState === 'stopped' ? 'stopped' : 'reply');
+        clearHideTimer();
+        autoResize();
+        if (contentEl && readingMode) {
+          contentEl.scrollTop = 0;
+        }
+      });
+    }
+    if (copyChipEl) {
+      copyChipEl.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        copyLastReply();
+        clearHideTimer();
+        if (!readingMode) startHideTimer();
+      });
+    }
     if (stopBtnEl) {
       stopBtnEl.addEventListener('click', function(e) {
         e.preventDefault();
@@ -919,6 +1112,7 @@
         e.preventDefault();
         e.stopPropagation();
         resizeMode = 'manual';
+        setManualSizeClass(true);
         userResizeActive = true;
         userResizeArmedUntil = Date.now() + 1500;
         diag('resize: grip mousedown start x=' + e.clientX + ' y=' + e.clientY +
@@ -936,6 +1130,7 @@
         userResizeActive = false;
         userPrefSize = null;
         autoSizeStage = 'compact';
+        setManualSizeClass(false);
         localStorage.removeItem('bubble_pref');
         diag('resize: double-click → reset to auto');
         autoResize();
@@ -952,7 +1147,8 @@
           var h = logical.h;
           currentWinW = w;
           currentWinH = h;
-          syncCssWidth(w);
+          syncCssSize(w, h);
+          setManualSizeClass(resizeMode === 'manual');
           repositionBubbleWindow();
           var userResizeArmed = Date.now() <= userResizeArmedUntil;
           diag('resize: onResized w=' + w + ' h=' + h +
