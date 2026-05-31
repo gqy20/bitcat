@@ -19,6 +19,11 @@ make nextest        # 同 make test
 cd app/frontend && npx vitest run     # 15 个测试文件
 cd app/frontend && npx vitest         # 监听模式
 
+# Arena 3D 角色资源（Blender 固定安装在 D:/tools）
+& "D:\tools\Blender\Blender_5.1\blender.exe" --background --python app/frontend/scripts/generate_arena_glb.py -- --out-dir app/frontend/assets/arena --variant all
+& "D:\tools\Blender\Blender_5.1\blender.exe" --background --python app/frontend/scripts/generate_arena_glb.py -- --out-dir app/frontend/assets/arena --variant player
+& "D:\tools\Blender\Blender_5.1\blender.exe" --background --python app/frontend/scripts/generate_arena_glb.py -- --out-dir app/frontend/assets/arena --variant enemy
+
 # 运行单个测试 / 模块
 cargo nextest run -p bitcat-core -E 'test(~pet::)'        # 按名字过滤
 cargo nextest run -p bitcat-core -E 'test(/test_walk_/)'  # 按正则过滤

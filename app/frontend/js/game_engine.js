@@ -2109,6 +2109,47 @@
     }
   }
 
+  function ensureArenaHud() {
+    let hud = document.getElementById('arenaHud');
+    if (hud) return hud;
+    hud = document.createElement('div');
+    hud.id = 'arenaHud';
+    hud.className = 'arena-hud';
+    hud.setAttribute('aria-hidden', 'true');
+    hud.innerHTML = `
+      <div class="arena-side arena-side-left">
+        <div class="arena-portrait"></div>
+        <div class="arena-name" data-arena-left-name></div>
+        <div class="arena-health"><div class="arena-health-fill" data-arena-left-hp></div></div>
+      </div>
+      <div class="arena-clock">
+        <div class="arena-timer" data-arena-timer></div>
+        <div class="arena-round" data-arena-round></div>
+      </div>
+      <div class="arena-side arena-side-right">
+        <div class="arena-portrait"></div>
+        <div class="arena-name" data-arena-right-name></div>
+        <div class="arena-health"><div class="arena-health-fill" data-arena-right-hp></div></div>
+      </div>
+      <div class="arena-meter arena-meter-left"><div class="arena-meter-fill" data-arena-left-mp></div></div>
+      <div class="arena-meter arena-meter-right"><div class="arena-meter-fill" data-arena-right-mp></div></div>
+    `;
+    document.body.appendChild(hud);
+    return hud;
+  }
+
+  function updateArenaHud(hud) {
+    const root = ensureArenaHud();
+    root.querySelector('[data-arena-left-name]').textContent = hud.playerName;
+    root.querySelector('[data-arena-right-name]').textContent = hud.enemyName;
+    root.querySelector('[data-arena-timer]').textContent = hud.timer;
+    root.querySelector('[data-arena-round]').textContent = hud.roundLabel;
+    root.querySelector('[data-arena-left-hp]').style.width = `${hud.playerHp}%`;
+    root.querySelector('[data-arena-right-hp]').style.width = `${hud.enemyHp}%`;
+    root.querySelector('[data-arena-left-mp]').style.width = `${hud.playerMeter}%`;
+    root.querySelector('[data-arena-right-mp]').style.width = `${hud.enemyMeter}%`;
+  }
+
   function updateHud() {
     titleEl.textContent = engine.config.title;
     scoreEl.textContent = String(engine.score);
@@ -2121,6 +2162,23 @@
         : engine instanceof CatchEngine
           ? `${engine.misses}/5${engine.combo > 1 ? ` x${engine.combo}` : ''}`
           : `${engine.snake.length}${engine.boostHeld ? ' BOOST' : ''}`;
+    if (engine.config?.game_type === 'arena' && typeof engine.hudState === 'function') {
+      const hud = engine.hudState();
+      document.body.classList.add('arena-active');
+      titleEl.textContent = '';
+      scoreEl.textContent = hud.roundLabel;
+      lengthEl.textContent = hud.metaLabel;
+      document.documentElement.style.setProperty('--arena-left-hp', `${hud.playerHp}%`);
+      document.documentElement.style.setProperty('--arena-right-hp', `${hud.enemyHp}%`);
+      document.documentElement.style.setProperty('--arena-left-mp', `${hud.playerMeter}%`);
+      document.documentElement.style.setProperty('--arena-right-mp', `${hud.enemyMeter}%`);
+      document.documentElement.style.setProperty('--arena-timer', `"${hud.timer}"`);
+      document.documentElement.style.setProperty('--arena-left-name', `"${hud.playerName}"`);
+      document.documentElement.style.setProperty('--arena-right-name', `"${hud.enemyName}"`);
+      updateArenaHud(hud);
+      return;
+    }
+    document.body.classList.remove('arena-active');
   }
 
   function loop(now) {

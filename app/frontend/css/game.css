@@ -55,20 +55,219 @@ body {
   white-space: nowrap;
 }
 
-body:has(#arenaCanvas) .hud {
-  left: 20px;
-  right: 20px;
+body.arena-active .hud {
+  display: none;
+}
+
+.arena-hud {
+  display: none;
+}
+
+body.arena-active .arena-hud {
+  --arena-hud-pad: 18px;
+  --arena-center-width: 154px;
+  --arena-portrait-size: 78px;
+  --arena-bar-height: 28px;
+  position: fixed;
+  inset: 8px var(--arena-hud-pad) auto var(--arena-hud-pad);
+  z-index: 20;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) var(--arena-center-width) minmax(220px, 1fr);
+  grid-template-rows: 88px;
+  column-gap: 18px;
+  pointer-events: none;
+}
+
+.arena-side {
+  position: relative;
   min-width: 0;
 }
 
-body:has(#arenaCanvas) .stats {
-  gap: 10px;
-  max-width: min(720px, calc(100vw - 40px));
+.arena-side-left {
+  padding-left: 90px;
 }
 
-body:has(#arenaCanvas) .stats span {
-  background: rgba(18, 22, 28, 0.68);
-  border-color: rgba(255, 255, 255, 0.18);
+.arena-side-right {
+  padding-right: 90px;
+}
+
+.arena-portrait {
+  position: absolute;
+  top: 0;
+  width: var(--arena-portrait-size);
+  height: var(--arena-portrait-size);
+  border-radius: 50%;
+  border: 4px solid rgba(255, 209, 102, 0.88);
+  background:
+    radial-gradient(circle at 42% 36%, rgba(255, 255, 255, 0.95) 0 9%, transparent 10%),
+    radial-gradient(circle at 58% 36%, rgba(255, 255, 255, 0.9) 0 9%, transparent 10%),
+    radial-gradient(circle at 50% 62%, rgba(255, 255, 255, 0.86) 0 19%, transparent 20%),
+    linear-gradient(135deg, rgba(0, 0, 0, 0.22), rgba(255, 255, 255, 0.10));
+  box-shadow:
+    0 0 0 6px rgba(8, 10, 18, 0.82),
+    0 0 0 10px rgba(148, 105, 34, 0.28),
+    0 0 30px rgba(59, 196, 255, 0.48);
+}
+
+.arena-side-left .arena-portrait {
+  left: 0;
+  background-color: #1688df;
+}
+
+.arena-side-right .arena-portrait {
+  right: 0;
+  background-color: #8f2ea8;
+  box-shadow:
+    0 0 0 6px rgba(8, 10, 18, 0.82),
+    0 0 0 10px rgba(148, 105, 34, 0.28),
+    0 0 30px rgba(255, 49, 208, 0.48);
+}
+
+.arena-name {
+  position: absolute;
+  top: 11px;
+  color: #f8fbff;
+  font: 900 25px/1 "Segoe UI", "Microsoft YaHei", sans-serif;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.75), 0 0 18px currentColor;
+  white-space: nowrap;
+}
+
+.arena-side-left .arena-name {
+  left: 4px;
+  transform: translateX(90px);
+}
+
+.arena-side-right .arena-name {
+  right: 4px;
+  transform: translateX(-90px);
+}
+
+.arena-health {
+  position: absolute;
+  top: 40px;
+  left: 92px;
+  right: 0;
+  height: var(--arena-bar-height);
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 3px solid rgba(255, 209, 102, 0.82);
+  background: linear-gradient(180deg, rgba(79, 15, 20, 0.96), rgba(22, 9, 16, 0.96));
+  box-shadow:
+    0 0 0 4px rgba(9, 10, 18, 0.86),
+    inset 0 3px 0 rgba(255, 255, 255, 0.24),
+    0 0 22px rgba(31, 178, 255, 0.20);
+  transform: skewX(-18deg);
+  transform-origin: right center;
+}
+
+.arena-side-right .arena-health {
+  left: 0;
+  right: 92px;
+  transform: skewX(18deg);
+  transform-origin: left center;
+  box-shadow:
+    0 0 0 4px rgba(9, 10, 18, 0.86),
+    inset 0 3px 0 rgba(255, 255, 255, 0.24),
+    0 0 22px rgba(255, 49, 208, 0.20);
+}
+
+.arena-health-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, rgba(255, 229, 86, 0.98), rgba(255, 168, 23, 0.96));
+}
+
+.arena-side-right .arena-health-fill {
+  margin-left: auto;
+  background: linear-gradient(270deg, rgba(255, 229, 86, 0.98), rgba(255, 168, 23, 0.96));
+}
+
+.arena-clock {
+  justify-self: stretch;
+  text-align: center;
+  color: #fff;
+}
+
+.arena-timer {
+  min-width: 118px;
+  padding: 9px 14px 8px;
+  color: #ffffff;
+  font: 900 54px/0.9 "Segoe UI", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(180deg, rgba(12, 14, 22, 0.96), rgba(3, 5, 10, 0.92));
+  border: 3px solid rgba(255, 209, 102, 0.78);
+  clip-path: polygon(12% 0, 88% 0, 100% 50%, 88% 100%, 12% 100%, 0 50%);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.48), inset 0 0 18px rgba(255, 209, 102, 0.12);
+}
+
+.arena-round {
+  margin-top: 5px;
+  color: #ffd166;
+  font: 900 18px/1 "Segoe UI", "Microsoft YaHei", sans-serif;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.85);
+}
+
+.arena-meter {
+  position: fixed;
+  bottom: 18px;
+  z-index: 18;
+  width: min(28vw, 360px);
+  height: 34px;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 3px solid rgba(255, 209, 102, 0.72);
+  background:
+    repeating-linear-gradient(90deg, transparent 0 23%, rgba(4, 6, 12, 0.66) 23% 27%),
+    rgba(9, 13, 24, 0.78);
+  box-shadow:
+    0 0 0 5px rgba(7, 9, 16, 0.72),
+    0 0 28px rgba(25, 185, 255, 0.35),
+    inset 0 2px 0 rgba(255, 255, 255, 0.18);
+  transform: skewX(-18deg);
+}
+
+.arena-meter-left {
+  left: 86px;
+}
+
+.arena-meter-right {
+  right: 86px;
+  transform: skewX(18deg);
+  box-shadow:
+    0 0 0 5px rgba(7, 9, 16, 0.72),
+    0 0 28px rgba(255, 49, 208, 0.35),
+    inset 0 2px 0 rgba(255, 255, 255, 0.18);
+}
+
+.arena-meter-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, rgba(25, 185, 255, 0.94), rgba(37, 117, 255, 0.76));
+}
+
+.arena-meter-right .arena-meter-fill {
+  margin-left: auto;
+  background: linear-gradient(270deg, rgba(255, 49, 208, 0.94), rgba(132, 51, 255, 0.72));
+}
+
+body.arena-active::before,
+body.arena-active::after {
+  content: none;
+}
+
+body.arena-active::before {
+  left: 86px;
+}
+
+body.arena-active::after {
+  right: 86px;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 23%, rgba(4, 6, 12, 0.66) 23% 27%),
+    linear-gradient(270deg, rgba(255, 49, 208, 0.94), rgba(132, 51, 255, 0.72)) right / var(--arena-right-mp) 100% no-repeat,
+    rgba(9, 13, 24, 0.76);
+  box-shadow:
+    0 0 0 5px rgba(7, 9, 16, 0.72),
+    0 0 28px rgba(255, 49, 208, 0.35),
+    inset 0 2px 0 rgba(255, 255, 255, 0.18);
 }
 
 .stats #score::before {
@@ -79,6 +278,16 @@ body:has(#arenaCanvas) .stats span {
 .stats #length::before {
   content: "";
   opacity: 0.72;
+}
+
+body.arena-active .stats #score::before {
+  content: var(--arena-timer);
+  opacity: 1;
+}
+
+body.arena-active .stats #length::before {
+  content: "";
+  opacity: 1;
 }
 
 .overlay {
