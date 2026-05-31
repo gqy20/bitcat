@@ -836,7 +836,7 @@ const PLAY_DANCE_TOOL: ToolSpec = ToolSpec {
 };
 const START_GAME_TOOL: ToolSpec = ToolSpec {
     name: "start_game",
-    description: "启动内置小游戏。kind 只能是 snake、memory、catch、battle、gomoku；用户说玩游戏、来一局、下五子棋或玩贪吃蛇时使用。",
+    description: "启动内置小游戏。kind 只能是 snake、memory、catch、battle、gomoku、arena；用户说玩游戏、来一局、下五子棋、猫猫擂台或玩贪吃蛇时使用。",
     guidance: &[],
 };
 

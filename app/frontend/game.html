@@ -23,7 +23,15 @@
       <button id="quitBtn" type="button">退出</button>
     </div>
   </div>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "/js/vendor/three/three.module.js"
+      }
+    }
+  </script>
   <script src="/js/games/gomoku.js"></script>
-  <script src="/js/game_engine.js"></script>
+  <script type="module" src="/js/games/arena.js"></script>
+  <script type="module" src="/js/game_engine.js"></script>
 </body>
 </html>

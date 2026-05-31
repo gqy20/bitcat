@@ -112,6 +112,11 @@ pub fn start_default_gomoku(app: &AppHandle) -> Result<(), String> {
     start_game(app, GameDef::default_gomoku())
 }
 
+/// Start the built-in 3D fighting arena mode.
+pub fn start_default_arena(app: &AppHandle) -> Result<(), String> {
+    start_game(app, GameDef::default_arena())
+}
+
 /// Return the current game type for gamepad input routing.
 pub fn current_game_type(app: &AppHandle) -> Option<MinigameType> {
     let state: tauri::State<'_, SharedGame> = app.state();
@@ -373,6 +378,13 @@ pub fn cmd_start_catch(app: AppHandle) -> Result<(), String> {
 pub fn cmd_start_gomoku(app: AppHandle) -> Result<(), String> {
     info!("[game] cmd_start_gomoku invoked");
     start_default_gomoku(&app)
+}
+
+/// Frontend request to start the built-in 3D fighting arena mode.
+#[tauri::command]
+pub fn cmd_start_arena(app: AppHandle) -> Result<(), String> {
+    info!("[game] cmd_start_arena invoked");
+    start_default_arena(&app)
 }
 
 /// Frontend or AI request to start a game from a definition.

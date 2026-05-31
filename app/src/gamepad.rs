@@ -539,11 +539,14 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                         }
 
                         if game_active {
-                            let is_battle = matches!(
+                            let is_combat_game = matches!(
                                 crate::game::current_game_type(app),
-                                Some(bitcat_core::minigame::MinigameType::Battle)
+                                Some(
+                                    bitcat_core::minigame::MinigameType::Battle
+                                        | bitcat_core::minigame::MinigameType::Arena
+                                )
                             );
-                            if is_battle {
+                            if is_combat_game {
                                 match name {
                                     "A" => {
                                         info!("→ 战斗普通攻击");

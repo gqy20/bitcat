@@ -43,3 +43,10 @@ actions:
     order: 50
     type: builtin
     command: gomoku
+
+  arena:
+    label: 猫猫擂台
+    icon: "A"
+    order: 60
+    type: builtin
+    command: arena

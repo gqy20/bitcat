@@ -51,6 +51,8 @@ pub enum Action {
     PlayBattleDefault,
     /// Start the built-in AI Gomoku mode.
     PlayGomokuDefault,
+    /// Start the built-in 3D fighting arena mode.
+    PlayArenaDefault,
     /// 立即截图 + Vision 分析
     ScreenshotNow,
     /// 启动程序（launch 动作）
@@ -202,6 +204,12 @@ impl ActionBus {
                     warn!(error = %e, "play gomoku action failed");
                 }
             }
+            Action::PlayArenaDefault => {
+                info!(?source, action = "PlayArenaDefault", "action dispatch");
+                if let Err(e) = crate::game::start_default_arena(app) {
+                    warn!(error = %e, "play arena action failed");
+                }
+            }
             Action::ScreenshotNow => {
                 info!(?source, action = "ScreenshotNow", "action dispatch");
                 let app = app.clone();
@@ -277,6 +285,7 @@ pub(crate) fn action_for_start_game_kind(kind: bitcat_core::game_request::StartG
         bitcat_core::game_request::StartGameKind::Catch => Action::PlayCatchDefault,
         bitcat_core::game_request::StartGameKind::Battle => Action::PlayBattleDefault,
         bitcat_core::game_request::StartGameKind::Gomoku => Action::PlayGomokuDefault,
+        bitcat_core::game_request::StartGameKind::Arena => Action::PlayArenaDefault,
     }
 }
 
@@ -388,6 +397,7 @@ mod tests {
             Action::PlayCatchDefault,
             Action::PlayBattleDefault,
             Action::PlayGomokuDefault,
+            Action::PlayArenaDefault,
             Action::ScreenshotNow,
             Action::Launch {
                 program: "code".into(),
@@ -432,6 +442,10 @@ mod tests {
         assert_eq!(
             action_for_start_game_kind(StartGameKind::Gomoku),
             Action::PlayGomokuDefault
+        );
+        assert_eq!(
+            action_for_start_game_kind(StartGameKind::Arena),
+            Action::PlayArenaDefault
         );
     }
 

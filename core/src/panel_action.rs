@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn test_load_panel_action_yml() {
         let config = PanelActionConfig::load("config/panel_action.yml").unwrap();
-        for id in ["game", "memory", "catch", "battle", "gomoku"] {
+        for id in ["game", "memory", "catch", "battle", "gomoku", "arena"] {
             assert!(config.actions.contains_key(id), "missing panel action {id}");
         }
     }
@@ -194,13 +194,13 @@ mod tests {
     #[test]
     fn test_panel_only_contains_minigames() {
         let config = PanelActionConfig::load("config/panel_action.yml").unwrap();
-        assert_eq!(config.actions.len(), 5);
+        assert_eq!(config.actions.len(), 6);
         for (id, action) in &config.actions {
             assert_eq!(action.action_type, "builtin", "{id} should be builtin");
             assert!(
                 matches!(
                     action.command.as_deref(),
-                    Some("game" | "memory" | "catch" | "battle" | "gomoku")
+                    Some("game" | "memory" | "catch" | "battle" | "gomoku" | "arena")
                 ),
                 "{id} should launch a minigame"
             );
@@ -219,8 +219,11 @@ mod tests {
         let config = PanelActionConfig::load("config/panel_action.yml").unwrap();
         let vm = config.to_view_model();
         assert_eq!((vm.width, vm.height, vm.columns, vm.rows), (480, 420, 3, 2));
-        assert_eq!(vm.actions.len(), 5);
+        assert_eq!(vm.actions.len(), 6);
         let ids: Vec<&str> = vm.actions.iter().map(|action| action.id.as_str()).collect();
-        assert_eq!(ids, vec!["game", "memory", "catch", "battle", "gomoku"]);
+        assert_eq!(
+            ids,
+            vec!["game", "memory", "catch", "battle", "gomoku", "arena"]
+        );
     }
 }

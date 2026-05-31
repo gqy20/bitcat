@@ -26,10 +26,14 @@ Thumbs.db
 Thumbs.db
 Desktop.ini
 
-# Tauri / Node (if ever added)
+# Tauri / Node
 node_modules/
 app/frontend/dist/
 app/frontend/package-lock.json
+pnpm-debug.log*
+.pnpm-store/
+app/frontend/.pnpm-store/
+!app/frontend/pnpm-lock.yaml
 
 # Env / Secrets
 .env

@@ -42,6 +42,7 @@ body {
 
 .stats {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   font: 600 13px/1.2 "Segoe UI", "Microsoft YaHei", sans-serif;
 }
@@ -51,6 +52,23 @@ body {
   border-radius: 8px;
   background: rgba(20, 24, 30, 0.56);
   border: 1px solid rgba(255, 255, 255, 0.14);
+  white-space: nowrap;
+}
+
+body:has(#arenaCanvas) .hud {
+  left: 20px;
+  right: 20px;
+  min-width: 0;
+}
+
+body:has(#arenaCanvas) .stats {
+  gap: 10px;
+  max-width: min(720px, calc(100vw - 40px));
+}
+
+body:has(#arenaCanvas) .stats span {
+  background: rgba(18, 22, 28, 0.68);
+  border-color: rgba(255, 255, 255, 0.18);
 }
 
 .stats #score::before {

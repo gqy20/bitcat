@@ -24,6 +24,7 @@ pub enum StartGameKind {
     Catch,
     Battle,
     Gomoku,
+    Arena,
 }
 
 /// Core -> app request payload for starting a built-in game.

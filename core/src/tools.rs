@@ -668,6 +668,7 @@ fn start_game_kind_label(kind: StartGameKind) -> &'static str {
         StartGameKind::Catch => "catch",
         StartGameKind::Battle => "battle",
         StartGameKind::Gomoku => "gomoku",
+        StartGameKind::Arena => "arena",
     }
 }
 

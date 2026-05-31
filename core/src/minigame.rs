@@ -16,6 +16,7 @@ pub enum MinigameType {
     Catch,
     Battle,
     Gomoku,
+    Arena,
 }
 
 /// 网格尺寸配置。
@@ -259,6 +260,43 @@ impl GameDef {
         }
     }
 
+    /// Built-in 3D arena fighting preset. The first implementation uses
+    /// simple Three.js geometry while keeping combat rules data-driven.
+    pub fn default_arena() -> Self {
+        Self {
+            game_type: MinigameType::Arena,
+            title: "BitCat Arena".into(),
+            grid: GameGrid {
+                width: 24,
+                height: 12,
+                cell_size: 32,
+            },
+            player: PlayerConfig {
+                speed_ms: 120,
+                initial_length: 3,
+            },
+            rules: GameRules {
+                walls_kill: false,
+                self_kill: false,
+                food_count: 0,
+                speed_ramp: 1.0,
+                win_length: 2,
+            },
+            theme: GameTheme {
+                head: "cat".into(),
+                body: "trail".into(),
+                food: "fish".into(),
+                trail_alpha: 0.55,
+            },
+            dialogue: GameDialogue {
+                start: "训练场启动，准备开打。".into(),
+                win: "漂亮！这拳有章法。".into(),
+                lose: "先喘口气，下一局找回节奏。".into(),
+            },
+            battle: None,
+        }
+    }
+
     /// 内置守护召唤战预设。
     pub fn default_battle() -> Self {
         Self {
@@ -334,6 +372,7 @@ pub fn validate_game_def(def: &GameDef) -> Result<(), String> {
         MinigameType::Catch => validate_catch(def),
         MinigameType::Battle => validate_battle(def),
         MinigameType::Gomoku => validate_gomoku(def),
+        MinigameType::Arena => validate_arena(def),
     }
 }
 
@@ -421,6 +460,24 @@ fn validate_gomoku(def: &GameDef) -> Result<(), String> {
     }
     if def.rules.win_length != 5 {
         return Err("gomoku win_length must be 5".into());
+    }
+    Ok(())
+}
+
+fn validate_arena(def: &GameDef) -> Result<(), String> {
+    validate_common_game_fields(def)?;
+    ensure_range("grid.width", def.grid.width, 12, 40)?;
+    ensure_range("grid.height", def.grid.height, 6, 24)?;
+    ensure_range("grid.cell_size", def.grid.cell_size, 16, 80)?;
+    ensure_range("player.speed_ms", def.player.speed_ms, 60, 300)?;
+    if def.rules.win_length == 0 || def.rules.win_length > 5 {
+        return Err("arena win_length must be within 1..=5 rounds".into());
+    }
+    if def.rules.food_count != 0 {
+        return Err("arena food_count must be 0".into());
+    }
+    if (def.rules.speed_ramp - 1.0).abs() > f32::EPSILON {
+        return Err("arena speed_ramp must be 1.0".into());
     }
     Ok(())
 }
@@ -552,6 +609,11 @@ mod tests {
     #[test]
     fn default_gomoku_is_valid() {
         assert!(validate_game_def(&GameDef::default_gomoku()).is_ok());
+    }
+
+    #[test]
+    fn default_arena_is_valid() {
+        assert!(validate_game_def(&GameDef::default_arena()).is_ok());
     }
 
     #[test]

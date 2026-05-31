@@ -1980,6 +1980,15 @@
   }
 
   function metricsFor(config) {
+    if (!config?.grid) {
+      return {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        cell: 1,
+        x: 0,
+        y: 0,
+      };
+    }
     const marginX = clamp(Math.floor(window.innerWidth * 0.035), 28, 88);
     const marginY = clamp(Math.floor(window.innerHeight * 0.06), 34, 96);
     const maxCell = Math.min(
@@ -2002,6 +2011,10 @@
     if (!engine) return;
     overlayActions.classList.add('hidden');
     if (kind === 'ready') {
+      if (engine.config?.game_type === 'arena') {
+        overlay.classList.add('hidden');
+        return;
+      }
       overlay.classList.remove('hidden');
       overlayTitle.textContent = engine.config.dialogue.start;
       if (typeof engine.readyText === 'function') {
@@ -2134,6 +2147,48 @@
   }
 
   function toInputFromKey(e) {
+    if (currentConfig && currentConfig.game_type === 'arena') {
+      switch (e.key) {
+        case 'ArrowLeft':
+        case 'a':
+        case 'A':
+          return { type: 'direction', dx: -1, dy: 0 };
+        case 'ArrowRight':
+        case 'd':
+        case 'D':
+          return { type: 'direction', dx: 1, dy: 0 };
+        case 'ArrowUp':
+        case 'w':
+        case 'W':
+          return { type: 'direction', dx: 0, dy: -1 };
+        case 'ArrowDown':
+        case 's':
+        case 'S':
+          return { type: 'direction', dx: 0, dy: 1 };
+        case ' ':
+        case 'j':
+        case 'J':
+        case 'Enter':
+          return { type: 'attack_primary' };
+        case 'k':
+        case 'K':
+        case '1':
+          return { type: 'skill', slot: 1 };
+        case 'l':
+        case 'L':
+        case '2':
+          return { type: 'skill', slot: 2 };
+        case 'Shift':
+          return { type: 'guard' };
+        case 'Escape':
+          return { type: 'cancel' };
+        case 'p':
+        case 'P':
+          return { type: 'pause' };
+        default:
+          return null;
+      }
+    }
     if (engine instanceof BattleEngine) {
       switch (e.key) {
         case ' ':
@@ -2232,6 +2287,10 @@
       if (engine instanceof BattleEngine && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'a', 'A', 'd', 'D', 'w', 'W', 's', 'S'].includes(e.key)) {
         e.preventDefault();
         engine.handleInput({ type: 'direction', dx: 0, dy: 0 });
+      }
+      if (currentConfig && currentConfig.game_type === 'arena' && typeof engine.handleKeyUp === 'function') {
+        e.preventDefault();
+        engine.handleKeyUp(e.key);
       }
     });
     window.addEventListener('resize', resizeCanvas);
