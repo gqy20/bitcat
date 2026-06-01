@@ -129,7 +129,7 @@ impl SharedAgentMonitor {
             .lock()
             .map_err(|e| format!("agent last event lock poisoned: {e}"))?;
         Ok(snapshot_from_sessions(
-            sessions.values().cloned().collect(),
+            sort_sessions(sessions.values().cloned().collect()),
             now_ms,
             event_count,
             last_event_at_ms,
@@ -358,57 +358,322 @@ fn watch_page_html() -> String {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Agent Watch</title>
   <style>
-    :root { color-scheme: dark; font-family: "Segoe UI", system-ui, sans-serif; background: #0f1115; color: rgba(255,255,255,.92); }
-    body { margin: 0; padding: 18px; }
-    header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
-    h1 { margin: 0; font-size: 22px; }
-    #status { color: rgba(255,255,255,.55); font-size: 13px; }
-    .stack { display: grid; gap: 10px; }
-    .card { border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 12px 14px; background: rgba(255,255,255,.045); }
-    .top { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
-    .title { font-weight: 760; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .age { color: rgba(255,255,255,.48); font-size: 12px; }
-    .meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; color: rgba(255,255,255,.62); font-size: 13px; }
-    .meta span { border: 1px solid rgba(255,255,255,.08); border-radius: 999px; padding: 2px 8px; }
-    .meta .device { border-color: rgba(126,165,232,.28); background: rgba(126,165,232,.12); color: rgba(184,211,255,.95); font-weight: 760; }
-    .done { border-color: rgba(142,230,168,.32); }
-    .waiting, .error { border-color: rgba(255,138,122,.42); }
-    p { margin: 8px 0 0; color: rgba(255,255,255,.76); line-height: 1.45; }
+    :root {
+      color-scheme: dark;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #101217;
+      color: rgba(255, 255, 255, .92);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #101217;
+    }
+    .shell {
+      width: min(100%, 760px);
+      margin: 0 auto;
+      padding: 14px 12px 28px;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      margin: 0 -12px 14px;
+      padding: 12px;
+      background: rgba(16, 18, 23, .96);
+      border-bottom: 1px solid rgba(255, 255, 255, .08);
+      backdrop-filter: blur(14px);
+    }
+    .headline {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 21px;
+      font-weight: 780;
+      letter-spacing: 0;
+    }
+    #status {
+      color: rgba(255, 255, 255, .58);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .summary-item {
+      min-width: 0;
+      border: 1px solid rgba(255, 255, 255, .1);
+      border-radius: 8px;
+      padding: 9px 10px;
+      background: rgba(255, 255, 255, .045);
+    }
+    .summary-label {
+      display: block;
+      color: rgba(255, 255, 255, .56);
+      font-size: 11px;
+    }
+    .summary-value {
+      display: block;
+      margin-top: 3px;
+      font-size: 18px;
+      font-weight: 760;
+    }
+    .groups {
+      display: grid;
+      gap: 16px;
+    }
+    .group[hidden] { display: none; }
+    .group-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 0 0 8px;
+      color: rgba(255, 255, 255, .66);
+      font-size: 12px;
+      font-weight: 760;
+      text-transform: uppercase;
+    }
+    .stack {
+      display: grid;
+      gap: 9px;
+    }
+    .card {
+      width: 100%;
+      text-align: left;
+      color: inherit;
+      border: 1px solid rgba(255, 255, 255, .1);
+      border-left: 4px solid rgba(160, 174, 192, .65);
+      border-radius: 8px;
+      padding: 12px;
+      background: rgba(255, 255, 255, .045);
+    }
+    .card:active { transform: translateY(1px); }
+    .card.waiting, .card.error { border-left-color: #ff8a7a; }
+    .card.working, .card.tool_running, .card.compacting { border-left-color: #7ea5e8; }
+    .card.done { border-left-color: #8ee6a8; }
+    .top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .title {
+      min-width: 0;
+      font-size: 15px;
+      font-weight: 760;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+    .age {
+      flex: 0 0 auto;
+      color: rgba(255, 255, 255, .5);
+      font-size: 12px;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 9px;
+      color: rgba(255, 255, 255, .68);
+      font-size: 12px;
+    }
+    .meta span {
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      border: 1px solid rgba(255, 255, 255, .08);
+      border-radius: 8px;
+      padding: 3px 7px;
+      white-space: nowrap;
+    }
+    .meta .device {
+      border-color: rgba(126, 165, 232, .28);
+      background: rgba(126, 165, 232, .12);
+      color: rgba(184, 211, 255, .95);
+      font-weight: 720;
+    }
+    .detail {
+      display: none;
+      margin: 10px 0 0;
+      color: rgba(255, 255, 255, .76);
+      font-size: 13px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+    .card.open .detail { display: block; }
+    .empty {
+      margin-top: 34px;
+      color: rgba(255, 255, 255, .54);
+      text-align: center;
+      line-height: 1.5;
+    }
+    @media (min-width: 640px) {
+      .shell { padding-top: 20px; }
+      header {
+        margin-left: 0;
+        margin-right: 0;
+        border: 1px solid rgba(255, 255, 255, .08);
+        border-radius: 8px;
+      }
+    }
   </style>
 </head>
 <body>
-  <header>
-    <h1>Agent Watch</h1>
-    <div id="status">loading</div>
-  </header>
-  <main id="stack" class="stack"></main>
+  <main class="shell">
+    <header>
+      <div class="headline">
+        <h1>Agent Watch</h1>
+        <div id="status">loading</div>
+      </div>
+      <section class="summary" aria-label="summary">
+        <div class="summary-item"><span class="summary-label">Needs You</span><span id="needs-count" class="summary-value">0</span></div>
+        <div class="summary-item"><span class="summary-label">Running</span><span id="active-count" class="summary-value">0</span></div>
+        <div class="summary-item"><span class="summary-label">Done</span><span id="done-count" class="summary-value">0</span></div>
+      </section>
+    </header>
+    <section id="groups" class="groups"></section>
+  </main>
   <script>
-    const stack = document.getElementById('stack');
+    const groups = document.getElementById('groups');
     const status = document.getElementById('status');
-    function esc(v) { return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    const needsCount = document.getElementById('needs-count');
+    const activeCount = document.getElementById('active-count');
+    const doneCount = document.getElementById('done-count');
+    let lastEventCount = null;
+    let lastRenderedAt = 0;
+    let timer = null;
+    const openCards = new Set();
+
+    function esc(v) {
+      return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    function bucketOf(session) {
+      const value = String(session.status || '').toLowerCase();
+      if (value === 'waiting' || value === 'error') return 'needs';
+      if (value === 'working' || value === 'tool_running' || value === 'compacting') return 'active';
+      if (value === 'done') return 'done';
+      return 'other';
+    }
+
+    function visibleSession(session) {
+      if (session.display?.quiet) return false;
+      return String(session.status || '').toLowerCase() !== 'idle';
+    }
+
+    function titleOf(session) {
+      const display = session.display || {};
+      return display.project || session.workspace_name || display.headline || session.status_label || 'Agent task';
+    }
+
+    function subtitleOf(session) {
+      const display = session.display || {};
+      return display.headline || session.status_label || session.status || 'Task update';
+    }
+
+    function detailOf(session) {
+      const display = session.display || {};
+      const lines = [display.detail, session.user_prompt_preview, session.last_response_preview]
+        .map(v => String(v || '').trim())
+        .filter(Boolean);
+      return [...new Set(lines)].join('\n');
+    }
+
+    function card(session) {
+      const display = session.display || {};
+      const meta = [];
+      if (session.machine) meta.push({ value: session.machine, className: 'device' });
+      meta.push({ value: session.workspace_name || 'unknown' });
+      meta.push({ value: display.source_label || session.source || 'Agent' });
+      meta.push({ value: display.action_label || 'Task' });
+      const detail = detailOf(session);
+      const open = openCards.has(session.session_id) ? ' open' : '';
+      return `
+        <button class="card ${esc(session.status)}${open}" type="button" data-id="${esc(session.session_id)}">
+          <div class="top">
+            <div class="title">${esc(titleOf(session))}</div>
+            <div class="age">${esc(display.age_label || '')}</div>
+          </div>
+          <div class="meta">
+            ${meta.map(item => `<span class="${esc(item.className || '')}" title="${esc(item.value)}">${esc(item.value)}</span>`).join('')}
+          </div>
+          <div class="detail">${esc(subtitleOf(session))}${detail ? '\n' + esc(detail) : ''}</div>
+        </button>`;
+    }
+
+    function render(snapshot) {
+      const sessions = (snapshot.sessions || []).filter(visibleSession);
+      const buckets = {
+        needs: sessions.filter(s => bucketOf(s) === 'needs'),
+        active: sessions.filter(s => bucketOf(s) === 'active'),
+        done: sessions.filter(s => bucketOf(s) === 'done'),
+      };
+      needsCount.textContent = String(buckets.needs.length);
+      activeCount.textContent = String(buckets.active.length);
+      doneCount.textContent = String(buckets.done.length);
+      status.textContent = `${sessions.length} visible`;
+      if (!sessions.length) {
+        groups.innerHTML = '<div class="empty">No active agent sessions yet.</div>';
+        return;
+      }
+      const sections = [
+        ['needs', 'Needs attention', buckets.needs],
+        ['active', 'Running', buckets.active],
+        ['done', 'Recently done', buckets.done],
+      ];
+      groups.innerHTML = sections
+        .filter(([, , items]) => items.length)
+        .map(([key, label, items]) => `
+          <section class="group" data-group="${key}">
+            <h2 class="group-title"><span>${label}</span><span>${items.length}</span></h2>
+            <div class="stack">${items.map(card).join('')}</div>
+          </section>`)
+        .join('');
+    }
+
     async function refresh() {
       try {
-        const snap = await fetch('/agent-sessions', { cache: 'no-store' }).then(r => r.json());
-        status.textContent = `${snap.sessions?.length || 0} sessions`;
-        stack.innerHTML = (snap.sessions || []).map(s => {
-          const meta = [];
-          if (s.machine) meta.push(s.machine);
-          meta.push(s.workspace_name || 'unknown');
-          meta.push(s.display?.source_label || s.source);
-          meta.push(s.display?.action_label || 'Task');
-          return `
-          <article class="card ${esc(s.status)}">
-            <div class="top"><div class="title">${esc(s.display?.headline || s.status_label || s.status)}</div><div class="age">${esc(s.display?.age_label || '')}</div></div>
-            <div class="meta">${meta.map((item, index) => `<span class="${index === 0 && s.machine ? 'device' : ''}">${esc(item)}</span>`).join('')}</div>
-            ${s.display?.detail ? `<p>${esc(s.display.detail)}</p>` : ''}
-          </article>
-        `}).join('') || '<p>No sessions yet.</p>';
+        const response = await fetch('/agent-sessions', { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const snap = await response.json();
+        const now = Date.now();
+        if (lastEventCount !== snap.event_count || now - lastRenderedAt > 30000) {
+          lastEventCount = snap.event_count;
+          lastRenderedAt = now;
+          render(snap);
+        }
       } catch (e) {
         status.textContent = 'offline';
       }
     }
+
+    function schedule() {
+      clearInterval(timer);
+      timer = setInterval(refresh, document.hidden ? 15000 : 2000);
+    }
+
+    groups.addEventListener('click', event => {
+      const card = event.target.closest('.card');
+      if (!card) return;
+      const id = card.dataset.id;
+      const open = !card.classList.contains('open');
+      card.classList.toggle('open', open);
+      if (id && open) openCards.add(id);
+      if (id && !open) openCards.delete(id);
+    });
+    document.addEventListener('visibilitychange', schedule);
     refresh();
-    setInterval(refresh, 2000);
+    schedule();
   </script>
 </body>
 </html>"#
