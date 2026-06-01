@@ -128,6 +128,15 @@ Idle sessions and quiet completed sessions are hidden so old history does not cr
 
 The page polls `/agent-sessions` every 2 seconds while visible and slows down while the browser tab is hidden. If the Windows BitCat process was already running before a new build, restart BitCat before checking the page so `5344` serves the current embedded HTML.
 
+The viewer also exposes a small PWA shell:
+
+- `/manifest.webmanifest`
+- `/sw.js`
+- `/agent-watch-icon-128.png`
+- `/agent-watch-icon-256.png`
+
+Browsers that support installing local or private-network web apps can add the viewer to the home screen as `Agent Watch`. Full service-worker behavior depends on the browser's secure-context rules. `localhost` usually works; plain `http://192.168.x.x:5344` may install as a shortcut but skip offline caching on stricter mobile browsers. Tailnet/VPN HTTPS or a trusted reverse proxy gives the most complete PWA behavior.
+
 ## Display
 
 Remote sessions appear in the same Agent Watch stack as local sessions. Cards include a device badge derived from the remote hostname. Settings -> Agent Watch also lists remote devices, session counts, active counts, and last update time.

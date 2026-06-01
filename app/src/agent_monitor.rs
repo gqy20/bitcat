@@ -265,32 +265,89 @@ fn handle_view_stream(app: &AppHandle, mut stream: TcpStream) {
         .next()
         .and_then(|line| line.split_whitespace().nth(1))
         .unwrap_or("/");
-    let (status, content_type, body) = view_response(app, path);
-    let response = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {content_type}; charset=utf-8\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
+    let response = view_response(app, path);
+    let charset = if response.content_type.starts_with("text/")
+        || response.content_type == "application/json"
+        || response.content_type == "application/manifest+json"
+        || response.content_type == "application/javascript"
+    {
+        "; charset=utf-8"
+    } else {
+        ""
+    };
+    let headers = format!(
+        "HTTP/1.1 {}\r\nContent-Type: {}{}\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        response.status,
+        response.content_type,
+        charset,
+        response.body.len()
     );
-    if let Err(e) = stream.write_all(response.as_bytes()) {
+    if let Err(e) = stream
+        .write_all(headers.as_bytes())
+        .and_then(|_| stream.write_all(&response.body))
+    {
         debug!(error = %e, "Agent Watch view response write failed");
     }
 }
 
-fn view_response(app: &AppHandle, path: &str) -> (&'static str, &'static str, String) {
+struct ViewResponse {
+    status: &'static str,
+    content_type: &'static str,
+    body: Vec<u8>,
+}
+
+impl ViewResponse {
+    fn text(status: &'static str, content_type: &'static str, body: impl Into<String>) -> Self {
+        Self {
+            status,
+            content_type,
+            body: body.into().into_bytes(),
+        }
+    }
+
+    fn bytes(status: &'static str, content_type: &'static str, body: &'static [u8]) -> Self {
+        Self {
+            status,
+            content_type,
+            body: body.to_vec(),
+        }
+    }
+}
+
+fn view_response(app: &AppHandle, path: &str) -> ViewResponse {
     let clean_path = path.split('?').next().unwrap_or(path);
     let settings = AppSettings::load().agent_watch;
     if let Some(response) = remote_access_forbidden(clean_path, &settings) {
         return response;
     }
     match clean_path {
-        "/" | "/watch" => ("200 OK", "text/html", watch_page_html()),
+        "/" | "/watch" => ViewResponse::text("200 OK", "text/html", watch_page_html()),
+        "/manifest.webmanifest" => {
+            ViewResponse::text("200 OK", "application/manifest+json", watch_manifest_json())
+        }
+        "/sw.js" => ViewResponse::text(
+            "200 OK",
+            "application/javascript",
+            watch_service_worker_js(),
+        ),
+        "/agent-watch-icon-128.png" => ViewResponse::bytes(
+            "200 OK",
+            "image/png",
+            include_bytes!("../../app/icons/128x128.png"),
+        ),
+        "/agent-watch-icon-256.png" => ViewResponse::bytes(
+            "200 OK",
+            "image/png",
+            include_bytes!("../../app/icons/128x128@2x.png"),
+        ),
         "/agent-sessions" => {
             let monitor: tauri::State<SharedAgentMonitor> = app.state();
             match monitor
                 .snapshot(now_ms())
                 .and_then(|snapshot| serde_json::to_string(&snapshot).map_err(|e| e.to_string()))
             {
-                Ok(body) => ("200 OK", "application/json", body),
-                Err(e) => (
+                Ok(body) => ViewResponse::text("200 OK", "application/json", body),
+                Err(e) => ViewResponse::text(
                     "500 Internal Server Error",
                     "application/json",
                     json_error(&e),
@@ -302,21 +359,21 @@ fn view_response(app: &AppHandle, path: &str) -> (&'static str, &'static str, St
             match remote_devices(&monitor, now_ms())
                 .and_then(|devices| serde_json::to_string(&devices).map_err(|e| e.to_string()))
             {
-                Ok(body) => ("200 OK", "application/json", body),
-                Err(e) => (
+                Ok(body) => ViewResponse::text("200 OK", "application/json", body),
+                Err(e) => ViewResponse::text(
                     "500 Internal Server Error",
                     "application/json",
                     json_error(&e),
                 ),
             }
         }
-        "/remote-install.sh" => (
+        "/remote-install.sh" => ViewResponse::text(
             "200 OK",
             "text/x-shellscript",
             include_str!("../../scripts/remote-install.sh").to_string(),
         ),
-        "/health" => ("200 OK", "application/json", "{\"ok\":true}".to_string()),
-        _ => (
+        "/health" => ViewResponse::text("200 OK", "application/json", "{\"ok\":true}".to_string()),
+        _ => ViewResponse::text(
             "404 Not Found",
             "application/json",
             "{\"error\":\"not found\"}".to_string(),
@@ -327,17 +384,26 @@ fn view_response(app: &AppHandle, path: &str) -> (&'static str, &'static str, St
 fn remote_access_forbidden(
     clean_path: &str,
     settings: &AgentWatchSettings,
-) -> Option<(&'static str, &'static str, String)> {
-    let is_view_path = matches!(clean_path, "/" | "/watch" | "/agent-sessions" | "/devices");
+) -> Option<ViewResponse> {
+    let is_view_path = matches!(
+        clean_path,
+        "/" | "/watch"
+            | "/agent-sessions"
+            | "/devices"
+            | "/manifest.webmanifest"
+            | "/sw.js"
+            | "/agent-watch-icon-128.png"
+            | "/agent-watch-icon-256.png"
+    );
     if is_view_path && !settings.remote_view_enabled {
-        return Some((
+        return Some(ViewResponse::text(
             "403 Forbidden",
             "application/json",
             json_error("remote Agent Watch view is disabled"),
         ));
     }
     if clean_path == "/remote-install.sh" && !settings.remote_install_enabled {
-        return Some((
+        return Some(ViewResponse::text(
             "403 Forbidden",
             "application/json",
             json_error("remote Agent Watch installer is disabled"),
@@ -351,11 +417,16 @@ fn json_error(error: &str) -> String {
 }
 
 fn watch_page_html() -> String {
-    r#"<!doctype html>
+    r##"<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#101217" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Agent Watch" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/agent-watch-icon-256.png" />
   <title>Agent Watch</title>
   <style>
     :root {
@@ -715,13 +786,74 @@ fn watch_page_html() -> String {
       lastRenderedAt = 0;
       refresh();
     });
+    if ('serviceWorker' in navigator && window.isSecureContext) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
     document.addEventListener('visibilitychange', schedule);
     refresh();
     schedule();
   </script>
 </body>
-</html>"#
+</html>"##
         .to_string()
+}
+
+fn watch_manifest_json() -> String {
+    serde_json::json!({
+        "name": "BitCat Agent Watch",
+        "short_name": "Agent Watch",
+        "description": "Read-only BitCat Agent Watch dashboard for LAN and tailnet devices.",
+        "start_url": "/watch",
+        "scope": "/",
+        "display": "standalone",
+        "background_color": "#101217",
+        "theme_color": "#101217",
+        "icons": [
+            {
+                "src": "/agent-watch-icon-128.png",
+                "sizes": "128x128",
+                "type": "image/png"
+            },
+            {
+                "src": "/agent-watch-icon-256.png",
+                "sizes": "256x256",
+                "type": "image/png"
+            }
+        ]
+    })
+    .to_string()
+}
+
+fn watch_service_worker_js() -> String {
+    r#"const CACHE = 'bitcat-agent-watch-v1';
+const SHELL = ['/watch', '/manifest.webmanifest', '/agent-watch-icon-128.png', '/agent-watch-icon-256.png'];
+
+self.addEventListener('install', event => {
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
+});
+
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('fetch', event => {
+  const url = new URL(event.request.url);
+  if (url.pathname === '/agent-sessions' || url.pathname === '/devices') {
+    event.respondWith(fetch(event.request).catch(() => new Response(JSON.stringify({
+      sessions: [],
+      devices: [],
+      offline: true
+    }), { headers: { 'Content-Type': 'application/json; charset=utf-8' } })));
+    return;
+  }
+  event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+});
+"#
+    .to_string()
 }
 
 pub fn handle_hook_payload(app: &AppHandle, raw: &str) -> Result<(), String> {
@@ -1516,11 +1648,16 @@ mod tests {
         let mut settings = AgentWatchSettings::default();
         settings.remote_view_enabled = false;
         assert_eq!(
-            remote_access_forbidden("/watch", &settings).map(|(status, _, _)| status),
+            remote_access_forbidden("/watch", &settings).map(|response| response.status),
             Some("403 Forbidden")
         );
         assert_eq!(
-            remote_access_forbidden("/agent-sessions", &settings).map(|(status, _, _)| status),
+            remote_access_forbidden("/agent-sessions", &settings).map(|response| response.status),
+            Some("403 Forbidden")
+        );
+        assert_eq!(
+            remote_access_forbidden("/manifest.webmanifest", &settings)
+                .map(|response| response.status),
             Some("403 Forbidden")
         );
         assert!(remote_access_forbidden("/health", &settings).is_none());
@@ -1528,9 +1665,19 @@ mod tests {
         settings.remote_view_enabled = true;
         settings.remote_install_enabled = false;
         assert_eq!(
-            remote_access_forbidden("/remote-install.sh", &settings).map(|(status, _, _)| status),
+            remote_access_forbidden("/remote-install.sh", &settings)
+                .map(|response| response.status),
             Some("403 Forbidden")
         );
         assert!(remote_access_forbidden("/watch", &settings).is_none());
+    }
+
+    #[test]
+    fn watch_manifest_describes_installable_pwa() {
+        let manifest: serde_json::Value = serde_json::from_str(&watch_manifest_json()).unwrap();
+        assert_eq!(manifest["name"], "BitCat Agent Watch");
+        assert_eq!(manifest["start_url"], "/watch");
+        assert_eq!(manifest["display"], "standalone");
+        assert_eq!(manifest["icons"].as_array().unwrap().len(), 2);
     }
 }
