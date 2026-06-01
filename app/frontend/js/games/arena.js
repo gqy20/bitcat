@@ -7,6 +7,7 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
   const STAGE_HALF_WIDTH = 5.45;
   const STAGE_SOFT_EDGE = 4.85;
   const ASSIST_HALF_WIDTH = 5.95;
+  const BASE_CAMERA_Z = 6.05;
   const DEFAULT_HP = 100;
   const HITSTOP_MS = 70;
   const MODEL_BASE_URL = '/assets/arena/';
@@ -1386,7 +1387,7 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       this.scene = new THREE.Scene();
       this.camera = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 100);
-      this.camera.position.set(0, 2.28, 6.55);
+      this.camera.position.set(0, 2.30, BASE_CAMERA_Z + 0.65);
       this.camera.lookAt(0, 0.98, 0.18);
       this.debugBoxes = [];
       this.effects = [];
@@ -1429,7 +1430,7 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       this.createArenaBackdrop();
       const floorTexture = createArenaFloorTexture();
       const floor = new THREE.Mesh(
-        new THREE.PlaneGeometry(13.4, 4.15),
+        new THREE.PlaneGeometry(16.8, 5.35),
         new THREE.MeshBasicMaterial({
           map: floorTexture,
           transparent: true,
@@ -1439,12 +1440,12 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
         })
       );
       floor.rotation.x = -Math.PI / 2;
-      floor.position.set(0, 0.004, 0.95);
+      floor.position.set(0, 0.004, 0.78);
       floor.userData.dispose = () => floorTexture.dispose();
       this.scene.add(floor);
       const contactShadow = new THREE.Mesh(
-        new THREE.PlaneGeometry(7.6, 1.24),
-        new THREE.MeshBasicMaterial({ color: 0x020617, transparent: true, opacity: 0.34, depthWrite: false })
+        new THREE.PlaneGeometry(8.4, 1.18),
+        new THREE.MeshBasicMaterial({ color: 0x020617, transparent: true, opacity: 0.26, depthWrite: false })
       );
       contactShadow.rotation.x = -Math.PI / 2;
       contactShadow.position.set(0, 0.014, 0.30);
@@ -1464,14 +1465,14 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy?.() || 1);
       const backdrop = new THREE.Mesh(
-        new THREE.PlaneGeometry(18.9, 9.45),
+        new THREE.PlaneGeometry(23.6, 11.8),
         new THREE.MeshBasicMaterial({
           map: texture,
           fog: false,
           depthWrite: false,
         })
       );
-      backdrop.position.set(0, 1.30, -3.72);
+      backdrop.position.set(0, 1.36, -4.38);
       this.scene.add(backdrop);
       this.imageBackdrop = backdrop;
     }
@@ -1581,7 +1582,7 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       normalizeImportedModel(modelRoot);
       const holder = new THREE.Group();
       holder.add(modelRoot);
-      holder.scale.setScalar(1.12);
+      holder.scale.setScalar(1.0);
       holder.userData.animator = new ModelAnimator(holder, gltf.animations || []);
       holder.userData.modelPath = path;
       holder.userData.rigNodes = collectImportedRigNodes(holder);
@@ -1612,6 +1613,7 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
 
     render() {
       const midpoint = (this.engine.player.pos.x + this.engine.enemy.pos.x) / 2;
+      const aspect = this.camera.aspect || 16 / 9;
       this.spawnHitEffects();
       const hitstopT = this.engine.combat.hitstopMs > 0 ? clamp(this.engine.combat.hitstopMs / HITSTOP_MS, 0, 1) : 0;
       const shakeX = hitstopT ? Math.sin(this.engine.timeMs * 0.52) * 0.09 * hitstopT : 0;
@@ -1619,12 +1621,14 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       const shakeZ = hitstopT ? Math.cos(this.engine.timeMs * 0.61) * 0.10 * hitstopT : 0;
       const spacing = Math.abs(this.engine.player.pos.x - this.engine.enemy.pos.x);
       const closeT = clamp((2.6 - spacing) / 2.1, 0, 1);
-      const targetZ = 6.05 + closeT * 0.14;
-      const targetY = 2.18 + closeT * 0.06;
-      this.camera.position.x += (clamp(midpoint, -3.8, 3.8) + shakeX - this.camera.position.x) * 0.08;
+      const portraitT = clamp((1.18 - aspect) / 0.55, 0, 1);
+      const targetZ = BASE_CAMERA_Z + closeT * 0.14 + portraitT * 2.25;
+      const targetY = 2.18 + closeT * 0.06 + portraitT * 0.34;
+      const midpointClamp = 3.8 - portraitT * 1.05;
+      this.camera.position.x += (clamp(midpoint, -midpointClamp, midpointClamp) + shakeX - this.camera.position.x) * 0.08;
       this.camera.position.y += (targetY + shakeY - this.camera.position.y) * 0.05;
       this.camera.position.z += (targetZ + shakeZ - this.camera.position.z) * 0.05;
-      this.camera.lookAt(this.camera.position.x, 1.02 + closeT * 0.06, 0.12 + closeT * -0.06);
+      this.camera.lookAt(this.camera.position.x, 1.06 + closeT * 0.06 + portraitT * 0.16, 0.12 + closeT * -0.06);
       const dtMs = this.engine.frameDtMs || this.engine.lastDtMs || 16;
       this.updateFighterMesh(this.engine.player, 0x58c7ff, dtMs);
       this.updateFighterMesh(this.engine.enemy, 0xff6b6b, dtMs);
@@ -1680,19 +1684,19 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       slash.visible = playerStrike > 0 || showcase;
       shield.visible = enemyGuard > 0 || showcase;
       if (!slash.visible && !shield.visible) return;
-      const idlePulse = showcase ? 0.055 : 0;
-      slash.position.set(player.pos.x + 0.92, player.pos.y + 0.98, this.getDisplayZ(player) + 0.62);
+      const idlePulse = showcase ? 0.025 : 0;
+      slash.position.set(player.pos.x + 0.74, player.pos.y + 1.02, this.getDisplayZ(player) + 0.56);
       slash.rotation.y = -0.52;
       slash.rotation.z = -0.22 + Math.sin(this.engine.timeMs * 0.004) * 0.035;
-      slash.scale.set(0.82 + playerStrike * 0.30, 0.84 + playerStrike * 0.20, 1);
-      slash.material.opacity = (idlePulse + playerStrike * 0.38) * pulse;
-      shield.position.set(enemy.pos.x - 0.72, enemy.pos.y + 1.18, this.getDisplayZ(enemy) + 0.66);
+      slash.scale.set(0.58 + playerStrike * 0.20, 0.60 + playerStrike * 0.16, 1);
+      slash.material.opacity = (idlePulse + playerStrike * 0.24) * pulse;
+      shield.position.set(enemy.pos.x - 0.60, enemy.pos.y + 1.16, this.getDisplayZ(enemy) + 0.58);
       shield.rotation.y = 0.54;
       shield.rotation.z += 0.012;
-      shield.scale.setScalar(0.88 + enemyGuard * 0.16 + Math.sin(this.engine.timeMs * 0.006) * 0.02);
-      shieldRing.material.opacity = 0.10 + enemyGuard * 0.34;
-      shieldCore.material.opacity = 0.018 + enemyGuard * 0.085;
-      glyph.material.opacity = 0.16 + enemyGuard * 0.26;
+      shield.scale.setScalar(0.68 + enemyGuard * 0.13 + Math.sin(this.engine.timeMs * 0.006) * 0.015);
+      shieldRing.material.opacity = 0.045 + enemyGuard * 0.24;
+      shieldCore.material.opacity = 0.010 + enemyGuard * 0.060;
+      glyph.material.opacity = 0.07 + enemyGuard * 0.18;
     }
 
     getDisplayZ(fighter) {
@@ -1726,7 +1730,7 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
         new THREE.MeshBasicMaterial({
           color: hit.blocked ? 0x9be7ff : 0xfff3b0,
           transparent: true,
-          opacity: hit.blocked ? 0.62 : 0.82,
+          opacity: hit.blocked ? 0.46 : 0.58,
           depthWrite: false,
           blending: THREE.AdditiveBlending,
           side: THREE.DoubleSide,
@@ -1736,11 +1740,11 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       burst.rotation.set(Math.PI / 2, 0.15, hit.blocked ? 0.3 : -0.15);
       group.add(burst);
       const slash = new THREE.Mesh(
-        new THREE.PlaneGeometry(hit.blocked ? 0.8 : 1.45, hit.blocked ? 0.22 : 0.34),
+        new THREE.PlaneGeometry(hit.blocked ? 0.58 : 1.02, hit.blocked ? 0.16 : 0.24),
         new THREE.MeshBasicMaterial({
           color: hit.blocked ? 0x9be7ff : 0xffffff,
           transparent: true,
-          opacity: hit.blocked ? 0.55 : 0.82,
+          opacity: hit.blocked ? 0.40 : 0.58,
           depthWrite: false,
           blending: THREE.AdditiveBlending,
           side: THREE.DoubleSide,
@@ -1749,12 +1753,12 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       slash.position.set(-defender.facing * 0.18, 0.02, 0.52);
       slash.rotation.z = hit.data?.vfx === 'slash_up' ? 0.78 : hit.data?.vfx === 'slash_down' ? -0.62 : 0.18;
       group.add(slash);
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 7; i++) {
         const shard = createPart(
-          new THREE.BoxGeometry(i % 2 ? 0.06 : 0.10, 0.035, 0.11),
-          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending })
+          new THREE.BoxGeometry(i % 2 ? 0.045 : 0.075, 0.026, 0.08),
+          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.62, blending: THREE.AdditiveBlending })
         );
-        shard.position.set((i - 4.5) * 0.07, (i % 3) * 0.055 - 0.03, 0.03);
+        shard.position.set((i - 3) * 0.06, (i % 3) * 0.043 - 0.03, 0.03);
         shard.rotation.set(i * 0.4, i * 0.2, i * 0.7);
         group.add(shard);
       }
@@ -1762,7 +1766,7 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       damageText.position.set(0.18, 0.56, 0.65);
       group.add(damageText);
       group.userData.age = 0;
-      group.userData.life = hit.blocked ? 220 : 360;
+      group.userData.life = hit.blocked ? 190 : 280;
       group.userData.blocked = hit.blocked;
       group.userData.damageText = damageText;
       this.effects.push(group);
@@ -1774,9 +1778,9 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       for (const effect of this.effects) {
         effect.userData.age += dtMs;
         const t = clamp(effect.userData.age / effect.userData.life, 0, 1);
-        effect.scale.setScalar(1 + t * (effect.userData.blocked ? 0.9 : 1.6));
-        effect.rotation.z += 0.12;
-        effect.position.y += dtMs * 0.00045;
+        effect.scale.setScalar(1 + t * (effect.userData.blocked ? 0.55 : 0.95));
+        effect.rotation.z += 0.075;
+        effect.position.y += dtMs * 0.00030;
         effect.traverse((node) => {
           if (node.material) node.material.opacity = Math.max(0, 0.9 * (1 - t));
         });
@@ -1885,23 +1889,23 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       const sweep = data.vfx === 'slash_up' ? 1 : data.vfx === 'slash_down' ? -1 : 0.55;
 
       for (const node of rig.rightArms) {
-        node.rotation.x += 0.24 * windup - (0.68 + lift) * snap + 0.18 * recover;
-        node.rotation.y += -0.14 * fighter.facing * snap;
-        node.rotation.z += -0.22 * windup + (0.44 + lift) * snap;
-        node.position.z += 0.04 + 0.13 * snap;
+        node.rotation.x += 0.30 * windup - (0.86 + lift) * snap + 0.18 * recover;
+        node.rotation.y += -0.18 * fighter.facing * snap;
+        node.rotation.z += -0.28 * windup + (0.58 + lift) * snap;
+        node.position.z += 0.04 + 0.18 * snap;
       }
       for (const node of rig.leftArms) {
         node.rotation.x += 0.10 - 0.16 * snap;
         node.rotation.z += -0.16 * fighter.facing * snap;
       }
       for (const node of rig.weapons) {
-        node.rotation.x += -0.30 * windup + (0.72 + lift) * snap - 0.12 * recover;
-        node.rotation.y += -0.22 * fighter.facing * snap;
-        node.rotation.z += -0.72 * windup + (1.32 + lift) * snap * sweep - 0.22 * recover;
-        node.position.x += fighter.facing * 0.035 * snap;
-        node.position.y += -0.055 * snap;
-        node.position.z += 0.12 * snap;
-        node.scale.y *= heavy ? 1.14 + 0.10 * snap : 1.06 + 0.06 * snap;
+        node.rotation.x += -0.34 * windup + (0.94 + lift) * snap - 0.12 * recover;
+        node.rotation.y += -0.26 * fighter.facing * snap;
+        node.rotation.z += -0.82 * windup + (1.62 + lift) * snap * sweep - 0.24 * recover;
+        node.position.x += fighter.facing * 0.055 * snap;
+        node.position.y += -0.070 * snap;
+        node.position.z += 0.18 * snap;
+        node.scale.y *= heavy ? 1.16 + 0.12 * snap : 1.07 + 0.08 * snap;
       }
       for (const node of rig.offhands) {
         node.rotation.z += -0.28 * fighter.facing * snap;
@@ -1924,12 +1928,12 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       if (!strike) return;
       const isHeavy = data.kind === 'heavy' || data.kind === 'spell' || data.kind === 'dash';
       const sweep = data.vfx === 'slash_up' ? 0.7 : data.vfx === 'slash_down' ? -0.72 : 0.08;
-      trail.position.set(0.55 * fighter.facing, 1.24, 0.44);
+      trail.position.set(0.48 * fighter.facing, 1.18, 0.38);
       trail.rotation.set(0, -fighter.facing * 0.55, sweep + fighter.facing * (progress - 0.45) * 1.8);
-      trail.scale.set(isHeavy ? 1.42 : 1.05, isHeavy ? 1.35 : 1.0, 1);
+      trail.scale.set(isHeavy ? 1.02 : 0.78, isHeavy ? 1.02 : 0.74, 1);
       const opacity = Math.sin(clamp((progress - 0.22) / 0.5, 0, 1) * Math.PI);
-      trail.userData.outer.material.opacity = (isHeavy ? 0.48 : 0.34) * opacity;
-      trail.userData.core.material.opacity = (isHeavy ? 0.9 : 0.68) * opacity;
+      trail.userData.outer.material.opacity = (isHeavy ? 0.30 : 0.20) * opacity;
+      trail.userData.core.material.opacity = (isHeavy ? 0.55 : 0.38) * opacity;
     }
 
     updateAssistMesh() {
@@ -1981,8 +1985,8 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       this.lastDtMs = 16;
       this.frameDtMs = 16;
       this.roundMs = 60_000;
-      this.player = new Fighter('player', { name: 'You', isPlayer: true, x: -2.35, facing: 1 });
-      this.enemy = new Fighter('dummy', { name: 'AI Dummy', x: 2.35, facing: -1, hp: 100, damageScale: 0.7 });
+      this.player = new Fighter('player', { name: 'You', isPlayer: true, x: -1.62, facing: 1 });
+      this.enemy = new Fighter('dummy', { name: 'AI Dummy', x: 1.62, facing: -1, hp: 100, damageScale: 0.7 });
       this.assist = new BitCatAssist(this.player);
       this.ai = new FighterAI(this.enemy);
       this.combat = new ArenaCombat(this.player, this.enemy, this.assist);

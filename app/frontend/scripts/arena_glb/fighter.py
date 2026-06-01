@@ -95,6 +95,17 @@ def create_fighter(name, palette):
             vertices=8,
             rotation=(0, math.radians(86 if x < 0 else 94), math.radians(rot)),
         )
+    for idx, (x, z, rot) in enumerate([(-0.245, 2.070, -18), (-0.220, 1.875, -10), (0.245, 2.070, 18), (0.220, 1.875, 10)]):
+        cylinder(
+            f"SideFurLine{idx + 1}",
+            (x, -0.465, z),
+            0.005,
+            0.165,
+            strand_mat,
+            head_pivot,
+            vertices=8,
+            rotation=(0, math.radians(86 if x < 0 else 94), math.radians(rot)),
+        )
     capsule("HairCap", (0, -0.01, 2.25), 0.31, 0.22, mats["dark"], head_pivot, scale=(1.74, 1.12, 0.50))
     capsule("HairFringe", (0.05, -0.255, 2.12), 0.150, 0.42, mats["dark"], head_pivot, rotation=(0, 0, math.radians(84)), scale=(0.70, 0.95, 1.0))
     add_headwear_details(head_pivot, mats)
@@ -120,6 +131,9 @@ def create_fighter(name, palette):
     bevel_object(cube("ScarfBand", (0, -0.245, 1.62), (0.54, 0.065, 0.10), mats["scarf"], spine), 0.012, 1)
     for idx, x in enumerate([-0.20, -0.10, 0.0, 0.10, 0.20]):
         bevel_object(cube(f"ScarfStitch{idx + 1}", (x, -0.286, 1.62), (0.022, 0.018, 0.085), mats["trim"], spine), 0.003, 1)
+    for idx, x in enumerate([-0.30, -0.18, -0.06, 0.06, 0.18, 0.30]):
+        sphere(f"NecklaceBead{idx + 1}", (x, -0.318, 1.565 - abs(x) * 0.10), (0.024, 0.014, 0.024), mats["jade"], spine)
+    sphere("NecklaceCenterGem", (0, -0.342, 1.500), (0.036, 0.014, 0.044), mats["glow"], spine)
     scarf = empty("ScarfTail", (-0.30, 0.18, 1.54), spine)
     bevel_object(cube("ScarfTailA", (0, 0, -0.18), (0.13, 0.055, 0.36), mats["scarf"], scarf), 0.012, 1)
     bevel_object(cube("ScarfTailB", (-0.03, 0.02, -0.48), (0.11, 0.05, 0.28), mats["scarf"], scarf), 0.010, 1)
@@ -129,6 +143,12 @@ def create_fighter(name, palette):
         flap = bevel_object(cube(f"CapeFlap{idx + 1}", (x, 0.025, -0.24), (0.18, 0.045, 0.56), mats["scarf"], cape, local=True), 0.014, 2)
         flap.rotation_euler = (math.radians(5 + idx * 2), 0, math.radians((idx - 1) * 5))
         talisman(f"CapeTalisman{idx + 1}", (x, 0.060, -0.16), cape, mats, scale=(0.070, 0.008, 0.22), glow=idx == 1, local=True)
+        bevel_object(cube(f"CapeGoldTrim{idx + 1}", (x, -0.006, -0.510), (0.158, 0.018, 0.030), mats["metal"], cape, local=True), 0.004, 1)
+    for idx, x in enumerate([-0.31, 0.31]):
+        side_flap = bevel_object(cube(f"CapeSideLayer{idx + 1}", (x, 0.042, -0.205), (0.115, 0.036, 0.470), mats["shadow"], cape, local=True), 0.010, 1)
+        side_flap.rotation_euler = (math.radians(8), 0, math.radians(11 if x < 0 else -11))
+    for idx, x in enumerate([-0.31, -0.155, 0.155, 0.31]):
+        sphere(f"CapeHemBell{idx + 1}", (x, 0.010, -0.560), (0.026, 0.018, 0.030), mats["metal"], cape, local=True)
     torus("CapeJadeKnot", (0, -0.035, 0.06), 0.050, 0.010, mats["jade"], cape, rotation=(math.radians(90), 0, 0), local=True)
     for idx, x in enumerate([-0.25, 0.25]):
         talisman(f"BackShoulderCharm{idx + 1}", (x, 0.078, -0.04), cape, mats, scale=(0.075, 0.008, 0.25), glow=False, local=True)
@@ -202,8 +222,8 @@ def create_fighter(name, palette):
         nodes[f"{label}_hip"] = hip
         nodes[f"{label}_knee"] = knee
 
-    weapon = empty("Weapon", (0.54, -0.18, -0.64), nodes["R_elbow"])
-    weapon.rotation_euler = (math.radians(8), 0, math.radians(-20))
+    weapon = empty("Weapon", (0.52, -0.20, -0.62), nodes["R_elbow"])
+    weapon.rotation_euler = (math.radians(8), math.radians(-4), math.radians(-26))
     cylinder("SwordGrip", (0, 0, 0), 0.044, 0.42, mats["leather"], weapon, local=True, vertices=16, rotation=(math.radians(90), 0, 0))
     torus("SwordPommelCharmRing", (0, 0.20, 0.01), 0.055, 0.010, mats["jade"], weapon, local=True, rotation=(math.radians(90), 0, 0))
     bevel_object(cube("SwordPommelTasselA", (0.035, 0.255, -0.07), (0.028, 0.035, 0.18), mats["scarf"], weapon, local=True), 0.006, 1)
@@ -215,6 +235,7 @@ def create_fighter(name, palette):
     bevel_object(cube("SwordBladeTip", (0, -1.25, 0.08), (0.08, 0.22, 0.034), mats["paper"], weapon, local=True), 0.016, 2)
     bevel_object(cube("SwordBackPlate", (0, -0.82, 0.050), (0.060, 1.18, 0.025), mats["ink"], weapon, local=True), 0.006, 1)
     bevel_object(cube("SwordCoreGlow", (0, -0.82, 0.112), (0.052, 1.12, 0.016), mats["glow"], weapon, local=True), 0.004, 1)
+    bevel_object(cube("SwordFaceInscriptionPanel", (0, -0.84, 0.136), (0.118, 0.420, 0.008), mats["paper"], weapon, local=True), 0.004, 1)
     bevel_object(cube("SwordEdgeGlowL", (-0.100, -0.82, 0.106), (0.020, 0.96, 0.012), mats["glow"], weapon, local=True), 0.003, 1)
     bevel_object(cube("SwordEdgeGlowR", (0.100, -0.82, 0.106), (0.020, 0.96, 0.012), mats["glow"], weapon, local=True), 0.003, 1)
     bevel_object(cube("SwordEnergyFinL", (-0.155, -0.82, 0.088), (0.026, 0.64, 0.020), mats["glow"], weapon, local=True), 0.004, 1)
@@ -228,6 +249,8 @@ def create_fighter(name, palette):
     for idx, y in enumerate([-0.45, -0.72, -0.99]):
         bevel_object(cube(f"SwordEtch{idx + 1}", (0, y, 0.126), (0.095, 0.020, 0.010), mats["glow"], weapon, local=True), 0.002, 1)
     talisman("SwordHangingCharm", (0.16, -0.28, -0.06), weapon, mats, scale=(0.050, 0.006, 0.20), glow=True, local=True)
+    for idx, y in enumerate([-0.58, -0.70, -0.82, -0.94]):
+        bevel_object(cube(f"SwordTinyRune{idx + 1}", (0, y, 0.148), (0.055, 0.010, 0.008), mats["seal"], weapon, local=True), 0.0015, 1)
     nodes["weapon"] = weapon
     offhand = empty("OffhandDagger", (-0.42, -0.16, -0.64), nodes["L_elbow"])
     offhand.rotation_euler = (math.radians(4), 0, math.radians(30))
