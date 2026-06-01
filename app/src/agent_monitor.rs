@@ -408,12 +408,23 @@ fn watch_page_html() -> String {
       gap: 8px;
       margin-top: 12px;
     }
-    .summary-item {
+    .summary-item,
+    .summary-button {
       min-width: 0;
       border: 1px solid rgba(255, 255, 255, .1);
       border-radius: 8px;
       padding: 9px 10px;
       background: rgba(255, 255, 255, .045);
+    }
+    .summary-button {
+      width: 100%;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+    }
+    .summary-button.active {
+      border-color: rgba(142, 230, 168, .34);
+      background: rgba(142, 230, 168, .07);
     }
     .summary-label {
       display: block;
@@ -526,6 +537,28 @@ fn watch_page_html() -> String {
         border-radius: 8px;
       }
     }
+    @media (max-width: 430px) {
+      .shell { padding: 10px 10px 24px; }
+      header {
+        margin: 0 -10px 12px;
+        padding: 10px;
+      }
+      h1 { font-size: 18px; }
+      .summary {
+        gap: 6px;
+        margin-top: 10px;
+      }
+      .summary-item,
+      .summary-button {
+        padding: 7px 8px;
+      }
+      .summary-label { font-size: 10px; }
+      .summary-value { font-size: 16px; }
+      .group-title { margin-bottom: 7px; }
+      .card { padding: 10px; }
+      .title { font-size: 14px; }
+      .detail { font-size: 12px; }
+    }
   </style>
 </head>
 <body>
@@ -538,7 +571,7 @@ fn watch_page_html() -> String {
       <section class="summary" aria-label="summary">
         <div class="summary-item"><span class="summary-label">Needs You</span><span id="needs-count" class="summary-value">0</span></div>
         <div class="summary-item"><span class="summary-label">Running</span><span id="active-count" class="summary-value">0</span></div>
-        <div class="summary-item"><span class="summary-label">Done</span><span id="done-count" class="summary-value">0</span></div>
+        <button id="done-toggle" class="summary-button active" type="button"><span class="summary-label">Done</span><span id="done-count" class="summary-value">0</span></button>
       </section>
     </header>
     <section id="groups" class="groups"></section>
@@ -549,10 +582,12 @@ fn watch_page_html() -> String {
     const needsCount = document.getElementById('needs-count');
     const activeCount = document.getElementById('active-count');
     const doneCount = document.getElementById('done-count');
+    const doneToggle = document.getElementById('done-toggle');
     let lastEventCount = null;
     let lastRenderedAt = 0;
     let timer = null;
     const openCards = new Set();
+    let showDone = localStorage.getItem('agentWatchRemoteShowDone') !== 'false';
 
     function esc(v) {
       return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -586,7 +621,8 @@ fn watch_page_html() -> String {
       const lines = [display.detail, session.user_prompt_preview, session.last_response_preview]
         .map(v => String(v || '').trim())
         .filter(Boolean);
-      return [...new Set(lines)].join('\n');
+      const detail = [...new Set(lines)].join('\n');
+      return detail.length > 900 ? `${detail.slice(0, 900)}...` : detail;
     }
 
     function card(session) {
@@ -621,6 +657,8 @@ fn watch_page_html() -> String {
       needsCount.textContent = String(buckets.needs.length);
       activeCount.textContent = String(buckets.active.length);
       doneCount.textContent = String(buckets.done.length);
+      doneToggle.classList.toggle('active', showDone);
+      doneToggle.setAttribute('aria-pressed', String(showDone));
       status.textContent = `${sessions.length} visible`;
       if (!sessions.length) {
         groups.innerHTML = '<div class="empty">No active agent sessions yet.</div>';
@@ -629,7 +667,7 @@ fn watch_page_html() -> String {
       const sections = [
         ['needs', 'Needs attention', buckets.needs],
         ['active', 'Running', buckets.active],
-        ['done', 'Recently done', buckets.done],
+        ['done', 'Recently done', showDone ? buckets.done : []],
       ];
       groups.innerHTML = sections
         .filter(([, , items]) => items.length)
@@ -670,6 +708,12 @@ fn watch_page_html() -> String {
       card.classList.toggle('open', open);
       if (id && open) openCards.add(id);
       if (id && !open) openCards.delete(id);
+    });
+    doneToggle.addEventListener('click', () => {
+      showDone = !showDone;
+      localStorage.setItem('agentWatchRemoteShowDone', String(showDone));
+      lastRenderedAt = 0;
+      refresh();
     });
     document.addEventListener('visibilitychange', schedule);
     refresh();

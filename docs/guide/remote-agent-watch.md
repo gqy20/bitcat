@@ -110,9 +110,35 @@ The installer normally sends a self-test event right after writing the hooks, so
 
 If the script downloads but sessions never appear, the remote machine can probably reach `5344` but not `5342`. Allow inbound TCP `5342` through Windows Firewall and make sure the selected endpoint is reachable from that remote network.
 
+## Mobile LAN Viewer
+
+Open the read-only viewer from a phone or tablet on the same network:
+
+```text
+http://<windows-ip>:5344/watch
+```
+
+The mobile viewer uses the same session snapshot as the desktop Agent Watch window. It groups visible sessions by attention level:
+
+- `Needs attention`: waiting or error sessions.
+- `Running`: working, tool-running, or compacting sessions.
+- `Recently done`: completed sessions that have not become quiet yet.
+
+Idle sessions and quiet completed sessions are hidden so old history does not crowd the phone screen. Tap a card to expand its detail preview. The `Done` summary tile toggles the `Recently done` group locally in that browser; it does not change the underlying session state.
+
+The page polls `/agent-sessions` every 2 seconds while visible and slows down while the browser tab is hidden. If the Windows BitCat process was already running before a new build, restart BitCat before checking the page so `5344` serves the current embedded HTML.
+
 ## Display
 
 Remote sessions appear in the same Agent Watch stack as local sessions. Cards include a device badge derived from the remote hostname. Settings -> Agent Watch also lists remote devices, session counts, active counts, and last update time.
+
+## Troubleshooting
+
+- `http://<windows-ip>:5344/health` should return `{"ok":true}`. If it does not, BitCat may not be running, the wrong IP was used, or Windows Firewall is blocking TCP `5344`.
+- If `/watch` opens but remote sessions never appear, check inbound TCP `5342`; remote hooks send events to `5342`, while the viewer itself is on `5344`.
+- If the phone cannot open the page but the Windows machine can open `http://127.0.0.1:5344/watch`, make sure both devices are on the same LAN or VPN/tailnet and that the router does not isolate wireless clients.
+- If the page still shows the older ungrouped list after updating code, restart BitCat. The viewer HTML is embedded in the running executable.
+- If Codex sessions are missing after remote install, run `/hooks` in Codex and trust the BitCat hook entries.
 
 ## Notes
 

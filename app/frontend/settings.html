@@ -431,7 +431,7 @@
             <div class="setting-row switch-row">
               <div class="setting-copy">
                 <label for="aw-remote-view">远程看板</label>
-                <span>允许局域网或 Tailscale 设备打开 /watch 查看 Agent 看管。</span>
+                <span>允许局域网或 Tailscale 设备打开手机友好的 /watch 只读看板。</span>
               </div>
               <input id="aw-remote-view" type="checkbox" />
             </div>
@@ -449,7 +449,7 @@
               <h3>远程设备</h3>
               <span id="aw-remote-status">等待</span>
             </div>
-            <p class="hint">在远程 Mac/Linux 上执行下面命令，hook 会把 Claude Code / Codex 状态发回本机。</p>
+            <p class="hint">手机或平板可打开下面的看板地址；远程 Mac/Linux 执行安装命令后，hook 会把 Claude Code / Codex 状态发回本机。</p>
             <div class="remote-install-box">
               <code id="aw-remote-command">读取中...</code>
               <button id="aw-remote-copy" class="btn small" type="button">复制</button>
@@ -458,6 +458,7 @@
               <code id="aw-remote-watch-url">读取中...</code>
               <button id="aw-remote-url-copy" class="btn small ghost" type="button">复制</button>
             </div>
+            <p class="hint">看板使用 5344 端口；远程 hook 上报使用 5342 端口。若手机无法访问，请检查 Windows 防火墙和是否处于同一局域网。</p>
             <div id="aw-remote-devices" class="remote-devices"></div>
           </div>
 
