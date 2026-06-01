@@ -177,7 +177,6 @@ def create_fighter(name, palette):
         knee = empty(f"{label}_Knee", (side * 0.035, foot_depth, -0.62), hip, local=True)
 
         sphere(f"{label}_ShoulderJoint", (side * -0.08, 0.00, -0.02), (0.15, 0.12, 0.15), mats["accent"], shoulder, local=True)
-        torus(f"{label}_ShoulderSocketRing", (side * -0.08, -0.004, -0.02), 0.132, 0.014, mats["jade"], shoulder, rotation=(math.radians(90), 0, 0), scale=(1.0, 0.78, 1.0))
         bevel_object(cube(f"{label}_ShoulderPad", (side * 0.05, -0.02, 0.03), (0.32, 0.30, 0.18), mats["paper"], shoulder, local=True), 0.035, 2)
         bevel_object(cube(f"{label}_ShoulderStripe", (side * 0.05, -0.18, 0.045), (0.22, 0.035, 0.055), mats["seal"], shoulder, local=True), 0.006, 1)
         sphere(f"{label}_ShoulderRivet", (side * 0.16, -0.18, 0.035), (0.020, 0.012, 0.020), mats["metal"], shoulder, local=True)
@@ -193,7 +192,6 @@ def create_fighter(name, palette):
         bevel_object(cube(f"{label}_WristBand", (0, -0.02, -0.40), (0.21, 0.22, 0.08), mats["metal"], elbow, local=True), 0.012, 1)
 
         sphere(f"{label}_HipJoint", (side * -0.045, 0.00, -0.02), (0.17, 0.12, 0.15), mats["primary"], hip, local=True)
-        torus(f"{label}_HipSocketRing", (side * -0.045, -0.004, -0.02), 0.150, 0.014, mats["metal"], hip, local=True, rotation=(math.radians(90), 0, 0), scale=(1.0, 0.74, 1.0))
         bevel_object(cube(f"{label}_HipConnector", (side * -0.070, -0.085, -0.05), (0.22, 0.07, 0.18), mats["metal"], hip, local=True), 0.016, 1)
         capsule(f"{label}_Thigh", (side * 0.025, 0, -0.31), 0.168, 0.68, mats["primary"], hip, local=True, scale=(0.98, 0.90, 1.0))
         bevel_object(cube(f"{label}_ThighPlate", (0, -0.145, -0.28), (0.27, 0.060, 0.39), mats["paper"], hip, local=True), 0.016, 1)
@@ -257,28 +255,9 @@ def create_fighter(name, palette):
     cylinder("DaggerGrip", (0, 0, 0), 0.032, 0.28, mats["leather"], offhand, local=True, vertices=14, rotation=(math.radians(90), 0, 0))
     bevel_object(cube("DaggerPommel", (0, 0.13, 0.01), (0.09, 0.05, 0.09), mats["metal"], offhand, local=True), 0.010, 1)
     bevel_object(cube("DaggerGuard", (0, -0.15, 0.03), (0.30, 0.052, 0.052), mats["jade"], offhand, local=True), 0.008, 1)
-    bevel_object(cube("DaggerBlade", (0, -0.42, 0.07), (0.090, 0.44, 0.030), mats["paper"], offhand, local=True), 0.012, 1)
-    bevel_object(cube("DaggerGlow", (0, -0.42, 0.094), (0.030, 0.34, 0.012), mats["glow"], offhand, local=True), 0.003, 1)
-    bevel_object(cube("DaggerSpine", (0, -0.42, 0.052), (0.030, 0.39, 0.014), mats["shadow"], offhand, local=True), 0.003, 1)
-    bevel_object(cube("DaggerEdgeL", (-0.062, -0.42, 0.076), (0.012, 0.34, 0.010), mats["glow"], offhand, local=True), 0.002, 1)
-    bevel_object(cube("DaggerEdgeR", (0.062, -0.42, 0.076), (0.012, 0.34, 0.010), mats["glow"], offhand, local=True), 0.002, 1)
-    if is_enemy:
-        ward = empty("WardPivot", (-0.03, -0.42, 0.09), offhand, local=True)
-        ward.rotation_euler = (math.radians(90), 0, 0)
-        torus("SpellWardOuterRing", (0, 0, 0), 0.245, 0.014, mats["glow"], ward, local=True, scale=(1.0, 1.0, 0.22))
-        torus("SpellWardInnerRing", (0, 0, 0), 0.160, 0.010, mats["jade"], ward, local=True, scale=(1.0, 1.0, 0.22))
-        bevel_object(cube("SpellWardGlyphV", (0, 0, 0.006), (0.026, 0.275, 0.012), mats["paper"], ward, local=True), 0.003, 1)
-        bevel_object(cube("SpellWardGlyphH", (0, 0, 0.008), (0.235, 0.026, 0.012), mats["paper"], ward, local=True), 0.003, 1)
-        for idx, angle in enumerate([0, 60, 120, 180, 240, 300]):
-            bead = sphere(
-                f"SpellWardBead{idx + 1}",
-                (math.cos(math.radians(angle)) * 0.212, math.sin(math.radians(angle)) * 0.212, 0.016),
-                (0.022, 0.022, 0.010),
-                mats["glow"],
-                ward,
-                local=True,
-            )
-            bead.rotation_euler.z = math.radians(angle)
+    bevel_object(cube("DaggerBlade", (0, -0.36, 0.07), (0.076, 0.32, 0.026), mats["paper"], offhand, local=True), 0.010, 1)
+    bevel_object(cube("DaggerSpine", (0, -0.36, 0.052), (0.024, 0.29, 0.012), mats["shadow"], offhand, local=True), 0.003, 1)
+    bevel_object(cube("DaggerGlow", (0, -0.36, 0.094), (0.020, 0.25, 0.010), mats["glow"], offhand, local=True), 0.002, 1)
     nodes["offhand"] = offhand
     tail = empty("Tail", (0, 0.18, 0.86), body)
     for idx, (x, y, z, rot_z, scale) in enumerate([

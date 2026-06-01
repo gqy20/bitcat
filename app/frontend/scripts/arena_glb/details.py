@@ -22,7 +22,11 @@ def add_face_details(head_pivot, mats):
     bevel_object(cube("L_AngryBrow", (-0.150, -0.488, 2.138), (0.170, 0.016, 0.030), mats["dark"], head_pivot), 0.004, 1).rotation_euler.z = math.radians(-14)
     bevel_object(cube("R_AngryBrow", (0.150, -0.488, 2.138), (0.170, 0.016, 0.030), mats["dark"], head_pivot), 0.004, 1).rotation_euler.z = math.radians(14)
     sphere("MuzzlePad", (0, -0.445, 1.872), (0.155, 0.018, 0.064), mats["paper"], head_pivot)
+    sphere("NoseButton", (0, -0.486, 1.912), (0.038, 0.010, 0.026), mats["dark"], head_pivot)
     bevel_object(cube("MouthMark", (0, -0.470, 1.838), (0.112, 0.010, 0.016), mats["ink"], head_pivot), 0.003, 1)
+    bevel_object(cube("MouthSplit", (0, -0.482, 1.872), (0.012, 0.010, 0.070), mats["ink"], head_pivot), 0.002, 1)
+    bevel_object(cube("L_MouthCurve", (-0.055, -0.483, 1.848), (0.072, 0.009, 0.012), mats["ink"], head_pivot), 0.002, 1).rotation_euler.z = math.radians(-10)
+    bevel_object(cube("R_MouthCurve", (0.055, -0.483, 1.848), (0.072, 0.009, 0.012), mats["ink"], head_pivot), 0.002, 1).rotation_euler.z = math.radians(10)
     torus("L_JadeHairBead", (-0.292, -0.06, 2.19), 0.040, 0.009, mats["jade"], head_pivot, rotation=(math.radians(90), 0, 0))
     torus("R_JadeHairBead", (0.292, -0.06, 2.19), 0.040, 0.009, mats["jade"], head_pivot, rotation=(math.radians(90), 0, 0))
     torus("L_EarRing", (-0.325, -0.045, 2.285), 0.046, 0.007, mats["metal"], head_pivot, rotation=(math.radians(90), 0, math.radians(12)), scale=(0.72, 1.0, 1.0))
@@ -33,6 +37,9 @@ def add_face_details(head_pivot, mats):
     torus("R_MaskCurl", (0.245, -0.485, 2.060), 0.068, 0.007, mats["glow"], head_pivot, rotation=(math.radians(90), 0, math.radians(-22)), scale=(0.92, 0.50, 1.0))
     bevel_object(cube("L_CheekStripe", (-0.230, -0.485, 1.895), (0.135, 0.010, 0.024), mats["paper"], head_pivot), 0.003, 1).rotation_euler.z = math.radians(-12)
     bevel_object(cube("R_CheekStripe", (0.230, -0.485, 1.895), (0.135, 0.010, 0.024), mats["paper"], head_pivot), 0.003, 1).rotation_euler.z = math.radians(12)
+    for idx, (z, rot) in enumerate([(1.936, -5), (1.900, 0), (1.864, 6)]):
+        bevel_object(cube(f"L_Whisker{idx + 1}", (-0.240, -0.500, z), (0.185, 0.008, 0.010), mats["ink"], head_pivot), 0.002, 1).rotation_euler.z = math.radians(rot)
+        bevel_object(cube(f"R_Whisker{idx + 1}", (0.240, -0.500, z), (0.185, 0.008, 0.010), mats["ink"], head_pivot), 0.002, 1).rotation_euler.z = math.radians(-rot)
     bevel_object(cube("L_FacePaintHook", (-0.306, -0.492, 1.990), (0.048, 0.010, 0.170), mats["glow"], head_pivot), 0.003, 1).rotation_euler.z = math.radians(-24)
     bevel_object(cube("R_FacePaintHook", (0.306, -0.492, 1.990), (0.048, 0.010, 0.170), mats["glow"], head_pivot), 0.003, 1).rotation_euler.z = math.radians(24)
     cone("L_CheekFurFanTop", (-0.405, -0.448, 1.990), 0.070, 0.190, mats["paper"], head_pivot, vertices=3, rotation=(0, math.radians(84), math.radians(-22)), scale=(0.70, 1.0, 1.0))
@@ -81,6 +88,12 @@ def add_torso_details(spine, body, mats):
         bevel_object(cube(f"RobeLowerLayer{idx + 1}", (x, -0.312, 0.710), (0.155, 0.024, 0.250), mats["accent" if idx == 1 else "trim"], body), 0.010, 1).rotation_euler.z = math.radians((idx - 1) * 4)
     for idx, x in enumerate([-0.285, -0.095, 0.095, 0.285]):
         sphere(f"LowerRobeBell{idx + 1}", (x, -0.330, 0.585), (0.022, 0.014, 0.026), mats["metal"], body)
+    for idx, x in enumerate([-0.315, 0.315]):
+        side = -1 if x < 0 else 1
+        skirt = bevel_object(cube(f"GroundedSideSkirt{idx + 1}", (x, -0.260, 0.545), (0.145, 0.034, 0.430), mats["shadow"], body), 0.012, 1)
+        skirt.rotation_euler.z = math.radians(side * 5)
+        trim = bevel_object(cube(f"GroundedSkirtTrim{idx + 1}", (x, -0.292, 0.342), (0.132, 0.018, 0.028), mats["metal"], body), 0.004, 1)
+        trim.rotation_euler.z = math.radians(side * 5)
 
 
 def add_hand_details(label, side, elbow, mats):
@@ -117,10 +130,16 @@ def add_hand_details(label, side, elbow, mats):
 
 
 def add_foot_details(label, knee, mats):
+    bevel_object(cube(f"{label}_SoleContactEdge", (0, -0.548, -0.706), (0.430, 0.165, 0.026), mats["shadow"], knee, local=True), 0.006, 1)
+    bevel_object(cube(f"{label}_HeelWeightPad", (0, -0.135, -0.716), (0.360, 0.135, 0.032), mats["shadow"], knee, local=True), 0.008, 1)
+    bevel_object(cube(f"{label}_FootGoldSideL", (-0.225, -0.260, -0.542), (0.028, 0.355, 0.040), mats["metal"], knee, local=True), 0.004, 1)
+    bevel_object(cube(f"{label}_FootGoldSideR", (0.225, -0.260, -0.542), (0.028, 0.355, 0.040), mats["metal"], knee, local=True), 0.004, 1)
     for toe_idx, toe_x in enumerate([-0.115, 0, 0.115]):
         bevel_object(cube(f"{label}_ToePlate{toe_idx + 1}", (toe_x, -0.585, -0.505), (0.072, 0.040, 0.052), mats["paper"], knee, local=True), 0.006, 1)
         bevel_object(cube(f"{label}_ToeClaw{toe_idx + 1}", (toe_x, -0.655, -0.492), (0.044, 0.030, 0.034), mats["metal"], knee, local=True), 0.006, 1)
     bevel_object(cube(f"{label}_BootGlowSlash", (0, -0.520, -0.445), (0.250, 0.018, 0.020), mats["glow"], knee, local=True), 0.003, 1)
+    for strap_idx, z in enumerate([-0.450, -0.385]):
+        bevel_object(cube(f"{label}_BootStrap{strap_idx + 1}", (0, -0.500, z), (0.310, 0.030, 0.028), mats["leather"], knee, local=True), 0.004, 1)
 
 
 def add_weapon_details(weapon, mats):

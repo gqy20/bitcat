@@ -4,14 +4,20 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
 (function () {
   const GRAVITY = -36;
   const FLOOR_Y = 0;
-  const STAGE_HALF_WIDTH = 5.45;
-  const STAGE_SOFT_EDGE = 4.85;
+  const STAGE_HALF_WIDTH = 4.95;
+  const STAGE_SOFT_EDGE = 4.35;
   const ASSIST_HALF_WIDTH = 5.95;
   const BASE_CAMERA_Z = 6.05;
+  const GROUND_NEAR_Z = 2.26;
+  const GROUND_FAR_Z = -1.08;
+  const GROUND_NEAR_HALF_WIDTH = 7.15;
+  const GROUND_FAR_HALF_WIDTH = 4.00;
   const DEFAULT_HP = 100;
   const HITSTOP_MS = 70;
   const MODEL_BASE_URL = '/assets/arena/';
   const ARENA_BACKGROUND_URL = `${MODEL_BASE_URL}backgrounds/temple-arena.png`;
+  const REDUCED_MOTION_QUERY = 'reducedMotion';
+  const DEBUG_GROUND_QUERY = 'groundDebug';
 
   function clamp(n, min, max) {
     return Math.max(min, Math.min(max, n));
@@ -20,6 +26,29 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
   function signOrFacing(value, fallback) {
     const sign = Math.sign(value || 0);
     return sign === 0 ? fallback : sign;
+  }
+
+  function arenaReducedMotionEnabled(config) {
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      return params.has(REDUCED_MOTION_QUERY) || Boolean(config?.config?.reduced_motion);
+    } catch {
+      return Boolean(config?.config?.reduced_motion);
+    }
+  }
+
+  function arenaGroundDebugEnabled(config) {
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      return params.has(DEBUG_GROUND_QUERY) || Boolean(config?.config?.debug_ground);
+    } catch {
+      return Boolean(config?.config?.debug_ground);
+    }
+  }
+
+  function stageHalfWidthAtZ(z = 0) {
+    const t = clamp((z - GROUND_FAR_Z) / Math.max(0.001, GROUND_NEAR_Z - GROUND_FAR_Z), 0, 1);
+    return GROUND_FAR_HALF_WIDTH + (GROUND_NEAR_HALF_WIDTH - GROUND_FAR_HALF_WIDTH) * t;
   }
 
   function boxesOverlap(a, b) {
@@ -411,7 +440,8 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       this.pos.x += this.vel.x * (dt / 1000);
       this.pos.y += this.vel.y * (dt / 1000);
       this.vel.x *= this.onGround ? 0.84 : 0.97;
-      const clampedX = clamp(this.pos.x, -STAGE_HALF_WIDTH, STAGE_HALF_WIDTH);
+      const stageHalf = Math.min(STAGE_HALF_WIDTH, stageHalfWidthAtZ(this.pos.z) - 0.72);
+      const clampedX = clamp(this.pos.x, -stageHalf, stageHalf);
       if (clampedX !== this.pos.x) this.vel.x = 0;
       this.pos.x = clampedX;
       if (this.pos.y <= FLOOR_Y) {
@@ -771,21 +801,33 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
     ctx.lineWidth = 2;
     for (let i = 0; i < 7; i++) {
-      const y = 80 + i * 58;
+      const y = 62 + i * 63;
       ctx.beginPath();
-      ctx.moveTo(30, y);
-      ctx.lineTo(canvas.width - 30, y);
+      const inset = 80 - i * 8;
+      ctx.moveTo(inset, y);
+      ctx.lineTo(canvas.width - inset, y);
+      ctx.stroke();
+    }
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.075)';
+    ctx.lineWidth = 2;
+    for (let i = -5; i <= 5; i++) {
+      const bottomX = canvas.width / 2 + i * 98;
+      const topX = canvas.width / 2 + i * 24;
+      ctx.beginPath();
+      ctx.moveTo(bottomX, canvas.height - 4);
+      ctx.lineTo(topX, 58);
       ctx.stroke();
     }
 
     ctx.strokeStyle = 'rgba(255, 209, 102, 0.26)';
     ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.moveTo(canvas.width / 2 - 128, canvas.height - 84);
-    ctx.lineTo(canvas.width / 2, canvas.height - 132);
-    ctx.lineTo(canvas.width / 2 + 128, canvas.height - 84);
-    ctx.lineTo(canvas.width / 2 + 84, canvas.height - 34);
-    ctx.lineTo(canvas.width / 2 - 84, canvas.height - 34);
+    ctx.moveTo(canvas.width / 2 - 158, canvas.height - 76);
+    ctx.lineTo(canvas.width / 2, canvas.height - 148);
+    ctx.lineTo(canvas.width / 2 + 158, canvas.height - 76);
+    ctx.lineTo(canvas.width / 2 + 98, canvas.height - 24);
+    ctx.lineTo(canvas.width / 2 - 98, canvas.height - 24);
     ctx.closePath();
     ctx.stroke();
 
@@ -794,6 +836,62 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
     texture.wrapS = THREE.ClampToEdgeWrapping;
     texture.wrapT = THREE.ClampToEdgeWrapping;
     return texture;
+  }
+
+  function createArenaStageGeometry(opts = {}) {
+    const nearHalfWidth = opts.nearHalfWidth ?? GROUND_NEAR_HALF_WIDTH;
+    const farHalfWidth = opts.farHalfWidth ?? GROUND_FAR_HALF_WIDTH;
+    const nearZ = opts.nearZ ?? GROUND_NEAR_Z;
+    const farZ = opts.farZ ?? GROUND_FAR_Z;
+    const geometry = new THREE.BufferGeometry();
+    const vertices = new Float32Array([
+      -nearHalfWidth, 0, nearZ,
+      nearHalfWidth, 0, nearZ,
+      farHalfWidth, 0, farZ,
+      -farHalfWidth, 0, farZ,
+    ]);
+    const uvs = new Float32Array([
+      0, 1,
+      1, 1,
+      1, 0,
+      0, 0,
+    ]);
+    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geometry.setIndex([0, 1, 2, 0, 2, 3]);
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+
+  function createArenaGroundFrame() {
+    const group = new THREE.Group();
+    const mat = new THREE.LineBasicMaterial({
+      color: 0xd4a84e,
+      transparent: true,
+      opacity: 0.28,
+      depthWrite: false,
+    });
+    const points = [
+      new THREE.Vector3(-GROUND_NEAR_HALF_WIDTH, 0.020, GROUND_NEAR_Z),
+      new THREE.Vector3(GROUND_NEAR_HALF_WIDTH, 0.020, GROUND_NEAR_Z),
+      new THREE.Vector3(GROUND_FAR_HALF_WIDTH, 0.020, GROUND_FAR_Z),
+      new THREE.Vector3(-GROUND_FAR_HALF_WIDTH, 0.020, GROUND_FAR_Z),
+      new THREE.Vector3(-GROUND_NEAR_HALF_WIDTH, 0.020, GROUND_NEAR_Z),
+    ];
+    const border = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), mat);
+    border.renderOrder = 3;
+    group.add(border);
+    const centerLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0.022, GROUND_NEAR_Z),
+        new THREE.Vector3(0, 0.022, GROUND_FAR_Z),
+      ]),
+      mat.clone()
+    );
+    centerLine.material.opacity = 0.16;
+    centerLine.renderOrder = 3;
+    group.add(centerLine);
+    return group;
   }
 
   function createSlashTrail(color = 0x9be7ff) {
@@ -859,6 +957,59 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
     group.userData.ring = ring;
     group.userData.glow = glow;
     return group;
+  }
+
+  function createFighterContactShadow() {
+    const group = new THREE.Group();
+    const makePatch = (name, radius, opacity, scaleX, scaleZ) => {
+      const patch = new THREE.Mesh(
+        new THREE.CircleGeometry(radius, 48),
+        new THREE.MeshBasicMaterial({
+          color: 0x02040a,
+          transparent: true,
+          opacity,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        })
+      );
+      patch.name = name;
+      patch.rotation.x = -Math.PI / 2;
+      patch.scale.set(scaleX, scaleZ, 1);
+      patch.renderOrder = 1;
+      return patch;
+    };
+    const body = makePatch('BodyContactShadow', 0.50, 0.16, 1.22, 0.28);
+    const leftFoot = makePatch('LeftFootContactShadow', 0.185, 0.36, 1.52, 0.42);
+    const rightFoot = makePatch('RightFootContactShadow', 0.185, 0.36, 1.52, 0.42);
+    const contactEdge = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.92, 0.030),
+      new THREE.MeshBasicMaterial({
+        color: 0x00020a,
+        transparent: true,
+        opacity: 0.24,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      })
+    );
+    contactEdge.name = 'FootContactEdge';
+    contactEdge.rotation.x = -Math.PI / 2;
+    contactEdge.renderOrder = 2;
+    group.add(body, leftFoot, rightFoot, contactEdge);
+    group.userData.body = body;
+    group.userData.leftFoot = leftFoot;
+    group.userData.rightFoot = rightFoot;
+    group.userData.contactEdge = contactEdge;
+    return group;
+  }
+
+  function createStageContactMat(opacity = 0.18) {
+    return new THREE.MeshBasicMaterial({
+        color: 0x02040a,
+        transparent: true,
+        opacity,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
   }
 
   function createArenaCombatEffects() {
@@ -1329,7 +1480,7 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
   }
 
   function collectImportedRigNodes(root) {
-    const rig = { weapons: [], offhands: [], rightArms: [], leftArms: [], reactive: [] };
+    const rig = { weapons: [], offhands: [], rightArms: [], leftArms: [], legs: [], body: [], reactive: [] };
     root.traverse((node) => {
       if (!node || !node.name) return;
       const name = node.name.toLowerCase();
@@ -1346,6 +1497,8 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       else if (name === 'offhanddagger' || name.includes('offhand') || name.includes('wardpivot')) rig.offhands.push(node);
       else if (name.includes('r_shoulder') || name.includes('r_elbow')) rig.rightArms.push(node);
       else if (name.includes('l_shoulder') || name.includes('l_elbow')) rig.leftArms.push(node);
+      else if (name.includes('_hip') || name.includes('_knee')) rig.legs.push(node);
+      else if (name === 'body' || name.includes('spinepivot') || name.includes('headpivot')) rig.body.push(node);
       if (
         name.includes('scarf') ||
         name.includes('cape') ||
@@ -1356,7 +1509,18 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
         rig.reactive.push(node);
       }
     });
+    rig.weapons = rig.weapons.filter((node) => !rig.weapons.some((other) => other !== node && isAncestorNode(other, node)));
+    rig.offhands = rig.offhands.filter((node) => !rig.offhands.some((other) => other !== node && isAncestorNode(other, node)));
     return rig;
+  }
+
+  function isAncestorNode(ancestor, node) {
+    let current = node.parent;
+    while (current) {
+      if (current === ancestor) return true;
+      current = current.parent;
+    }
+    return false;
   }
 
   class ArenaRenderer {
@@ -1370,21 +1534,22 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       this.canvas.style.height = '100vh';
       this.canvas.style.pointerEvents = 'none';
       this.canvas.style.zIndex = '0';
-      canvas.style.opacity = '0';
+      canvas.style.display = 'none';
       canvas.parentElement.insertBefore(this.canvas, canvas);
       this.engine = engine;
       this.renderer = new THREE.WebGLRenderer({
         canvas: this.canvas,
-        alpha: false,
+        alpha: true,
         antialias: true,
         powerPreference: 'high-performance',
+        preserveDrawingBuffer: true,
       });
-      this.renderer.setClearColor(0x05070d, 1);
+      this.renderer.setClearColor(0x05070d, 0);
       this.renderer.outputColorSpace = THREE.SRGBColorSpace;
       this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
       this.renderer.toneMappingExposure = 1.26;
-      this.renderer.shadowMap.enabled = true;
-      this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+      this.renderer.shadowMap.enabled = false;
       this.scene = new THREE.Scene();
       this.camera = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 100);
       this.camera.position.set(0, 2.30, BASE_CAMERA_Z + 0.65);
@@ -1396,8 +1561,20 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       this.fighterAuras = new Map();
       this.combatPoseEffects = null;
       this.displayZ = new Map();
+      this.contactShadows = new Map();
+      this.lastRenderSize = { width: 0, height: 0 };
       this.modelLoader = new ArenaModelLoader();
       this.textureLoader = new THREE.TextureLoader();
+      this.groundDebug = arenaGroundDebugEnabled(config);
+      this.canvas.addEventListener('webglcontextlost', (event) => {
+        event.preventDefault();
+        window.__arenaPreviewErrors?.push?.({ type: 'webglcontextlost', message: 'Arena WebGL context was lost' });
+        this.contextLost = true;
+      });
+      this.canvas.addEventListener('webglcontextrestored', () => {
+        window.__arenaPreviewErrors?.push?.({ type: 'webglcontextrestored', message: 'Arena WebGL context was restored' });
+        this.contextLost = false;
+      });
       this.buildScene();
     }
 
@@ -1426,38 +1603,55 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       const centerWarmLight = new THREE.PointLight(0xffb84d, 1.15, 10);
       centerWarmLight.position.set(0, 2.35, 2.7);
       this.scene.add(blueLanternLight, magentaLanternLight, centerWarmLight);
-      this.createImageBackdrop();
-      this.createArenaBackdrop();
+      if (!this.engine.reducedMotion) {
+        this.createImageBackdrop();
+        this.createArenaBackdrop();
+      }
       const floorTexture = createArenaFloorTexture();
       const floor = new THREE.Mesh(
-        new THREE.PlaneGeometry(16.8, 5.35),
+        createArenaStageGeometry(),
         new THREE.MeshBasicMaterial({
           map: floorTexture,
           transparent: true,
-          opacity: 0.74,
+          opacity: this.engine.reducedMotion ? 0.24 : 0.30,
           depthWrite: false,
           side: THREE.DoubleSide,
         })
       );
-      floor.rotation.x = -Math.PI / 2;
-      floor.position.set(0, 0.004, 0.78);
+      floor.renderOrder = 0;
       floor.userData.dispose = () => floorTexture.dispose();
       this.scene.add(floor);
-      const contactShadow = new THREE.Mesh(
-        new THREE.PlaneGeometry(8.4, 1.18),
-        new THREE.MeshBasicMaterial({ color: 0x020617, transparent: true, opacity: 0.26, depthWrite: false })
+      const stageContactMat = createStageContactMat(this.engine.reducedMotion ? 0.07 : 0.09);
+      const stageContact = new THREE.Mesh(
+        createArenaStageGeometry({
+          nearHalfWidth: 4.95,
+          farHalfWidth: 2.62,
+          nearZ: 1.34,
+          farZ: -0.22,
+        }),
+        stageContactMat
       );
-      contactShadow.rotation.x = -Math.PI / 2;
-      contactShadow.position.set(0, 0.014, 0.30);
-      this.scene.add(contactShadow);
+      stageContact.position.y = 0.010;
+      stageContact.renderOrder = 1;
+      this.scene.add(stageContact);
+      const stageFrame = createArenaGroundFrame();
+      stageFrame.visible = this.groundDebug;
+      this.scene.add(stageFrame);
+      this.groundFrame = stageFrame;
       this.engine.assist.mesh = createBoxMesh(0xffd166, [0.52, 0.52, 0.52]);
       this.scene.add(this.engine.assist.mesh);
       this.loadOptionalModel(this.engine.player, this.engine.config?.config?.player_model || `${MODEL_BASE_URL}player.glb`);
       this.loadOptionalModel(this.engine.enemy, this.engine.config?.config?.enemy_model || `${MODEL_BASE_URL}enemy.glb`);
-      this.ensureFighterAura(this.engine.player, 0x4cc9f0);
-      this.ensureFighterAura(this.engine.enemy, 0xf72585);
-      this.combatPoseEffects = createArenaCombatEffects();
-      this.scene.add(this.combatPoseEffects);
+      this.ensureContactShadow(this.engine.player);
+      this.ensureContactShadow(this.engine.enemy);
+      if (!this.engine.reducedMotion) {
+        this.ensureFighterAura(this.engine.player, 0x4cc9f0);
+        this.ensureFighterAura(this.engine.enemy, 0xf72585);
+      }
+      if (!this.engine.reducedMotion) {
+        this.combatPoseEffects = createArenaCombatEffects();
+        this.scene.add(this.combatPoseEffects);
+      }
     }
 
     createImageBackdrop() {
@@ -1572,6 +1766,15 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       return aura;
     }
 
+    ensureContactShadow(fighter) {
+      if (this.contactShadows.has(fighter.id)) return this.contactShadows.get(fighter.id);
+      const shadow = createFighterContactShadow();
+      shadow.position.set(fighter.pos.x, 0.020, fighter.pos.z + 0.10);
+      this.scene.add(shadow);
+      this.contactShadows.set(fighter.id, shadow);
+      return shadow;
+    }
+
     async loadOptionalModel(fighter, path) {
       const gltf = await this.modelLoader.load(path);
       if (!gltf || !this.scene) {
@@ -1606,6 +1809,9 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
     }
 
     resize(width, height) {
+      if (this.lastRenderSize.width === width && this.lastRenderSize.height === height) return;
+      this.lastRenderSize.width = width;
+      this.lastRenderSize.height = height;
       this.renderer.setSize(width, height, false);
       this.camera.aspect = width / Math.max(1, height);
       this.camera.updateProjectionMatrix();
@@ -1622,27 +1828,36 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       const spacing = Math.abs(this.engine.player.pos.x - this.engine.enemy.pos.x);
       const closeT = clamp((2.6 - spacing) / 2.1, 0, 1);
       const portraitT = clamp((1.18 - aspect) / 0.55, 0, 1);
-      const targetZ = BASE_CAMERA_Z + closeT * 0.14 + portraitT * 2.25;
-      const targetY = 2.18 + closeT * 0.06 + portraitT * 0.34;
+      const targetZ = BASE_CAMERA_Z - 0.32 + closeT * 0.10 + portraitT * 1.58;
+      const targetY = 1.90 + closeT * 0.03 + portraitT * 0.18;
       const midpointClamp = 3.8 - portraitT * 1.05;
       this.camera.position.x += (clamp(midpoint, -midpointClamp, midpointClamp) + shakeX - this.camera.position.x) * 0.08;
       this.camera.position.y += (targetY + shakeY - this.camera.position.y) * 0.05;
       this.camera.position.z += (targetZ + shakeZ - this.camera.position.z) * 0.05;
-      this.camera.lookAt(this.camera.position.x, 1.06 + closeT * 0.06 + portraitT * 0.16, 0.12 + closeT * -0.06);
+      this.camera.lookAt(this.camera.position.x, 1.18 + closeT * 0.04 + portraitT * 0.10, 0.58 + closeT * -0.04);
       const dtMs = this.engine.frameDtMs || this.engine.lastDtMs || 16;
       this.updateFighterMesh(this.engine.player, 0x58c7ff, dtMs);
       this.updateFighterMesh(this.engine.enemy, 0xff6b6b, dtMs);
       this.updateAssistMesh();
+      this.updateContactShadows();
       this.updateFighterAuras();
       this.updateCombatPoseEffects();
       this.updateStageAccents();
       this.updateEffects(dtMs);
       this.renderDebugBoxes();
-      this.renderer.render(this.scene, this.camera);
+      if (this.contextLost) return;
+      try {
+        this.renderer.render(this.scene, this.camera);
+      } catch (error) {
+        window.__arenaPreviewErrors?.push?.({
+          type: 'render',
+          message: error && (error.stack || error.message || String(error)),
+        });
+      }
     }
 
     updateStageAccents() {
-      const pulse = 0.55 + Math.sin(this.engine.timeMs * 0.006) * 0.12;
+      const pulse = this.engine.reducedMotion ? 0.50 : 0.55 + Math.sin(this.engine.timeMs * 0.006) * 0.08;
       for (const accent of this.stageAccents) {
         if (!accent.material) continue;
         const min = accent.userData.pulseMin ?? 0.32;
@@ -1657,13 +1872,62 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
         if (!aura) continue;
         const attackPulse = fighter.state === 'attack' ? 0.18 : 0;
         const hurtPulse = fighter.state === 'hurt' || fighter.state === 'blockstun' ? 0.22 : 0;
-        const pulse = 0.94 + Math.sin(this.engine.timeMs * 0.008 + (fighter.isPlayer ? 0 : 1.4)) * 0.035;
+        const idleWave = this.engine.reducedMotion ? 0 : Math.sin(this.engine.timeMs * 0.008 + (fighter.isPlayer ? 0 : 1.4)) * 0.018;
+        const pulse = 0.94 + idleWave;
         const displayZ = this.getDisplayZ(fighter);
         aura.position.set(fighter.pos.x, 0.028, displayZ);
         aura.rotation.z += 0.012 * fighter.facing;
         aura.scale.setScalar(pulse + attackPulse + hurtPulse);
         aura.userData.ring.material.opacity = fighter.onGround ? 0.18 + attackPulse + hurtPulse : 0.08;
         aura.userData.glow.material.opacity = fighter.state === 'attack' ? 0.16 : 0.075;
+      }
+    }
+
+    updateContactShadows() {
+      for (const fighter of [this.engine.player, this.engine.enemy]) {
+        const shadow = this.contactShadows.get(fighter.id);
+        if (!shadow) continue;
+        const displayZ = this.getDisplayZ(fighter);
+        const airborne = Math.max(0, fighter.pos.y - FLOOR_Y);
+        const groundedT = clamp(1 - airborne * 0.72, 0.18, 1);
+        const moving = Math.abs(fighter.vel.x) > 0.10 || Math.abs(fighter.input.x) > 0.05;
+        const attackT = fighter.state === 'attack' ? clamp(fighter.stateMs / Math.max(1, fighter.attack?.data?.duration || 1), 0, 1) : 0;
+        const snap = attackT ? Math.sin(clamp((attackT - 0.18) / 0.44, 0, 1) * Math.PI) : 0;
+        const footSpread = 0.33;
+        const forward = fighter.facing;
+        const leadX = forward * (moving ? 0.10 : 0.070) + forward * snap * 0.065;
+        const rearX = -forward * (moving ? 0.075 : 0.045);
+        const leadZ = 0.130 + snap * 0.030;
+        const rearZ = -0.040;
+        shadow.position.set(fighter.pos.x, 0.020, displayZ + 0.040);
+        shadow.rotation.y = fighter.facing < 0 ? Math.PI : 0;
+        const body = shadow.userData.body;
+        const leftFoot = shadow.userData.leftFoot;
+        const rightFoot = shadow.userData.rightFoot;
+        const contactEdge = shadow.userData.contactEdge;
+        if (body) {
+          body.position.set(0, 0, 0.02);
+          body.material.opacity = 0.060 * groundedT;
+          body.scale.set(0.86 + airborne * 0.05, 0.16 + airborne * 0.02, 1);
+        }
+        if (leftFoot) {
+          const leftLead = fighter.facing < 0;
+          leftFoot.position.set(-footSpread + (leftLead ? leadX : rearX), 0.003, leftLead ? leadZ : rearZ);
+          leftFoot.material.opacity = (leftLead ? 0.40 : 0.30) * groundedT;
+          leftFoot.scale.set(leftLead ? 1.46 : 1.18, leftLead ? 0.44 : 0.34, 1);
+        }
+        if (rightFoot) {
+          const rightLead = fighter.facing > 0;
+          rightFoot.position.set(footSpread + (rightLead ? leadX : rearX), 0.003, rightLead ? leadZ : rearZ);
+          rightFoot.material.opacity = (rightLead ? 0.40 : 0.30) * groundedT;
+          rightFoot.scale.set(rightLead ? 1.46 : 1.18, rightLead ? 0.44 : 0.34, 1);
+        }
+        if (contactEdge) {
+          contactEdge.position.set(forward * (0.10 + snap * 0.05), 0.006, 0.145 + snap * 0.025);
+          contactEdge.rotation.z = forward * 0.02;
+          contactEdge.material.opacity = 0.30 * groundedT;
+          contactEdge.scale.set(1 + snap * 0.12, 1, 1);
+        }
       }
     }
 
@@ -1677,26 +1941,24 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       const glyph = effects.userData.glyph;
       const player = this.engine.player;
       const enemy = this.engine.enemy;
-      const pulse = 0.72 + Math.sin(this.engine.timeMs * 0.007) * 0.16;
-      const showcase = player.state !== 'dead' && enemy.state !== 'dead';
+      const pulse = this.engine.reducedMotion ? 0.70 : 0.72 + Math.sin(this.engine.timeMs * 0.007) * 0.07;
       const playerStrike = player.state === 'attack' ? 1 : 0;
       const enemyGuard = enemy.state === 'guard' || enemy.state === 'blockstun' ? 1 : 0;
-      slash.visible = playerStrike > 0 || showcase;
-      shield.visible = enemyGuard > 0 || showcase;
+      slash.visible = playerStrike > 0;
+      shield.visible = enemyGuard > 0;
       if (!slash.visible && !shield.visible) return;
-      const idlePulse = showcase ? 0.025 : 0;
       slash.position.set(player.pos.x + 0.74, player.pos.y + 1.02, this.getDisplayZ(player) + 0.56);
       slash.rotation.y = -0.52;
-      slash.rotation.z = -0.22 + Math.sin(this.engine.timeMs * 0.004) * 0.035;
+      slash.rotation.z = -0.22 + (this.engine.reducedMotion ? 0 : Math.sin(this.engine.timeMs * 0.004) * 0.02);
       slash.scale.set(0.58 + playerStrike * 0.20, 0.60 + playerStrike * 0.16, 1);
-      slash.material.opacity = (idlePulse + playerStrike * 0.24) * pulse;
+      slash.material.opacity = playerStrike * 0.22 * pulse;
       shield.position.set(enemy.pos.x - 0.60, enemy.pos.y + 1.16, this.getDisplayZ(enemy) + 0.58);
       shield.rotation.y = 0.54;
-      shield.rotation.z += 0.012;
-      shield.scale.setScalar(0.68 + enemyGuard * 0.13 + Math.sin(this.engine.timeMs * 0.006) * 0.015);
-      shieldRing.material.opacity = 0.045 + enemyGuard * 0.24;
-      shieldCore.material.opacity = 0.010 + enemyGuard * 0.060;
-      glyph.material.opacity = 0.07 + enemyGuard * 0.18;
+      if (!this.engine.reducedMotion) shield.rotation.z += 0.006;
+      shield.scale.setScalar(0.68 + enemyGuard * 0.11 + (this.engine.reducedMotion ? 0 : Math.sin(this.engine.timeMs * 0.006) * 0.01));
+      shieldRing.material.opacity = enemyGuard * 0.22;
+      shieldCore.material.opacity = enemyGuard * 0.050;
+      glyph.material.opacity = enemyGuard * 0.16;
     }
 
     getDisplayZ(fighter) {
@@ -1709,7 +1971,8 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       const closeT = clamp((2.7 - spacing) / 2.0, 0, 1);
       const attackBias = fighter.state === 'attack' ? -0.10 : opponent.state === 'attack' ? 0.10 : 0;
       const side = fighter.isPlayer ? 1 : -1;
-      const target = fighter.pos.z + side * (0.18 + closeT * 0.34) + attackBias;
+      const groundedBias = this.engine.reducedMotion ? 0.24 : 0;
+      const target = fighter.pos.z + groundedBias + side * (0.10 + closeT * 0.22) + attackBias;
       const prev = this.getDisplayZ(fighter);
       const next = prev + (target - prev) * 0.14;
       this.displayZ.set(fighter.id, next);
@@ -1797,12 +2060,14 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       const mesh = fighter.mesh;
       if (!mesh) return;
       const displayZ = this.updateDisplayDepth(fighter);
-      mesh.position.set(fighter.pos.x, fighter.pos.y, displayZ);
+      const footSettle = this.engine.reducedMotion ? -0.175 : -0.108;
+      mesh.position.set(fighter.pos.x, fighter.pos.y + footSettle, displayZ);
       const presentationTurn = fighter.isPlayer ? -0.12 : 0.12;
       mesh.rotation.y = presentationTurn;
       this.updateSlashTrail(fighter, mesh);
       this.updateModelMaterialState(fighter, mesh);
       if (mesh.userData.animator) {
+        mesh.scale.setScalar(fighter.state === 'attack' ? 0.955 : 0.920);
         mesh.userData.animator.update(fighter, dtMs);
         this.updateImportedModelPose(fighter, mesh);
         return;
@@ -1815,9 +2080,9 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       else if (fighter.state === 'guard' || fighter.state === 'blockstun') material.color.setHex(0x9be7ff);
       else if (fighter.state === 'attack') material.color.setHex(fighter.isAttackActive() ? 0xfff3b0 : color);
       else material.color.setHex(color);
-      const sx = fighter.state === 'attack' ? 1.08 : 1;
-      const sy = fighter.state === 'guard' ? 0.92 : 1;
-      mesh.scale.set(sx, sy, 1);
+      const sx = fighter.state === 'attack' ? 1.02 : 0.94;
+      const sy = fighter.state === 'guard' ? 0.86 : 0.94;
+      mesh.scale.set(sx, sy, 0.94);
     }
 
     updateModelMaterialState(fighter, mesh) {
@@ -1848,18 +2113,44 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
     updateImportedModelPose(fighter, mesh) {
       const rig = mesh.userData.rigNodes;
       if (!rig) return;
-      const animated = Boolean(mesh.userData.animator?.mixer);
-      if (!animated) {
-        for (const node of [...rig.weapons, ...rig.offhands, ...rig.rightArms, ...rig.leftArms, ...rig.reactive]) {
-          const base = node.userData.arenaBaseTransform;
-          if (!base) continue;
-          node.position.copy(base.position);
-          node.rotation.copy(base.rotation);
-          node.scale.copy(base.scale);
-        }
+      const poseNodes = new Set([
+        ...rig.weapons,
+        ...rig.offhands,
+        ...rig.rightArms,
+        ...rig.leftArms,
+        ...(rig.legs || []),
+        ...(rig.body || []),
+        ...rig.reactive,
+      ]);
+      for (const node of poseNodes) {
+        const base = node.userData.arenaBaseTransform;
+        if (!base) continue;
+        node.position.copy(base.position);
+        node.rotation.copy(base.rotation);
+        node.scale.copy(base.scale);
       }
 
       const now = this.engine.timeMs;
+      const moving = Math.abs(fighter.vel.x) > 0.06 || Math.abs(fighter.input.x) > 0.05;
+      const grounded = fighter.onGround;
+      const stanceDip = grounded ? (moving ? 0.018 : 0.030) : 0;
+      for (const node of rig.body || []) {
+        const name = node.name.toLowerCase();
+        if (name === 'body') node.position.y -= stanceDip;
+        if (name.includes('spine')) node.rotation.x += grounded ? -0.035 : 0;
+        if (name.includes('head')) node.rotation.x += grounded ? 0.018 : 0;
+      }
+      for (const node of rig.legs || []) {
+        const name = node.name.toLowerCase();
+        const left = name.includes('l_');
+        const rearLeg = left ? fighter.facing > 0 : fighter.facing < 0;
+        if (name.includes('_hip')) {
+          node.rotation.x += grounded ? (rearLeg ? -0.10 : 0.075) : 0;
+          node.rotation.z += grounded ? (rearLeg ? -0.020 : 0.015) : 0;
+        } else if (name.includes('_knee')) {
+          node.rotation.x += grounded ? (rearLeg ? 0.16 : 0.10) : 0;
+        }
+      }
       for (const node of rig.reactive) {
         const name = node.name.toLowerCase();
         const phase = name.includes('tail') ? 0.7 : name.includes('cape') ? 1.3 : name.includes('charm') ? 1.9 : 0.2;
@@ -1887,6 +2178,24 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       const heavy = data.kind === 'heavy' || data.kind === 'dash' || data.kind === 'spell';
       const lift = heavy ? 0.18 : 0.10;
       const sweep = data.vfx === 'slash_up' ? 1 : data.vfx === 'slash_down' ? -1 : 0.55;
+      for (const node of rig.body || []) {
+        const name = node.name.toLowerCase();
+        if (name === 'body') {
+          node.position.x += fighter.facing * 0.030 * snap;
+          node.position.y -= 0.020 * snap;
+        }
+        if (name.includes('spine')) {
+          node.rotation.y += -0.18 * fighter.facing * snap;
+          node.rotation.x += -0.08 * snap;
+        }
+        if (name.includes('head')) node.rotation.y += -0.08 * fighter.facing * snap;
+      }
+      for (const node of rig.legs || []) {
+        const name = node.name.toLowerCase();
+        const lead = name.includes('r_') ? fighter.facing > 0 : fighter.facing < 0;
+        if (name.includes('_hip')) node.rotation.x += (lead ? -0.15 : 0.12) * snap;
+        if (name.includes('_knee')) node.rotation.x += (lead ? 0.10 : 0.20) * snap;
+      }
 
       for (const node of rig.rightArms) {
         node.rotation.x += 0.30 * windup - (0.86 + lift) * snap + 0.18 * recover;
@@ -1905,7 +2214,6 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
         node.position.x += fighter.facing * 0.055 * snap;
         node.position.y += -0.070 * snap;
         node.position.z += 0.18 * snap;
-        node.scale.y *= heavy ? 1.16 + 0.12 * snap : 1.07 + 0.08 * snap;
       }
       for (const node of rig.offhands) {
         node.rotation.z += -0.28 * fighter.facing * snap;
@@ -1992,6 +2300,7 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       this.combat = new ArenaCombat(this.player, this.enemy, this.assist);
       this.renderer = null;
       this.lastLoggedAssist = false;
+      this.reducedMotion = arenaReducedMotionEnabled(config);
     }
 
     getState() {
