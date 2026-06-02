@@ -836,8 +836,12 @@ const PLAY_DANCE_TOOL: ToolSpec = ToolSpec {
 };
 const START_GAME_TOOL: ToolSpec = ToolSpec {
     name: "start_game",
-    description: "启动内置小游戏。kind 只能是 snake、memory、catch、battle、gomoku、arena；用户说玩游戏、来一局、下五子棋、猫猫擂台或玩贪吃蛇时使用。",
-    guidance: &[],
+    description: "启动内置小游戏。kind 只能是 snake、memory、catch、battle、gomoku、arena；用户说玩游戏、来一局、下五子棋、猫猫擂台或玩贪吃蛇时使用。用户要求背单词、练词汇、指定主题/难度词汇时，kind=snake 并提供 vocab_pack。",
+    guidance: &[
+        "snake 背单词组卷：vocab_pack.mode=\"meaning_choice\"，answer_count 默认 4，target_correct 建议 8-12",
+        "每个 vocab_pack.entries 项必须有 id、term、meaning；distractors 给 3 个中文干扰项，不能重复正确释义",
+        "词表按用户主题生成：如编程、四级、英语面试、日常；不要生成过长词表，建议 8-16 个 entries",
+    ],
 };
 
 const TOOL_SPECS: &[ToolSpec] = &[

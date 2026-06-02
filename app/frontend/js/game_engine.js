@@ -50,257 +50,6 @@
     return Math.max(min, Math.min(max, n));
   }
 
-  function lerp(a, b, t) {
-    return a + (b - a) * t;
-  }
-
-  function easeOutCubic(t) {
-    return 1 - Math.pow(1 - t, 3);
-  }
-
-  function samePoint(a, b) {
-    return a.x === b.x && a.y === b.y;
-  }
-
-  function keyOf(p) {
-    return `${p.x},${p.y}`;
-  }
-
-  function createRng(seed) {
-    let s = seed >>> 0;
-    return function rng() {
-      s = (s * 1664525 + 1013904223) >>> 0;
-      return s / 4294967296;
-    };
-  }
-
-  class SnakeEngine {
-    constructor(config, rng) {
-      this.config = config;
-      this.rng = rng || Math.random;
-      this.state = 'ready';
-      this.score = 0;
-      this.dir = { x: 1, y: 0 };
-      this.nextDir = { x: 1, y: 0 };
-      this.stepMs = Number(config.player.speed_ms) || 140;
-      this.tickMs = 0;
-      this.ended = false;
-      this.boostHeld = false;
-      this.snake = [];
-      this.prevSnake = [];
-      this.food = { x: 0, y: 0 };
-      this.foodEaten = 0;
-      this.animMs = 0;
-      this.foodBursts = [];
-      this.reset();
-    }
-
-    reset() {
-      const grid = this.config.grid;
-      const len = clamp(Number(this.config.player.initial_length) || 3, 1, 10);
-      const startX = Math.floor(grid.width / 2);
-      const startY = Math.floor(grid.height / 2);
-      this.snake = [];
-      for (let i = 0; i < len; i++) {
-        this.snake.push({ x: startX - i, y: startY });
-      }
-      this.prevSnake = this.snake.map((p) => ({ ...p }));
-      this.spawnFood();
-    }
-
-    getState() {
-      return this.state;
-    }
-
-    handleInput(input) {
-      if (!input) return;
-      log(`input type=${input.type || ''} dx=${input.dx ?? ''} dy=${input.dy ?? ''} state=${this.state}`);
-      if (this.ended) {
-        if (input.type === 'confirm') restartGame();
-        else if (input.type === 'cancel') closeEndedGame(this.state);
-        return;
-      }
-      if (input.type === 'confirm' && this.state === 'ready') {
-        this.state = 'playing';
-        return;
-      }
-      if (input.type === 'boost') {
-        this.boostHeld = Boolean(input.active);
-        if (this.boostHeld && this.state === 'ready') this.state = 'playing';
-        return;
-      }
-      if (input.type === 'pause' && (this.state === 'playing' || this.state === 'paused')) {
-        this.state = this.state === 'playing' ? 'paused' : 'playing';
-        return;
-      }
-      if (input.type === 'cancel') {
-        this.finish('cancel');
-        return;
-      }
-      if (input.type === 'direction') {
-        const next = { x: Math.sign(input.dx || 0), y: Math.sign(input.dy || 0) };
-        if (Math.abs(next.x) + Math.abs(next.y) !== 1) return;
-        if (this.state === 'ready') this.state = 'playing';
-        if (next.x === -this.dir.x && next.y === -this.dir.y) return;
-        this.nextDir = next;
-      }
-    }
-
-    update(dtMs) {
-      this.animMs += dtMs;
-      this.updateFoodBursts(dtMs);
-      if (this.state !== 'playing' || this.ended) return;
-      this.tickMs += dtMs;
-      while (this.tickMs >= this.effectiveStepMs() && this.state === 'playing') {
-        this.tickMs -= this.effectiveStepMs();
-        this.step();
-      }
-    }
-
-    step() {
-      this.prevSnake = this.snake.map((p) => ({ ...p }));
-      this.dir = this.nextDir;
-      const head = this.snake[0];
-      let next = { x: head.x + this.dir.x, y: head.y + this.dir.y };
-      const grid = this.config.grid;
-      const rules = this.config.rules;
-
-      if (!rules.walls_kill) {
-        next = {
-          x: (next.x + grid.width) % grid.width,
-          y: (next.y + grid.height) % grid.height,
-        };
-      } else if (next.x < 0 || next.y < 0 || next.x >= grid.width || next.y >= grid.height) {
-        this.finish('lose');
-        return;
-      }
-
-      const ate = samePoint(next, this.food);
-      const body = ate ? this.snake : this.snake.slice(0, -1);
-      if (rules.self_kill && body.some((p) => samePoint(p, next))) {
-        this.finish('lose');
-        return;
-      }
-
-      this.snake.unshift(next);
-      if (ate) {
-        this.score += this.boostHeld ? 14 : 10;
-        this.foodEaten += 1;
-        this.addFoodBurst(next);
-        this.stepMs = Math.max(40, Math.floor(this.stepMs * rules.speed_ramp));
-        if (this.snake.length >= rules.win_length) {
-          this.finish('win');
-          return;
-        }
-        this.spawnFood();
-      } else {
-        this.snake.pop();
-      }
-    }
-
-    effectiveStepMs() {
-      return this.boostHeld ? Math.max(28, Math.floor(this.stepMs * 0.55)) : this.stepMs;
-    }
-
-    spawnFood() {
-      const grid = this.config.grid;
-      const occupied = new Set(this.snake.map(keyOf));
-      const free = [];
-      for (let y = 0; y < grid.height; y++) {
-        for (let x = 0; x < grid.width; x++) {
-          if (!occupied.has(`${x},${y}`)) free.push({ x, y });
-        }
-      }
-      if (free.length === 0) {
-        this.finish('win');
-        return;
-      }
-      const choices = this.foodEaten < 20 ? this.centerFoodChoices(free) : free;
-      this.food = choices[Math.floor(this.rng() * choices.length) % choices.length];
-    }
-
-    centerFoodChoices(free) {
-      const grid = this.config.grid;
-      const marginX = Math.max(3, Math.floor(grid.width * 0.24));
-      const marginY = Math.max(3, Math.floor(grid.height * 0.22));
-      const minX = marginX;
-      const maxX = grid.width - marginX - 1;
-      const minY = marginY;
-      const maxY = grid.height - marginY - 1;
-      const center = free.filter((point) => (
-        point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY
-      ));
-      return center.length > 0 ? center : free;
-    }
-
-    addFoodBurst(point) {
-      for (let i = 0; i < 10; i++) {
-        const angle = (Math.PI * 2 * i) / 10 + this.rng() * 0.35;
-        const speed = 0.0018 + this.rng() * 0.0012;
-        this.foodBursts.push({
-          x: point.x + 0.5,
-          y: point.y + 0.5,
-          vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed,
-          age: 0,
-          life: 420 + this.rng() * 180,
-        });
-      }
-    }
-
-    updateFoodBursts(dtMs) {
-      for (const burst of this.foodBursts) {
-        burst.age += dtMs;
-        burst.x += burst.vx * dtMs;
-        burst.y += burst.vy * dtMs;
-        burst.vy += 0.000002 * dtMs;
-      }
-      this.foodBursts = this.foodBursts.filter((burst) => burst.age < burst.life);
-    }
-
-    finish(result) {
-      if (this.ended) return;
-      this.ended = true;
-      this.state = result;
-    }
-
-    render(ctx, metrics) {
-      ctx.clearRect(0, 0, metrics.width, metrics.height);
-      const grid = this.config.grid;
-      const cell = metrics.cell;
-      const ox = metrics.x;
-      const oy = metrics.y;
-
-      ctx.save();
-      ctx.translate(ox, oy);
-      fillBoardPanel(ctx, grid.width * cell, grid.height * cell);
-
-      drawSnakeField(ctx, grid, cell);
-
-      drawFood(ctx, this.food, cell, this.config.theme.food, this.animMs);
-      drawFoodBursts(ctx, this.foodBursts, cell);
-      drawSnake(ctx, this.renderSnake(), cell, this.dir, this.config.theme, this.animMs);
-      if (this.boostHeld) drawBoostBadge(ctx, grid.width * cell, cell);
-      ctx.restore();
-    }
-
-    renderSnake() {
-      if (this.state !== 'playing' || this.ended || this.prevSnake.length === 0) {
-        return this.snake;
-      }
-      const progress = clamp(this.tickMs / this.effectiveStepMs(), 0, 1);
-      const eased = easeOutCubic(progress);
-      return this.snake.map((point, index) => {
-        const previous = this.prevSnake[index] || this.prevSnake[this.prevSnake.length - 1] || point;
-        if (Math.abs(point.x - previous.x) > 1 || Math.abs(point.y - previous.y) > 1) return point;
-        return {
-          x: lerp(previous.x, point.x, eased),
-          y: lerp(previous.y, point.y, eased),
-        };
-      });
-    }
-  }
-
   class MemoryEngine {
     constructor(config, rng) {
       this.config = config;
@@ -1339,33 +1088,6 @@
     }
   }
 
-  function drawSnakeField(ctx, grid, cell) {
-    const width = grid.width * cell;
-    const height = grid.height * cell;
-    ctx.save();
-    ctx.strokeStyle = 'rgba(8,12,16,0.58)';
-    ctx.lineWidth = 6;
-    ctx.strokeRect(3, 3, width - 6, height - 6);
-    ctx.strokeStyle = 'rgba(255,255,255,0.42)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(1, 1, width - 2, height - 2);
-    ctx.strokeStyle = 'rgba(112,214,255,0.36)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(7.5, 7.5, width - 15, height - 15);
-    if (cell >= 14) {
-      ctx.fillStyle = 'rgba(255,255,255,0.065)';
-      const dot = Math.max(1, cell * 0.055);
-      for (let y = 1; y < grid.height; y += 2) {
-        for (let x = 1; x < grid.width; x += 2) {
-          ctx.beginPath();
-          ctx.arc(x * cell, y * cell, dot, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-    }
-    ctx.restore();
-  }
-
   function fillBoardPanel(ctx, width, height) {
     const gradient = ctx.createLinearGradient(0, 0, width, height);
     gradient.addColorStop(0, 'rgba(10,16,22,0.46)');
@@ -1404,27 +1126,6 @@
       ctx.fillStyle = effect.color;
       ctx.fillText(effect.text, effect.x * cell + cell / 2, effect.y * cell + cell / 2);
     }
-    ctx.restore();
-  }
-
-  function drawBoostBadge(ctx, width, cell) {
-    const w = Math.max(76, cell * 5.5);
-    const h = Math.max(24, cell * 1.45);
-    const x = width - w - cell * 0.8;
-    const y = cell * 0.8;
-    ctx.save();
-    ctx.fillStyle = 'rgba(255,209,102,0.20)';
-    ctx.strokeStyle = 'rgba(255,209,102,0.86)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.roundRect(x, y, w, h, h / 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = '#ffd166';
-    ctx.font = `800 ${Math.max(13, cell * 0.72)}px "Segoe UI", sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('BOOST', x + w / 2, y + h / 2 + 1);
     ctx.restore();
   }
 
@@ -1549,163 +1250,6 @@
       ctx.moveTo(px, top + h * 0.18);
       ctx.lineTo(px - w * 0.04, top + h * 0.86);
       ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  function cellCenter(p, cell) {
-    return {
-      x: p.x * cell + cell / 2,
-      y: p.y * cell + cell / 2,
-    };
-  }
-
-  function drawSnake(ctx, snake, cell, dir, theme, timeMs = 0) {
-    if (!snake.length) return;
-    const bodyWidth = Math.max(8, cell * 0.72);
-    const points = snake.map((p) => cellCenter(p, cell));
-    ctx.save();
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.shadowColor = 'rgba(0,0,0,0.28)';
-    ctx.shadowBlur = Math.max(4, cell * 0.25);
-
-    if (points.length > 1) {
-      ctx.strokeStyle = 'rgba(32,36,42,0.36)';
-      ctx.lineWidth = bodyWidth + Math.max(3, cell * 0.22);
-      drawRoundedPolyline(ctx, points, cell);
-      ctx.stroke();
-
-      const gradient = ctx.createLinearGradient(points[points.length - 1].x, points[points.length - 1].y, points[0].x, points[0].y);
-      gradient.addColorStop(0, 'rgba(112,214,255,0.82)');
-      gradient.addColorStop(0.55, theme.body === 'trail' ? 'rgba(184,242,230,0.86)' : 'rgba(184,242,230,0.94)');
-      gradient.addColorStop(1, '#ffd166');
-      ctx.strokeStyle = gradient;
-      ctx.lineWidth = bodyWidth;
-      drawRoundedPolyline(ctx, points, cell);
-      ctx.stroke();
-    }
-
-    drawSnakeTail(ctx, points[points.length - 1], bodyWidth);
-    drawSnakeHead(ctx, points[0], cell, dir, timeMs);
-    ctx.restore();
-  }
-
-  function drawRoundedPolyline(ctx, points, cell) {
-    ctx.beginPath();
-    ctx.moveTo(points[0].x, points[0].y);
-    if (points.length === 2) {
-      ctx.lineTo(points[1].x, points[1].y);
-      return;
-    }
-    const radius = Math.max(2, cell * 0.48);
-    for (let i = 1; i < points.length - 1; i++) {
-      const prev = points[i - 1];
-      const curr = points[i];
-      const next = points[i + 1];
-      const prevDx = prev.x - curr.x;
-      const prevDy = prev.y - curr.y;
-      const nextDx = next.x - curr.x;
-      const nextDy = next.y - curr.y;
-      if (prevDx === -nextDx && prevDy === -nextDy) {
-        ctx.lineTo(curr.x, curr.y);
-        continue;
-      }
-      const prevLen = Math.hypot(prevDx, prevDy) || 1;
-      const nextLen = Math.hypot(nextDx, nextDy) || 1;
-      const r = Math.min(radius, prevLen * 0.5, nextLen * 0.5);
-      const cornerStart = {
-        x: curr.x + (prevDx / prevLen) * r,
-        y: curr.y + (prevDy / prevLen) * r,
-      };
-      const cornerEnd = {
-        x: curr.x + (nextDx / nextLen) * r,
-        y: curr.y + (nextDy / nextLen) * r,
-      };
-      ctx.lineTo(cornerStart.x, cornerStart.y);
-      ctx.quadraticCurveTo(curr.x, curr.y, cornerEnd.x, cornerEnd.y);
-    }
-    const tail = points[points.length - 1];
-    ctx.lineTo(tail.x, tail.y);
-  }
-
-  function drawSnakeTail(ctx, tail, bodyWidth) {
-    ctx.save();
-    ctx.fillStyle = 'rgba(112,214,255,0.72)';
-    ctx.beginPath();
-    ctx.arc(tail.x, tail.y, bodyWidth * 0.42, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-
-  function drawSnakeHead(ctx, head, cell, dir, timeMs = 0) {
-    const r = Math.max(6, cell * 0.56);
-    const angle = Math.atan2(dir.y, dir.x);
-    const bob = Math.sin(timeMs / 130) * cell * 0.025;
-    ctx.save();
-    ctx.translate(head.x, head.y + bob);
-    ctx.rotate(angle);
-    ctx.fillStyle = '#ffd166';
-    ctx.beginPath();
-    ctx.ellipse(0, 0, r * 1.12, r * 0.92, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.beginPath();
-    ctx.ellipse(r * 0.18, -r * 0.28, r * 0.34, r * 0.20, -0.45, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#20242a';
-    const eye = Math.max(2, cell * 0.13);
-    ctx.beginPath();
-    ctx.arc(r * 0.28, -r * 0.32, eye, 0, Math.PI * 2);
-    ctx.arc(r * 0.28, r * 0.32, eye, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(32,36,42,0.55)';
-    ctx.lineWidth = Math.max(1.5, cell * 0.08);
-    ctx.beginPath();
-    ctx.moveTo(r * 0.72, 0);
-    ctx.lineTo(r * 1.04, -r * 0.14);
-    ctx.moveTo(r * 0.72, 0);
-    ctx.lineTo(r * 1.04, r * 0.14);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  function drawFood(ctx, p, cell, kind, timeMs = 0) {
-    const c = cellCenter(p, cell);
-    const pulse = 1 + Math.sin(timeMs / 180 + p.x * 0.31 + p.y * 0.17) * 0.08;
-    const r = Math.max(4, cell * 0.34) * pulse;
-    ctx.save();
-    ctx.shadowColor = 'rgba(255,209,102,0.45)';
-    ctx.shadowBlur = Math.max(4, cell * 0.26);
-    ctx.fillStyle = kind === 'fish' ? '#8ecae6' : kind === 'butterfly' ? '#ffafcc' : '#ef476f';
-    ctx.beginPath();
-    ctx.ellipse(c.x, c.y, r * 1.12, r * 0.78, 0, 0, Math.PI * 2);
-    ctx.fill();
-    if (kind === 'fish') {
-      ctx.beginPath();
-      ctx.moveTo(c.x - r * 0.94, c.y);
-      ctx.lineTo(c.x - r * 1.45, c.y - r * 0.48);
-      ctx.lineTo(c.x - r * 1.45, c.y + r * 0.48);
-      ctx.closePath();
-      ctx.fill();
-    }
-    ctx.fillStyle = 'rgba(255,255,255,0.76)';
-    ctx.beginPath();
-    ctx.arc(c.x + r * 0.38, c.y - r * 0.22, Math.max(1.5, r * 0.16), 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-
-  function drawFoodBursts(ctx, bursts, cell) {
-    if (!bursts.length) return;
-    ctx.save();
-    for (const burst of bursts) {
-      const alpha = clamp(1 - burst.age / burst.life, 0, 1);
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = '#ffd166';
-      ctx.beginPath();
-      ctx.arc(burst.x * cell, burst.y * cell, Math.max(1.5, cell * 0.12 * alpha), 0, Math.PI * 2);
-      ctx.fill();
     }
     ctx.restore();
   }
@@ -2025,8 +1569,6 @@
         overlayText.textContent = '翻开卡牌，配对相同图案，Enter / A 确认';
       } else if (engine instanceof CatchEngine) {
         overlayText.textContent = '左右移动接住食物，漏掉 5 个就结束';
-      } else if (engine instanceof SnakeEngine) {
-        overlayText.textContent = '方向键 / WASD 移动，吃到食物变长，A / 空格 / Enter 开始';
       } else {
         overlayText.textContent = '方向键 / WASD 移动';
       }
@@ -2071,7 +1613,7 @@
         return new CatchEngine(config);
       case 'snake':
       default:
-        return new SnakeEngine(config);
+        throw new Error(`external game engine not registered: ${config && config.game_type}`);
     }
   }
 
@@ -2315,7 +1857,7 @@
         return { type: 'direction', dx: 1, dy: 0 };
       case 'Enter':
       case ' ':
-        if (engine instanceof SnakeEngine && !engine.ended) return { type: 'boost', active: true };
+        if (engine.supportsBoost && !engine.ended) return { type: 'boost', active: true };
         return { type: 'confirm' };
       case 'Escape':
         return { type: 'cancel' };
@@ -2336,7 +1878,7 @@
       engine.handleInput(input);
     });
     document.addEventListener('keyup', (e) => {
-      if (engine instanceof SnakeEngine) {
+      if (engine && engine.supportsBoost) {
         if (e.key !== 'Enter' && e.key !== ' ') return;
         e.preventDefault();
         engine.handleInput({ type: 'boost', active: false });
@@ -2400,6 +1942,6 @@
     requestAnimationFrame(loop);
   }
 
-  window.GameEngineTest = { SnakeEngine, MemoryEngine, CatchEngine, BattleEngine, createRng };
+  window.GameEngineTest = { MemoryEngine, CatchEngine, BattleEngine };
   init();
 })();

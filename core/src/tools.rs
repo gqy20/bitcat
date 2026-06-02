@@ -15,7 +15,9 @@ use crate::dance::{DanceDef, DanceStep};
 use crate::game_request::{StartGameKind, StartGameRequest, request_start_game};
 use crate::logging::log_preview;
 use crate::memory::{LongTermMemory, LongTermMemoryQuery};
+use crate::minigame::{GameDef, validate_game_def};
 pub use crate::reminder::{CancelReminderArgs, CreateReminderArgs, ListRemindersArgs};
+use crate::vocab::SnakeVocabConfig;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -611,6 +613,12 @@ pub struct PlayDanceArgs {
 pub struct StartGameArgs {
     /// 内置游戏类型。
     pub kind: StartGameKind,
+    /// Optional title override. For AI-built snake vocabulary rounds, keep it short.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Optional AI-built vocabulary pack. Only valid when `kind` is `snake`.
+    #[serde(default)]
+    pub vocab_pack: Option<SnakeVocabConfig>,
 }
 
 /// AI 播放已保存的舞蹈：校验舞蹈存在 → 通过事件通道通知 app 层 emit 到前端
@@ -651,7 +659,14 @@ pub fn execute_play_dance(args: &PlayDanceArgs) -> ToolResult {
 pub fn execute_start_game(args: &StartGameArgs) -> ToolResult {
     debug!(kind = ?args.kind, "AI starts built-in game");
 
-    let req = StartGameRequest { kind: args.kind };
+    let game_def = match build_start_game_def(args) {
+        Ok(def) => def,
+        Err(e) => return ToolResult::err(e),
+    };
+    let req = StartGameRequest {
+        kind: args.kind,
+        game_def,
+    };
     match request_start_game(req) {
         Ok(()) => ToolResult::ok(format!(
             "已请求启动游戏: {}",
@@ -659,6 +674,45 @@ pub fn execute_start_game(args: &StartGameArgs) -> ToolResult {
         )),
         Err(e) => ToolResult::err(format!("启动游戏失败: {e}")),
     }
+}
+
+fn build_start_game_def(args: &StartGameArgs) -> Result<Option<GameDef>, String> {
+    let Some(vocab) = args.vocab_pack.clone() else {
+        if args
+            .title
+            .as_ref()
+            .is_some_and(|title| !title.trim().is_empty())
+        {
+            return Err("title override requires vocab_pack for snake games".into());
+        }
+        return Ok(None);
+    };
+    if args.kind != StartGameKind::Snake {
+        return Err("vocab_pack is only supported for snake".into());
+    }
+    let mut def = GameDef::default_snake();
+    let target = vocab.target_correct;
+    def.title = args
+        .title
+        .as_deref()
+        .map(trim_title)
+        .filter(|title| !title.is_empty())
+        .unwrap_or_else(|| "AI 单词贪吃蛇".into());
+    def.dialogue.start = "吃掉正确释义".into();
+    def.dialogue.win = "复习完成".into();
+    def.dialogue.lose = "撞到了，先歇一下".into();
+    def.rules.win_length = def
+        .player
+        .initial_length
+        .saturating_add(target)
+        .max(def.player.initial_length + 1);
+    def.snake_vocab = Some(vocab);
+    validate_game_def(&def)?;
+    Ok(Some(def))
+}
+
+fn trim_title(title: &str) -> String {
+    title.trim().chars().take(40).collect()
 }
 
 fn start_game_kind_label(kind: StartGameKind) -> &'static str {
@@ -1069,12 +1123,52 @@ mod tests {
         let json = r#"{"kind":"gomoku"}"#;
         let args: StartGameArgs = serde_json::from_str(json).unwrap();
         assert_eq!(args.kind, StartGameKind::Gomoku);
+        assert!(args.title.is_none());
+        assert!(args.vocab_pack.is_none());
     }
 
     #[test]
     fn start_game_args_reject_invalid_kind() {
         let json = r#"{"kind":"pinball"}"#;
         assert!(serde_json::from_str::<StartGameArgs>(json).is_err());
+    }
+
+    #[test]
+    fn build_start_game_def_accepts_ai_snake_vocab_pack() {
+        let json = r#"{
+            "kind":"snake",
+            "title":"编程词汇",
+            "vocab_pack":{
+                "mode":"meaning_choice",
+                "answer_count":4,
+                "target_correct":3,
+                "entries":[
+                    {"id":"debug","term":"debug","meaning":"调试","distractors":["部署","编译","删除"]},
+                    {"id":"deploy","term":"deploy","meaning":"部署","distractors":["调试","绘制","取消"]},
+                    {"id":"compile","term":"compile","meaning":"编译","distractors":["预测","折叠","等待"]},
+                    {"id":"review","term":"review","meaning":"审查","distractors":["运行","跳过","隐藏"]}
+                ]
+            }
+        }"#;
+        let args: StartGameArgs = serde_json::from_str(json).unwrap();
+        let def = build_start_game_def(&args).unwrap().unwrap();
+        assert_eq!(def.title, "编程词汇");
+        assert_eq!(def.snake_vocab.unwrap().target_correct, 3);
+    }
+
+    #[test]
+    fn build_start_game_def_rejects_vocab_pack_for_non_snake() {
+        let args = StartGameArgs {
+            kind: StartGameKind::Gomoku,
+            title: None,
+            vocab_pack: Some(crate::vocab::SnakeVocabConfig {
+                mode: "meaning_choice".into(),
+                answer_count: 4,
+                target_correct: 1,
+                entries: vec![],
+            }),
+        };
+        assert!(build_start_game_def(&args).is_err());
     }
 
     #[test]

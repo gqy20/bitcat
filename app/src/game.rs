@@ -89,7 +89,19 @@ pub fn game_phase(app: &AppHandle) -> &'static str {
 
 /// Start the built-in Snake mode.
 pub fn start_default_game(app: &AppHandle) -> Result<(), String> {
-    start_game(app, GameDef::default_snake())
+    let mut def = GameDef::default_snake();
+    let pack = bitcat_core::vocab::VocabPack::load_default()?;
+    def.title = "单词贪吃蛇".into();
+    def.dialogue.start = "吃掉正确释义".into();
+    def.dialogue.win = "复习完成".into();
+    def.dialogue.lose = "撞到了，先歇一下".into();
+    def.rules.win_length = def
+        .player
+        .initial_length
+        .saturating_add(pack.target_correct)
+        .max(def.rules.win_length.min(def.player.initial_length + 12));
+    def.snake_vocab = Some(pack.into_snake_config());
+    start_game(app, def)
 }
 
 /// Start the built-in battle mode.

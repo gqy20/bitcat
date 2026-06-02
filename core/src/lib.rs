@@ -73,3 +73,4 @@ pub mod tool_events;
 pub mod tools;
 pub mod user_profile;
 pub mod vision;
+pub mod vocab;

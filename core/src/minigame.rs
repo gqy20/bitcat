@@ -7,6 +7,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::vocab::SnakeVocabConfig;
+
 /// 当前支持的迷你游戏类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -110,6 +112,8 @@ pub struct GameDef {
     pub theme: GameTheme,
     pub dialogue: GameDialogue,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snake_vocab: Option<SnakeVocabConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub battle: Option<BattleConfig>,
 }
 
@@ -146,6 +150,7 @@ impl GameDef {
                 win: "太厉害了喵~".into(),
                 lose: "呜...再来一次！".into(),
             },
+            snake_vocab: None,
             battle: None,
         }
     }
@@ -183,6 +188,7 @@ impl GameDef {
                 win: "All matched".into(),
                 lose: "Try again".into(),
             },
+            snake_vocab: None,
             battle: None,
         }
     }
@@ -219,6 +225,7 @@ impl GameDef {
                 win: "Nice catch".into(),
                 lose: "Missed too many".into(),
             },
+            snake_vocab: None,
             battle: None,
         }
     }
@@ -256,6 +263,7 @@ impl GameDef {
                 win: "你连成五子".into(),
                 lose: "BitCat 连成五子".into(),
             },
+            snake_vocab: None,
             battle: None,
         }
     }
@@ -293,6 +301,7 @@ impl GameDef {
                 win: "漂亮！这拳有章法。".into(),
                 lose: "先喘口气，下一局找回节奏。".into(),
             },
+            snake_vocab: None,
             battle: None,
         }
     }
@@ -329,6 +338,7 @@ impl GameDef {
                 win: "赢啦！材料到手！".into(),
                 lose: "呜...下次我会更强。".into(),
             },
+            snake_vocab: None,
             battle: Some(BattleConfig {
                 pet: BattlePetConfig {
                     hp: 48,
@@ -415,6 +425,25 @@ fn validate_snake(def: &GameDef) -> Result<(), String> {
     )?;
     if !(0.0..=1.0).contains(&def.theme.trail_alpha) {
         return Err("theme.trail_alpha 必须在 0.0..=1.0 之间".into());
+    }
+
+    if let Some(vocab) = &def.snake_vocab {
+        if vocab.mode != "meaning_choice" {
+            return Err(format!("unsupported snake vocab mode: {}", vocab.mode));
+        }
+        ensure_range("snake_vocab.answer_count", vocab.answer_count, 2, 6)?;
+        ensure_range("snake_vocab.target_correct", vocab.target_correct, 1, 50)?;
+        if vocab.entries.len() < vocab.answer_count as usize {
+            return Err("snake_vocab requires enough entries for answer choices".into());
+        }
+        for entry in &vocab.entries {
+            if entry.id.trim().is_empty()
+                || entry.term.trim().is_empty()
+                || entry.meaning.trim().is_empty()
+            {
+                return Err("snake_vocab entries require id, term, and meaning".into());
+            }
+        }
     }
 
     Ok(())

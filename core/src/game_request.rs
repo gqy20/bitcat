@@ -15,6 +15,8 @@ use std::sync::OnceLock;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::warn;
 
+use crate::minigame::GameDef;
+
 /// Built-in game kinds that the agent may request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -28,9 +30,11 @@ pub enum StartGameKind {
 }
 
 /// Core -> app request payload for starting a built-in game.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StartGameRequest {
     pub kind: StartGameKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub game_def: Option<GameDef>,
 }
 
 static START_GAME_TX: OnceLock<UnboundedSender<StartGameRequest>> = OnceLock::new();

@@ -341,12 +341,18 @@ pub fn run() {
             });
             tauri::async_runtime::spawn(async move {
                 while let Some(req) = game_rx.recv().await {
-                    let action = action_bus::action_for_start_game_kind(req.kind);
-                    action_bus::ActionBus::dispatch(
-                        &game_app,
-                        action,
-                        action_bus::ActionSource::Internal,
-                    );
+                    if let Some(def) = req.game_def {
+                        if let Err(e) = game::start_game(&game_app, def) {
+                            warn!(error = %e, "[game-bridge] start game def failed");
+                        }
+                    } else {
+                        let action = action_bus::action_for_start_game_kind(req.kind);
+                        action_bus::ActionBus::dispatch(
+                            &game_app,
+                            action,
+                            action_bus::ActionSource::Internal,
+                        );
+                    }
                 }
                 warn!("[game-bridge] channel 已关闭，消费任务退出");
             });

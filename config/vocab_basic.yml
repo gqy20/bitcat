@@ -1,0 +1,116 @@
+mode: meaning_choice
+answer_count: 4
+target_correct: 12
+entries:
+  - id: absorb
+    term: absorb
+    meaning: 吸收
+    distractors: [逃避, 预测, 修复]
+    example: Plants absorb water through roots.
+    tags: [basic, verb]
+    difficulty: 2
+  - id: adjust
+    term: adjust
+    meaning: 调整
+    distractors: [拒绝, 复制, 删除]
+    example: Adjust the volume before the meeting starts.
+    tags: [basic, verb]
+    difficulty: 1
+  - id: compare
+    term: compare
+    meaning: 比较
+    distractors: [隐藏, 购买, 忘记]
+    example: Compare the two answers before choosing.
+    tags: [basic, verb]
+    difficulty: 1
+  - id: create
+    term: create
+    meaning: 创造
+    distractors: [取消, 等待, 借用]
+    example: You can create a new note from the panel.
+    tags: [basic, verb]
+    difficulty: 1
+  - id: detail
+    term: detail
+    meaning: 细节
+    distractors: [速度, 噪音, 方向]
+    example: Small details can change the result.
+    tags: [basic, noun]
+    difficulty: 1
+  - id: explain
+    term: explain
+    meaning: 解释
+    distractors: [打断, 加速, 保存]
+    example: Please explain the rule in one sentence.
+    tags: [basic, verb]
+    difficulty: 1
+  - id: focus
+    term: focus
+    meaning: 专注
+    distractors: [庆祝, 移动, 猜测]
+    example: Focus on the current task first.
+    tags: [basic, verb]
+    difficulty: 1
+  - id: improve
+    term: improve
+    meaning: 改进
+    distractors: [迷路, 重命名, 下降]
+    example: Practice can improve your vocabulary.
+    tags: [basic, verb]
+    difficulty: 1
+  - id: notice
+    term: notice
+    meaning: 注意到
+    distractors: [拥有, 悬浮, 失去]
+    example: Did you notice the new button?
+    tags: [basic, verb]
+    difficulty: 1
+  - id: predict
+    term: predict
+    meaning: 预测
+    distractors: [修理, 翻译, 收集]
+    example: The model tries to predict the next word.
+    tags: [basic, verb]
+    difficulty: 2
+  - id: record
+    term: record
+    meaning: 记录
+    distractors: [跳过, 改名, 燃烧]
+    example: The game can record missed words.
+    tags: [basic, verb]
+    difficulty: 1
+  - id: review
+    term: review
+    meaning: 复习
+    distractors: [删除, 奔跑, 折叠]
+    example: Review the words you missed yesterday.
+    tags: [basic, verb]
+    difficulty: 1
+  - id: select
+    term: select
+    meaning: 选择
+    distractors: [推迟, 描绘, 沉默]
+    example: Select the correct answer.
+    tags: [basic, verb]
+    difficulty: 1
+  - id: stable
+    term: stable
+    meaning: 稳定的
+    distractors: [昂贵的, 空白的, 吵闹的]
+    example: A stable rhythm helps the game feel fair.
+    tags: [basic, adjective]
+    difficulty: 2
+  - id: useful
+    term: useful
+    meaning: 有用的
+    distractors: [潮湿的, 随机的, 遥远的]
+    example: A useful hint appears after a mistake.
+    tags: [basic, adjective]
+    difficulty: 1
+  - id: mistake
+    term: mistake
+    meaning: 错误
+    distractors: [礼物, 入口, 天气]
+    example: A mistake is a chance to practice again.
+    tags: [basic, noun]
+    difficulty: 1
