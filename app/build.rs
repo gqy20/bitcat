@@ -52,6 +52,10 @@ fn rebuild_frontend_dist(frontend_dir: &Path, dist_dir: &Path) -> io::Result<()>
     for dir in ["assets", "css", "js"] {
         copy_dir_recursive(&frontend_dir.join(dir), &dist_dir.join(dir))?;
     }
+    copy_dir_recursive(
+        &frontend_dir.join("__fixtures__").join("pets"),
+        &dist_dir.join("__fixtures__").join("pets"),
+    )?;
 
     Ok(())
 }

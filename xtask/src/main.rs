@@ -120,6 +120,10 @@ fn prepare_frontend_cmd() -> Result<()> {
     for dir in ["assets", "css", "js"] {
         copy_dir_recursive(&frontend_dir.join(dir), &dist_dir.join(dir))?;
     }
+    copy_dir_recursive(
+        &frontend_dir.join("__fixtures__").join("pets"),
+        &dist_dir.join("__fixtures__").join("pets"),
+    )?;
 
     let (file_count, total_bytes) = dir_stats(&dist_dir)?;
     let size_mb = total_bytes as f64 / 1024.0 / 1024.0;
