@@ -1056,7 +1056,9 @@ mod tests {
         assert!(guide.contains("at=\"YYYY-MM-DD HH:MM\""));
         assert!(guide.contains("daily_time=\"HH:MM\""));
         assert!(guide.contains("创建失败必须告诉用户没有创建成功"));
-        assert!(!guide.contains("start_game"));
+        assert!(guide.contains("start_game"));
+        assert!(guide.contains("vocab_pack"));
+        assert!(guide.contains("meaning_choice"));
         assert!(!guide.contains("perform_dance"));
     }
 

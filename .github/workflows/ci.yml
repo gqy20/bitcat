@@ -40,6 +40,8 @@ jobs:
           copy config\*.yml core\config\
           mkdir app\config
           copy config\*.yml app\config\
+      - name: Prepare frontend dist
+        run: cargo run -p xtask -- prepare-frontend
       - run: cargo clippy --workspace -- -D warnings
 
   # ───── 测试任务 ─────
@@ -64,6 +66,9 @@ jobs:
           copy config\*.yml core\config\
           mkdir app\config
           copy config\*.yml app\config\
+
+      - name: Prepare frontend dist
+        run: cargo run -p xtask -- prepare-frontend
 
       - name: Install nextest
         uses: taiki-e/install-action@v2

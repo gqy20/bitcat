@@ -101,6 +101,9 @@ jobs:
       # ── 用 tauri-action 打 msi + nsis 安装器（不让它自己发布 release）──
       # projectPath 指向 tauri.conf.json 所在目录
       # tagName 留空时 tauri-action 仅构建，不创建 release；我们在独立 job 里汇总后再发布
+      - name: Prepare frontend dist
+        run: cargo run -p xtask -- prepare-frontend
+
       - name: Build Tauri bundles
         uses: tauri-apps/tauri-action@v0
         env:

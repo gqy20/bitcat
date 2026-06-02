@@ -24,6 +24,7 @@ fn main() -> Result<()> {
     let mut args = env::args().skip(1);
     match args.next().as_deref() {
         Some("package-portable") => package_portable(parse_package_args(args.collect())?),
+        Some("prepare-frontend") => prepare_frontend_cmd(),
         Some("copy-config") => copy_config_cmd(parse_copy_config_args(args.collect())?),
         Some("prepare-exe") => prepare_exe_cmd(parse_prepare_exe_args(args.collect())?),
         Some("clean-dist") => clean_dist(),
@@ -96,6 +97,39 @@ fn prepare_exe_cmd(out_dir: PathBuf) -> Result<()> {
     Ok(())
 }
 
+fn prepare_frontend_cmd() -> Result<()> {
+    let repo_root = env::current_dir()?;
+    let frontend_dir = repo_root.join("app").join("frontend");
+    let dist_dir = repo_root.join("app").join("frontend-dist");
+
+    if !frontend_dir.is_dir() {
+        return Err(format!("frontend directory not found: {}", frontend_dir.display()).into());
+    }
+
+    remove_if_exists(&dist_dir)?;
+    fs::create_dir_all(&dist_dir)?;
+
+    for entry in fs::read_dir(&frontend_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) == Some("html") {
+            fs::copy(&path, dist_dir.join(entry.file_name()))?;
+        }
+    }
+
+    for dir in ["assets", "css", "js"] {
+        copy_dir_recursive(&frontend_dir.join(dir), &dist_dir.join(dir))?;
+    }
+
+    let (file_count, total_bytes) = dir_stats(&dist_dir)?;
+    let size_mb = total_bytes as f64 / 1024.0 / 1024.0;
+    println!(
+        "Prepared frontend dist: {} ({file_count} files, {size_mb:.2} MB)",
+        dist_dir.display()
+    );
+    Ok(())
+}
+
 fn clean_dist() -> Result<()> {
     let repo_root = env::current_dir()?;
     for entry in fs::read_dir(&repo_root)? {
@@ -106,6 +140,52 @@ fn clean_dist() -> Result<()> {
         };
         if name.starts_with("bitcat-") && name.ends_with(".zip") {
             fs::remove_file(path)?;
+        }
+    }
+    Ok(())
+}
+
+fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<()> {
+    if !src.is_dir() {
+        return Err(format!(
+            "frontend runtime asset directory not found: {}",
+            src.display()
+        )
+        .into());
+    }
+
+    fs::create_dir_all(dest)?;
+    let mut entries = fs::read_dir(src)?.collect::<std::result::Result<Vec<_>, io::Error>>()?;
+    entries.sort_by_key(|entry| entry.path());
+
+    for entry in entries {
+        let path = entry.path();
+        let dest_path = dest.join(entry.file_name());
+        if path.is_dir() {
+            copy_dir_recursive(&path, &dest_path)?;
+        } else {
+            fs::copy(&path, dest_path)?;
+        }
+    }
+    Ok(())
+}
+
+fn dir_stats(dir: &Path) -> Result<(usize, u64)> {
+    let mut file_count = 0;
+    let mut total_bytes = 0;
+    collect_dir_stats(dir, &mut file_count, &mut total_bytes)?;
+    Ok((file_count, total_bytes))
+}
+
+fn collect_dir_stats(dir: &Path, file_count: &mut usize, total_bytes: &mut u64) -> Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_dir_stats(&path, file_count, total_bytes)?;
+        } else {
+            *file_count += 1;
+            *total_bytes += entry.metadata()?.len();
         }
     }
     Ok(())

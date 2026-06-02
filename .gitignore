@@ -29,6 +29,7 @@ Desktop.ini
 # Tauri / Node
 node_modules/
 app/frontend/dist/
+app/frontend-dist/
 app/frontend/package-lock.json
 pnpm-debug.log*
 .pnpm-store/
