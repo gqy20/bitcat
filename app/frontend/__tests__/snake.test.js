@@ -63,16 +63,16 @@ describe('Word Snake rules', () => {
   it('does not grow after eating a wrong meaning in the movement path', () => {
     const SnakeEngine = loadSnakeEngine();
     const engine = new SnakeEngine({ ...baseConfig, snake_vocab: vocab }, {}, () => 0);
-    const head = engine.snake[0];
+    const head = { x: Math.floor(engine.snake[0].x / 4), y: Math.floor(engine.snake[0].y / 4) };
     const wrong = { x: head.x + 1, y: head.y, label: '取消', correct: false };
     engine.answerFoods = [wrong];
     engine.food = wrong;
 
     engine.handleInput({ type: 'confirm' });
-    engine.update(100);
+    engine.update(50);
 
     expect(engine.wrongCount).toBe(1);
-    expect(engine.snake.length).toBe(baseConfig.player.initial_length);
+    expect(engine.coarseLength()).toBe(baseConfig.player.initial_length);
     expect(engine.missed[0]).toMatchObject({ term: 'create', picked: '取消' });
   });
 
@@ -85,10 +85,23 @@ describe('Word Snake rules', () => {
     engine.handleInput({ type: 'direction', dx: 1, dy: 0 });
 
     expect(engine.directionQueue).toHaveLength(2);
-    engine.update(100);
+    engine.update(25);
     expect(engine.dir).toEqual({ x: 0, y: -1 });
-    engine.update(100);
+    engine.update(25);
     expect(engine.dir).toEqual({ x: 1, y: 0 });
+  });
+
+  it('uses four fine movement steps per coarse cell', () => {
+    const SnakeEngine = loadSnakeEngine();
+    const engine = new SnakeEngine({ ...baseConfig, snake_vocab: vocab }, {}, () => 0);
+    const start = { ...engine.snake[0] };
+
+    expect(engine.snake.length).toBe(baseConfig.player.initial_length * 4);
+    engine.handleInput({ type: 'confirm' });
+    engine.update(25);
+
+    expect(engine.snake[0]).toEqual({ x: start.x + 1, y: start.y });
+    expect(engine.coarseLength()).toBe(baseConfig.player.initial_length);
   });
 
   it('raises feedback pulses after a correct answer', () => {
@@ -101,6 +114,22 @@ describe('Word Snake rules', () => {
     expect(engine.boardFlashMs).toBeGreaterThan(0);
     expect(engine.comboPulseMs).toBeGreaterThan(0);
     expect(engine.questionPulseMs).toBeGreaterThan(0);
-    expect(engine.effects.some((effect) => effect.text === '正确')).toBe(true);
+    expect(engine.hudFeedback).toMatchObject({ label: '正确', term: 'create', correct: true });
+    expect(engine.effects.some((effect) => effect.text === '正确')).toBe(false);
+  });
+
+  it('records the previous word review after an answer', () => {
+    const SnakeEngine = loadSnakeEngine();
+    const engine = new SnakeEngine({ ...baseConfig, snake_vocab: vocab }, {}, () => 0);
+    const correct = engine.answerFoods.find((food) => food.correct);
+
+    engine.consumeAnswer(correct);
+
+    expect(engine.lastReview).toMatchObject({
+      term: 'create',
+      meaning: '创造',
+      picked: '创造',
+      correct: true,
+    });
   });
 });

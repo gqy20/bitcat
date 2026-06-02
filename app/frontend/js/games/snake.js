@@ -17,10 +17,35 @@
     return a.x === b.x && a.y === b.y;
   }
 
+  function toFinePoint(point) {
+    return {
+      x: point.x * SUBGRID + Math.floor(SUBGRID / 2),
+      y: point.y * SUBGRID + Math.floor(SUBGRID / 2),
+    };
+  }
+
+  function toCoarsePoint(point) {
+    return {
+      x: Math.floor(point.x / SUBGRID),
+      y: Math.floor(point.y / SUBGRID),
+    };
+  }
+
+  function sameCoarseCell(finePoint, coarsePoint) {
+    const coarse = toCoarsePoint(finePoint);
+    return coarse.x === coarsePoint.x && coarse.y === coarsePoint.y;
+  }
+
   function keyOf(p) {
     return `${p.x},${p.y}`;
   }
 
+  function coarseKeyOf(p) {
+    const coarse = toCoarsePoint(p);
+    return keyOf(coarse);
+  }
+
+  const SUBGRID = 4;
   const MAX_DIRECTION_QUEUE = 3;
 
   class SnakeEngine {
@@ -41,6 +66,7 @@
       this.boostHeld = false;
       this.snake = [];
       this.prevSnake = [];
+      this.growRemainder = 0;
       this.food = { x: 0, y: 0 };
       this.answerFoods = [];
       this.question = null;
@@ -49,11 +75,13 @@
       this.wrongCount = 0;
       this.combo = 0;
       this.maxCombo = 0;
+      this.lastReview = null;
       this.missed = [];
       this.foodEaten = 0;
       this.animMs = 0;
       this.foodBursts = [];
       this.effects = [];
+      this.hudFeedback = null;
       this.boardFlashMs = 0;
       this.comboPulseMs = 0;
       this.questionPulseMs = 0;
@@ -66,16 +94,20 @@
       const len = clamp(Number(this.config.player.initial_length) || 3, 1, 10);
       const startX = Math.floor(grid.width / 2);
       const startY = Math.floor(grid.height / 2);
+      const start = toFinePoint({ x: startX, y: startY });
       this.snake = [];
-      for (let i = 0; i < len; i++) {
-        this.snake.push({ x: startX - i, y: startY });
+      for (let i = 0; i < len * SUBGRID; i++) {
+        this.snake.push({ x: start.x - i, y: start.y });
       }
       this.prevSnake = this.snake.map((p) => ({ ...p }));
       this.directionQueue = [];
+      this.growRemainder = 0;
       this.boardFlashMs = 0;
       this.comboPulseMs = 0;
       this.questionPulseMs = 0;
       this.screenShakeMs = 0;
+      this.lastReview = null;
+      this.hudFeedback = null;
       if (this.vocab) this.nextQuestion();
       else this.spawnFood();
     }
@@ -90,7 +122,7 @@
     }
 
     hudText() {
-      return `${this.snake.length}${this.boostHeld ? ' BOOST' : ''}`;
+      return `${this.coarseLength()}${this.boostHeld ? ' BOOST' : ''}`;
     }
 
     handleInput(input) {
@@ -136,8 +168,8 @@
       this.screenShakeMs = Math.max(0, this.screenShakeMs - dtMs);
       if (this.state !== 'playing' || this.ended) return;
       this.tickMs += dtMs;
-      while (this.tickMs >= this.effectiveStepMs() && this.state === 'playing') {
-        this.tickMs -= this.effectiveStepMs();
+      while (this.tickMs >= this.effectiveFineStepMs() && this.state === 'playing') {
+        this.tickMs -= this.effectiveFineStepMs();
         this.step();
       }
     }
@@ -149,20 +181,24 @@
       let next = { x: head.x + this.dir.x, y: head.y + this.dir.y };
       const grid = this.config.grid;
       const rules = this.config.rules;
+      const fineWidth = grid.width * SUBGRID;
+      const fineHeight = grid.height * SUBGRID;
 
       if (!rules.walls_kill) {
         next = {
-          x: (next.x + grid.width) % grid.width,
-          y: (next.y + grid.height) % grid.height,
+          x: (next.x + fineWidth) % fineWidth,
+          y: (next.y + fineHeight) % fineHeight,
         };
-      } else if (next.x < 0 || next.y < 0 || next.x >= grid.width || next.y >= grid.height) {
+      } else if (next.x < 0 || next.y < 0 || next.x >= fineWidth || next.y >= fineHeight) {
         this.finish('lose');
         return;
       }
 
-      const eatenAnswer = this.vocab ? this.answerFoods.find((food) => samePoint(next, food)) : null;
-      const ate = this.vocab ? Boolean(eatenAnswer) : samePoint(next, this.food);
-      const body = ate ? this.snake : this.snake.slice(0, -1);
+      const eatenAnswer = this.vocab ? this.answerFoods.find((food) => sameCoarseCell(next, food)) : null;
+      const ate = this.vocab ? Boolean(eatenAnswer) : sameCoarseCell(next, this.food);
+      const growsOnThisMove = ate && (!this.vocab || eatenAnswer.correct);
+      const tailMoves = !growsOnThisMove && this.growRemainder <= 0;
+      const body = tailMoves ? this.snake.slice(0, -1) : this.snake;
       if (rules.self_kill && body.some((p) => samePoint(p, next))) {
         this.finish('lose');
         return;
@@ -172,20 +208,21 @@
       if (ate) {
         if (this.vocab) {
           const shouldGrow = this.consumeAnswer(eatenAnswer);
-          if (!shouldGrow) this.snake.pop();
+          this.settleTail(shouldGrow);
         } else {
           this.score += this.boostHeld ? 14 : 10;
           this.foodEaten += 1;
-          this.addFoodBurst(next);
+          this.addFoodBurst(this.food);
           this.stepMs = Math.max(40, Math.floor(this.stepMs * rules.speed_ramp));
-          if (this.snake.length >= rules.win_length) {
+          this.settleTail(true);
+          if (this.coarseLength() >= rules.win_length) {
             this.finish('win');
             return;
           }
           this.spawnFood();
         }
       } else {
-        this.snake.pop();
+        this.settleTail(false);
       }
     }
 
@@ -193,9 +230,26 @@
       return this.boostHeld ? Math.max(28, Math.floor(this.stepMs * 0.55)) : this.stepMs;
     }
 
+    effectiveFineStepMs() {
+      return Math.max(12, this.effectiveStepMs() / SUBGRID);
+    }
+
+    coarseLength() {
+      return Math.max(1, Math.ceil(this.snake.length / SUBGRID));
+    }
+
+    settleTail(shouldGrow) {
+      if (shouldGrow) this.growRemainder += SUBGRID;
+      if (this.growRemainder > 0) {
+        this.growRemainder -= 1;
+      } else {
+        this.snake.pop();
+      }
+    }
+
     spawnFood() {
       const grid = this.config.grid;
-      const occupied = new Set(this.snake.map(keyOf));
+      const occupied = new Set(this.snake.map(coarseKeyOf));
       const free = [];
       for (let y = 0; y < grid.height; y++) {
         for (let x = 0; x < grid.width; x++) {
@@ -224,13 +278,15 @@
 
     spawnAnswerFoods(choices) {
       const grid = this.config.grid;
-      const occupied = new Set(this.snake.map(keyOf));
+      const occupied = new Set(this.snake.map(coarseKeyOf));
+      const head = toCoarsePoint(this.snake[0]);
       const free = [];
       for (let y = 0; y < grid.height; y++) {
         for (let x = 0; x < grid.width; x++) {
           const point = { x, y };
           if (occupied.has(keyOf(point))) continue;
-          if (distanceToSnakeHead(this.snake[0], point) < 4) continue;
+          if (distanceToSnakeHead(head, point) < 4) continue;
+          if (isVocabHudCell(point, grid)) continue;
           free.push(point);
         }
       }
@@ -249,6 +305,7 @@
       this.foodEaten += 1;
       this.addFoodBurst(food);
       if (food.correct) {
+        this.rememberReview(food, true);
         this.score += this.boostHeld ? 18 : 14;
         this.correctCount += 1;
         this.combo += 1;
@@ -257,11 +314,7 @@
         this.boardFlashMs = 220;
         this.comboPulseMs = 420;
         this.questionPulseMs = 380;
-        this.addEffect('正确', food, '#b8f2e6', { scale: 1.7, stroke: 'rgba(8,28,24,0.72)' });
-        this.addEffect(`+${this.boostHeld ? 18 : 14}`, { x: food.x, y: food.y + 0.25 }, '#ffd166', {
-          scale: 1.15,
-          stroke: 'rgba(8,12,16,0.55)',
-        });
+        this.setHudFeedback('正确', this.question, food, true, `+${this.boostHeld ? 18 : 14}`);
         if (this.correctCount >= this.vocab.targetCorrect) {
           this.finish('win');
           return true;
@@ -269,16 +322,13 @@
         this.nextQuestion();
         return true;
       } else {
+        this.rememberReview(food, false);
         this.score = Math.max(0, this.score - 4);
         this.wrongCount += 1;
         this.combo = 0;
         this.boardFlashMs = 180;
         this.screenShakeMs = 260;
-        this.addEffect('再试', food, '#ffafcc', { scale: 1.55, stroke: 'rgba(54,8,28,0.72)' });
-        this.addEffect('-4', { x: food.x, y: food.y + 0.25 }, '#ff6b6b', {
-          scale: 1.05,
-          stroke: 'rgba(60,0,18,0.65)',
-        });
+        this.setHudFeedback('再记一次', this.question, food, false, '-4');
         if (this.question) {
           this.missed.push({
             id: this.question.id,
@@ -287,7 +337,6 @@
             picked: food.label,
           });
         }
-        this.addEffect('MISS', food, '#ffafcc');
         this.nextQuestion();
         return false;
       }
@@ -371,6 +420,10 @@
     updateEffects(dtMs) {
       for (const effect of this.effects) effect.age += dtMs;
       this.effects = this.effects.filter((effect) => effect.age < 760);
+      if (this.hudFeedback) {
+        this.hudFeedback.age += dtMs;
+        if (this.hudFeedback.age >= this.hudFeedback.life) this.hudFeedback = null;
+      }
     }
 
     finish(result) {
@@ -396,6 +449,7 @@
           drawAnswerFood(ctx, food, cell, this.config.theme.food, this.animMs, this.questionPulseMs);
         }
         drawQuestionPanel(ctx, this.question, grid, cell, this.questionPulseMs, this.combo);
+        drawHudFeedback(ctx, this.hudFeedback, grid, cell);
       } else {
         drawFood(ctx, this.food, cell, this.config.theme.food, this.animMs);
       }
@@ -404,13 +458,14 @@
       drawSnake(ctx, this.renderSnake(), cell, this.dir, this.config.theme, this.animMs);
       if (this.boostHeld) drawBoostBadge(ctx, grid.width * cell, cell);
       ctx.restore();
+      if (this.vocab) drawReviewPanel(ctx, this.lastReview, metrics, this.animMs);
     }
 
     renderSnake() {
       if (this.state !== 'playing' || this.ended || this.prevSnake.length === 0) {
         return this.snake;
       }
-      const progress = clamp(this.tickMs / this.effectiveStepMs(), 0, 1);
+      const progress = clamp(this.tickMs / this.effectiveFineStepMs(), 0, 1);
       const eased = easeOutCubic(progress);
       return this.snake.map((point, index) => {
         const previous = this.prevSnake[index] || this.prevSnake[this.prevSnake.length - 1] || point;
@@ -420,6 +475,31 @@
           y: lerp(previous.y, point.y, eased),
         };
       });
+    }
+
+    rememberReview(food, correct) {
+      if (!this.question) return;
+      this.lastReview = {
+        term: this.question.term,
+        meaning: this.question.meaning,
+        example: this.question.example || '',
+        picked: food && food.label ? food.label : '',
+        correct: Boolean(correct),
+      };
+    }
+
+    setHudFeedback(label, question, food, correct, delta) {
+      if (!question) return;
+      this.hudFeedback = {
+        label,
+        term: question.term,
+        meaning: question.meaning,
+        picked: food && food.label ? food.label : '',
+        correct: Boolean(correct),
+        delta,
+        age: 0,
+        life: 980,
+      };
     }
   }
 
@@ -487,10 +567,17 @@
     };
   }
 
+  function finePointCenter(p, cell) {
+    return {
+      x: (p.x / SUBGRID) * cell,
+      y: (p.y / SUBGRID) * cell,
+    };
+  }
+
   function drawSnake(ctx, snake, cell, dir, theme, timeMs = 0) {
     if (!snake.length) return;
     const bodyWidth = Math.max(8, cell * 0.72);
-    const points = snake.map((p) => cellCenter(p, cell));
+    const points = snake.map((p) => finePointCenter(p, cell));
     ctx.save();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -704,7 +791,7 @@
     const width = grid.width * cell;
     const x = cell * 0.8;
     const y = cell * 0.8;
-    const w = Math.min(width - cell * 1.6, Math.max(cell * 10, 310));
+    const w = Math.min(width - cell * 1.6, Math.max(310, Math.min(cell * 14, 430)));
     const h = Math.max(52, cell * 2.6);
     const pulse = 1 + clamp(pulseMs / 380, 0, 1) * 0.05;
     ctx.save();
@@ -734,6 +821,108 @@
       ctx.font = `600 ${Math.max(11, cell * 0.54)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
       ctx.fillText(fitText(question.example, 44), x + cell * 0.75, y + h * 0.78);
     }
+    ctx.restore();
+  }
+
+  function drawReviewPanel(ctx, review, metrics, timeMs = 0) {
+    if (!review || !metrics) return;
+    const cell = metrics.cell;
+    const boardX = Number(metrics.x) || 0;
+    const boardY = Number(metrics.y) || 0;
+    const leftSpace = boardX - 12;
+    if (leftSpace < 170) return;
+    const w = clamp(leftSpace - 20, 176, 260);
+    const h = Math.max(118, cell * 4.6);
+    const x = Math.max(12, boardX - w - 16);
+    const y = Math.max(68, boardY + cell * 1.1);
+    const accent = review.correct ? '#b8f2e6' : '#ffafcc';
+    const glow = 0.18 + Math.sin(timeMs / 240) * 0.04;
+    ctx.save();
+    ctx.fillStyle = 'rgba(9, 13, 18, 0.68)';
+    ctx.strokeStyle = review.correct ? `rgba(184, 242, 230, ${0.48 + glow})` : `rgba(255, 175, 204, ${0.48 + glow})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = `rgba(${review.correct ? '184, 242, 230' : '255, 175, 204'}, 0.10)`;
+    ctx.beginPath();
+    ctx.roundRect(x + 5, y + 5, w - 10, Math.min(h - 10, cell * 1.6), 8);
+    ctx.fill();
+
+    ctx.fillStyle = accent;
+    ctx.font = `800 ${Math.max(10, cell * 0.48)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(review.correct ? '上一题 · 正确' : '上一题 · 再记', x + cell * 0.55, y + cell * 0.42);
+
+    ctx.fillStyle = '#ffd166';
+    ctx.font = `900 ${Math.max(17, cell * 0.86)}px "Segoe UI", sans-serif`;
+    ctx.fillText(fitText(review.term, 15), x + cell * 0.55, y + cell * 1.30);
+
+    ctx.fillStyle = '#f7fbff';
+    ctx.font = `800 ${Math.max(13, cell * 0.60)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.fillText(fitText(review.meaning, 14), x + cell * 0.55, y + cell * 2.24);
+
+    if (!review.correct && review.picked) {
+      ctx.fillStyle = 'rgba(255, 175, 204, 0.86)';
+      ctx.font = `700 ${Math.max(10, cell * 0.45)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.fillText(`刚才选了：${fitText(review.picked, 10)}`, x + cell * 0.55, y + cell * 2.86);
+    }
+
+    if (review.example) {
+      ctx.fillStyle = 'rgba(247, 251, 255, 0.72)';
+      ctx.font = `650 ${Math.max(10, cell * 0.46)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      const example = fitTextToWidth(ctx, review.example, w - cell * 1.1);
+      ctx.fillText(example, x + cell * 0.55, y + cell * 3.48);
+    }
+    ctx.restore();
+  }
+
+  function drawHudFeedback(ctx, feedback, grid, cell) {
+    if (!feedback) return;
+    const width = grid.width * cell;
+    const progress = clamp(feedback.age / feedback.life, 0, 1);
+    const alpha = progress < 0.12 ? progress / 0.12 : clamp((1 - progress) / 0.28, 0, 1);
+    if (alpha <= 0) return;
+    const panelY = cell * 0.8;
+    const w = Math.min(Math.max(cell * 7.4, 220), Math.max(220, width * 0.28));
+    const h = Math.max(54, cell * 2.45);
+    const x = Math.max(cell * 0.8, width - w - cell * 0.8);
+    const y = panelY + cell * 0.18;
+    const boxW = w;
+    const accent = feedback.correct ? '#b8f2e6' : '#ffafcc';
+    const dy = (1 - easeOutCubic(clamp(progress / 0.22, 0, 1))) * cell * 0.35;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(0, dy);
+    ctx.shadowColor = feedback.correct ? 'rgba(184, 242, 230, 0.22)' : 'rgba(255, 175, 204, 0.24)';
+    ctx.shadowBlur = Math.max(8, cell * 0.42);
+    ctx.fillStyle = feedback.correct ? 'rgba(8, 28, 24, 0.82)' : 'rgba(36, 13, 24, 0.82)';
+    ctx.strokeStyle = feedback.correct ? 'rgba(184, 242, 230, 0.86)' : 'rgba(255, 175, 204, 0.86)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(x, y, boxW, h, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = accent;
+    ctx.font = `900 ${Math.max(17, cell * 0.78)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(feedback.label, x + cell * 0.6, y + h * 0.36);
+
+    ctx.fillStyle = feedback.correct ? '#ffd166' : '#ffafcc';
+    ctx.font = `900 ${Math.max(15, cell * 0.68)}px "Segoe UI", sans-serif`;
+    ctx.textAlign = 'right';
+    ctx.fillText(feedback.delta || '', x + boxW - cell * 0.62, y + h * 0.36);
+
+    ctx.fillStyle = 'rgba(247, 251, 255, 0.88)';
+    ctx.font = `750 ${Math.max(11, cell * 0.50)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.fillText(`${fitText(feedback.term, 13)} = ${fitText(feedback.meaning, 12)}`, x + cell * 0.6, y + h * 0.73);
     ctx.restore();
   }
 
@@ -821,10 +1010,56 @@
     return Math.abs(head.x - point.x) + Math.abs(head.y - point.y);
   }
 
+  function isVocabHudCell(point, grid) {
+    const leftLimit = Math.ceil(grid.width * 0.42);
+    const rightStart = Math.floor(grid.width * 0.68);
+    const topBandLimit = Math.ceil(grid.height * 0.23);
+    return (
+      point.y <= topBandLimit
+      && (point.x <= leftLimit || point.x >= rightStart)
+    );
+  }
+
   function fitText(text, maxChars) {
     const value = String(text || '');
     if (value.length <= maxChars) return value;
     return `${value.slice(0, Math.max(1, maxChars - 1))}…`;
+  }
+
+  function fitTextToWidth(ctx, text, maxWidth) {
+    const value = String(text || '');
+    if (ctx.measureText(value).width <= maxWidth) return value;
+    let lo = 0;
+    let hi = value.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (ctx.measureText(`${value.slice(0, mid)}…`).width <= maxWidth) lo = mid;
+      else hi = mid - 1;
+    }
+    return `${value.slice(0, Math.max(1, lo))}…`;
+  }
+
+  function wrapText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
+    const value = String(text || '').trim();
+    if (!value) return;
+    const words = value.includes(' ') ? value.split(/\s+/) : Array.from(value);
+    const lines = [];
+    let current = '';
+    for (const word of words) {
+      const candidate = current ? `${current}${value.includes(' ') ? ' ' : ''}${word}` : word;
+      if (ctx.measureText(candidate).width <= maxWidth || !current) {
+        current = candidate;
+      } else {
+        lines.push(current);
+        current = word;
+      }
+      if (lines.length >= maxLines) break;
+    }
+    if (current && lines.length < maxLines) lines.push(current);
+    lines.slice(0, maxLines).forEach((line, index) => {
+      const suffix = index === maxLines - 1 && words.join(value.includes(' ') ? ' ' : '').length > lines.join('').length ? '…' : '';
+      ctx.fillText(`${line}${suffix}`, x, y + index * lineHeight);
+    });
   }
 
   window.BitCatGames.snake = (config, host) => new SnakeEngine(config, host);
