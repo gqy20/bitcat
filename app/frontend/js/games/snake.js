@@ -21,6 +21,8 @@
     return `${p.x},${p.y}`;
   }
 
+  const MAX_DIRECTION_QUEUE = 3;
+
   class SnakeEngine {
     constructor(config, host, rng) {
       this.config = config;
@@ -32,7 +34,7 @@
       this.state = 'ready';
       this.score = 0;
       this.dir = { x: 1, y: 0 };
-      this.nextDir = { x: 1, y: 0 };
+      this.directionQueue = [];
       this.stepMs = Number(config.player.speed_ms) || 140;
       this.tickMs = 0;
       this.ended = false;
@@ -52,6 +54,10 @@
       this.animMs = 0;
       this.foodBursts = [];
       this.effects = [];
+      this.boardFlashMs = 0;
+      this.comboPulseMs = 0;
+      this.questionPulseMs = 0;
+      this.screenShakeMs = 0;
       this.reset();
     }
 
@@ -65,6 +71,11 @@
         this.snake.push({ x: startX - i, y: startY });
       }
       this.prevSnake = this.snake.map((p) => ({ ...p }));
+      this.directionQueue = [];
+      this.boardFlashMs = 0;
+      this.comboPulseMs = 0;
+      this.questionPulseMs = 0;
+      this.screenShakeMs = 0;
       if (this.vocab) this.nextQuestion();
       else this.spawnFood();
     }
@@ -111,8 +122,7 @@
         const next = { x: Math.sign(input.dx || 0), y: Math.sign(input.dy || 0) };
         if (Math.abs(next.x) + Math.abs(next.y) !== 1) return;
         if (this.state === 'ready') this.state = 'playing';
-        if (next.x === -this.dir.x && next.y === -this.dir.y) return;
-        this.nextDir = next;
+        this.enqueueDirection(next);
       }
     }
 
@@ -120,6 +130,10 @@
       this.animMs += dtMs;
       this.updateFoodBursts(dtMs);
       this.updateEffects(dtMs);
+      this.boardFlashMs = Math.max(0, this.boardFlashMs - dtMs);
+      this.comboPulseMs = Math.max(0, this.comboPulseMs - dtMs);
+      this.questionPulseMs = Math.max(0, this.questionPulseMs - dtMs);
+      this.screenShakeMs = Math.max(0, this.screenShakeMs - dtMs);
       if (this.state !== 'playing' || this.ended) return;
       this.tickMs += dtMs;
       while (this.tickMs >= this.effectiveStepMs() && this.state === 'playing') {
@@ -130,7 +144,7 @@
 
     step() {
       this.prevSnake = this.snake.map((p) => ({ ...p }));
-      this.dir = this.nextDir;
+      this.dir = this.consumeQueuedDirection();
       const head = this.snake[0];
       let next = { x: head.x + this.dir.x, y: head.y + this.dir.y };
       const grid = this.config.grid;
@@ -240,7 +254,14 @@
         this.combo += 1;
         this.maxCombo = Math.max(this.maxCombo, this.combo);
         this.stepMs = Math.max(48, Math.floor(this.stepMs * this.config.rules.speed_ramp));
-        this.addEffect('GOOD', food, '#b8f2e6');
+        this.boardFlashMs = 220;
+        this.comboPulseMs = 420;
+        this.questionPulseMs = 380;
+        this.addEffect('正确', food, '#b8f2e6', { scale: 1.7, stroke: 'rgba(8,28,24,0.72)' });
+        this.addEffect(`+${this.boostHeld ? 18 : 14}`, { x: food.x, y: food.y + 0.25 }, '#ffd166', {
+          scale: 1.15,
+          stroke: 'rgba(8,12,16,0.55)',
+        });
         if (this.correctCount >= this.vocab.targetCorrect) {
           this.finish('win');
           return true;
@@ -251,6 +272,13 @@
         this.score = Math.max(0, this.score - 4);
         this.wrongCount += 1;
         this.combo = 0;
+        this.boardFlashMs = 180;
+        this.screenShakeMs = 260;
+        this.addEffect('再试', food, '#ffafcc', { scale: 1.55, stroke: 'rgba(54,8,28,0.72)' });
+        this.addEffect('-4', { x: food.x, y: food.y + 0.25 }, '#ff6b6b', {
+          scale: 1.05,
+          stroke: 'rgba(60,0,18,0.65)',
+        });
         if (this.question) {
           this.missed.push({
             id: this.question.id,
@@ -263,6 +291,30 @@
         this.nextQuestion();
         return false;
       }
+    }
+
+    enqueueDirection(next) {
+      if (!next || (next.x === 0 && next.y === 0)) return;
+      const latest = this.directionQueue.length
+        ? this.directionQueue[this.directionQueue.length - 1]
+        : this.dir;
+      if (samePoint(next, latest) || (next.x === -latest.x && next.y === -latest.y)) return;
+      if (this.directionQueue.length >= MAX_DIRECTION_QUEUE) {
+        this.directionQueue.shift();
+      }
+      this.directionQueue.push(next);
+    }
+
+    consumeQueuedDirection() {
+      let current = this.dir;
+      while (this.directionQueue.length) {
+        const next = this.directionQueue.shift();
+        if (samePoint(next, current)) continue;
+        if (next.x === -current.x && next.y === -current.y) continue;
+        current = next;
+        break;
+      }
+      return current;
     }
 
     centerFoodChoices(free) {
@@ -304,8 +356,16 @@
       this.foodBursts = this.foodBursts.filter((burst) => burst.age < burst.life);
     }
 
-    addEffect(text, point, color) {
-      this.effects.push({ text, x: point.x, y: point.y, color, age: 0 });
+    addEffect(text, point, color, opts = {}) {
+      this.effects.push({
+        text,
+        x: point.x,
+        y: point.y,
+        color,
+        age: 0,
+        scale: Number(opts.scale) || 1,
+        stroke: opts.stroke || null,
+      });
     }
 
     updateEffects(dtMs) {
@@ -329,10 +389,13 @@
       ctx.save();
       ctx.translate(ox, oy);
       fillBoardPanel(ctx, grid.width * cell, grid.height * cell);
+      drawBoardFlash(ctx, grid, cell, this.boardFlashMs, this.comboPulseMs, this.screenShakeMs);
       drawSnakeField(ctx, grid, cell);
       if (this.vocab) {
-        for (const food of this.answerFoods) drawAnswerFood(ctx, food, cell, this.config.theme.food, this.animMs);
-        drawQuestionPanel(ctx, this.question, grid, cell);
+        for (const food of this.answerFoods) {
+          drawAnswerFood(ctx, food, cell, this.config.theme.food, this.animMs, this.questionPulseMs);
+        }
+        drawQuestionPanel(ctx, this.question, grid, cell, this.questionPulseMs, this.combo);
       } else {
         drawFood(ctx, this.food, cell, this.config.theme.food, this.animMs);
       }
@@ -574,7 +637,32 @@
     ctx.restore();
   }
 
-  function drawAnswerFood(ctx, food, cell, kind, timeMs = 0) {
+  function drawBoardFlash(ctx, grid, cell, flashMs, pulseMs, shakeMs) {
+    const width = grid.width * cell;
+    const height = grid.height * cell;
+    const flashAlpha = clamp(flashMs / 220, 0, 1);
+    const pulseAlpha = clamp(pulseMs / 420, 0, 1);
+    const shake = shakeMs > 0 ? Math.sin(shakeMs * 0.75) * Math.min(4, cell * 0.12) : 0;
+    if (!flashAlpha && !pulseAlpha && !shake) return;
+    ctx.save();
+    ctx.translate(shake, 0);
+    if (flashAlpha > 0) {
+      ctx.fillStyle = `rgba(184, 242, 230, ${0.12 * flashAlpha})`;
+      ctx.fillRect(0, 0, width, height);
+      ctx.strokeStyle = `rgba(255, 209, 102, ${0.52 * flashAlpha})`;
+      ctx.lineWidth = Math.max(3, cell * 0.12);
+      ctx.strokeRect(cell * 0.35, cell * 0.35, width - cell * 0.7, height - cell * 0.7);
+    }
+    if (pulseAlpha > 0) {
+      ctx.fillStyle = `rgba(255, 209, 102, ${0.06 * pulseAlpha})`;
+      ctx.beginPath();
+      ctx.roundRect(cell * 0.9, cell * 0.9, width - cell * 1.8, height - cell * 1.8, 14);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawAnswerFood(ctx, food, cell, kind, timeMs = 0, pulseMs = 0) {
     drawFood(ctx, food, cell, kind, timeMs);
     const c = cellCenter(food, cell);
     const text = fitText(food.label, 8);
@@ -584,14 +672,25 @@
     const w = Math.max(cell * 1.8, text.length * fontSize * 0.9 + padX * 2);
     const x = c.x - w / 2;
     const y = c.y + cell * 0.42;
+    const pulse = 1 + Math.sin(timeMs / 120 + food.x * 0.41 + food.y * 0.23) * 0.06 + clamp(pulseMs / 380, 0, 1) * 0.12;
     ctx.save();
-    ctx.fillStyle = food.correct ? 'rgba(8, 28, 24, 0.82)' : 'rgba(20, 24, 30, 0.82)';
-    ctx.strokeStyle = food.correct ? 'rgba(184, 242, 230, 0.58)' : 'rgba(255, 255, 255, 0.20)';
-    ctx.lineWidth = 1.5;
+    ctx.translate(c.x, c.y);
+    ctx.scale(pulse, pulse);
+    ctx.translate(-c.x, -c.y);
+    ctx.fillStyle = food.correct ? 'rgba(8, 28, 24, 0.88)' : 'rgba(20, 24, 30, 0.82)';
+    ctx.strokeStyle = food.correct ? 'rgba(184, 242, 230, 0.80)' : 'rgba(255, 255, 255, 0.20)';
+    ctx.lineWidth = food.correct ? 2 : 1.5;
     ctx.beginPath();
     ctx.roundRect(x, y, w, h, 8);
     ctx.fill();
     ctx.stroke();
+    if (food.correct) {
+      ctx.strokeStyle = 'rgba(255, 209, 102, 0.36)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(x - 3, y - 3, w + 6, h + 6, 10);
+      ctx.stroke();
+    }
     ctx.fillStyle = '#f7fbff';
     ctx.font = `800 ${fontSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
     ctx.textAlign = 'center';
@@ -600,21 +699,31 @@
     ctx.restore();
   }
 
-  function drawQuestionPanel(ctx, question, grid, cell) {
+  function drawQuestionPanel(ctx, question, grid, cell, pulseMs = 0, combo = 0) {
     if (!question) return;
     const width = grid.width * cell;
     const x = cell * 0.8;
     const y = cell * 0.8;
     const w = Math.min(width - cell * 1.6, Math.max(cell * 10, 310));
     const h = Math.max(52, cell * 2.6);
+    const pulse = 1 + clamp(pulseMs / 380, 0, 1) * 0.05;
     ctx.save();
+    ctx.translate(x + w / 2, y + h / 2);
+    ctx.scale(pulse, pulse);
+    ctx.translate(-(x + w / 2), -(y + h / 2));
     ctx.fillStyle = 'rgba(9, 13, 18, 0.78)';
-    ctx.strokeStyle = 'rgba(255, 209, 102, 0.52)';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = pulseMs > 0 ? 'rgba(184, 242, 230, 0.78)' : 'rgba(255, 209, 102, 0.52)';
+    ctx.lineWidth = pulseMs > 0 ? 2.5 : 2;
     ctx.beginPath();
     ctx.roundRect(x, y, w, h, 10);
     ctx.fill();
     ctx.stroke();
+    if (combo > 1) {
+      ctx.fillStyle = 'rgba(255, 209, 102, 0.14)';
+      ctx.beginPath();
+      ctx.roundRect(x + 4, y + 4, w - 8, h - 8, 8);
+      ctx.fill();
+    }
     ctx.fillStyle = '#ffd166';
     ctx.font = `900 ${Math.max(20, cell * 1.15)}px "Segoe UI", sans-serif`;
     ctx.textAlign = 'left';
@@ -631,14 +740,28 @@
   function drawEffects(ctx, effects, cell) {
     if (!effects.length) return;
     ctx.save();
-    ctx.font = `900 ${Math.max(14, cell * 0.62)}px "Segoe UI", sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const effect of effects) {
       const alpha = clamp(1 - effect.age / 760, 0, 1);
       ctx.globalAlpha = alpha;
       ctx.fillStyle = effect.color;
-      ctx.fillText(effect.text, effect.x * cell + cell / 2, effect.y * cell + cell / 2 - effect.age * 0.025);
+      const scale = 1 + (effect.scale || 1) * 0.2 * alpha;
+      const x = effect.x * cell + cell / 2;
+      const y = effect.y * cell + cell / 2 - effect.age * 0.025;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(scale, scale);
+      ctx.font = `900 ${Math.max(14, cell * 0.62)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.38)';
+      ctx.shadowBlur = Math.max(2, cell * 0.18);
+      if (effect.stroke) {
+        ctx.lineWidth = Math.max(2, cell * 0.08);
+        ctx.strokeStyle = effect.stroke;
+        ctx.strokeText(effect.text, 0, 0);
+      }
+      ctx.fillText(effect.text, 0, 0);
+      ctx.restore();
     }
     ctx.restore();
   }

@@ -75,4 +75,32 @@ describe('Word Snake rules', () => {
     expect(engine.snake.length).toBe(baseConfig.player.initial_length);
     expect(engine.missed[0]).toMatchObject({ term: 'create', picked: '取消' });
   });
+
+  it('queues direction changes for tighter turning', () => {
+    const SnakeEngine = loadSnakeEngine();
+    const engine = new SnakeEngine({ ...baseConfig, snake_vocab: vocab }, {}, () => 0);
+
+    engine.handleInput({ type: 'confirm' });
+    engine.handleInput({ type: 'direction', dx: 0, dy: -1 });
+    engine.handleInput({ type: 'direction', dx: 1, dy: 0 });
+
+    expect(engine.directionQueue).toHaveLength(2);
+    engine.update(100);
+    expect(engine.dir).toEqual({ x: 0, y: -1 });
+    engine.update(100);
+    expect(engine.dir).toEqual({ x: 1, y: 0 });
+  });
+
+  it('raises feedback pulses after a correct answer', () => {
+    const SnakeEngine = loadSnakeEngine();
+    const engine = new SnakeEngine({ ...baseConfig, snake_vocab: vocab }, {}, () => 0);
+    const correct = engine.answerFoods.find((food) => food.correct);
+
+    engine.consumeAnswer(correct);
+
+    expect(engine.boardFlashMs).toBeGreaterThan(0);
+    expect(engine.comboPulseMs).toBeGreaterThan(0);
+    expect(engine.questionPulseMs).toBeGreaterThan(0);
+    expect(engine.effects.some((effect) => effect.text === '正确')).toBe(true);
+  });
 });
