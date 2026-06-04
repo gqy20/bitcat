@@ -100,3 +100,7 @@ cargo check -p bitcat-app
 - 系统托盘菜单 → 停止舞动。
 
 当前音乐舞动默认只做 canvas 内动作，不移动真实窗口。如果感觉 UI 卡顿，优先使用托盘停止入口。
+
+## Provider compatibility
+
+If AI chat starts but fails as soon as a model calls a tool, see [Provider Compatibility Notes](provider-compatibility.md). This includes the known StepFun `step-3.7-flash` streaming tool issue where `content_block_start.tool_use` lacks `input` and the arguments arrive later as `input_json_delta`.

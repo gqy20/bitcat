@@ -176,6 +176,12 @@ impl ChatError {
             } => *accumulated_chars,
         }
     }
+
+    fn reason(&self) -> &str {
+        match self {
+            Self::RecoverableStream { reason, .. } | Self::Fatal { reason, .. } => reason,
+        }
+    }
 }
 
 impl std::fmt::Display for ChatError {
@@ -214,6 +220,16 @@ fn classify_stream_error(
     tool_call_count: u32,
 ) -> ChatError {
     let lower = raw.to_lowercase();
+
+    if is_stepfun_streaming_tool_parse_raw(&lower) {
+        return ChatError::RecoverableStream {
+            reason: "stepfun_stream_tool_parse".into(),
+            original: raw.to_string(),
+            accumulated_chars,
+            chunk_count,
+            tool_call_count,
+        };
+    }
 
     // [DONE] / SSE parse — glm-5v-turbo 在多轮 tool result 后直接发 [DONE] 关闭流
     if lower.contains("[done]")
@@ -297,6 +313,22 @@ fn classify_stream_error(
         accumulated_chars,
         tool_call_count,
     }
+}
+
+fn is_stepfun_provider(config: &AiConfig) -> bool {
+    let base_url = config.base_url.to_ascii_lowercase();
+    base_url.contains("stepfun")
+}
+
+fn is_stepfun_streaming_tool_parse_raw(lower_raw: &str) -> bool {
+    lower_raw.contains("missing field")
+        && lower_raw.contains("input")
+        && lower_raw.contains("content_block_start")
+        && lower_raw.contains("tool_use")
+}
+
+fn should_retry_stepfun_non_streaming(config: &AiConfig, error: &ChatError) -> bool {
+    is_stepfun_provider(config) && error.reason() == "stepfun_stream_tool_parse"
 }
 
 const TOOL_FAILURE_STOP_PREFIX: &str = "tool_failure_stop:";
@@ -709,6 +741,44 @@ impl PetAgent {
                     }
 
                     // 致命错误或无累积文本 → 返回分类后的结构化错误
+                    if accumulated.is_empty()
+                        && should_retry_stepfun_non_streaming(&self.config, &classified)
+                    {
+                        info!(
+                            session_id = %session_id,
+                            reason = %classified.reason(),
+                            "retrying StepFun chat without streaming"
+                        );
+                        match self.chat(message).await {
+                            Ok(reply) => {
+                                if !reply.is_empty() {
+                                    on_event(AgentStreamEvent::Status {
+                                        status: AgentStreamStatus::AiWriting,
+                                    });
+                                    on_event(AgentStreamEvent::Text {
+                                        text: reply.clone(),
+                                    });
+                                }
+                                info!(
+                                    session_id = %session_id,
+                                    chars = reply.chars().count(),
+                                    "StepFun non-streaming retry succeeded"
+                                );
+                                return Ok(reply);
+                            }
+                            Err(retry_error) => {
+                                warn!(
+                                    session_id = %session_id,
+                                    retry_error_kind = %retry_error.short_kind(),
+                                    retry_error_reason = %retry_error.reason(),
+                                    original_error_reason = %classified.reason(),
+                                    "StepFun non-streaming retry failed"
+                                );
+                                return Err(retry_error);
+                            }
+                        }
+                    }
+
                     return Err(classified);
                 }
             }
@@ -1108,6 +1178,46 @@ mod tests {
             Some("{\"success\":true}"),
             Some(true)
         ));
+    }
+
+    fn test_config(base_url: &str, model: &str) -> AiConfig {
+        AiConfig {
+            api_key: "sk-test".into(),
+            base_url: base_url.into(),
+            model: model.into(),
+        }
+    }
+
+    fn stepfun_streaming_tool_error() -> &'static str {
+        "Failed to parse JSON: missing field `input`\nData: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"tool_use\",\"name\":\"get_time\"}}"
+    }
+
+    #[test]
+    fn test_classify_stepfun_streaming_tool_parse_error() {
+        let error = classify_stream_error(stepfun_streaming_tool_error(), 0, 0, 0);
+
+        assert!(error.is_recoverable());
+        assert_eq!(error.reason(), "stepfun_stream_tool_parse");
+        assert_eq!(error.accumulated_chars(), 0);
+    }
+
+    #[test]
+    fn test_stepfun_non_streaming_retry_is_scoped_to_stepfun() {
+        let error = classify_stream_error(stepfun_streaming_tool_error(), 0, 0, 0);
+        let stepfun = test_config("https://api.stepfun.com/step_plan", "step-3.7-flash");
+        let anthropic = test_config("https://api.anthropic.com", "claude-sonnet-4-20250514");
+
+        assert!(should_retry_stepfun_non_streaming(&stepfun, &error));
+        assert!(!should_retry_stepfun_non_streaming(&anthropic, &error));
+    }
+
+    #[test]
+    fn test_stepfun_non_streaming_retry_ignores_generic_sse_parse() {
+        let error = classify_stream_error("Failed to parse JSON\nData: [DONE]", 0, 0, 0);
+        let stepfun = test_config("https://api.stepfun.com/step_plan", "step-3.7-flash");
+
+        assert_eq!(error.reason(), "sse_parse");
+        assert!(!should_retry_stepfun_non_streaming(&stepfun, &error));
     }
 
     #[tokio::test]

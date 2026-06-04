@@ -712,15 +712,15 @@ fn reminder_view(reminder: ReminderRecord) -> ReminderView {
 
 fn schedule_label(schedule: &ReminderSchedule) -> String {
     match schedule {
-        ReminderSchedule::Once { at } => format!("涓€娆?路 {at}"),
+        ReminderSchedule::Once { at } => format!("一次 · {at}"),
         ReminderSchedule::Interval { every_minutes } => {
             if *every_minutes % 60 == 0 {
-                format!("姣?{} 灏忔椂", every_minutes / 60)
+                format!("每 {} 小时", every_minutes / 60)
             } else {
-                format!("姣?{every_minutes} 鍒嗛挓")
+                format!("每 {every_minutes} 分钟")
             }
         }
-        ReminderSchedule::Daily { time } => format!("姣忓ぉ 路 {time}"),
+        ReminderSchedule::Daily { time } => format!("每天 · {time}"),
     }
 }
 
@@ -1153,6 +1153,30 @@ mod tests {
         assert_eq!(pick_cn_label(&["LB".into(), "左肩键".into()]), "左肩键");
         assert_eq!(pick_cn_label(&["OnlyEn".into()]), "OnlyEn");
         assert_eq!(pick_cn_label(&[]), "");
+    }
+
+    #[test]
+    fn test_reminder_schedule_label_uses_readable_chinese() {
+        assert_eq!(
+            schedule_label(&ReminderSchedule::Once {
+                at: "2026-06-02T19:45:17+08:00".into()
+            }),
+            "一次 · 2026-06-02T19:45:17+08:00"
+        );
+        assert_eq!(
+            schedule_label(&ReminderSchedule::Interval { every_minutes: 60 }),
+            "每 1 小时"
+        );
+        assert_eq!(
+            schedule_label(&ReminderSchedule::Interval { every_minutes: 10 }),
+            "每 10 分钟"
+        );
+        assert_eq!(
+            schedule_label(&ReminderSchedule::Daily {
+                time: "09:30".into()
+            }),
+            "每天 · 09:30"
+        );
     }
 
     #[test]

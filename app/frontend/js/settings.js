@@ -1252,12 +1252,14 @@ function renderReminders(review) {
     </div>
     ${storePath}
     ${eventsPath}
-    ${entries.map(entry => `
+    ${entries.map(entry => {
+      const description = reminderDescription(entry);
+      return `
       <div class="reminder-entry ${escapeAttr(entry.status)}">
         <div class="memory-entry-head">
           <div>
             <strong>${escapeHtml(entry.title || "提醒")}</strong>
-            <p>${escapeHtml(entry.message || entry.schedule_label || "")}</p>
+            ${description ? `<p>${escapeHtml(description)}</p>` : ""}
           </div>
           <span class="reminder-status-pill">${escapeHtml(reminderStatusLabel(entry.status))}</span>
         </div>
@@ -1273,8 +1275,8 @@ function renderReminders(review) {
           <button class="btn small danger reminder-cancel" type="button" data-id="${escapeAttr(entry.id)}">取消</button>
           <button class="icon-btn danger reminder-delete" type="button" data-id="${escapeAttr(entry.id)}" aria-label="删除提醒" title="删除提醒">🗑</button>
         </div>
-      </div>
-    `).join("")}
+      </div>`;
+    }).join("")}
   `;
   box.querySelectorAll(".reminder-complete").forEach(btn => {
     btn.addEventListener("click", () => reminderAction("cmd_complete_reminder", btn.dataset.id));
@@ -1312,11 +1314,16 @@ function reminderStatusLabel(status) {
   return status || "未知";
 }
 
+function reminderDescription(entry) {
+  const message = String(entry?.message || "").trim();
+  return message;
+}
+
 function formatReminderSchedule(entry) {
   const raw = entry?.schedule_label || "";
   if (!raw) return "未设置计划";
-  if (raw.startsWith("一次") && entry?.next_fire_at) {
-    return `一次 · ${formatDateTime(entry.next_fire_at)}`;
+  if (raw.startsWith("一次")) {
+    return "一次";
   }
   return raw.replace(
     /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/g,
@@ -1794,3 +1801,11 @@ document.addEventListener("DOMContentLoaded", () => {
   bindGlobal();
   loadSnapshot();
 });
+
+if (typeof window !== "undefined") {
+  window.__settingsTest = {
+    formatReminderSchedule,
+    reminderDescription,
+    renderReminders,
+  };
+}

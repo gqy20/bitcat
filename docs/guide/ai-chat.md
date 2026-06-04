@@ -2,6 +2,9 @@
 
 AI 对话是 BitCat 的主能力。它会流式回复、调用工具、根据对话结果改变宠物情绪，并把值得长期保留的信息写入可审查的记忆文件。
 
+> Provider compatibility: if chat starts but fails when the model calls a tool,
+> see [Provider Compatibility Notes](provider-compatibility.md).
+
 ## 触发方式
 
 | 方式 | 操作 | 说明 |
