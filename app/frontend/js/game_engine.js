@@ -1,4 +1,5 @@
 (function () {
+  document.body.dataset.gameEngineScript = 'loaded';
   const invoke = window.__TAURI__?.core?.invoke;
   const listen = window.__TAURI__?.event?.listen;
 
@@ -1533,6 +1534,46 @@
         y: 0,
       };
     }
+    if (config.snake_vocab) {
+      const marginX = clamp(Math.floor(window.innerWidth * 0.035), 18, 72);
+      const topY = clamp(Math.floor(window.innerHeight * 0.014), 10, 14);
+      const topH = clamp(Math.floor(window.innerHeight * 0.105), 72, 92);
+      const bottomH = clamp(Math.floor(window.innerHeight * 0.095), 56, 82);
+      const gap = clamp(Math.floor(window.innerHeight * 0.014), 8, 14);
+      const boardY = topY + topH + gap;
+      const bottomSafeGap = clamp(Math.floor(window.innerHeight * 0.02), 12, 18);
+      const availableH = window.innerHeight - boardY - bottomH - gap - bottomSafeGap;
+      const maxCell = Math.min(
+        Math.floor((window.innerWidth - marginX * 2) / config.grid.width),
+        Math.floor(availableH / config.grid.height)
+      );
+      const cell = Math.max(6, maxCell);
+      const w = config.grid.width * cell;
+      const h = config.grid.height * cell;
+      const x = Math.floor((window.innerWidth - w) / 2);
+      const y = boardY;
+      return {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        cell,
+        x,
+        y,
+        vocabLayout: {
+          top: {
+            x: marginX,
+            y: topY,
+            w: window.innerWidth - marginX * 2,
+            h: topH,
+          },
+          bottom: {
+            x: marginX,
+            y: Math.min(window.innerHeight - bottomH - bottomSafeGap, y + h + gap),
+            w: window.innerWidth - marginX * 2,
+            h: bottomH,
+          },
+        },
+      };
+    }
     const marginX = clamp(Math.floor(window.innerWidth * 0.035), 28, 88);
     const marginY = clamp(Math.floor(window.innerHeight * 0.06), 34, 96);
     const maxCell = Math.min(
@@ -1693,6 +1734,15 @@
   }
 
   function updateHud() {
+    if (engine.config?.snake_vocab) {
+      document.body.classList.remove('arena-active');
+      document.body.classList.add('word-snake-active');
+      titleEl.textContent = '';
+      scoreEl.textContent = '';
+      lengthEl.textContent = '';
+      return;
+    }
+    document.body.classList.remove('word-snake-active');
     titleEl.textContent = engine.config.title;
     scoreEl.textContent = String(engine.score);
     lengthEl.textContent = typeof engine.hudText === 'function'
@@ -1723,7 +1773,8 @@
     document.body.classList.remove('arena-active');
   }
 
-  function loop(now) {
+  function tick(now) {
+    document.body.dataset.gameEngineFrame = String(Number(document.body.dataset.gameEngineFrame || 0) + 1);
     const dt = Math.min(100, now - lastTime);
     lastTime = now;
     if (engine) {
@@ -1743,6 +1794,10 @@
         reportEnd(state);
       }
     }
+  }
+
+  function loop(now) {
+    tick(now);
     requestAnimationFrame(loop);
   }
 
@@ -1917,6 +1972,7 @@
   }
 
   async function init() {
+    document.body.dataset.gameEngineInit = 'start';
     log('init start');
     resizeCanvas();
     let config;
@@ -1939,7 +1995,11 @@
     engine = createEngine(config);
     await initEvents();
     log(`engine ready title=${config.title}`);
+    document.body.dataset.gameEngineInit = 'ready';
     requestAnimationFrame(loop);
+    if (window.BitCatGameDev) {
+      setInterval(() => tick(performance.now()), 1000 / 30);
+    }
   }
 
   window.GameEngineTest = { MemoryEngine, CatchEngine, BattleEngine };

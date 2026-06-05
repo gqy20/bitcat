@@ -448,8 +448,6 @@
         for (const food of this.answerFoods) {
           drawAnswerFood(ctx, food, cell, this.config.theme.food, this.animMs, this.questionPulseMs);
         }
-        drawQuestionPanel(ctx, this.question, grid, cell, this.questionPulseMs, this.combo);
-        drawHudFeedback(ctx, this.hudFeedback, grid, cell);
       } else {
         drawFood(ctx, this.food, cell, this.config.theme.food, this.animMs);
       }
@@ -458,7 +456,16 @@
       drawSnake(ctx, this.renderSnake(), cell, this.dir, this.config.theme, this.animMs);
       if (this.boostHeld) drawBoostBadge(ctx, grid.width * cell, cell);
       ctx.restore();
-      if (this.vocab) drawReviewPanel(ctx, this.lastReview, metrics, this.animMs);
+      if (this.vocab) {
+        drawVocabTopPanel(ctx, this.question, metrics, {
+          score: this.score,
+          correct: this.correctCount,
+          target: this.vocab.targetCorrect,
+          combo: this.combo,
+          wrong: this.wrongCount,
+        }, this.questionPulseMs);
+        drawVocabBottomPanel(ctx, this.lastReview, this.hudFeedback, metrics, this.animMs);
+      }
     }
 
     renderSnake() {
@@ -752,11 +759,17 @@
   function drawAnswerFood(ctx, food, cell, kind, timeMs = 0, pulseMs = 0) {
     drawFood(ctx, food, cell, kind, timeMs);
     const c = cellCenter(food, cell);
-    const text = fitText(food.label, 8);
-    const fontSize = Math.max(11, Math.min(18, cell * 0.62));
+    const fontSize = Math.max(10, Math.min(18, cell * 0.62));
     const padX = Math.max(6, cell * 0.22);
-    const h = Math.max(22, fontSize + 10);
-    const w = Math.max(cell * 1.8, text.length * fontSize * 0.9 + padX * 2);
+    const maxW = Math.max(58, Math.min(150, cell * 7.5));
+    ctx.save();
+    ctx.font = `800 ${fontSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    const lines = wrapLines(ctx, food.label, maxW - padX * 2, 2);
+    const textW = Math.max(...lines.map((line) => ctx.measureText(line).width), 0);
+    ctx.restore();
+    const lineHeight = fontSize + 2;
+    const h = Math.max(22, lines.length * lineHeight + 10);
+    const w = Math.min(maxW, Math.max(cell * 1.8, textW + padX * 2));
     const x = c.x - w / 2;
     const y = c.y + cell * 0.42;
     const pulse = 1 + Math.sin(timeMs / 120 + food.x * 0.41 + food.y * 0.23) * 0.06 + clamp(pulseMs / 380, 0, 1) * 0.12;
@@ -782,8 +795,147 @@
     ctx.font = `800 ${fontSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, c.x, y + h / 2 + 1);
+    const firstLineY = y + h / 2 - ((lines.length - 1) * lineHeight) / 2 + 1;
+    lines.forEach((line, index) => {
+      ctx.fillText(line, c.x, firstLineY + index * lineHeight);
+    });
     ctx.restore();
+  }
+
+  function drawVocabTopPanel(ctx, question, metrics, progress, pulseMs = 0) {
+    if (!question || !metrics?.vocabLayout?.top) return;
+    const panel = metrics.vocabLayout.top;
+    const compact = panel.w < 560;
+    const pulse = 1 + clamp(pulseMs / 380, 0, 1) * 0.025;
+    const pad = compact ? 12 : 18;
+    const labelSize = clamp(panel.h * 0.14, 10, 12);
+    const termSize = clamp(panel.h * 0.30, 20, compact ? 26 : 30);
+    const metaSize = clamp(panel.h * 0.15, 11, 13);
+    const exampleSize = clamp(panel.h * 0.17, 11, 14);
+    const badgeW = compact ? 94 : 142;
+    const textW = panel.w - badgeW - pad * 3;
+    const labelY = panel.y + pad;
+    const termY = compact
+      ? panel.y + panel.h * 0.58
+      : panel.y + pad + labelSize + termSize * 0.62;
+    const exampleY = panel.y + panel.h - pad;
+
+    ctx.save();
+    ctx.translate(panel.x + panel.w / 2, panel.y + panel.h / 2);
+    ctx.scale(pulse, pulse);
+    ctx.translate(-(panel.x + panel.w / 2), -(panel.y + panel.h / 2));
+    drawInfoPanel(ctx, panel, pulseMs > 0 ? 'rgba(184, 242, 230, 0.72)' : 'rgba(255, 209, 102, 0.46)');
+
+    ctx.fillStyle = 'rgba(247, 251, 255, 0.64)';
+    ctx.font = `800 ${labelSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('WORD', panel.x + pad, labelY);
+
+    ctx.fillStyle = '#ffd166';
+    ctx.font = `900 ${termSize}px "Segoe UI", sans-serif`;
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(fitTextToWidth(ctx, question.term, textW), panel.x + pad, termY);
+
+    if (question.example && !compact) {
+      ctx.fillStyle = 'rgba(247, 251, 255, 0.78)';
+      ctx.font = `650 ${exampleSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(fitTextToWidth(ctx, question.example, textW), panel.x + pad, exampleY);
+    }
+
+    const badgeX = panel.x + panel.w - badgeW - pad;
+    const badgeY = panel.y + pad;
+    const badgeH = panel.h - pad * 2;
+    ctx.fillStyle = 'rgba(8, 12, 16, 0.38)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#b8f2e6';
+    ctx.font = `900 ${compact ? 17 : 20}px "Segoe UI", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${progress.correct}/${progress.target}`, badgeX + badgeW / 2, badgeY + badgeH * 0.36);
+
+    ctx.fillStyle = 'rgba(247, 251, 255, 0.68)';
+    ctx.font = `750 ${compact ? 10 : 12}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    const meta = progress.combo > 1
+      ? `score ${progress.score}  x${progress.combo}`
+      : `score ${progress.score}${progress.wrong ? `  miss ${progress.wrong}` : ''}`;
+    ctx.fillText(fitTextToWidth(ctx, meta, badgeW - 12), badgeX + badgeW / 2, badgeY + badgeH * 0.70);
+    ctx.restore();
+  }
+
+  function drawVocabBottomPanel(ctx, review, feedback, metrics, timeMs = 0) {
+    if (!metrics?.vocabLayout?.bottom) return;
+    const panel = metrics.vocabLayout.bottom;
+    const compact = panel.w < 560;
+    const active = feedback || review;
+    const accent = feedback
+      ? (feedback.correct ? '#b8f2e6' : '#ffafcc')
+      : (review?.correct ? '#b8f2e6' : '#ffd166');
+    drawInfoPanel(ctx, panel, active ? colorToStroke(accent, 0.58) : 'rgba(255, 255, 255, 0.16)');
+    const pad = compact ? 12 : 16;
+
+    ctx.save();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    if (feedback) {
+      const progress = clamp(feedback.age / feedback.life, 0, 1);
+      const alpha = progress < 0.12 ? progress / 0.12 : clamp((1 - progress) / 0.34, 0, 1);
+      ctx.globalAlpha = Math.max(0.18, alpha);
+      ctx.fillStyle = accent;
+      ctx.font = `900 ${compact ? 17 : 21}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.fillText(feedback.label, panel.x + pad, panel.y + panel.h * 0.38);
+      ctx.fillStyle = 'rgba(247, 251, 255, 0.88)';
+      ctx.font = `750 ${compact ? 12 : 14}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      const text = `${feedback.term} = ${feedback.meaning}${feedback.delta ? `  ${feedback.delta}` : ''}`;
+      ctx.fillText(fitTextToWidth(ctx, text, panel.w - pad * 2), panel.x + pad, panel.y + panel.h * 0.70);
+      ctx.restore();
+      return;
+    }
+
+    if (review) {
+      const title = review.correct ? '上一题 · 正确' : '上一题 · 再记一次';
+      ctx.fillStyle = accent;
+      ctx.font = `850 ${compact ? 13 : 15}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.fillText(title, panel.x + pad, panel.y + panel.h * 0.32);
+      ctx.fillStyle = '#f7fbff';
+      ctx.font = `760 ${compact ? 12 : 14}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      const picked = !review.correct && review.picked ? `  刚才选了：${review.picked}` : '';
+      const text = `${review.term} = ${review.meaning}${picked}`;
+      ctx.fillText(fitTextToWidth(ctx, text, panel.w - pad * 2), panel.x + pad, panel.y + panel.h * 0.66);
+      ctx.restore();
+      return;
+    }
+
+    ctx.fillStyle = 'rgba(247, 251, 255, 0.62)';
+    ctx.font = `750 ${compact ? 12 : 14}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.fillText('吃掉正确释义，错误选项不会增长。', panel.x + pad, panel.y + panel.h / 2);
+    ctx.restore();
+  }
+
+  function drawInfoPanel(ctx, panel, strokeStyle) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(9, 13, 18, 0.76)';
+    ctx.strokeStyle = strokeStyle;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(panel.x, panel.y, panel.w, panel.h, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function colorToStroke(hex, alpha) {
+    if (hex === '#b8f2e6') return `rgba(184, 242, 230, ${alpha})`;
+    if (hex === '#ffafcc') return `rgba(255, 175, 204, ${alpha})`;
+    if (hex === '#ffd166') return `rgba(255, 209, 102, ${alpha})`;
+    return `rgba(255, 255, 255, ${alpha})`;
   }
 
   function drawQuestionPanel(ctx, question, grid, cell, pulseMs = 0, combo = 0) {
@@ -1037,6 +1189,32 @@
       else hi = mid - 1;
     }
     return `${value.slice(0, Math.max(1, lo))}…`;
+  }
+
+  function wrapLines(ctx, text, maxWidth, maxLines) {
+    const value = String(text || '').trim();
+    if (!value) return [''];
+    const words = value.includes(' ') ? value.split(/\s+/) : Array.from(value);
+    const joiner = value.includes(' ') ? ' ' : '';
+    const lines = [];
+    let current = '';
+    for (const word of words) {
+      const candidate = current ? `${current}${joiner}${word}` : word;
+      if (ctx.measureText(candidate).width <= maxWidth || !current) {
+        current = candidate;
+      } else {
+        lines.push(current);
+        current = word;
+      }
+      if (lines.length >= maxLines) break;
+    }
+    if (current && lines.length < maxLines) lines.push(current);
+    const consumed = lines.join(joiner).replace(/\s/g, '');
+    const source = value.replace(/\s/g, '');
+    if (source.length > consumed.length && lines.length > 0) {
+      lines[lines.length - 1] = fitTextToWidth(ctx, `${lines[lines.length - 1]}…`, maxWidth);
+    }
+    return lines.slice(0, maxLines);
   }
 
   function wrapText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {

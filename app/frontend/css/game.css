@@ -59,6 +59,10 @@ body.arena-active .hud {
   display: none;
 }
 
+body.word-snake-active .hud {
+  display: none;
+}
+
 body.arena-active {
   background:
     linear-gradient(180deg, rgba(5, 7, 13, 0.04), rgba(5, 7, 13, 0.34) 72%, rgba(5, 7, 13, 0.58)),
