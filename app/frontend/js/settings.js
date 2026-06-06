@@ -227,12 +227,12 @@ function renderAi(ai) {
   $("ai-maxtokens").value = ai.overlay.max_tokens == null ? "" : ai.overlay.max_tokens;
 
   const eff = ai.effective;
-  $("ai-key-current").textContent = ai.has_effective_key ? "当前：已配置" : "当前：未配置";
-  $("ai-baseurl-current").textContent = eff.base_url ? `当前：${eff.base_url}` : "";
+  $("ai-key-current").textContent = ai.has_effective_key ? "已配置" : "未配置";
+  $("ai-baseurl-current").textContent = eff.base_url || "";
   $("ai-baseurl-current").title = eff.base_url || "";
-  $("ai-model-current").textContent = eff.model ? `当前：${eff.model}` : "";
+  $("ai-model-current").textContent = eff.model || "";
   $("ai-model-current").title = eff.model || "";
-  $("ai-maxtokens-current").textContent = eff.max_tokens == null ? "" : `当前：${formatNumber(eff.max_tokens)}`;
+  $("ai-maxtokens-current").textContent = eff.max_tokens == null ? "" : formatNumber(eff.max_tokens);
   renderOverviewNotices(ai);
   $("ov-ai-model").textContent = eff.model || "-";
   $("ov-ai-key").textContent = ai.has_effective_key ? "API Key 已配置" : "API Key 未配置";
@@ -253,7 +253,7 @@ function renderOverviewNotices(ai) {
     notices.push(["模型未配置", "请指定一个可用模型。"]);
   }
   if (!notices.length) {
-    box.innerHTML = `<div class="empty compact">当前没有需要处理的配置项。</div>`;
+    box.innerHTML = `<div class="empty compact">没有需要处理的配置项。</div>`;
     return;
   }
   box.innerHTML = notices.map(([title, body]) => `
@@ -977,7 +977,7 @@ function renderAgentSessions(snapshot) {
   }
   const sessions = snapshot?.sessions || [];
   if (!sessions.length) {
-    box.innerHTML = `<div class="empty-note">还没有 Agent 会话。安装 Claude Code 或 Codex hook 并启用看管后，状态会出现在这里。</div>`;
+    box.innerHTML = `<div class="empty-note">暂无 Agent 会话。</div>`;
     return;
   }
   box.innerHTML = sessions.map(session => `
@@ -1087,7 +1087,7 @@ function renderUsageBreakdown(today) {
 function renderUsageSessions(sessions) {
   const box = $("usage-sessions");
   if (!sessions.length) {
-    box.innerHTML = `<div class="empty">暂无会话记录。开始一次对话后，这里会显示最近的 token 明细。</div>`;
+    box.innerHTML = `<div class="empty">暂无会话记录。</div>`;
     return;
   }
 
@@ -1121,7 +1121,7 @@ function renderPetEventLog(logView) {
   if (!box) return;
   const entries = logView?.entries || [];
   if (!entries.length) {
-    box.innerHTML = `<div class="empty">暂无宠物事件。事件发送、去重和节流记录会显示在这里。</div>`;
+    box.innerHTML = `<div class="empty">暂无宠物事件。</div>`;
     return;
   }
 
@@ -1173,7 +1173,7 @@ function renderMemoryReview(review) {
   const entries = review?.entries || [];
   updateOverviewMemory(review);
   if (!entries.length) {
-    box.innerHTML = `<div class="empty">还没有长期记忆。对话结束后，猫猫会把值得保留的内容放在这里供你审查。</div>`;
+    box.innerHTML = `<div class="empty">暂无长期记忆。</div>`;
     return;
   }
 
@@ -1236,7 +1236,7 @@ function renderReminders(review) {
       : "不可用";
   }
   if (!entries.length) {
-    box.innerHTML = `<div class="empty">暂无提醒。你可以让 Agent 创建，例如“每小时提醒我喝水”。</div>`;
+    box.innerHTML = `<div class="empty">暂无提醒。</div>`;
     return;
   }
   const eventsPath = review?.events_path
@@ -1516,20 +1516,42 @@ function compactNumber(value) {
   return formatNumber(num);
 }
 
+function compactMetricNumber(value) {
+  const num = Number(value || 0);
+  const abs = Math.abs(num);
+  if (abs >= 1_000_000) return `${formatFixed(num / 1_000_000, 1)}M`;
+  if (abs >= 1_000) return `${formatFixed(num / 1000, 1)}K`;
+  return formatNumber(Math.round(num));
+}
+
+function metricSizeClass(text) {
+  const len = String(text || "").replace(/\s+/g, "").length;
+  if (len >= 9) return " metric-value-tight";
+  if (len >= 7) return " metric-value-compact";
+  return "";
+}
+
 function formatMetricPart(value) {
-  return typeof value === "number" ? compactNumber(value) : String(value ?? "-");
+  return typeof value === "number" ? compactMetricNumber(value) : String(value ?? "-");
 }
 
 function metricValue(value, unit = "") {
+  const text = formatMetricPart(value);
   const suffix = unit ? `<small>${escapeHtml(unit)}</small>` : "";
-  return `<span class="metric-main">${escapeHtml(formatMetricPart(value))}${suffix}</span>`;
+  return `<span class="metric-main${metricSizeClass(text)}">${escapeHtml(text)}${suffix}</span>`;
 }
 
 function pairedMetric(leftLabel, leftValue, rightLabel, rightValue) {
+  const leftText = formatMetricPart(leftValue);
+  const rightText = formatMetricPart(rightValue);
   return `
     <span class="metric-pair">
-      <span title="${escapeAttr(leftLabel)}"><b>${escapeHtml(formatMetricPart(leftValue))}</b></span>
-      <span title="${escapeAttr(rightLabel)}"><b>${escapeHtml(formatMetricPart(rightValue))}</b></span>
+      <span title="${escapeAttr(leftLabel)}">
+        <b class="${metricSizeClass(leftText).trim()}">${escapeHtml(leftText)}</b>
+      </span>
+      <span title="${escapeAttr(rightLabel)}">
+        <b class="${metricSizeClass(rightText).trim()}">${escapeHtml(rightText)}</b>
+      </span>
     </span>
   `;
 }
@@ -1717,7 +1739,6 @@ function renderPointsBreakdown(state) {
   if (!container) return;
 
   const cats = state.categories || {};
-  const catTotals = state.category_totals || {};
 
   const items = [
     ["Chat", "chats", cats.chats || 0],
@@ -1738,7 +1759,7 @@ function renderPointsBreakdown(state) {
           <span class="points-cat-label">${POINTS_CATEGORY_LABELS[key] || key}</span>
         </div>`
     )
-    .join("") || '<div style="color:var(--text-faint);padding:12px;text-align:center">还没有积分记录，开始和猫猫互动吧！</div>';
+    .join("") || '<div class="points-empty">暂无积分记录。</div>';
 }
 
 function renderAchievements(achievements, state) {
@@ -1746,10 +1767,16 @@ function renderAchievements(achievements, state) {
   const countEl = document.getElementById("achievement-count");
   if (!grid) return;
 
+  achievements = Array.isArray(achievements) ? achievements : [];
   const unlockedIds = new Set(state.achievements || []);
   const unlockedCount = achievements.filter((a) => a.unlocked).length;
 
   if (countEl) countEl.textContent = unlockedCount;
+
+  if (achievements.length === 0) {
+    grid.innerHTML = '<div class="points-empty">暂无成就数据。</div>';
+    return;
+  }
 
   grid.innerHTML = achievements
     .map((a) => {
@@ -1770,7 +1797,7 @@ function renderPointsEvents(events) {
 
   if (!events || events.length === 0) {
     box.innerHTML =
-      '<div style="color:var(--text-faint);padding:12px;text-align:center">还没有积分事件。开始和猫猫互动吧！</div>';
+      '<div class="points-empty">暂无积分事件。</div>';
     return;
   }
 
