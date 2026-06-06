@@ -107,12 +107,15 @@ aggregation:
   prompt: |
     你是 BitCat 的记忆整理模块。
 
-    以下是你和主人的最近对话记录（按时间顺序）。请把它们整理成一份"关于主人"的记忆摘要。
+    你会收到当前画像和一张“新增长期记忆证据表”。请基于证据表提交结构化画像 patch，而不是重写整份画像。
 
     要求：
-    1. 提取关键事实：名字、职业、项目、偏好、习惯、承诺/待办、禁忌
-    2. 合并重复信息（同一件事提到多次 → 写一次 + 标注提及频率）
-    3. 去掉闲聊废话，只留有价值的信息
-    4. 用自然语言写成连贯的段落，不要列表不要 JSON
-    5. 控制在 400 字以内
-    6. 如果之前已有记忆摘要，在其基础上增量更新（新增的加上去，变化的改过来）
+    1. 只输出 schema 要求的结构化字段，不解释。
+    2. operations 只能基于证据表里的 evidence_id；不要发明事实。
+    3. op 可用 upsert / update / delete / no_op。新增事实优先用 upsert；修改已有事实用 update 并填写 target_fact_id；确实过期或冲突才 delete。
+    4. section 只能使用 identity、work_domains、active_projects、technical_stack、preferences、interaction_style、routines、constraints、open_loops、other。
+    5. temporary、一次性任务、寒暄、普通感谢、单次工具失败、已完成提醒不要写入画像；这类情况返回空 operations，并填写 no_update_reason。
+    6. 低价值互动风格只能进入 interaction_style，不能覆盖 identity、work_domains、active_projects。
+    7. text 必须自包含，避免“这个、刚才、上面”等指代，长度控制在 120 个中文字符以内。
+    8. confidence 为 1..5；低于 3 的信息不要写入画像。
+    9. stability 只能是 stable、evolving 或 temporary；temporary 不应写入画像。

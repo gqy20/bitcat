@@ -8,7 +8,7 @@
 //! 三层各自持久化到 `~/.bitcat/memory/`：
 //! - **MemoryStore** — `chat_summary.json`，滚动窗口短期记忆，直接注入 prompt
 //! - **LongTermMemory** — `long_term.jsonl`，原始对话按需候选召回注入
-//! - **ProfileStore** — `profile.json`，AI 定期聚合的用户画像摘要
+//! - **ProfileStore** — `profile.json`，AI 定期提交 patch 的结构化用户画像
 //!
 //! 与 `agent.rs`（对话后写入）、`bridge.rs`（构建上下文）交互。
 
@@ -22,6 +22,7 @@ use tracing::{debug, info, warn};
 
 use crate::agent_reaction::MemoryCandidate;
 use crate::ai_config::AiConfig;
+use crate::logging::append_jsonl;
 use crate::token_tracker::{
     TokenCategory, TokenRecord, TokenUsage, new_session_id, record_token_usage,
 };
@@ -782,13 +783,139 @@ fn memory_candidate_line(entry: &LongTermEntry) -> String {
 /// 优先级低于 `config/user.yml` 中的显式声明——user.yml 有内容时直接使用，全空才回退到本画像。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileStore {
+    #[serde(default)]
+    pub facts: Vec<ProfileFact>,
+    #[serde(default)]
+    pub revision: u64,
+    #[serde(default)]
     pub profile_text: String,
+    #[serde(default)]
     pub updated_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-struct ProfileAggregation {
-    pub profile_text: String,
+pub struct ProfilePatch {
+    #[serde(default)]
+    pub operations: Vec<ProfilePatchOperation>,
+    #[serde(default)]
+    pub no_update_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ProfilePatchOperation {
+    pub op: ProfilePatchOp,
+    pub section: ProfileSection,
+    #[serde(default)]
+    pub target_fact_id: Option<String>,
+    #[serde(default)]
+    pub evidence_ids: Vec<String>,
+    pub text: String,
+    #[serde(default)]
+    pub confidence: u8,
+    #[serde(default)]
+    pub stability: ProfileStability,
+    #[serde(default)]
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfilePatchOp {
+    Upsert,
+    Update,
+    Delete,
+    NoOp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfileSection {
+    Identity,
+    WorkDomains,
+    ActiveProjects,
+    TechnicalStack,
+    Preferences,
+    InteractionStyle,
+    Routines,
+    Constraints,
+    OpenLoops,
+    Other,
+}
+
+impl ProfileSection {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Identity => "身份",
+            Self::WorkDomains => "工作领域",
+            Self::ActiveProjects => "当前项目",
+            Self::TechnicalStack => "技术栈/工具",
+            Self::Preferences => "偏好",
+            Self::InteractionStyle => "互动风格",
+            Self::Routines => "习惯/节奏",
+            Self::Constraints => "约束/禁忌",
+            Self::OpenLoops => "待确认/开放事项",
+            Self::Other => "其他",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfileStability {
+    Stable,
+    #[default]
+    Evolving,
+    Temporary,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfileFactStatus {
+    #[default]
+    Active,
+    Deleted,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ProfileFact {
+    pub id: String,
+    pub section: ProfileSection,
+    pub text: String,
+    #[serde(default)]
+    pub evidence_ids: Vec<String>,
+    #[serde(default)]
+    pub confidence: u8,
+    #[serde(default)]
+    pub stability: ProfileStability,
+    #[serde(default)]
+    pub first_seen_at: String,
+    #[serde(default)]
+    pub last_seen_at: String,
+    #[serde(default)]
+    pub status: ProfileFactStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct ProfileEvidenceRow {
+    evidence_id: String,
+    memory_id: String,
+    timestamp: String,
+    summary: String,
+    kind: Option<String>,
+    ttl_hint: Option<String>,
+    importance: Option<u8>,
+    confidence: Option<u8>,
+    tags: Vec<String>,
+    source: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ProfileAggregationDiagnostic<'a> {
+    event: &'a str,
+    error: Option<&'a str>,
+    existing_fact_count: usize,
+    evidence_count: usize,
+    patch: Option<&'a ProfilePatch>,
 }
 
 /// 返回用户画像文件路径 `~/.bitcat/memory/profile.json`。
@@ -798,52 +925,220 @@ fn profile_file_path() -> Result<PathBuf, String> {
         .join("profile.json"))
 }
 
+fn next_profile_fact_id(revision: u64, index: usize) -> String {
+    let now = chrono::Local::now().format("%Y%m%d%H%M%S%3f");
+    format!("profile_{now}_{revision:04}_{index:04}")
+}
+
+fn unique_strings(values: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    for value in values {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() && !out.iter().any(|existing| existing == trimmed) {
+            out.push(trimmed.to_string());
+        }
+    }
+    out
+}
+
+fn merge_evidence_ids(target: &mut Vec<String>, source: &[String]) {
+    for value in source {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() && !target.iter().any(|existing| existing == trimmed) {
+            target.push(trimmed.to_string());
+        }
+    }
+}
+
+fn stronger_stability(left: ProfileStability, right: ProfileStability) -> ProfileStability {
+    match (left, right) {
+        (ProfileStability::Stable, _) | (_, ProfileStability::Stable) => ProfileStability::Stable,
+        (ProfileStability::Evolving, _) | (_, ProfileStability::Evolving) => {
+            ProfileStability::Evolving
+        }
+        _ => ProfileStability::Temporary,
+    }
+}
+
+fn evidence_id_for_entry(entry: &LongTermEntry) -> String {
+    entry.id.clone()
+}
+
+fn profile_evidence_rows(entries: &[&LongTermEntry]) -> Vec<ProfileEvidenceRow> {
+    entries
+        .iter()
+        .filter(|entry| !entry.deleted)
+        .map(|entry| ProfileEvidenceRow {
+            evidence_id: evidence_id_for_entry(entry),
+            memory_id: entry.id.clone(),
+            timestamp: entry.timestamp.clone(),
+            summary: entry
+                .summary
+                .clone()
+                .unwrap_or_else(|| truncate_chars(&entry.user_msg, 160)),
+            kind: entry.kind.clone(),
+            ttl_hint: entry.ttl_hint.clone(),
+            importance: entry.importance,
+            confidence: entry.confidence,
+            tags: entry.tags.clone(),
+            source: entry.source.clone(),
+        })
+        .collect()
+}
+
+fn format_profile_evidence(rows: &[ProfileEvidenceRow]) -> String {
+    rows.iter()
+        .map(|row| {
+            format!(
+                "- evidence_id={}; timestamp={}; kind={}; ttl={}; importance={}; confidence={}; tags=[{}]; summary={}",
+                row.evidence_id,
+                row.timestamp,
+                row.kind.as_deref().unwrap_or("unknown"),
+                row.ttl_hint.as_deref().unwrap_or("unknown"),
+                row.importance.map(|v| v.to_string()).unwrap_or_else(|| "unknown".into()),
+                row.confidence.map(|v| v.to_string()).unwrap_or_else(|| "unknown".into()),
+                row.tags.join(","),
+                row.summary
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn validate_profile_patch(
+    patch: &ProfilePatch,
+    evidence: &[&LongTermEntry],
+    store: &ProfileStore,
+) -> Result<(), String> {
+    let evidence_ids: Vec<String> = evidence
+        .iter()
+        .map(|entry| evidence_id_for_entry(entry))
+        .collect();
+    if patch.operations.is_empty() {
+        return Ok(());
+    }
+
+    for op in &patch.operations {
+        let text = op.text.trim();
+        if !matches!(op.op, ProfilePatchOp::NoOp | ProfilePatchOp::Delete) && text.is_empty() {
+            return Err("profile patch operation text cannot be empty".into());
+        }
+        if op.confidence > 5 {
+            return Err("profile patch confidence must be 0..=5".into());
+        }
+        if matches!(op.op, ProfilePatchOp::Upsert | ProfilePatchOp::Update) && op.confidence < 3 {
+            return Err("profile patch update confidence must be at least 3".into());
+        }
+        if matches!(op.stability, ProfileStability::Temporary)
+            && matches!(op.op, ProfilePatchOp::Upsert | ProfilePatchOp::Update)
+        {
+            return Err("temporary profile facts cannot be persisted".into());
+        }
+        if matches!(op.op, ProfilePatchOp::Upsert | ProfilePatchOp::Update)
+            && op.evidence_ids.is_empty()
+        {
+            return Err("profile patch update requires at least one evidence_id".into());
+        }
+        for id in &op.evidence_ids {
+            if !evidence_ids.iter().any(|evidence_id| evidence_id == id) {
+                return Err(format!("profile patch references unknown evidence_id {id}"));
+            }
+        }
+        if matches!(op.op, ProfilePatchOp::Update | ProfilePatchOp::Delete) {
+            let target = op
+                .target_fact_id
+                .as_deref()
+                .ok_or_else(|| "profile patch update/delete requires target_fact_id".to_string())?;
+            if !store.facts.iter().any(|fact| fact.id == target) {
+                return Err(format!(
+                    "profile patch references unknown target_fact_id {target}"
+                ));
+            }
+        }
+        if text.chars().count() > 240 {
+            return Err("profile patch text is too long".into());
+        }
+    }
+    Ok(())
+}
+
+pub fn record_profile_aggregation_diagnostic(
+    event: &str,
+    error: Option<&str>,
+    store: &ProfileStore,
+    evidence: &[&LongTermEntry],
+    patch: Option<&ProfilePatch>,
+) {
+    let record = ProfileAggregationDiagnostic {
+        event,
+        error,
+        existing_fact_count: store.active_facts().len(),
+        evidence_count: evidence.len(),
+        patch,
+    };
+    if let Err(e) = append_jsonl("profile_aggregation.jsonl", &record) {
+        warn!(error = %e, "failed to write profile aggregation diagnostic");
+    }
+}
+
 impl ProfileStore {
+    pub fn empty() -> Self {
+        Self {
+            facts: Vec::new(),
+            revision: 0,
+            profile_text: String::new(),
+            updated_at: String::new(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.active_facts().is_empty() && self.profile_text.trim().is_empty()
+    }
+
+    fn active_facts(&self) -> Vec<&ProfileFact> {
+        self.facts
+            .iter()
+            .filter(|fact| fact.status == ProfileFactStatus::Active && !fact.text.trim().is_empty())
+            .collect()
+    }
+
     /// 从磁盘加载。文件不存在或损坏时返回空画像。
     pub fn load() -> Self {
         let path = match profile_file_path() {
             Ok(p) => p,
             Err(e) => {
                 warn!(error = %e, "获取画像文件路径失败");
-                return Self {
-                    profile_text: String::new(),
-                    updated_at: String::new(),
-                };
+                return Self::empty();
             }
         };
         if !path.exists() {
-            return Self {
-                profile_text: String::new(),
-                updated_at: String::new(),
-            };
+            return Self::empty();
         }
         match fs::read_to_string(&path) {
             Ok(content) => match serde_json::from_str::<ProfileStore>(&content) {
-                Ok(store) => store,
+                Ok(mut store) => {
+                    store.refresh_profile_text();
+                    store
+                }
                 Err(e) => {
                     warn!(error = %e, "解析画像文件失败");
-                    Self {
-                        profile_text: String::new(),
-                        updated_at: String::new(),
-                    }
+                    Self::empty()
                 }
             },
             Err(e) => {
                 warn!(error = %e, "读取画像文件失败");
-                Self {
-                    profile_text: String::new(),
-                    updated_at: String::new(),
-                }
+                Self::empty()
             }
         }
     }
 
     /// 构建注入 prompt 的文本。空画像返回空字符串。
     pub fn build_context(&self) -> String {
-        if self.profile_text.is_empty() {
+        let rendered = self.render_profile_text();
+        if rendered.is_empty() {
             return String::new();
         }
-        format!("[关于主人]\n{}\n[/关于主人]\n", self.profile_text)
+        format!("[关于主人]\n{}\n[/关于主人]\n", rendered)
     }
 
     /// 持久化到磁盘（原子写入：先写临时文件再 rename）。
@@ -852,7 +1147,9 @@ impl ProfileStore {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
         }
-        let json = serde_json::to_string(self).map_err(|e| format!("序列化失败: {e}"))?;
+        let mut store = self.clone();
+        store.refresh_profile_text();
+        let json = serde_json::to_string(&store).map_err(|e| format!("序列化失败: {e}"))?;
         let mut tmp = tempfile::NamedTempFile::new_in(path.parent().unwrap())
             .map_err(|e| format!("创建临时文件失败: {e}"))?;
         std::io::Write::write_all(&mut tmp, json.as_bytes())
@@ -868,33 +1165,148 @@ impl ProfileStore {
         self.profile_text = new_profile.to_string();
         self.updated_at = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
     }
+
+    /// Apply an AI-submitted profile patch after deterministic validation.
+    pub fn apply_patch(
+        &mut self,
+        patch: &ProfilePatch,
+        evidence: &[&LongTermEntry],
+    ) -> Result<(), String> {
+        validate_profile_patch(patch, evidence, self)?;
+        let now = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+
+        for op in &patch.operations {
+            match op.op {
+                ProfilePatchOp::NoOp => {}
+                ProfilePatchOp::Delete => {
+                    let target = op
+                        .target_fact_id
+                        .as_deref()
+                        .ok_or_else(|| "delete operation requires target_fact_id".to_string())?;
+                    if let Some(fact) = self.facts.iter_mut().find(|fact| fact.id == target) {
+                        fact.status = ProfileFactStatus::Deleted;
+                        fact.last_seen_at = now.clone();
+                    }
+                }
+                ProfilePatchOp::Update => {
+                    let target = op
+                        .target_fact_id
+                        .as_deref()
+                        .ok_or_else(|| "update operation requires target_fact_id".to_string())?;
+                    if let Some(fact) = self.facts.iter_mut().find(|fact| fact.id == target) {
+                        fact.section = op.section;
+                        fact.text = truncate_chars(op.text.trim(), 220);
+                        fact.confidence = op.confidence;
+                        fact.stability = op.stability;
+                        merge_evidence_ids(&mut fact.evidence_ids, &op.evidence_ids);
+                        fact.last_seen_at = now.clone();
+                        fact.status = ProfileFactStatus::Active;
+                    }
+                }
+                ProfilePatchOp::Upsert => {
+                    let normalized = normalize_memory_summary(&op.text);
+                    if normalized.is_empty() {
+                        continue;
+                    }
+                    if let Some(fact) = self.facts.iter_mut().find(|fact| {
+                        fact.status == ProfileFactStatus::Active
+                            && fact.section == op.section
+                            && normalize_memory_summary(&fact.text) == normalized
+                    }) {
+                        fact.confidence = fact.confidence.max(op.confidence);
+                        fact.stability = stronger_stability(fact.stability, op.stability);
+                        merge_evidence_ids(&mut fact.evidence_ids, &op.evidence_ids);
+                        fact.last_seen_at = now.clone();
+                    } else {
+                        self.facts.push(ProfileFact {
+                            id: next_profile_fact_id(self.revision, self.facts.len()),
+                            section: op.section,
+                            text: truncate_chars(op.text.trim(), 220),
+                            evidence_ids: unique_strings(&op.evidence_ids),
+                            confidence: op.confidence,
+                            stability: op.stability,
+                            first_seen_at: now.clone(),
+                            last_seen_at: now.clone(),
+                            status: ProfileFactStatus::Active,
+                        });
+                    }
+                }
+            }
+        }
+
+        if !patch.operations.is_empty() {
+            self.revision = self.revision.saturating_add(1);
+            self.updated_at = now;
+            self.refresh_profile_text();
+        }
+        Ok(())
+    }
+
+    fn refresh_profile_text(&mut self) {
+        let rendered = self.render_profile_text();
+        if !rendered.is_empty() {
+            self.profile_text = rendered;
+        }
+    }
+
+    fn render_profile_text(&self) -> String {
+        let facts = self.active_facts();
+        if facts.is_empty() {
+            return self.profile_text.trim().to_string();
+        }
+
+        let sections = [
+            ProfileSection::Identity,
+            ProfileSection::WorkDomains,
+            ProfileSection::ActiveProjects,
+            ProfileSection::TechnicalStack,
+            ProfileSection::Preferences,
+            ProfileSection::InteractionStyle,
+            ProfileSection::Routines,
+            ProfileSection::Constraints,
+            ProfileSection::OpenLoops,
+            ProfileSection::Other,
+        ];
+        let mut lines = Vec::new();
+        for section in sections {
+            let items: Vec<&ProfileFact> = facts
+                .iter()
+                .copied()
+                .filter(|fact| fact.section == section)
+                .collect();
+            if items.is_empty() {
+                continue;
+            }
+            lines.push(format!("{}：", section.label()));
+            for fact in items.into_iter().take(5) {
+                lines.push(format!("- {}", fact.text.trim()));
+            }
+        }
+        lines.join("\n")
+    }
 }
 
-// ---- AI 聚合：从原始记录生成画像摘要 ----
+// ---- AI 聚合：从长期记忆生成画像 patch ----
 
-/// 调用 AI 将未聚合的长期记忆条目聚合为用户画像摘要。
+/// 调用 AI 将未聚合的长期记忆条目整理为结构化画像 patch。
 /// `prompt` 来自 `PromptsConfig::default().aggregation.prompt`（即 config/prompts.yml 的 aggregation 段）。
 pub async fn aggregate_profile(
     unaggregated: &[&LongTermEntry],
     existing_profile: &str,
     ai_config: &AiConfig,
     prompt: &str,
-) -> Result<String, String> {
+) -> Result<ProfilePatch, String> {
     if unaggregated.is_empty() {
         return Err("没有需要聚合的新记录".to_string());
     }
 
-    let entries_text: String = unaggregated
-        .iter()
-        .map(|e| format!("[{}] {} | {}", e.timestamp, e.user_msg, e.ai_reply))
-        .collect::<Vec<_>>()
-        .join("\n");
-
+    let evidence_rows = profile_evidence_rows(unaggregated);
+    let evidence_text = format_profile_evidence(&evidence_rows);
     let user_content = if existing_profile.is_empty() {
-        format!("以下是新的对话记录：\n{entries_text}")
+        format!("当前画像为空。\n\n以下是新增长期记忆证据表：\n{evidence_text}")
     } else {
         format!(
-            "以下是之前的记忆摘要：\n{existing_profile}\n\n以下是新增的对话记录：\n{entries_text}"
+            "以下是当前画像：\n{existing_profile}\n\n以下是新增长期记忆证据表：\n{evidence_text}"
         )
     };
 
@@ -915,7 +1327,7 @@ pub async fn aggregate_profile(
         .build()
         .map_err(|e| format!("创建 Anthropic 记忆 Client 失败: {e}"))?;
     let extractor = client
-        .extractor::<ProfileAggregation>(ai_config.model.as_str())
+        .extractor::<ProfilePatch>(ai_config.model.as_str())
         .preamble(prompt)
         .max_tokens(1024)
         .retries(1)
@@ -930,8 +1342,9 @@ pub async fn aggregate_profile(
     let elapsed = start.elapsed();
     debug!(
         elapsed_ms = elapsed.as_millis(),
-        chars = response.data.profile_text.chars().count(),
-        "用户画像聚合完成"
+        operations = response.data.operations.len(),
+        no_update = response.data.no_update_reason.is_some(),
+        "用户画像 patch 聚合完成"
     );
 
     record_token_usage(
@@ -944,7 +1357,7 @@ pub async fn aggregate_profile(
         .with_elapsed_ms(elapsed.as_millis() as u64),
     );
 
-    Ok(response.data.profile_text)
+    Ok(response.data)
 }
 
 // ---- 测试 ----
@@ -1502,6 +1915,8 @@ mod tests {
     #[test]
     fn test_profile_store_roundtrip() {
         let store = ProfileStore {
+            facts: Vec::new(),
+            revision: 0,
             profile_text: "主人叫小明，程序员".into(),
             updated_at: "2026-05-12 14:30".into(),
         };
@@ -1512,16 +1927,15 @@ mod tests {
 
     #[test]
     fn test_profile_build_context_empty() {
-        let store = ProfileStore {
-            profile_text: String::new(),
-            updated_at: String::new(),
-        };
+        let store = ProfileStore::empty();
         assert!(store.build_context().is_empty());
     }
 
     #[test]
     fn test_profile_build_context_format() {
         let store = ProfileStore {
+            facts: Vec::new(),
+            revision: 0,
             profile_text: "主人叫小明，正在开发 BitCat".into(),
             updated_at: "2026-05-12".into(),
         };
@@ -1534,13 +1948,72 @@ mod tests {
 
     #[test]
     fn test_profile_update() {
-        let mut store = ProfileStore {
-            profile_text: String::new(),
-            updated_at: String::new(),
-        };
+        let mut store = ProfileStore::empty();
         store.update("新的画像内容");
         assert_eq!(store.profile_text, "新的画像内容");
         assert!(!store.updated_at.is_empty());
+    }
+
+    #[test]
+    fn test_profile_apply_patch_adds_structured_fact() {
+        let mut store = ProfileStore::empty();
+        let entries = vec![LongTermEntry {
+            id: "mem_test_1".into(),
+            created_at: "2026-05-12T14:23:00+08:00".into(),
+            timestamp: "05-12 14:23".into(),
+            user_msg: "我在做 BitCat".into(),
+            ai_reply: "记住了".into(),
+            summary: Some("用户正在开发 BitCat 桌面应用".into()),
+            tags: vec!["bitcat".into()],
+            importance: Some(4),
+            confidence: Some(5),
+            kind: Some("project".into()),
+            ttl_hint: Some("evolving".into()),
+            reason: Some("明确项目背景".into()),
+            source: Some("agent_reaction".into()),
+            aggregated: false,
+            deleted: false,
+        }];
+        let refs: Vec<&LongTermEntry> = entries.iter().collect();
+        let patch = ProfilePatch {
+            operations: vec![ProfilePatchOperation {
+                op: ProfilePatchOp::Upsert,
+                section: ProfileSection::ActiveProjects,
+                target_fact_id: None,
+                evidence_ids: vec!["mem_test_1".into()],
+                text: "用户正在开发 BitCat 桌面应用".into(),
+                confidence: 5,
+                stability: ProfileStability::Evolving,
+                reason: "长期记忆明确提到当前项目".into(),
+            }],
+            no_update_reason: None,
+        };
+
+        store.apply_patch(&patch, &refs).unwrap();
+        assert_eq!(store.facts.len(), 1);
+        assert!(store.profile_text.contains("当前项目"));
+        assert!(store.profile_text.contains("BitCat"));
+    }
+
+    #[test]
+    fn test_profile_apply_patch_rejects_unknown_evidence() {
+        let mut store = ProfileStore::empty();
+        let patch = ProfilePatch {
+            operations: vec![ProfilePatchOperation {
+                op: ProfilePatchOp::Upsert,
+                section: ProfileSection::Preferences,
+                target_fact_id: None,
+                evidence_ids: vec!["missing".into()],
+                text: "用户偏好结构化记忆".into(),
+                confidence: 4,
+                stability: ProfileStability::Stable,
+                reason: "测试".into(),
+            }],
+            no_update_reason: None,
+        };
+
+        let err = store.apply_patch(&patch, &[]).unwrap_err();
+        assert!(err.contains("unknown evidence_id"));
     }
 
     // ---- aggregate_profile 测试 ----
@@ -1550,22 +2023,31 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "type": "message",
-                "id": "msg_test",
-                "model": "test-model",
-                "role": "assistant",
-                "stop_reason": "tool_use",
-                "stop_sequence": null,
-                "usage": {
-                    "input_tokens": 18,
-                    "output_tokens": 7
-                },
+               "type": "message",
+               "id": "msg_test",
+               "model": "test-model",
+               "role": "assistant",
+               "stop_reason": "tool_use",
+               "stop_sequence": null,
+               "usage": {
+                   "input_tokens": 18,
+                   "output_tokens": 7
+               },
                 "content": [{
                     "type": "tool_use",
                     "id": "toolu_test",
                     "name": "submit",
                     "input": {
-                        "profile_text": "主人叫小明，程序员，正在做 BitCat 项目。"
+                        "operations": [{
+                            "op": "upsert",
+                            "section": "identity",
+                            "evidence_ids": ["mem_test_1"],
+                            "text": "用户叫小明",
+                            "confidence": 5,
+                            "stability": "stable",
+                            "reason": "用户明确自我介绍"
+                        }],
+                        "no_update_reason": null
                     }
                 }]
             })))
@@ -1578,7 +2060,7 @@ mod tests {
             timestamp: "05-12 14:23".into(),
             user_msg: "我叫小明".into(),
             ai_reply: "你好小明！".into(),
-            summary: None,
+            summary: Some("用户叫小明".into()),
             tags: Vec::new(),
             importance: None,
             confidence: None,
@@ -1599,8 +2081,10 @@ mod tests {
 
         let result = aggregate_profile(&refs, "", &ai_config, "测试聚合提示词").await;
         assert!(result.is_ok());
-        let profile = result.unwrap();
-        assert!(profile.contains("小明"));
+        let patch = result.unwrap();
+        assert_eq!(patch.operations.len(), 1);
+        assert_eq!(patch.operations[0].evidence_ids, vec!["mem_test_1"]);
+        assert!(patch.operations[0].text.contains("小明"));
     }
 
     #[tokio::test]
@@ -1608,22 +2092,31 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "type": "message",
-                "id": "msg_test",
-                "model": "test-model",
-                "role": "assistant",
-                "stop_reason": "tool_use",
-                "stop_sequence": null,
-                "usage": {
-                    "input_tokens": 20,
-                    "output_tokens": 8
-                },
+               "type": "message",
+               "id": "msg_test",
+               "model": "test-model",
+               "role": "assistant",
+               "stop_reason": "tool_use",
+               "stop_sequence": null,
+               "usage": {
+                   "input_tokens": 20,
+                   "output_tokens": 8
+               },
                 "content": [{
                     "type": "tool_use",
                     "id": "toolu_test",
                     "name": "submit",
                     "input": {
-                        "profile_text": "主人叫小明，程序员。正在做 BitCat 项目（Rust）。"
+                        "operations": [{
+                            "op": "upsert",
+                            "section": "active_projects",
+                            "evidence_ids": ["mem_test_2"],
+                            "text": "用户正在做 Rust 项目",
+                            "confidence": 4,
+                            "stability": "evolving",
+                            "reason": "用户说明当前项目技术"
+                        }],
+                        "no_update_reason": null
                     }
                 }]
             })))
@@ -1636,7 +2129,7 @@ mod tests {
             timestamp: "05-12 15:00".into(),
             user_msg: "我在做 Rust 项目".into(),
             ai_reply: "什么项目？".into(),
-            summary: None,
+            summary: Some("用户正在做 Rust 项目".into()),
             tags: Vec::new(),
             importance: None,
             confidence: None,

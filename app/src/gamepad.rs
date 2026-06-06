@@ -957,10 +957,41 @@ pub fn chat_loop(app: &tauri::AppHandle) {
                             }
                         };
                         match agg_result {
-                            Ok(new_profile) => {
-                                if let Ok(mut pf) = core.profile.lock() {
-                                    pf.update(&new_profile);
-                                    let _ = pf.save();
+                            Ok(patch) => {
+                                let applied = if let Ok(mut pf) = core.profile.lock() {
+                                    match pf.apply_patch(&patch, &entry_refs) {
+                                        Ok(()) => {
+                                            bitcat_core::memory::record_profile_aggregation_diagnostic(
+                                                "profile_patch_applied",
+                                                None,
+                                                &pf,
+                                                &entry_refs,
+                                                Some(&patch),
+                                            );
+                                            let _ = pf.save();
+                                            true
+                                        }
+                                        Err(e) => {
+                                            bitcat_core::memory::record_profile_aggregation_diagnostic(
+                                                "profile_patch_rejected",
+                                                Some(&e),
+                                                &pf,
+                                                &entry_refs,
+                                                Some(&patch),
+                                            );
+                                            warn!(
+                                                error = %e,
+                                                "[chat_loop] 用户画像 patch 校验失败，下次重试"
+                                            );
+                                            false
+                                        }
+                                    }
+                                } else {
+                                    warn!("profile 锁中毒，跳过用户画像 patch 应用");
+                                    false
+                                };
+                                if !applied {
+                                    continue;
                                 }
                                 if let Ok(mut lt) = core.long_term.lock() {
                                     lt.mark_all_aggregated();
