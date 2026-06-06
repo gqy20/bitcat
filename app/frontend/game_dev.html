@@ -33,7 +33,7 @@
 
     .devbar:hover,
     .devbar:focus-within {
-      width: 318px;
+      width: min(720px, calc(100vw - 28px));
       background: rgba(9, 13, 18, 0.90);
     }
 
@@ -45,6 +45,7 @@
     }
 
     .devbar label,
+    .devbar input,
     .devbar select,
     .devbar button {
       opacity: 0;
@@ -53,9 +54,11 @@
     }
 
     .devbar:hover label,
+    .devbar:hover input,
     .devbar:hover select,
     .devbar:hover button,
     .devbar:focus-within label,
+    .devbar:focus-within input,
     .devbar:focus-within select,
     .devbar:focus-within button {
       opacity: 1;
@@ -63,6 +66,7 @@
     }
 
     .devbar select,
+    .devbar input,
     .devbar button {
       height: 30px;
       color: #f7fbff;
@@ -70,6 +74,11 @@
       border: 1px solid rgba(255, 255, 255, 0.18);
       border-radius: 6px;
       font: inherit;
+    }
+
+    .devbar input {
+      width: 188px;
+      padding: 0 9px;
     }
 
     .devbar select {
@@ -80,6 +89,7 @@
     .devbar button {
       padding: 0 10px;
       cursor: pointer;
+      white-space: nowrap;
     }
   </style>
 </head>
@@ -103,6 +113,9 @@
   <div class="devbar">
     <label for="devGameSelect">Game</label>
     <select id="devGameSelect"></select>
+    <label for="devTopicInput">Topic</label>
+    <input id="devTopicInput" type="text" value="Rust 编程词汇" />
+    <button id="devGenerateBtn" type="button">Generate</button>
     <button id="devRestartBtn" type="button">Restart</button>
   </div>
   <script type="importmap">
@@ -112,10 +125,10 @@
       }
     }
   </script>
-  <script src="js/game_dev.js?dev=2"></script>
-  <script src="js/games/snake.js?dev=2"></script>
-  <script src="js/games/gomoku.js?dev=2"></script>
-  <script type="module" src="js/games/arena.js?dev=2"></script>
-  <script src="js/game_engine.js?dev=2"></script>
+  <script src="js/game_dev.js?dev=3"></script>
+  <script src="js/games/snake.js?dev=3"></script>
+  <script src="js/games/gomoku.js?dev=3"></script>
+  <script type="module" src="js/games/arena.js?dev=3"></script>
+  <script src="js/game_engine.js?dev=3"></script>
 </body>
 </html>

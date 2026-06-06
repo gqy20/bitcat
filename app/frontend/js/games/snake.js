@@ -121,6 +121,20 @@
       return '方向键 / WASD 移动，吃到食物变长，A / 空格 / Enter 开始';
     }
 
+    endText(result) {
+      if (!this.vocab) return `得分 ${this.score}，Enter / A 再来一局，Esc / B 退出`;
+      const missedTerms = Array.from(new Set(this.missed.map((item) => item.term))).slice(0, 3);
+      const topic = this.vocab.topic ? `${this.vocab.topic} · ` : '';
+      if (result === 'win') {
+        return missedTerms.length
+          ? `${topic}完成 ${this.correctCount}/${this.vocab.targetCorrect}。再练：${missedTerms.join('、')}`
+          : `${topic}完成 ${this.correctCount}/${this.vocab.targetCorrect}，这局很稳。`;
+      }
+      return missedTerms.length
+        ? `${topic}得分 ${this.score}。重点复习：${missedTerms.join('、')}`
+        : `${topic}得分 ${this.score}，Enter / A 再来一局。`;
+    }
+
     hudText() {
       return `${this.coarseLength()}${this.boostHeld ? ' BOOST' : ''}`;
     }
@@ -335,6 +349,7 @@
             term: this.question.term,
             meaning: this.question.meaning,
             picked: food.label,
+            explanation: this.question.explanation || '',
           });
         }
         this.nextQuestion();
@@ -490,6 +505,8 @@
         term: this.question.term,
         meaning: this.question.meaning,
         example: this.question.example || '',
+        hint: this.question.hint || '',
+        explanation: this.question.explanation || '',
         picked: food && food.label ? food.label : '',
         correct: Boolean(correct),
       };
@@ -501,11 +518,13 @@
         label,
         term: question.term,
         meaning: question.meaning,
+        hint: question.hint || '',
+        explanation: question.explanation || '',
         picked: food && food.label ? food.label : '',
         correct: Boolean(correct),
         delta,
         age: 0,
-        life: 980,
+        life: correct ? 980 : 2200,
       };
     }
   }
@@ -893,8 +912,10 @@
       ctx.fillText(feedback.label, panel.x + pad, panel.y + panel.h * 0.38);
       ctx.fillStyle = 'rgba(247, 251, 255, 0.88)';
       ctx.font = `750 ${compact ? 12 : 14}px "Segoe UI", "Microsoft YaHei", sans-serif`;
-      const text = `${feedback.term} = ${feedback.meaning}${feedback.delta ? `  ${feedback.delta}` : ''}`;
-      ctx.fillText(fitTextToWidth(ctx, text, panel.w - pad * 2), panel.x + pad, panel.y + panel.h * 0.70);
+      const text = feedback.correct
+        ? `${feedback.term} = ${feedback.meaning}${feedback.delta ? `  ${feedback.delta}` : ''}`
+        : (feedback.explanation || `${feedback.term} = ${feedback.meaning}；刚才选了：${feedback.picked}`);
+      drawPanelLines(ctx, text, panel.x + pad, panel.y + panel.h * 0.70, panel.w - pad * 2, compact ? 15 : 17, feedback.correct ? 1 : 2);
       ctx.restore();
       return;
     }
@@ -907,8 +928,10 @@
       ctx.fillStyle = '#f7fbff';
       ctx.font = `760 ${compact ? 12 : 14}px "Segoe UI", "Microsoft YaHei", sans-serif`;
       const picked = !review.correct && review.picked ? `  刚才选了：${review.picked}` : '';
-      const text = `${review.term} = ${review.meaning}${picked}`;
-      ctx.fillText(fitTextToWidth(ctx, text, panel.w - pad * 2), panel.x + pad, panel.y + panel.h * 0.66);
+      const text = !review.correct && review.explanation
+        ? review.explanation
+        : `${review.term} = ${review.meaning}${picked}`;
+      drawPanelLines(ctx, text, panel.x + pad, panel.y + panel.h * 0.66, panel.w - pad * 2, compact ? 15 : 17, !review.correct ? 2 : 1);
       ctx.restore();
       return;
     }
@@ -1118,11 +1141,15 @@
           ? entry.distractors.map((item) => String(item || '').trim()).filter(Boolean)
           : [],
         example: String(entry.example || '').trim(),
+        hint: String(entry.hint || '').trim(),
+        explanation: String(entry.explanation || '').trim(),
       }))
       .filter((entry) => entry.id && entry.term && entry.meaning);
     if (entries.length < 2) return null;
     return {
       mode: raw.mode || 'meaning_choice',
+      topic: String(raw.topic || '').trim(),
+      level: String(raw.level || '').trim(),
       answerCount: clamp(Number(raw.answer_count) || 4, 2, 6),
       targetCorrect: clamp(Number(raw.target_correct) || Math.min(12, entries.length), 1, 50),
       entries,
@@ -1215,6 +1242,14 @@
       lines[lines.length - 1] = fitTextToWidth(ctx, `${lines[lines.length - 1]}…`, maxWidth);
     }
     return lines.slice(0, maxLines);
+  }
+
+  function drawPanelLines(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
+    const lines = wrapLines(ctx, text, maxWidth, maxLines);
+    const top = y - ((lines.length - 1) * lineHeight) / 2;
+    lines.forEach((line, index) => {
+      ctx.fillText(line, x, top + index * lineHeight);
+    });
   }
 
   function wrapText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {

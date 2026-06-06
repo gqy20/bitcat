@@ -1538,7 +1538,7 @@
       const marginX = clamp(Math.floor(window.innerWidth * 0.035), 18, 72);
       const topY = clamp(Math.floor(window.innerHeight * 0.014), 10, 14);
       const topH = clamp(Math.floor(window.innerHeight * 0.105), 72, 92);
-      const bottomH = clamp(Math.floor(window.innerHeight * 0.095), 56, 82);
+      const bottomH = clamp(Math.floor(window.innerHeight * 0.105), 64, 96);
       const gap = clamp(Math.floor(window.innerHeight * 0.014), 8, 14);
       const boardY = topY + topH + gap;
       const bottomSafeGap = clamp(Math.floor(window.innerHeight * 0.02), 12, 18);

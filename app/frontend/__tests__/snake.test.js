@@ -132,4 +132,28 @@ describe('Word Snake rules', () => {
       correct: true,
     });
   });
+
+  it('keeps AI-style explanations for wrong answers', () => {
+    const SnakeEngine = loadSnakeEngine();
+    const vocabWithExplanation = {
+      ...vocab,
+      entries: vocab.entries.map((entry, index) => (
+        index === 0 ? { ...entry, explanation: 'create means make something new.' } : entry
+      )),
+    };
+    const engine = new SnakeEngine({ ...baseConfig, snake_vocab: vocabWithExplanation }, {}, () => 0);
+    const wrong = engine.answerFoods.find((food) => !food.correct);
+
+    engine.consumeAnswer(wrong);
+
+    expect(engine.hudFeedback).toMatchObject({
+      term: 'create',
+      correct: false,
+      explanation: 'create means make something new.',
+    });
+    expect(engine.missed[0]).toMatchObject({
+      term: 'create',
+      explanation: 'create means make something new.',
+    });
+  });
 });

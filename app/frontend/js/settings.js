@@ -1392,7 +1392,18 @@ async function resetCurrent() {
 }
 
 function tabLabel(t) {
-  return ({ ai: "AI 与对话", user: "记忆与画像", actions: "按键与操作", prompts: "提示词", appearance: "外观与行为", "agent-watch": "Agent 看管", agent_watch: "Agent 看管", reminders: "提醒" })[t] || t;
+  return ({
+    ai: "对话方式",
+    user: "记得什么",
+    actions: "互动方式",
+    prompts: "提示词",
+    appearance: "猫猫表现",
+    "agent-watch": "陪你盯任务",
+    agent_watch: "陪你盯任务",
+    reminders: "不会忘的事",
+    usage: "运行记录",
+    about: "关于",
+  })[t] || t;
 }
 
 async function loadSnapshot() {

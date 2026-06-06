@@ -12,7 +12,7 @@
     <header class="titlebar">
       <div class="drag">
         <span class="dot"></span>
-        <span class="title">BitCat 控制台</span>
+        <span class="title">BitCat 陪伴设置</span>
       </div>
       <div class="tb-actions">
         <button id="btn-close" class="tb-btn" type="button" title="关闭 (Esc)" aria-label="关闭设置">×</button>
@@ -27,22 +27,22 @@
           </div>
           <div>
             <strong>BitCat</strong>
-            <span>已连接本机配置</span>
+            <span>正在陪你工作</span>
           </div>
         </div>
-        <div class="nav-kicker">控制台</div>
-        <button class="nav-item active" data-tab="overview" type="button"><span class="icon icon-overview"></span><span>总览</span></button>
-        <button class="nav-item" data-tab="ai" type="button"><span class="icon icon-ai"></span><span>AI 与对话</span></button>
-        <button class="nav-item" data-tab="memory" type="button"><span class="icon icon-memory"></span><span>记忆与画像</span></button>
-        <button class="nav-item" data-tab="actions" type="button"><span class="icon icon-actions"></span><span>按键与操作</span></button>
-        <button class="nav-item" data-tab="appearance" type="button"><span class="icon icon-appearance"></span><span>外观与行为</span></button>
-        <button class="nav-item" data-tab="agent-watch" type="button"><span class="icon icon-usage"></span><span>Agent 看管</span></button>
-        <button class="nav-item" data-tab="reminders" type="button"><span class="icon icon-usage"></span><span>提醒</span></button>
+        <div class="nav-kicker">陪伴</div>
+        <button class="nav-item active" data-tab="overview" type="button"><span class="icon icon-overview"></span><span>今日状态</span></button>
+        <button class="nav-item" data-tab="ai" type="button"><span class="icon icon-ai"></span><span>对话方式</span></button>
+        <button class="nav-item" data-tab="memory" type="button"><span class="icon icon-memory"></span><span>记得什么</span></button>
+        <button class="nav-item" data-tab="actions" type="button"><span class="icon icon-actions"></span><span>互动方式</span></button>
+        <button class="nav-item" data-tab="appearance" type="button"><span class="icon icon-appearance"></span><span>猫猫表现</span></button>
+        <button class="nav-item" data-tab="agent-watch" type="button"><span class="icon icon-usage"></span><span>陪你盯任务</span></button>
+        <button class="nav-item" data-tab="reminders" type="button"><span class="icon icon-usage"></span><span>不会忘的事</span></button>
         <button class="nav-item" data-tab="prompts" type="button"><span class="icon icon-prompts"></span><span>提示词</span></button>
-        <button class="nav-item" data-tab="usage" type="button"><span class="icon icon-usage"></span><span>用量与诊断</span></button>
+        <button class="nav-item" data-tab="usage" type="button"><span class="icon icon-usage"></span><span>运行记录</span></button>
         <button class="nav-item" data-tab="about" type="button"><span class="icon icon-about"></span><span>关于</span></button>
         <div class="nav-footer">
-          <span>设置会保存到本机</span>
+          <span>只保存在这台电脑</span>
           <code>config/*.yml</code>
         </div>
       </aside>
@@ -51,30 +51,30 @@
         <section class="tab" data-pane="overview">
           <div class="pane-head hero-head">
             <div>
-              <h1>设置中心</h1>
-              <p class="hint">快速检查猫猫的模型连接、观察频率、记忆和最近用量。</p>
+              <h1>今日状态</h1>
+              <p class="hint">看看 BitCat 今天是否准备好陪你工作：对话、观察、记忆和提醒都在这里安静待命。</p>
             </div>
             <button id="overview-refresh" class="btn small" type="button">刷新状态</button>
           </div>
 
           <div class="overview-grid">
-            <div class="status-card accent">
-              <span>模型连接</span>
+            <div class="status-card status-brain">
+              <span>正在使用的脑袋</span>
               <strong id="ov-ai-model">-</strong>
               <small id="ov-ai-key">-</small>
             </div>
-            <div class="status-card">
-              <span>今日用量</span>
+            <div class="status-card status-usage">
+              <span>今天聊过</span>
               <strong id="ov-usage-total">-</strong>
               <small>本机 token 记录</small>
             </div>
-            <div class="status-card">
-              <span>观察频率</span>
+            <div class="status-card status-observe">
+              <span>看屏幕的频率</span>
               <strong id="ov-screenshot">-</strong>
               <small>对话中会自动暂停</small>
             </div>
-            <div class="status-card warm">
-              <span>长期记忆</span>
+            <div class="status-card status-memory">
+              <span>它记得的事</span>
               <strong id="ov-memory-total">-</strong>
               <small id="ov-memory-time">-</small>
             </div>
@@ -82,7 +82,7 @@
 
           <div class="section-panel overview-note">
             <div class="section-head">
-              <h3>需要处理的项目</h3>
+              <h3>需要你看一眼</h3>
               <span>只显示异常、缺失或需要重启的状态</span>
             </div>
             <div id="overview-notices" class="notice-list"></div>
@@ -92,8 +92,8 @@
         <section class="tab hidden" data-pane="ai">
           <div class="pane-head">
             <div>
-              <h1>AI 与对话</h1>
-              <p class="hint">只填你想覆盖的项目，留空会沿用当前生效配置。</p>
+              <h1>对话方式</h1>
+              <p class="hint">只填你想改变的部分；留空时，BitCat 会继续沿用当前能工作的配置。</p>
             </div>
           </div>
 
@@ -125,7 +125,7 @@
             <div class="setting-row">
               <div class="setting-copy">
                 <label for="ai-maxtokens">最大 token</label>
-                <span>留空使用默认上限。<small id="ai-maxtokens-current" class="field-current"></small></span>
+                <span>留空时猫猫会自己控制，不用刻意设置。<small id="ai-maxtokens-current" class="field-current"></small></span>
               </div>
               <input id="ai-maxtokens" type="number" min="1" placeholder="256000" />
             </div>
@@ -135,8 +135,8 @@
         <section class="tab hidden" data-pane="memory">
           <div class="pane-head">
             <div>
-              <h1>记忆与画像</h1>
-              <p class="hint">告诉猫猫你是谁，并审查会被长期保留的记忆。</p>
+              <h1>记得什么</h1>
+              <p class="hint">告诉 BitCat 该怎样理解你，也可以随时审查和删除它长期记住的内容。</p>
             </div>
             <button id="memory-refresh" class="btn small" type="button">刷新记忆</button>
           </div>
@@ -193,8 +193,8 @@
         <section class="tab hidden" data-pane="actions">
           <div class="pane-head">
             <div>
-              <h1>按键与操作</h1>
-              <p class="hint">保存后手柄映射会热重载；全局键盘热键仍需重启完全生效。</p>
+              <h1>互动方式</h1>
+              <p class="hint">保存后手柄映射会热重载；全局键盘热键仍需重启才会完全生效。</p>
             </div>
           </div>
           <div class="settings-card compact">
@@ -228,120 +228,120 @@
         <section class="tab hidden" data-pane="appearance">
           <div class="pane-head">
             <div>
-              <h1>外观与行为</h1>
-              <p class="hint">控制桌宠的常驻、启动、语音和屏幕观察方式。</p>
+              <h1>猫猫表现</h1>
+              <p class="hint">调整它的常驻、启动、语音和观察方式，尽量保持安静和克制。</p>
             </div>
           </div>
           <div class="settings-card">
             <div class="setting-row switch-row">
               <div class="setting-copy">
                 <label for="a-top">默认置顶</label>
-                <span>窗口保持在其他应用上方。</span>
+                <span>始终浮在别的应用之上。</span>
               </div>
               <input id="a-top" type="checkbox" />
             </div>
             <div class="setting-row switch-row">
               <div class="setting-copy">
                 <label for="a-collapsed">启动时折叠</label>
-                <span>启动后先保持轻量状态。</span>
+                <span>启动后先收起来，减少打扰。</span>
               </div>
               <input id="a-collapsed" type="checkbox" />
             </div>
             <div class="setting-row switch-row">
               <div class="setting-copy">
                 <label for="a-tts">TTS 语音</label>
-                <span>允许语音播报回复。</span>
+                <span>允许用声音读出回复。</span>
               </div>
               <input id="a-tts" type="checkbox" />
             </div>
             <div class="setting-row switch-row">
               <div class="setting-copy">
                 <label for="a-notify-sound">顶部通知提示音</label>
-                <span>提醒和 Agent 看管弹出顶部通知时播放系统提示音。</span>
+                <span>顶部提醒出现时播放轻提示音。</span>
               </div>
               <input id="a-notify-sound" type="checkbox" />
             </div>
             <div class="setting-row switch-row">
               <div class="setting-copy">
                 <label for="a-notify-sound-reminder">提醒通知响铃</label>
-                <span>程序化提醒到期时播放提示音。</span>
+                <span>提醒到期时才响一次。</span>
               </div>
               <input id="a-notify-sound-reminder" type="checkbox" />
             </div>
             <div class="setting-row switch-row">
               <div class="setting-copy">
                 <label for="a-notify-sound-agent">Agent 通知响铃</label>
-                <span>Agent 等待、完成或出错时播放提示音。</span>
+                <span>Agent 有状态变化时提示一下。</span>
               </div>
               <input id="a-notify-sound-agent" type="checkbox" />
             </div>
             <div class="setting-row switch-row">
               <div class="setting-copy">
                 <label for="a-notify-sound-skip-tts">语音提醒时静音</label>
-                <span>Agent 看管已启用语音提醒时，不额外播放提示音。</span>
+                <span>有语音播报时不再额外响铃。</span>
               </div>
               <input id="a-notify-sound-skip-tts" type="checkbox" />
             </div>
             <div class="setting-row switch-row">
               <div class="setting-copy">
                 <label for="a-reminder-ai">AI 润色提醒</label>
-                <span>提醒到期时用轻量模型生成更自然的顶部通知文案；失败会显示原始提醒。</span>
+                <span>让到期提醒的文案更自然一点。</span>
               </div>
               <input id="a-reminder-ai" type="checkbox" />
             </div>
             <div class="setting-row">
               <div class="setting-copy">
                 <label for="a-reminder-ai-timeout">提醒润色超时</label>
-                <span>500-10000 毫秒；超时后立即回退原始提醒。</span>
+                <span>超时就直接用原始提醒。</span>
               </div>
               <input id="a-reminder-ai-timeout" type="number" min="500" max="10000" step="500" placeholder="3000" />
             </div>
             <div class="setting-row">
               <div class="setting-copy">
                 <label for="a-shortcut">全局快捷键</label>
-                <span>更改后重启完全生效。</span>
+                <span>改完后重启才会完全生效。</span>
               </div>
               <input id="a-shortcut" type="text" placeholder="CommandOrControl+Alt+Space" spellcheck="false" />
             </div>
             <div class="setting-row">
               <div class="setting-copy">
                 <label for="a-ss-interval">截屏分析</label>
-                <span>5-3600 秒；对话中暂停。</span>
+                <span>对话时自动暂停。</span>
               </div>
               <input id="a-ss-interval" type="number" min="5" max="3600" step="5" placeholder="30" />
             </div>
             <div class="setting-row switch-row">
               <div class="setting-copy">
                 <label for="a-ss-bubble">截屏分析弹窗</label>
-                <span>关闭后截图仍会分析并保存，但不再弹出气泡通知。</span>
+                <span>只分析，不弹气泡。</span>
               </div>
               <input id="a-ss-bubble" type="checkbox" />
             </div>
             <div class="setting-row switch-row">
               <div class="setting-copy">
                 <label for="a-camera-enabled">摄像头观察</label>
-                <span>默认关闭；开启后会请求摄像头权限，并按低频间隔分析用户在场状态。</span>
+                <span>默认关闭，开启后才会观察在场状态。</span>
               </div>
               <input id="a-camera-enabled" type="checkbox" />
             </div>
             <div class="setting-row switch-row">
               <div class="setting-copy">
                 <label for="a-camera-save">保存摄像头原图</label>
-                <span>默认只保存分析 JSON；开启后才会把 JPEG 存入独立 camera 目录。</span>
+                <span>默认只留分析结果。</span>
               </div>
               <input id="a-camera-save" type="checkbox" />
             </div>
             <div class="setting-row">
               <div class="setting-copy">
                 <label for="a-storage-data">本地数据目录</label>
-                <span>留空使用默认 ~\.bitcat；存放 logs、memory、screenshots 和 camera。</span>
+                <span>留空就用默认目录。</span>
               </div>
               <input id="a-storage-data" type="text" placeholder="C:\\Users\\you\\.bitcat" spellcheck="false" />
             </div>
             <div class="setting-row">
               <div class="setting-copy">
                 <label for="a-storage-app-data">应用数据目录</label>
-                <span>留空使用默认 %APPDATA%\bitcat；存放 dances 和 reminders。</span>
+                <span>留空就用默认应用目录。</span>
               </div>
               <input id="a-storage-app-data" type="text" placeholder="C:\\Users\\you\\AppData\\Roaming\\bitcat" spellcheck="false" />
             </div>
@@ -366,7 +366,7 @@
           <div class="pane-head agent-watch-hero">
             <div class="agent-watch-hero-copy">
               <h1>Agent 看管</h1>
-              <p class="hint">只读观察 Claude Code 和 Codex 状态；工作时安静盯着，等待、异常或完成时再提醒你回来。</p>
+              <p class="hint">只读观察 Claude Code 和 Codex，安静盯着，等到需要你时再提醒。</p>
               <div class="agent-watch-chips" aria-label="支持的 agent">
                 <span>Claude Code</span>
                 <span>Codex</span>
@@ -382,94 +382,100 @@
             <div class="setting-row switch-row">
               <div class="setting-copy">
                 <label for="aw-enabled">启用看管</label>
-                <span>需要先安装对应 hook；可重复点击修复 BitCat 自己写入的 hook，不会改动其他配置。</span>
+                <span>要先装 hook 才能看管。</span>
               </div>
               <input id="aw-enabled" type="checkbox" />
             </div>
             <div class="setting-row switch-row">
               <div class="setting-copy">
                 <label for="aw-away">离屏提醒</label>
-                <span>Agent 持续工作一段时间后，低频提醒你不用一直盯着。</span>
+                <span>它忙久了会轻轻提醒你。</span>
               </div>
               <input id="aw-away" type="checkbox" />
             </div>
             <div class="setting-row">
               <div class="setting-copy">
                 <label for="aw-first">首次提醒</label>
-                <span>10-3600 秒；调试阶段默认 30 秒。</span>
+                <span>首次提醒的等待时长。</span>
               </div>
               <input id="aw-first" type="number" min="10" max="3600" step="5" />
             </div>
             <div class="setting-row">
               <div class="setting-copy">
                 <label for="aw-repeat">重复冷却</label>
-                <span>1-240 分钟；冷却内不重复提示。</span>
+                <span>多久内不重复打扰。</span>
               </div>
               <input id="aw-repeat" type="number" min="1" max="240" step="1" />
             </div>
             <div class="setting-row switch-row">
               <div class="setting-copy">
                 <label for="aw-waiting">等待时提醒</label>
-                <span>权限请求或需要用户输入时立刻提示。</span>
+                <span>需要你接手时就提示。</span>
               </div>
               <input id="aw-waiting" type="checkbox" />
             </div>
             <div class="setting-row switch-row">
               <div class="setting-copy">
                 <label for="aw-done">完成时提醒</label>
-                <span>同一会话完成后只提示一次。</span>
+                <span>完成后只提示一次。</span>
               </div>
               <input id="aw-done" type="checkbox" />
             </div>
             <div class="setting-row switch-row">
               <div class="setting-copy">
                 <label for="aw-tts">语音提醒</label>
-                <span>等待或完成时播报；离屏提醒保持静音。</span>
+                <span>等待或完成时可播报。</span>
               </div>
               <input id="aw-tts" type="checkbox" />
             </div>
             <div class="setting-row switch-row">
               <div class="setting-copy">
                 <label for="aw-remote-view">远程看板</label>
-                <span>允许局域网或 Tailscale 设备打开手机友好的 /watch 只读看板，并支持主屏幕快捷方式。</span>
+                <span>允许手机打开只读看板。</span>
               </div>
               <input id="aw-remote-view" type="checkbox" />
             </div>
             <div class="setting-row switch-row">
               <div class="setting-copy">
                 <label for="aw-remote-install">远程安装脚本</label>
-                <span>允许远程设备下载一键安装脚本；关闭后安装命令不可生成。</span>
+                <span>允许远程设备下载安装脚本。</span>
               </div>
               <input id="aw-remote-install" type="checkbox" />
             </div>
           </div>
 
-          <div class="section-panel agent-watch-remote-panel">
-            <div class="section-head">
-              <h3>远程设备</h3>
-              <span id="aw-remote-status">等待</span>
+          <details class="quiet-details agent-watch-remote-panel">
+            <summary>远程设备</summary>
+            <div class="section-panel embedded">
+              <div class="section-head">
+                <h3>远程设备</h3>
+                <span id="aw-remote-status">等待</span>
+              </div>
+              <p class="hint">手机或平板可打开看板；远程设备执行安装命令后，状态会回传本机。</p>
+              <div class="remote-install-box">
+                <code id="aw-remote-command">读取中...</code>
+                <button id="aw-remote-copy" class="btn small" type="button">复制</button>
+              </div>
+              <div class="remote-install-box">
+                <code id="aw-remote-watch-url">读取中...</code>
+                <button id="aw-remote-url-copy" class="btn small ghost" type="button">复制</button>
+              </div>
+              <p class="hint">看板使用 5344 端口；上报使用 5342 端口。</p>
+              <div id="aw-remote-devices" class="remote-devices"></div>
             </div>
-            <p class="hint">手机或平板可打开下面的看板地址；远程 Mac/Linux 执行安装命令后，hook 会把 Claude Code / Codex 状态发回本机。</p>
-            <div class="remote-install-box">
-              <code id="aw-remote-command">读取中...</code>
-              <button id="aw-remote-copy" class="btn small" type="button">复制</button>
-            </div>
-            <div class="remote-install-box">
-              <code id="aw-remote-watch-url">读取中...</code>
-              <button id="aw-remote-url-copy" class="btn small ghost" type="button">复制</button>
-            </div>
-            <p class="hint">看板使用 5344 端口；远程 hook 上报使用 5342 端口。若手机无法访问，请检查 Windows 防火墙和是否处于同一局域网。支持的浏览器可将看板添加到主屏幕。</p>
-            <div id="aw-remote-devices" class="remote-devices"></div>
-          </div>
+          </details>
 
-          <div class="section-panel agent-watch-sessions-panel">
-            <div class="section-head">
-              <h3>当前会话</h3>
-              <span id="aw-status">等待状态</span>
+          <details class="quiet-details agent-watch-sessions-panel">
+            <summary>当前会话</summary>
+            <div class="section-panel embedded">
+              <div class="section-head">
+                <h3>当前会话</h3>
+                <span id="aw-status">等待状态</span>
+              </div>
+              <div id="aw-diag" class="agent-watch-diag"></div>
+              <div id="aw-sessions" class="agent-sessions"></div>
             </div>
-            <div id="aw-diag" class="agent-watch-diag"></div>
-            <div id="aw-sessions" class="agent-sessions"></div>
-          </div>
+          </details>
         </section>
 
         <section class="tab hidden" data-pane="reminders">
@@ -621,40 +627,43 @@
           </div>
 
           <!-- ===== 积分与成就 ===== -->
-          <div class="usage-block">
-            <div class="usage-block-title">🎮 互动积分</div>
-            <div class="points-level-card">
-              <div class="points-level-header">
-                <div class="points-level-badge">
-                  <span class="points-level-number" id="points-level">1</span>
-                  <span class="points-level-title" id="points-level-title">初识</span>
+          <details class="quiet-details usage-growth-panel" open>
+            <summary>陪伴成长</summary>
+            <div class="usage-block">
+              <div class="usage-block-title">互动积分</div>
+              <div class="points-level-card">
+                <div class="points-level-header">
+                  <div class="points-level-badge">
+                    <span class="points-level-number" id="points-level">1</span>
+                    <span class="points-level-title" id="points-level-title">初识</span>
+                  </div>
+                  <div class="points-total">
+                    <strong id="points-total">0</strong>
+                    <span>总积分</span>
+                  </div>
                 </div>
-                <div class="points-total">
-                  <strong id="points-total">0</strong>
-                  <span>总积分</span>
+                <div class="points-exp-bar">
+                  <div class="points-exp-fill" id="points-exp-fill" style="width:0%"></div>
+                  <span id="points-exp-text">0 / 50</span>
+                </div>
+                <div class="points-streak">
+                  <span>连续 <strong id="points-streak">0</strong> 天 🔥</span>
+                  <span>最长 <strong id="points-longest-streak">0</strong> 天</span>
                 </div>
               </div>
-              <div class="points-exp-bar">
-                <div class="points-exp-fill" id="points-exp-fill" style="width:0%"></div>
-                <span id="points-exp-text">0 / 50</span>
-              </div>
-              <div class="points-streak">
-                <span>连续 <strong id="points-streak">0</strong> 天 🔥</span>
-                <span>最长 <strong id="points-longest-streak">0</strong> 天</span>
-              </div>
+              <div class="points-categories" id="points-breakdown"></div>
             </div>
-            <div class="points-categories" id="points-breakdown"></div>
-          </div>
 
-          <div class="usage-block">
-            <div class="usage-block-title">🏆 成就徽章 (<span id="achievement-count">0</span>/12)</div>
-            <div class="achievements-grid" id="achievements-grid"></div>
-          </div>
+            <div class="usage-block">
+              <div class="usage-block-title">成就徽章 (<span id="achievement-count">0</span>/12)</div>
+              <div class="achievements-grid" id="achievements-grid"></div>
+            </div>
 
-          <div class="usage-block">
-            <div class="usage-block-title">📋 最近积分事件</div>
-            <div class="points-events" id="points-events"></div>
-          </div>
+            <div class="usage-block">
+              <div class="usage-block-title">最近积分事件</div>
+              <div class="points-events" id="points-events"></div>
+            </div>
+          </details>
           <div id="usage-status" class="status-line"></div>
         </section>
 
