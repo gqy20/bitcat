@@ -235,7 +235,7 @@ function renderAi(ai) {
   $("ai-maxtokens-current").textContent = eff.max_tokens == null ? "" : formatNumber(eff.max_tokens);
   renderOverviewNotices(ai);
   $("ov-ai-model").textContent = eff.model || "-";
-  $("ov-ai-key").textContent = ai.has_effective_key ? "API Key 已配置" : "API Key 未配置";
+  $("ov-ai-key").textContent = ai.has_effective_key ? "已配置" : "未配置";
 
   ["ai-key", "ai-baseurl", "ai-model", "ai-maxtokens"].forEach(id => {
     $(id).oninput = () => markDirty("ai");
@@ -247,19 +247,19 @@ function renderOverviewNotices(ai) {
   if (!box) return;
   const notices = [];
   if (!ai.has_effective_key) {
-    notices.push(["API Key 未配置", "AI 对话会不可用，请在 AI 与对话页补充密钥。"]);
+    notices.push(["API Key 未配置", "对话不可用"]);
   }
   if (!ai.effective?.model) {
-    notices.push(["模型未配置", "请指定一个可用模型。"]);
+    notices.push(["模型未配置", ""]);
   }
   if (!notices.length) {
-    box.innerHTML = `<div class="empty compact">没有需要处理的配置项。</div>`;
+    box.innerHTML = `<div class="empty compact">一切正常</div>`;
     return;
   }
   box.innerHTML = notices.map(([title, body]) => `
     <div class="notice-item">
       <strong>${escapeHtml(title)}</strong>
-      <span>${escapeHtml(body)}</span>
+      ${body ? `<span>${escapeHtml(body)}</span>` : ""}
     </div>
   `).join("");
 }
@@ -1592,7 +1592,7 @@ function updateOverviewAppearance(appearance) {
 
 function updateOverviewMemory(review) {
   $("ov-memory-total").textContent = formatNumber(review?.total_entries || 0);
-  $("ov-memory-time").textContent = review?.generated_at ? `更新于 ${formatDateTime(review.generated_at)}` : "等待记录";
+  $("ov-memory-time").textContent = review?.generated_at ? "" : "等待";
 }
 
 function formatPetDecision(value) {
@@ -1759,7 +1759,7 @@ function renderPointsBreakdown(state) {
           <span class="points-cat-label">${POINTS_CATEGORY_LABELS[key] || key}</span>
         </div>`
     )
-    .join("") || '<div class="points-empty">暂无积分记录。</div>';
+    .join("") || '<div class="points-empty">暂无成长记录</div>';
 }
 
 function renderAchievements(achievements, state) {
@@ -1774,7 +1774,7 @@ function renderAchievements(achievements, state) {
   if (countEl) countEl.textContent = unlockedCount;
 
   if (achievements.length === 0) {
-    grid.innerHTML = '<div class="points-empty">暂无成就数据。</div>';
+    grid.innerHTML = '<div class="points-empty">暂无成长记录</div>';
     return;
   }
 
@@ -1797,7 +1797,7 @@ function renderPointsEvents(events) {
 
   if (!events || events.length === 0) {
     box.innerHTML =
-      '<div class="points-empty">暂无积分事件。</div>';
+      '<div class="points-empty">暂无成长记录</div>';
     return;
   }
 

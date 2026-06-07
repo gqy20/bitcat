@@ -1,0 +1,110 @@
+@font-face {
+  font-family: "Geist BitCat";
+  src: url("/assets/fonts/geist-latin-variable.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 100 900;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122;
+}
+
+@font-face {
+  font-family: "JetBrains Mono BitCat";
+  src: url("/assets/fonts/jetbrains-mono-latin-variable.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 100 800;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122;
+}
+
+:root {
+  color-scheme: light;
+
+  --bg-deep: #eef3f7;
+  --bg-shell: rgba(255, 255, 255, 0.9);
+  --bg-panel: rgba(255, 255, 255, 0.72);
+  --bg-panel-soft: rgba(246, 249, 252, 0.86);
+  --bg-input: rgba(255, 255, 255, 0.86);
+  --surface-glass: rgba(255, 255, 255, 0.76);
+  --surface-glass-strong: rgba(255, 255, 255, 0.9);
+  --surface-tint: rgba(241, 246, 250, 0.72);
+
+  --line-subtle: rgba(34, 48, 64, 0.08);
+  --line-normal: rgba(34, 48, 64, 0.13);
+  --line-strong: rgba(34, 48, 64, 0.2);
+
+  --text-main: #22303d;
+  --text-secondary: #52606f;
+  --text-muted: #7a8795;
+  --text-faint: #a3adb8;
+  --text: var(--text-main);
+  --muted: var(--text-muted);
+
+  --cat-green: #34b77a;
+  --brand: var(--cat-green);
+  --brand-soft: #dff4ec;
+  --pixel-blue: #5d8fd7;
+  --soft-cyan: #4fb8b4;
+  --sun-amber: #c58a2b;
+  --coral: #d86f60;
+  --berry: #896fd0;
+  --observe: var(--pixel-blue);
+  --memory: var(--berry);
+  --companion: var(--sun-amber);
+
+  --accent-green-rgb: 52, 183, 122;
+  --accent-blue-rgb: 93, 143, 215;
+  --accent-amber-rgb: 197, 138, 43;
+  --accent-coral-rgb: 216, 111, 96;
+  --accent-memory-rgb: 137, 111, 208;
+
+  --shadow: 0 22px 60px rgba(43, 57, 74, 0.18);
+  --shadow-panel: 0 18px 44px rgba(43, 57, 74, 0.2), 0 2px 8px rgba(43, 57, 74, 0.08);
+  --shadow-raised: 0 10px 26px rgba(43, 57, 74, 0.13), 0 1px 3px rgba(43, 57, 74, 0.08);
+
+  --radius: 8px;
+  --radius-sm: 6px;
+  --radius-lg: 12px;
+
+  --font-ui: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  --font-sans: var(--font-ui);
+  --font-brand: "Geist BitCat", "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  --font-mono: "JetBrains Mono BitCat", "Cascadia Mono", "JetBrains Mono", "Consolas", monospace;
+
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 28px;
+  --text-3xl: 34px;
+
+  --font-size-control: var(--text-md);
+  --font-size-control-sm: 13px;
+  --font-size-code: 13px;
+  --font-size-page-title: 26px;
+  --font-size-hero-title: var(--text-3xl);
+  --font-size-section-title: var(--text-lg);
+  --font-size-icon: var(--text-xl);
+  --font-size-icon-sm: 18px;
+  --font-size-metric-lg: 23px;
+  --font-size-metric-md: 22px;
+  --font-size-metric-sm: 22px;
+
+  --control-h: 42px;
+  --control-h-sm: 36px;
+  --control-h-icon: 40px;
+  --control-px: 16px;
+  --control-px-sm: 12px;
+  --control-radius: 7px;
+  --control-bg: rgba(255, 255, 255, 0.72);
+  --control-bg-hover: rgba(244, 248, 252, 0.96);
+  --control-bg-active: rgba(93, 143, 215, 0.12);
+  --control-border: rgba(34, 48, 64, 0.14);
+  --control-border-hover: rgba(93, 143, 215, 0.36);
+  --control-text: #263444;
+
+  --focus-ring: 0 0 0 3px rgba(var(--accent-green-rgb), 0.105);
+  --motion-fast: 140ms ease;
+  --motion-medium: 200ms ease;
+  --motion-spring: 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}

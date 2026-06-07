@@ -1,90 +1,4 @@
-@font-face {
-  font-family: "Geist BitCat";
-  src: url("/assets/fonts/geist-latin-variable.woff2") format("woff2");
-  font-display: swap;
-  font-style: normal;
-  font-weight: 100 900;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122;
-}
-
-@font-face {
-  font-family: "JetBrains Mono BitCat";
-  src: url("/assets/fonts/jetbrains-mono-latin-variable.woff2") format("woff2");
-  font-display: swap;
-  font-style: normal;
-  font-weight: 100 800;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122;
-}
-
-:root {
-  --bg-deep: #eef3f7;
-  --bg-shell: rgba(255, 255, 255, 0.9);
-  --bg-panel: rgba(255, 255, 255, 0.72);
-  --bg-panel-soft: rgba(246, 249, 252, 0.86);
-  --bg-input: rgba(255, 255, 255, 0.86);
-  --line-subtle: rgba(34, 48, 64, 0.08);
-  --line-normal: rgba(34, 48, 64, 0.13);
-  --line-strong: rgba(34, 48, 64, 0.2);
-  --text-main: #22303d;
-  --text-secondary: #52606f;
-  --text-muted: #7a8795;
-  --text-faint: #a3adb8;
-  --text: var(--text-main);
-  --muted: var(--text-muted);
-  --cat-green: #34b77a;
-  --brand: var(--cat-green);
-  --brand-soft: #dff4ec;
-  --pixel-blue: #5d8fd7;
-  --soft-cyan: #4fb8b4;
-  --sun-amber: #c58a2b;
-  --coral: #d86f60;
-  --berry: #896fd0;
-  --observe: var(--pixel-blue);
-  --memory: var(--berry);
-  --companion: var(--sun-amber);
-  --accent-green-rgb: 52, 183, 122;
-  --accent-blue-rgb: 93, 143, 215;
-  --accent-amber-rgb: 197, 138, 43;
-  --accent-coral-rgb: 216, 111, 96;
-  --accent-memory-rgb: 137, 111, 208;
-  --shadow: 0 22px 60px rgba(43, 57, 74, 0.18);
-  --radius: 8px;
-  --radius-sm: 6px;
-  --font-ui: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", sans-serif;
-  --font-sans: var(--font-ui);
-  --font-brand: "Geist BitCat", "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", sans-serif;
-  --font-mono: "JetBrains Mono BitCat", "Cascadia Mono", "JetBrains Mono", "Consolas", monospace;
-  --text-xs: 11px;
-  --text-sm: 12px;
-  --text-md: 14px;
-  --text-lg: 16px;
-  --text-xl: 20px;
-  --text-2xl: 28px;
-  --text-3xl: 34px;
-  --font-size-control: var(--text-md);
-  --font-size-control-sm: 13px;
-  --font-size-code: 13px;
-  --font-size-page-title: 26px;
-  --font-size-hero-title: var(--text-3xl);
-  --font-size-section-title: var(--text-lg);
-  --font-size-icon: var(--text-xl);
-  --font-size-icon-sm: 18px;
-  --font-size-metric-lg: 23px;
-  --font-size-metric-md: 22px;
-  --font-size-metric-sm: 22px;
-  --control-h: 42px;
-  --control-h-sm: 36px;
-  --control-h-icon: 40px;
-  --control-px: 16px;
-  --control-px-sm: 12px;
-  --control-radius: 7px;
-  --control-bg: rgba(255, 255, 255, 0.72);
-  --control-bg-hover: rgba(244, 248, 252, 0.96);
-  --control-bg-active: rgba(93, 143, 215, 0.12);
-  --control-border: rgba(34, 48, 64, 0.14);
-  --control-border-hover: rgba(93, 143, 215, 0.36);
-  --control-text: #263444;
-}
+@import url("/css/ui-tokens.css");
 
 * {
   box-sizing: border-box;
@@ -219,10 +133,9 @@ summary {
   gap: 6px;
   overflow-y: auto;
   overflow-x: hidden;
-  border-right: 1px solid var(--line-subtle);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.36), transparent 50%),
-    rgba(241, 246, 250, 0.72);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.3), transparent 52%),
+    rgba(243, 248, 251, 0.58);
 }
 
 .nav::-webkit-scrollbar {
@@ -253,11 +166,10 @@ summary {
   grid-template-columns: 34px minmax(0, 1fr);
   align-items: center;
   gap: 12px;
-  border: 1px solid rgba(var(--accent-green-rgb), 0.13);
   border-radius: var(--radius);
   background:
-    linear-gradient(135deg, rgba(var(--accent-green-rgb), 0.08), rgba(var(--accent-blue-rgb), 0.04)),
-    rgba(255, 255, 255, 0.64);
+    linear-gradient(135deg, rgba(var(--accent-green-rgb), 0.055), rgba(var(--accent-blue-rgb), 0.03)),
+    rgba(255, 255, 255, 0.48);
 }
 
 .nav-brand strong {
@@ -501,9 +413,9 @@ code {
 .editor-panel,
 .quiet-details,
 .usage-breakdown {
-  border: 1px solid var(--line-subtle);
+  border: 1px solid rgba(34, 48, 64, 0.045);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.54);
   box-shadow: none;
 }
 
@@ -1030,10 +942,14 @@ input[type="checkbox"]:checked::after {
 
 .overview-growth {
   margin-top: 2px;
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.38);
 }
 
 .overview-note {
   max-width: none;
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.38);
 }
 
 .notice-list {
@@ -2150,8 +2066,9 @@ input[type="checkbox"]:checked::after {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  border-top: 1px solid var(--line-subtle);
-  background: rgba(255, 255, 255, 0.74);
+  background:
+    linear-gradient(180deg, rgba(244, 249, 252, 0), rgba(255, 255, 255, 0.72) 34%),
+    rgba(255, 255, 255, 0.64);
 }
 
 .actions-right {
@@ -2585,16 +2502,16 @@ input[type="checkbox"]:checked::after {
 /* Compact growth module in 今日状态. */
 .overview-growth {
   display: grid;
-  gap: 18px;
+  gap: 14px;
 }
 
 .overview-growth .section-head {
-  margin-bottom: 0;
+  display: none;
 }
 
 .points-overview {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .points-overview .usage-block-title {
@@ -2603,12 +2520,11 @@ input[type="checkbox"]:checked::after {
 
 .points-overview .points-level-card {
   display: grid;
-  grid-template-columns: auto minmax(260px, 620px) auto;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-template-areas: none;
-  gap: 16px;
-  align-items: center;
-  justify-content: start;
-  width: min(860px, 100%);
+  gap: 14px;
+  align-items: start;
+  width: 100%;
   padding: 14px 16px;
   margin: 0;
   border-radius: var(--radius-sm);
@@ -2627,23 +2543,36 @@ input[type="checkbox"]:checked::after {
 .points-main {
   min-width: 0;
   display: grid;
-  gap: 9px;
+  gap: 8px;
 }
 
 .points-overview .points-level-badge {
-  width: 48px;
-  height: 48px;
-  border-radius: 15px;
-  gap: 1px;
+  width: auto;
+  height: auto;
+  border-radius: var(--radius-sm);
+  gap: 4px;
+  align-self: stretch;
+}
+
+.points-overview .points-metric {
+  min-height: 58px;
+  padding: 8px 10px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.42);
 }
 
 .points-overview .points-level-number {
-  font-size: 18px;
+  font-size: 23px;
+  font-family: var(--font-mono);
+  font-weight: 720;
   line-height: 1;
 }
 
 .points-overview .points-level-title {
-  max-width: 40px;
+  max-width: 100%;
   overflow: hidden;
   font-size: 10px;
   line-height: 1.1;
@@ -2652,9 +2581,9 @@ input[type="checkbox"]:checked::after {
 }
 
 .points-overview .points-total {
-  flex-direction: row;
-  align-items: baseline;
-  gap: 8px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
 }
 
 .points-overview .points-total strong {
@@ -2669,7 +2598,8 @@ input[type="checkbox"]:checked::after {
 }
 
 .points-overview .points-exp-bar {
-  height: 14px;
+  height: 12px;
+  opacity: 0.72;
 }
 
 .points-overview .points-exp-bar::before,
@@ -2682,33 +2612,33 @@ input[type="checkbox"]:checked::after {
 .points-overview #points-exp-text,
 .points-overview .points-exp-text {
   right: 0;
-  top: -11px;
+  top: -12px;
   transform: none;
   font-size: 10px;
   color: var(--text-muted);
 }
 
 .points-overview .points-streak {
+  grid-column: span 2;
   display: grid;
-  grid-template-columns: repeat(2, minmax(52px, auto));
-  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
   margin: 0;
-  justify-content: start;
+  justify-content: stretch;
 }
 
 .points-overview .points-streak span {
   display: grid;
+  align-content: start;
   gap: 3px;
-  min-width: 58px;
-  padding-left: 12px;
-  border-left: 1px solid rgba(34, 48, 64, 0.08);
+  min-width: 0;
   text-align: left;
 }
 
 .points-overview .points-streak strong {
   color: var(--text-main);
   font-family: var(--font-mono);
-  font-size: 17px;
+  font-size: 23px;
   font-weight: 720;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -2764,15 +2694,14 @@ input[type="checkbox"]:checked::after {
 
 .points-empty {
   grid-column: 1 / -1;
-  padding: 7px 0;
+  padding: 3px 0;
   color: var(--text-faint);
-  font-size: 12px;
-  text-align: center;
+  font-size: 11px;
+  text-align: left;
 }
 
 .overview-growth .points-empty {
-  border-top: 1px solid rgba(34, 48, 64, 0.06);
-  border-bottom: 1px solid rgba(34, 48, 64, 0.06);
+  border: 0;
 }
 
 .overview-growth .achievements-grid {
@@ -2788,6 +2717,12 @@ input[type="checkbox"]:checked::after {
 
 .overview-growth .achievements-grid:has(.points-empty:only-child) {
   display: block;
+  margin-top: -2px;
+}
+
+.overview-growth .usage-block:has(.achievements-grid .points-empty:only-child),
+.overview-growth .usage-block:has(.points-events .points-empty:only-child) {
+  display: none;
 }
 
 .overview-growth .achievement-icon {
@@ -2804,6 +2739,7 @@ input[type="checkbox"]:checked::after {
 
 .overview-growth .points-events:has(.points-empty:only-child) {
   display: block;
+  margin-top: -2px;
 }
 
 .overview-growth .points-event {
