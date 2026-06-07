@@ -52,7 +52,8 @@ pub fn refresh_camera_window(app: &AppHandle) {
         }
         match window.emit("camera-observation-refresh", ()) {
             Ok(()) => info!(
-                enabled = settings.appearance.camera_observation_enabled,
+                enabled = settings.appearance.camera_observation_enabled
+                    && settings.permissions.allow_camera_observation,
                 interval_sec = settings.appearance.camera_observation_interval_sec,
                 save_frames = settings.appearance.camera_save_frames,
                 "camera observation refresh emitted"
@@ -73,7 +74,10 @@ pub fn request_camera_capture(app: &AppHandle) {
         );
         return;
     }
-    if !AppSettings::load().appearance.camera_observation_enabled {
+    let settings = AppSettings::load();
+    if !settings.appearance.camera_observation_enabled
+        || !settings.permissions.allow_camera_observation
+    {
         return;
     }
     if let Some(window) = app.get_webview_window("camera") {
@@ -119,7 +123,9 @@ pub async fn cmd_camera_frame(
         return Ok(());
     }
     let settings = AppSettings::load();
-    if !settings.appearance.camera_observation_enabled {
+    if !settings.appearance.camera_observation_enabled
+        || !settings.permissions.allow_camera_observation
+    {
         return Ok(());
     }
     if let Some(window) = app.get_webview_window("camera") {

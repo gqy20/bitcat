@@ -24,7 +24,10 @@
 
   async function loadSettings() {
     const snapshot = await invoke("cmd_settings_load");
-    return snapshot?.appearance || {};
+    return {
+      appearance: snapshot?.appearance || {},
+      permissions: snapshot?.permissions || {},
+    };
   }
 
   async function ensureStream() {
@@ -68,8 +71,8 @@
     }
     captureRunning = true;
     try {
-      const appearance = await loadSettings();
-      if (!appearance.camera_observation_enabled) {
+      const { appearance, permissions } = await loadSettings();
+      if (!appearance.camera_observation_enabled || !permissions.allow_camera_observation) {
         stopStream();
         return;
       }
@@ -98,8 +101,8 @@
 
   async function refreshFromSettings() {
     try {
-      const appearance = await loadSettings();
-      if (appearance.camera_observation_enabled) {
+      const { appearance, permissions } = await loadSettings();
+      if (appearance.camera_observation_enabled && permissions.allow_camera_observation) {
         if (streamReady) {
           try {
             await invoke("cmd_camera_ready");

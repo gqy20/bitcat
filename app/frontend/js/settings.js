@@ -41,7 +41,7 @@ const ACTION_TYPE_LABELS = {
 };
 
 let SNAPSHOT = null;
-const dirty = { ai: false, user: false, actions: false, prompts: false, appearance: false, agent_watch: false };
+const dirty = { ai: false, user: false, actions: false, prompts: false, appearance: false, permissions: false, agent_watch: false };
 let currentTab = "overview";
 let selectedUsageModel = "__all";
 let agentWatchCopyBound = false;
@@ -103,6 +103,20 @@ async function mockInvoke(command) {
           default_data_dir: "C:\\Users\\you\\.bitcat",
           default_app_data_dir: "C:\\Users\\you\\AppData\\Roaming\\bitcat",
         },
+      },
+      permissions: {
+        onboarding_completed: false,
+        steam_demo_mode: false,
+        allow_screenshot_observation: true,
+        allow_camera_observation: false,
+        allow_shell_tool: false,
+        allow_read_file_tool: false,
+        allow_clipboard_tool: false,
+        allow_foreground_tool: false,
+        allow_launch_program_tool: false,
+        allow_hotkey_tool: false,
+        allow_agent_watch_remote: false,
+        diagnostics_enabled: true,
       },
       agent_watch: {
         enabled: false,
@@ -572,6 +586,60 @@ function collectAppearance() {
     camera_observation_interval_sec: interval,
     camera_save_frames: $("a-camera-save").checked,
     pet_asset_url: collectPetAssetUrl(),
+  };
+}
+
+function renderPermissions(p = {}) {
+  $("perm-onboarding-completed").checked = !!p.onboarding_completed;
+  $("perm-steam-demo").checked = !!p.steam_demo_mode;
+  $("perm-screenshot").checked = p.allow_screenshot_observation !== false;
+  $("perm-camera").checked = !!p.allow_camera_observation;
+  $("perm-shell").checked = !!p.allow_shell_tool;
+  $("perm-read-file").checked = !!p.allow_read_file_tool;
+  $("perm-clipboard").checked = !!p.allow_clipboard_tool;
+  $("perm-foreground").checked = !!p.allow_foreground_tool;
+  $("perm-launch").checked = !!p.allow_launch_program_tool;
+  $("perm-hotkey").checked = !!p.allow_hotkey_tool;
+  $("perm-agent-remote").checked = !!p.allow_agent_watch_remote;
+  $("perm-diagnostics").checked = p.diagnostics_enabled !== false;
+  $("perm-onboarding").classList.toggle("hidden", !!p.onboarding_completed);
+
+  [
+    "perm-onboarding-completed",
+    "perm-steam-demo",
+    "perm-screenshot",
+    "perm-camera",
+    "perm-shell",
+    "perm-read-file",
+    "perm-clipboard",
+    "perm-foreground",
+    "perm-launch",
+    "perm-hotkey",
+    "perm-agent-remote",
+    "perm-diagnostics",
+  ].forEach(id => { $(id).onchange = () => markDirty("permissions"); });
+
+  $("perm-complete").onclick = () => {
+    $("perm-onboarding-completed").checked = true;
+    markDirty("permissions");
+    toast("已标记为了解，保存后生效", "ok");
+  };
+}
+
+function collectPermissions() {
+  return {
+    onboarding_completed: $("perm-onboarding-completed").checked,
+    steam_demo_mode: $("perm-steam-demo").checked,
+    allow_screenshot_observation: $("perm-screenshot").checked,
+    allow_camera_observation: $("perm-camera").checked,
+    allow_shell_tool: $("perm-shell").checked,
+    allow_read_file_tool: $("perm-read-file").checked,
+    allow_clipboard_tool: $("perm-clipboard").checked,
+    allow_foreground_tool: $("perm-foreground").checked,
+    allow_launch_program_tool: $("perm-launch").checked,
+    allow_hotkey_tool: $("perm-hotkey").checked,
+    allow_agent_watch_remote: $("perm-agent-remote").checked,
+    diagnostics_enabled: $("perm-diagnostics").checked,
   };
 }
 
@@ -1365,6 +1433,10 @@ async function saveAll() {
       await invoke("cmd_settings_save_storage", { payload: collectStorage() });
       clearDirty("appearance");
     }
+    if (dirty.permissions) {
+      await invoke("cmd_settings_save_permissions", { payload: collectPermissions() });
+      clearDirty("permissions");
+    }
     if (dirty.agent_watch) {
       await invoke("cmd_settings_save_agent_watch", { payload: collectAgentWatch() });
       clearDirty("agent_watch");
@@ -1398,6 +1470,7 @@ function tabLabel(t) {
     actions: "互动方式",
     prompts: "提示词",
     appearance: "猫猫表现",
+    permissions: "发布与权限",
     "agent-watch": "陪你盯任务",
     agent_watch: "陪你盯任务",
     reminders: "不会忘的事",
@@ -1414,12 +1487,16 @@ async function loadSnapshot() {
     renderActions(SNAPSHOT.actions);
     renderPrompts(SNAPSHOT.prompts);
     renderAppearance(SNAPSHOT.appearance);
+    renderPermissions(SNAPSHOT.permissions);
     renderAgentWatch(SNAPSHOT.agent_watch);
     renderAbout(SNAPSHOT.about);
     loadUsageDiagnostics();
     loadMemoryReview();
     loadReminders();
-    ["ai", "user", "actions", "prompts", "appearance", "agent_watch"].forEach(clearDirty);
+    if (!SNAPSHOT.permissions?.onboarding_completed) {
+      switchTab("permissions");
+    }
+    ["ai", "user", "actions", "prompts", "appearance", "permissions", "agent_watch"].forEach(clearDirty);
   } catch (e) {
     log("加载失败: " + e);
     toast("加载配置失败：" + String(e), "err");

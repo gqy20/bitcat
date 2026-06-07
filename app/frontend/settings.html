@@ -26,6 +26,7 @@
         <button class="nav-item" data-tab="memory" type="button"><span class="icon icon-memory"></span><span>记得什么</span></button>
         <button class="nav-item" data-tab="actions" type="button"><span class="icon icon-actions"></span><span>互动方式</span></button>
         <button class="nav-item" data-tab="appearance" type="button"><span class="icon icon-appearance"></span><span>猫猫表现</span></button>
+        <button class="nav-item" data-tab="permissions" type="button"><span class="icon icon-permissions"></span><span>发布与权限</span></button>
         <button class="nav-item" data-tab="agent-watch" type="button"><span class="icon icon-agent-watch"></span><span>陪你盯任务</span></button>
         <button class="nav-item" data-tab="reminders" type="button"><span class="icon icon-reminders"></span><span>不会忘的事</span></button>
         <button class="nav-item" data-tab="prompts" type="button"><span class="icon icon-prompts"></span><span>提示词</span></button>
@@ -363,6 +364,107 @@
               <div id="a-pet-asset-picker" class="pet-asset-picker" role="listbox" aria-label="宠物资源"></div>
               <input id="a-pet-asset" class="hidden" type="text" placeholder="/__fixtures__/pets/piggy" spellcheck="false" />
               <small>保存后重载</small>
+            </div>
+          </div>
+        </section>
+
+        <section class="tab hidden permissions-pane" data-pane="permissions">
+          <div class="pane-head">
+            <div>
+              <h1>发布与权限</h1>
+            </div>
+            <button id="perm-complete" class="btn small primary" type="button">已了解</button>
+          </div>
+
+          <div id="perm-onboarding" class="permission-callout hidden">
+            <strong>首次启动需要确认权限</strong>
+            <span>BitCat 会把会话、观察和系统工具分开授权。未开启的能力不会因为 AI 请求而自动执行。</span>
+          </div>
+
+          <div class="settings-card permission-card">
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="perm-onboarding-completed">已完成首次说明</label>
+                <span>用于 Steam Demo 的启动闸门</span>
+              </div>
+              <input id="perm-onboarding-completed" type="checkbox" />
+            </div>
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="perm-steam-demo">Steam Demo 模式</label>
+                <span>按发布版口径收敛高风险能力</span>
+              </div>
+              <input id="perm-steam-demo" type="checkbox" />
+            </div>
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="perm-screenshot">截图观察</label>
+                <span>允许后台截屏并调用视觉分析</span>
+              </div>
+              <input id="perm-screenshot" type="checkbox" />
+            </div>
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="perm-camera">摄像头观察</label>
+                <span>仍需在猫猫表现中单独开启</span>
+              </div>
+              <input id="perm-camera" type="checkbox" />
+            </div>
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="perm-shell">AI 执行 shell</label>
+                <span>允许 PowerShell 命令，仍受危险命令策略拦截</span>
+              </div>
+              <input id="perm-shell" type="checkbox" />
+            </div>
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="perm-read-file">AI 读取文件</label>
+                <span>关闭时 read_file 工具会被拒绝</span>
+              </div>
+              <input id="perm-read-file" type="checkbox" />
+            </div>
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="perm-clipboard">AI 读取剪贴板</label>
+                <span>关闭时不会读取当前剪贴板文本</span>
+              </div>
+              <input id="perm-clipboard" type="checkbox" />
+            </div>
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="perm-foreground">AI 切换前台窗口</label>
+                <span>关闭时 force_foreground 工具不可用</span>
+              </div>
+              <input id="perm-foreground" type="checkbox" />
+            </div>
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="perm-launch">AI 启动程序</label>
+                <span>关闭时 launch_program 工具不可用</span>
+              </div>
+              <input id="perm-launch" type="checkbox" />
+            </div>
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="perm-hotkey">AI 发送热键</label>
+                <span>关闭时 send_hotkey 工具不可用</span>
+              </div>
+              <input id="perm-hotkey" type="checkbox" />
+            </div>
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="perm-agent-remote">Agent Watch 远程访问</label>
+                <span>关闭时远程查看和安装脚本都会拒绝</span>
+              </div>
+              <input id="perm-agent-remote" type="checkbox" />
+            </div>
+            <div class="setting-row switch-row">
+              <div class="setting-copy">
+                <label for="perm-diagnostics">诊断日志</label>
+                <span>保留结构化故障字段，不记录隐私正文</span>
+              </div>
+              <input id="perm-diagnostics" type="checkbox" />
             </div>
           </div>
         </section>

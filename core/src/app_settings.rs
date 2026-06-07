@@ -25,6 +25,8 @@ pub struct AppSettings {
     #[serde(default)]
     pub agent_watch: AgentWatchSettings,
     #[serde(default)]
+    pub permissions: PermissionSettings,
+    #[serde(default)]
     pub storage: StorageSettings,
 }
 
@@ -71,6 +73,35 @@ pub struct StorageSettings {
     pub data_dir: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app_data_dir: Option<String>,
+}
+
+/// Release-facing permission gates for AI and observation capabilities.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct PermissionSettings {
+    #[serde(default)]
+    pub onboarding_completed: bool,
+    #[serde(default)]
+    pub steam_demo_mode: bool,
+    #[serde(default = "default_true")]
+    pub allow_screenshot_observation: bool,
+    #[serde(default)]
+    pub allow_camera_observation: bool,
+    #[serde(default)]
+    pub allow_shell_tool: bool,
+    #[serde(default)]
+    pub allow_read_file_tool: bool,
+    #[serde(default)]
+    pub allow_clipboard_tool: bool,
+    #[serde(default)]
+    pub allow_foreground_tool: bool,
+    #[serde(default)]
+    pub allow_launch_program_tool: bool,
+    #[serde(default)]
+    pub allow_hotkey_tool: bool,
+    #[serde(default)]
+    pub allow_agent_watch_remote: bool,
+    #[serde(default = "default_true")]
+    pub diagnostics_enabled: bool,
 }
 
 /// 外观与行为设置：置顶、折叠、TTS、全局快捷键、截图间隔等
@@ -161,6 +192,25 @@ impl Default for AgentWatchSettings {
             use_tts: false,
             remote_view_enabled: true,
             remote_install_enabled: true,
+        }
+    }
+}
+
+impl Default for PermissionSettings {
+    fn default() -> Self {
+        Self {
+            onboarding_completed: false,
+            steam_demo_mode: false,
+            allow_screenshot_observation: true,
+            allow_camera_observation: false,
+            allow_shell_tool: false,
+            allow_read_file_tool: false,
+            allow_clipboard_tool: false,
+            allow_foreground_tool: false,
+            allow_launch_program_tool: false,
+            allow_hotkey_tool: false,
+            allow_agent_watch_remote: false,
+            diagnostics_enabled: true,
         }
     }
 }
@@ -327,6 +377,20 @@ mod tests {
                 remote_view_enabled: false,
                 remote_install_enabled: false,
             },
+            permissions: PermissionSettings {
+                onboarding_completed: true,
+                steam_demo_mode: true,
+                allow_screenshot_observation: true,
+                allow_camera_observation: true,
+                allow_shell_tool: true,
+                allow_read_file_tool: true,
+                allow_clipboard_tool: true,
+                allow_foreground_tool: true,
+                allow_launch_program_tool: true,
+                allow_hotkey_tool: true,
+                allow_agent_watch_remote: true,
+                diagnostics_enabled: false,
+            },
             storage: StorageSettings {
                 data_dir: Some("C:\\Users\\alice\\.bitcat".into()),
                 app_data_dir: Some("C:\\Users\\alice\\AppData\\Roaming\\bitcat".into()),
@@ -349,6 +413,9 @@ mod tests {
         assert!(restored.agent_watch.use_tts);
         assert!(!restored.agent_watch.remote_view_enabled);
         assert!(!restored.agent_watch.remote_install_enabled);
+        assert!(restored.permissions.onboarding_completed);
+        assert!(restored.permissions.allow_shell_tool);
+        assert!(!restored.permissions.diagnostics_enabled);
         assert_eq!(
             restored.storage.data_dir.as_deref(),
             Some("C:\\Users\\alice\\.bitcat")
@@ -363,7 +430,25 @@ mod tests {
         assert!(s.ai.model.is_none());
         assert_eq!(s.appearance, AppearanceSettings::default());
         assert_eq!(s.agent_watch, AgentWatchSettings::default());
+        assert_eq!(s.permissions, PermissionSettings::default());
         assert_eq!(s.storage, StorageSettings::default());
+    }
+
+    #[test]
+    fn test_default_permission_values_are_release_safe() {
+        let p = PermissionSettings::default();
+        assert!(!p.onboarding_completed);
+        assert!(!p.steam_demo_mode);
+        assert!(p.allow_screenshot_observation);
+        assert!(!p.allow_camera_observation);
+        assert!(!p.allow_shell_tool);
+        assert!(!p.allow_read_file_tool);
+        assert!(!p.allow_clipboard_tool);
+        assert!(!p.allow_foreground_tool);
+        assert!(!p.allow_launch_program_tool);
+        assert!(!p.allow_hotkey_tool);
+        assert!(!p.allow_agent_watch_remote);
+        assert!(p.diagnostics_enabled);
     }
 
     #[test]

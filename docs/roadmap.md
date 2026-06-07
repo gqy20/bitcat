@@ -87,7 +87,7 @@ Agent 管理线应优先复用现有栈：
 │  │          │  │ B5 文本记忆│  │          │  │          │   │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
 │                                                             │
-│  当前优先级：A2 GameDef 持久化 → 成长上下文/权限 gate → E2/E3 → Observation Hints → C1 → D1│
+│  当前主流程：Steam Demo → Early Access → 正式版；先补核心玩法、权限合规和 Steam 集成│
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -379,25 +379,105 @@ pet/bubble/panel ──→ E2 状态呈现与手柄操作
 
 ## Track D: 商业化
 
-### D1. Steam 发布准备
+### D1. Steam 发布主流程
 
-| 项目 | 要求 | 当前状态 |
-|------|------|---------|
-| Steamworks SDK | 集成 | 待做 |
-| App ID | $100（可回收） | 待申请 |
-| 年龄评级 | IARC（免费） | 待做 |
-| Store 页面 | capsule + 截片 + trailer | 待准备 |
-| AI 内容披露 | 实时生成内容声明 | 需要（舞蹈+游戏+对话+视觉分析） |
-| 自动更新 | tauri-plugin-updater | Tauri 已支持 |
+BitCat 当前已经具备可打包、可运行、可接 Steamworks 的 Windows 桌面应用底座，但还不能直接按“正式 Steam 游戏”发布。当前更准确的定位是：**AI 桌面伙伴 + 轻游戏体验**。下一阶段主流程不再只按 A/B/C/E 模块推进，而是按 Steam 发布闸门推进：先做可审查 Demo，再做 Early Access，最后收束正式版。
 
-### D2. 定价建议
+核心判断：
+
+- 技术底座已有：Tauri bundle、`make release` / `make dist`、portable zip、Steamworks 启动探针、多窗口桌宠和 5 个内置小游戏。
+- 最大缺口不是“能不能启动”，而是“玩家买到的核心游戏闭环是什么”。当前 Snake / Memory / Catch / Battle / Gomoku 更像薄片，需要补一个 BitCat 专属主玩法。
+- Steam 审核风险主要来自 AI、截图/摄像头观察、读文件、shell、剪贴板和前台控制等高权限能力。发布版必须默认收敛权限，并把授权、隐私、日志和删除路径讲清楚。
+- Steam 平台能力仍处于探针级：`app/src/steam.rs` 只验证 DLL/AppID/客户端链路，尚未接成就、统计、云存档、SteamPipe depot 或 Workshop。
+
+推荐发布节奏：
+
+| 阶段 | 目标 | 必须完成 | 不做/后置 |
+|------|------|----------|-----------|
+| **Steam Demo / Playtest** | 验证安装、启动、权限说明、AI 对话、小游戏窗口和 Steam 链路 | 干净机器 smoke test、首次启动权限页、AI 内容披露草案、SteamPipe 上传脚本、最小 Steam init 诊断、1 个可反复玩的核心玩法切片 | DLC、Workshop、复杂社区功能、完整 RPG |
+| **Early Access** | 以“AI 桌面伙伴 + 轻游戏”诚实发售 | `Invasion` 或同等级 BitCat 语义化小游戏、积分/成就闭环、Steam Achievements、Steam Cloud、隐私/数据删除、崩溃恢复、商店素材 | 大规模 3D 重写、多人/借猫社区、生成完整 3D 关卡 |
+| **正式版** | 功能承诺、商店页和实际体验一致 | 核心玩法稳定、权限/合规成熟、Steam 平台功能完整、资产/包体策略稳定、长期存档迁移策略、回归测试矩阵 | 未验证的高风险 AI 控制能力 |
+
+### D2. Steam 工程清单
+
+| 项目 | 发布要求 | 当前状态 | 下一步 |
+|------|----------|----------|--------|
+| AppID / Partner 设置 | Steam 后台创建应用、配置 depot、分支和商店基础信息 | 待申请/配置 | 先建立 dev AppID，明确 Demo/Playtest/主应用关系 |
+| Steamworks SDK | 运行时初始化、成就/统计/云存档 API | 只有 `steam_api64.dll` 动态加载探针 | 接入正式封装层，保留非 Steam 构建可运行 |
+| SteamPipe | 上传 build 到 depot，维护 default/beta/internal 分支 | 目前只有 portable zip | 在 `xtask` 增加或旁路维护 SteamPipe build 脚本，生成上传清单 |
+| Steam Achievements | 映射游戏内成就到 Steam 成就 | 本地 points/12 个成就已可用 | 把 points 事件桥接到 Steam stats/achievements，离线失败可重试 |
+| Steam Cloud | 同步进度和设置 | 本地 `~/.bitcat` 数据目录已规划 | 只同步非敏感数据：points、小游戏分数、宠物状态、用户可选设置；记忆/截图/摄像头记录默认不同步 |
+| Store 页面 | capsule、截图、预告片、短描述、长描述、标签、系统需求 | 待准备 | 先按 Demo 口径写“一句话承诺”，避免夸大 AI 能力 |
+| Build Review | 商店页功能和实际 build 一致，干净环境可启动 | 未做 Steam 环境回归 | 建 Windows 干净机 smoke checklist：安装、启动、关闭、重启、权限、手柄、小游戏、AI fallback |
+| 自动更新 | Steam 默认负责分发；Tauri updater 可后置 | Tauri 支持但不必首发接 | Steam 版优先走 Steam 更新，非 Steam portable 再评估 updater |
+
+### D3. AI、隐私与高权限合规
+
+Steam 版必须把 AI 能力和高权限能力做成可解释、可关闭、可审计的产品面，而不是隐藏在设置深处。
+
+发布前必做：
+
+1. **首次启动权限向导**：明确 AI 对话、截图观察、摄像头观察、文件读取、shell、剪贴板、前台窗口控制分别会做什么；截图可默认启用但必须可见可关，摄像头继续默认关闭，shell/文件/剪贴板保持显式确认或安全边界。
+2. **AI 内容披露**：商店页和内容问卷说明使用运行时 AI：对话、舞蹈/小游戏结构化生成、视觉分析、提醒润色。写清楚 guardrails：权限 gate、工具 schema 校验、危险命令拦截、摄像头保守描述、敏感属性不推断。
+3. **隐私与数据删除**：设置页提供数据位置、导出/清理入口，覆盖 memory、screenshots、camera、logs、points、reminders、agent watch。Steam Cloud 默认排除敏感目录。
+4. **发布版默认权限收敛**：高风险工具不因“AI 想调用”自动执行。Rust 负责 schema、权限、审计和执行边界，模型只负责建议和生成结构化意图。
+5. **诊断日志分级**：发布版日志继续保留故障复盘字段，但大文本、图片、隐私正文不裸写 INFO；用户可以关闭或清理诊断数据。
+
+### D4. 核心玩法收束
+
+Steam 玩家需要一个明确理由每天打开 BitCat。下一阶段不建议只增加第 6 个传统小游戏，而是做一个能体现项目差异化的 BitCat 语义化小游戏。
+
+推荐主玩法原型：`Invasion / 桌面小怪入侵`。
+
+- 小怪从游戏窗口或屏幕边缘出现，试图偷走鱼干、记忆碎片、提醒便签、Agent 任务卡等“投影目标”。
+- 这些目标只影响本局分数、反馈和宠物情绪，不直接修改真实记忆、提醒或 Agent 任务。
+- Rust 只暴露安全摘要，不把隐私正文、真实控制权或删除能力交给小游戏。
+- 胜负仍走现有 `game` 窗口生命周期、`GameWin` / `GameLose` 宠物状态、points 事件和成就系统。
+
+这条线的目标不是做大 RPG，而是把 BitCat 已有系统变成可玩的闭环：
+
+```text
+memory/reminder/agent_watch/points 安全摘要
+        ↓
+Invasion 本局目标和风险
+        ↓
+game window 输入/胜负/分数
+        ↓
+PetEvent + points + achievements + Steam stats
+        ↓
+形成“陪伴关系正在被游戏化”的可售卖体验
+```
+
+### D5. 商店定位与定价建议
+
+一句话定位建议：
+
+> 一只会记住你、陪你工作、偶尔把桌面变成小游戏战场的 AI 桌面伙伴。
+
+商店页不要把 BitCat 写成通用 AI 助手或完整 RPG。更稳妥的品类是：桌面宠物、AI companion、casual、utility-light game、cozy/productivity companion。正式卖点应围绕“桌宠陪伴 + 可玩互动 + 本地成长 + 玩家可控权限”。
 
 | 对比产品 | 价格 | 特点 |
 |---------|------|------|
 | VPet | 免费 | 开源社区驱动 |
 | Weyrdlets 2.0 | $5-8 | 有迷你游戏但无 AI |
 | AI Desktop Pet | ~$8 | Live2D + 本地 LLM + Workshop |
-| **BitCat** | **$5-7** | 桌面陪伴 + AI 对话 + **AI 生成内容** + 开源 |
+| **BitCat Demo** | 免费 | 验证 AI 桌宠和核心玩法切片 |
+| **BitCat Early Access** | **$4.99-6.99** | 桌面陪伴 + AI 对话 + 轻游戏 + 成长/成就 |
+| **BitCat 正式版** | **$6.99-9.99** | 更完整玩法、Steam 成就/云存档、资产包和长期打磨 |
+
+### D6. 首发质量闸门
+
+发布前每个 build 必须过这些检查：
+
+- `make test-fast`
+- `cd app/frontend && npx vitest run`
+- `make release` 或 `make dist`
+- 干净 Windows 用户目录启动，不依赖开发环境 `.env` 或源码路径
+- 无 Steam 客户端 / 有 Steam 客户端 / Steam AppID 缺失三种模式均有可解释行为
+- 首次启动权限向导可完成，关闭截图/摄像头/AI 后不会反复打扰
+- 游戏窗口可打开、输入、结束、关闭，手柄独占不会卡住普通桌宠操作
+- AI API 不可用时有友好 fallback，不出现空白气泡或未创建却口头承诺的提醒/任务
+- 日志和用户数据目录可在设置页定位并清理
 
 ---
 
@@ -416,21 +496,23 @@ pet/bubble/panel ──→ E2 状态呈现与手柄操作
            └─────────────────────────────────────┘
                   ↓
 短期        ┌─────────────────────────────────────┐
-1-3天      │  A2 GameDef 持久化与分数 JSONL         │  ← start_game 已完成，perform_game 仍待做
-           │  B7 成长上下文 / 权限 gate             │  ← points 已有，补能力开关
-           │  E2 Agent Watch panel 收敛             │  ← 已有浮动窗/顶部通知，补手柄工作流
-           │  Observation Hints                     │  ← 让截图观察变成可复用提示资产
+1-3天      │  D1 Demo 闸门：权限向导 + smoke 清单    │  ← 先保证可审查、可解释、可回归
+           │  D4 Invasion 核心玩法 MVP              │  ← 把记忆/提醒/Agent 投影成玩法目标
+           │  A2 分数 JSONL / GameDef 持久化         │  ← 为 Demo 分数、成就和云存档打底
+           │  B7 成长上下文 / 权限 gate             │  ← points 已有，补发布版能力开关
            └─────────────────────────────────────┘
                   ↓
 中期        ┌─────────────────────────────────────┐
-1-3天      │  宠物资源包发布策略                    │
-           │  E3 Agent 控制动作与安全审计           │
-           │  A3 内容扩展（更多游戏类型）           │
+2-5天      │  D2 SteamPipe / Achievements / Cloud  │
+           │  D3 AI 披露、隐私删除、敏感目录排除     │
+           │  E2 Agent Watch panel 收敛             │  ← 作为 Early Access 差异化配套
+           │  宠物资源包发布策略                    │
            └─────────────────────────────────────┘
                   ↓
 大块        ┌─────────────────────────────────────┐
-4-8天      │  C1 桌宠 3D 体素化                    │
-           │  E4 多工作区 / 远程机器 Agent 管理     │
+4-10天     │  D5 商店素材 + Demo/EA 分支回归        │
+           │  E3 Agent 控制动作与安全审计           │
+           │  C1 桌宠 3D 体素化                    │
            │  C2/C3 3D 动画与游戏能力               │
            └─────────────────────────────────────┘
 ```
@@ -447,8 +529,11 @@ E2(桌宠管家) ──→ E3(控制动作) 只对明确会话提供窄动作入
 B5(文本记忆) ──→ E4(多项目历史) 让 Agent 会话摘要可 grep、可回忆
 A1/A2(内容型工具) ─→ B4(工具运行时) 提供舞蹈/游戏两类真实样本，验证工具事件协议
 B4(工具运行时) ──→ 控制固定 prompt 成本，给记忆候选留预算，也为工具事件记忆化打基础
-C1(3D化) ──→ C2/C3 渲染层就绪
-A1+A2+E1/E2+C1 ──→ D1(Steam) MVP 差异化更完整
+D1(权限/Steam闸门) ──→ Demo/Playtest 可审查
+D4(Invasion) ──→ Early Access 核心玩法承诺
+A2+B7 ──→ Steam Achievements / Stats / Cloud 的本地事实来源
+D3(合规) ──→ 发布版默认权限收敛，降低 AI/高权限审核风险
+C1(3D化) ──→ C2/C3 渲染层就绪，但不阻塞 Demo/EA
 ```
 
 ---
@@ -490,9 +575,9 @@ A1+A2+E1/E2+C1 ──→ D1(Steam) MVP 差异化更完整
 | **C1** | 3D 体素化 | ~1200-1800 行 | three.js | P3，4-8 天 |
 | **C2** | 动画增强 | ~300-500 行 | 0 | P3，1-3 天 |
 | **C3** | 3D 游戏生成 | ~700-1000 行 | cannon-es 等 | P3，3-6 天 |
-| **D1** | Steam 发布 | 集成工作 | Steamworks SDK | P4，2-5 天 |
+| **D1-D6** | Steam 发布主流程 | Demo/EA 闸门、权限合规、SteamPipe、成就/云存档、商店素材和 smoke 回归 | Steamworks SDK / SteamPipe | P0 主线，分阶段推进 |
 
-**当前可玩 Demo 的基础设施已超过原 MVP 预期；下一阶段最短路径是 A2 GameDef 持久化 → B7 成长权限 → E2/E3 → Observation Hints，让“AI 生成可玩内容”“成长激励”“看管其他 Agent”和“观察经验沉淀”进入同一套可审计闭环。**
+**当前可玩 Demo 的基础设施已超过原 MVP 预期；下一阶段最短路径是 D1 Demo 闸门 → D4 Invasion 核心玩法 MVP → A2/B7 分数、成长和权限闭环 → D2/D3 Steam 平台与合规收束。目标是先让 BitCat 成为可审查、可解释、可反复游玩的 Steam Demo，再推进 Early Access。**
 
 ### 当前打磨队列
 

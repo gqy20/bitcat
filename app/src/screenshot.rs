@@ -566,7 +566,8 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
             info!("[screenshot] shutdown requested, exiting");
             break;
         }
-        let interval_sec = bitcat_core::app_settings::AppSettings::load()
+        let app_settings = bitcat_core::app_settings::AppSettings::load();
+        let interval_sec = app_settings
             .appearance
             .screenshot_interval_sec
             .clamp(5, 3600);
@@ -578,6 +579,17 @@ pub fn screenshot_loop(app: &tauri::AppHandle) {
         }
         cycle_count += 1;
         trace!(cycle = cycle_count, "[screenshot] sleep end");
+
+        if !bitcat_core::app_settings::AppSettings::load()
+            .permissions
+            .allow_screenshot_observation
+        {
+            debug!(
+                cycle = cycle_count,
+                "screenshot observation skipped by permission settings"
+            );
+            continue;
+        }
 
         trace!("[screenshot] 获取 state");
         let state: tauri::State<SharedScreenshotState> = app.state();

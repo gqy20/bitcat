@@ -11,6 +11,9 @@ use crate::logging::log_preview;
 
 /// shell 工具被安全策略拦截时返回给模型的稳定原因。
 pub const POLICY_BLOCK_REASON: &str = "此命令被安全策略阻止，可能造成数据丢失或系统损坏";
+/// Tool calls disabled by the user's release-facing permission settings.
+pub const PERMISSION_DISABLED_REASON: &str =
+    "此能力已在 BitCat 权限设置中关闭，需要用户在设置页手动开启后才能使用";
 
 /// 空结构体，实现 rig 的 PromptHook trait，在工具调用前进行安全检查
 #[derive(Clone)]
@@ -26,6 +29,11 @@ impl<M: rig::completion::CompletionModel> PromptHook<M> for PermissionHook {
     ) -> impl std::future::Future<Output = ToolCallHookAction> + Send {
         let cmd_lower = args.to_lowercase();
         async move {
+            if let Some(reason) = disabled_by_settings(tool_name) {
+                warn!(tool = %tool_name, reason = %reason, "tool call blocked by permission settings");
+                return ToolCallHookAction::Skip { reason };
+            }
+
             match tool_name {
                 "shell" => {
                     let command_preview = log_preview(args, 120);
@@ -91,5 +99,41 @@ fn is_dangerous_command(cmd: &str) -> bool {
 
 /// 判断工具结果是否来自 PermissionHook 的安全策略拦截。
 pub fn is_policy_block_reason(text: &str) -> bool {
-    text == POLICY_BLOCK_REASON
+    text == POLICY_BLOCK_REASON || text == PERMISSION_DISABLED_REASON
+}
+
+fn disabled_by_settings(tool_name: &str) -> Option<String> {
+    let permissions = crate::app_settings::AppSettings::load().permissions;
+    let allowed = match tool_name {
+        "shell" => permissions.allow_shell_tool,
+        "read_file" => permissions.allow_read_file_tool,
+        "read_clipboard" => permissions.allow_clipboard_tool,
+        "force_foreground" => permissions.allow_foreground_tool,
+        "launch_program" => permissions.allow_launch_program_tool,
+        "send_hotkey" => permissions.allow_hotkey_tool,
+        _ => return None,
+    };
+    if allowed {
+        None
+    } else {
+        Some(PERMISSION_DISABLED_REASON.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_settings_block_high_risk_tools() {
+        assert_eq!(
+            disabled_by_settings("shell").as_deref(),
+            Some(PERMISSION_DISABLED_REASON)
+        );
+        assert_eq!(
+            disabled_by_settings("read_file").as_deref(),
+            Some(PERMISSION_DISABLED_REASON)
+        );
+        assert!(disabled_by_settings("get_time").is_none());
+    }
 }

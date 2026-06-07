@@ -9,7 +9,8 @@
 use crate::commands::SharedWindowState;
 use bitcat_core::action::{ActionConfig, ActionDef, Defaults};
 use bitcat_core::app_settings::{
-    AgentWatchSettings, AiOverride, AppSettings, AppearanceSettings, StorageSettings,
+    AgentWatchSettings, AiOverride, AppSettings, AppearanceSettings, PermissionSettings,
+    StorageSettings,
 };
 use bitcat_core::memory::{LongTermMemory, LongTermReviewEntry};
 use bitcat_core::prompts::PromptsConfig;
@@ -86,6 +87,7 @@ pub struct SettingsSnapshot {
     pub prompts: PromptsConfig,
     pub appearance: AppearanceSettings,
     pub agent_watch: AgentWatchSettings,
+    pub permissions: PermissionSettings,
     pub storage: StorageView,
     pub about: AboutInfo,
     /// Complete configurable button catalog, ordered by button index.
@@ -279,6 +281,34 @@ pub struct StorageInput {
     pub app_data_dir: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct PermissionInput {
+    #[serde(default)]
+    pub onboarding_completed: bool,
+    #[serde(default)]
+    pub steam_demo_mode: bool,
+    #[serde(default = "default_true")]
+    pub allow_screenshot_observation: bool,
+    #[serde(default)]
+    pub allow_camera_observation: bool,
+    #[serde(default)]
+    pub allow_shell_tool: bool,
+    #[serde(default)]
+    pub allow_read_file_tool: bool,
+    #[serde(default)]
+    pub allow_clipboard_tool: bool,
+    #[serde(default)]
+    pub allow_foreground_tool: bool,
+    #[serde(default)]
+    pub allow_launch_program_tool: bool,
+    #[serde(default)]
+    pub allow_hotkey_tool: bool,
+    #[serde(default)]
+    pub allow_agent_watch_remote: bool,
+    #[serde(default = "default_true")]
+    pub diagnostics_enabled: bool,
+}
+
 fn default_screenshot_interval_sec() -> u64 {
     30
 }
@@ -447,6 +477,7 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
         prompts: prompts_cfg,
         appearance: overlay.appearance,
         agent_watch: overlay.agent_watch,
+        permissions: overlay.permissions,
         storage: StorageView {
             settings: overlay.storage,
             paths: bitcat_core::storage::storage_paths()?,
@@ -1028,6 +1059,29 @@ pub async fn cmd_settings_save_storage(payload: StorageInput) -> Result<(), Stri
     Ok(())
 }
 
+/// Save release-facing permission gates.
+#[tauri::command]
+pub async fn cmd_settings_save_permissions(payload: PermissionInput) -> Result<(), String> {
+    let mut s = AppSettings::load();
+    s.permissions = PermissionSettings {
+        onboarding_completed: payload.onboarding_completed,
+        steam_demo_mode: payload.steam_demo_mode,
+        allow_screenshot_observation: payload.allow_screenshot_observation,
+        allow_camera_observation: payload.allow_camera_observation,
+        allow_shell_tool: payload.allow_shell_tool,
+        allow_read_file_tool: payload.allow_read_file_tool,
+        allow_clipboard_tool: payload.allow_clipboard_tool,
+        allow_foreground_tool: payload.allow_foreground_tool,
+        allow_launch_program_tool: payload.allow_launch_program_tool,
+        allow_hotkey_tool: payload.allow_hotkey_tool,
+        allow_agent_watch_remote: payload.allow_agent_watch_remote,
+        diagnostics_enabled: payload.diagnostics_enabled,
+    };
+    s.save()?;
+    info!(permissions = ?s.permissions, "permission settings saved");
+    Ok(())
+}
+
 /// Save Claude Code Agent watch settings.
 #[tauri::command]
 pub async fn cmd_settings_save_agent_watch(payload: AgentWatchInput) -> Result<(), String> {
@@ -1071,6 +1125,11 @@ pub async fn cmd_settings_reset(category: String) -> Result<(), String> {
         "storage" => {
             let mut s = AppSettings::load();
             s.storage = StorageSettings::default();
+            s.save()?;
+        }
+        "permissions" => {
+            let mut s = AppSettings::load();
+            s.permissions = PermissionSettings::default();
             s.save()?;
         }
         "ai" => {
@@ -1122,6 +1181,7 @@ mod tests {
             prompts: PromptsConfig::default(),
             appearance: AppearanceSettings::default(),
             agent_watch: AgentWatchSettings::default(),
+            permissions: PermissionSettings::default(),
             storage: StorageView {
                 settings: StorageSettings::default(),
                 paths: bitcat_core::storage::storage_paths().unwrap(),

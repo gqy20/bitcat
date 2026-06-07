@@ -316,8 +316,12 @@ impl ViewResponse {
 
 fn view_response(app: &AppHandle, path: &str) -> ViewResponse {
     let clean_path = path.split('?').next().unwrap_or(path);
-    let settings = AppSettings::load().agent_watch;
-    if let Some(response) = remote_access_forbidden(clean_path, &settings) {
+    let app_settings = AppSettings::load();
+    if let Some(response) = remote_access_forbidden(
+        clean_path,
+        &app_settings.agent_watch,
+        app_settings.permissions.allow_agent_watch_remote,
+    ) {
         return response;
     }
     match clean_path {
@@ -384,6 +388,7 @@ fn view_response(app: &AppHandle, path: &str) -> ViewResponse {
 fn remote_access_forbidden(
     clean_path: &str,
     settings: &AgentWatchSettings,
+    permission_enabled: bool,
 ) -> Option<ViewResponse> {
     let is_view_path = matches!(
         clean_path,
@@ -395,6 +400,13 @@ fn remote_access_forbidden(
             | "/agent-watch-icon-128.png"
             | "/agent-watch-icon-256.png"
     );
+    if (is_view_path || clean_path == "/remote-install.sh") && !permission_enabled {
+        return Some(ViewResponse::text(
+            "403 Forbidden",
+            "application/json",
+            json_error("remote Agent Watch is disabled in permission settings"),
+        ));
+    }
     if is_view_path && !settings.remote_view_enabled {
         return Some(ViewResponse::text(
             "403 Forbidden",
@@ -1297,7 +1309,11 @@ pub async fn cmd_get_agent_sessions(
 
 #[tauri::command]
 pub async fn cmd_get_remote_install_cmd() -> Result<RemoteInstallInfo, String> {
-    if !AppSettings::load().agent_watch.remote_install_enabled {
+    let settings = AppSettings::load();
+    if !settings.permissions.allow_agent_watch_remote {
+        return Err("remote Agent Watch is disabled in permission settings".to_string());
+    }
+    if !settings.agent_watch.remote_install_enabled {
         return Err("remote Agent Watch installer is disabled in settings".to_string());
     }
     crate::remote_endpoint::remote_install_info()
@@ -1648,28 +1664,33 @@ mod tests {
         let mut settings = AgentWatchSettings::default();
         settings.remote_view_enabled = false;
         assert_eq!(
-            remote_access_forbidden("/watch", &settings).map(|response| response.status),
+            remote_access_forbidden("/watch", &settings, true).map(|response| response.status),
             Some("403 Forbidden")
         );
         assert_eq!(
-            remote_access_forbidden("/agent-sessions", &settings).map(|response| response.status),
-            Some("403 Forbidden")
-        );
-        assert_eq!(
-            remote_access_forbidden("/manifest.webmanifest", &settings)
+            remote_access_forbidden("/agent-sessions", &settings, true)
                 .map(|response| response.status),
             Some("403 Forbidden")
         );
-        assert!(remote_access_forbidden("/health", &settings).is_none());
+        assert_eq!(
+            remote_access_forbidden("/manifest.webmanifest", &settings, true)
+                .map(|response| response.status),
+            Some("403 Forbidden")
+        );
+        assert!(remote_access_forbidden("/health", &settings, true).is_none());
 
         settings.remote_view_enabled = true;
         settings.remote_install_enabled = false;
         assert_eq!(
-            remote_access_forbidden("/remote-install.sh", &settings)
+            remote_access_forbidden("/remote-install.sh", &settings, true)
                 .map(|response| response.status),
             Some("403 Forbidden")
         );
-        assert!(remote_access_forbidden("/watch", &settings).is_none());
+        assert!(remote_access_forbidden("/watch", &settings, true).is_none());
+        assert_eq!(
+            remote_access_forbidden("/watch", &settings, false).map(|response| response.status),
+            Some("403 Forbidden")
+        );
     }
 
     #[test]
