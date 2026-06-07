@@ -21,6 +21,10 @@ pub enum GameInput {
     Pause,
     /// Hold-to-speed-up input for games that support boost.
     Boost { active: bool },
+    /// Generic option cycling for non-combat games.
+    Cycle { dir: i32 },
+    /// Generic undo/backtrack action for puzzle games.
+    Undo,
     /// Directional input from a d-pad, hat, arrow keys, or WASD.
     Direction { dx: i32, dy: i32 },
     /// Primary battle attack.

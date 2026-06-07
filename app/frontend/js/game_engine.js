@@ -1927,6 +1927,10 @@
   async function initEvents() {
     log('init events begin');
     document.addEventListener('keydown', (e) => {
+      if (engine && typeof engine.handleKey === 'function' && engine.handleKey(e.key, e)) {
+        e.preventDefault();
+        return;
+      }
       const input = toInputFromKey(e);
       if (!input || !engine) return;
       e.preventDefault();

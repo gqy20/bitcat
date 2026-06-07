@@ -91,6 +91,7 @@ pub fn run() {
             game::cmd_start_catch,
             game::cmd_start_gomoku,
             game::cmd_start_arena,
+            game::cmd_start_beads,
             game::cmd_start_game_with_def,
             game::cmd_get_current_game,
             game::cmd_game_end,

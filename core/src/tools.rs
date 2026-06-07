@@ -723,6 +723,7 @@ fn start_game_kind_label(kind: StartGameKind) -> &'static str {
         StartGameKind::Battle => "battle",
         StartGameKind::Gomoku => "gomoku",
         StartGameKind::Arena => "arena",
+        StartGameKind::Beads => "beads",
     }
 }
 

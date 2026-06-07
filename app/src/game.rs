@@ -129,6 +129,11 @@ pub fn start_default_arena(app: &AppHandle) -> Result<(), String> {
     start_game(app, GameDef::default_arena())
 }
 
+/// Start the built-in pixel bead mode.
+pub fn start_default_beads(app: &AppHandle) -> Result<(), String> {
+    start_game(app, GameDef::default_beads())
+}
+
 /// Return the current game type for gamepad input routing.
 pub fn current_game_type(app: &AppHandle) -> Option<MinigameType> {
     let state: tauri::State<'_, SharedGame> = app.state();
@@ -397,6 +402,13 @@ pub fn cmd_start_gomoku(app: AppHandle) -> Result<(), String> {
 pub fn cmd_start_arena(app: AppHandle) -> Result<(), String> {
     info!("[game] cmd_start_arena invoked");
     start_default_arena(&app)
+}
+
+/// Frontend request to start the built-in pixel bead mode.
+#[tauri::command]
+pub fn cmd_start_beads(app: AppHandle) -> Result<(), String> {
+    info!("[game] cmd_start_beads invoked");
+    start_default_beads(&app)
 }
 
 /// Frontend or AI request to start a game from a definition.

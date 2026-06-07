@@ -139,6 +139,18 @@
         dialogue: { start: '传送门打开了，帮我一起打！', win: '赢啦！材料到手！', lose: '呜...下次我会更强。' },
       }),
     },
+    beads: {
+      label: 'Beads',
+      config: () => ({
+        game_type: 'beads',
+        title: 'Pixel Beads',
+        grid: { width: 16, height: 16, cell_size: 36 },
+        player: { speed_ms: 120, initial_length: 3 },
+        rules: { walls_kill: false, self_kill: false, food_count: 0, speed_ramp: 1.0, win_length: 256 },
+        theme: { head: 'cat', body: 'dot', food: 'fish', trail_alpha: 0.55 },
+        dialogue: { start: '喵! 看我的!', win: '拼完啦', lose: '下次再拼' },
+      }),
+    },
   };
 
   const params = new URLSearchParams(location.search);

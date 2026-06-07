@@ -6,7 +6,7 @@ defaults:
   width: 480
   height: 420
   columns: 3
-  rows: 2
+  rows: 3
 
 actions:
   game:
@@ -50,3 +50,10 @@ actions:
     order: 60
     type: builtin
     command: arena
+
+  beads:
+    label: 拼豆
+    icon: "B"
+    order: 70
+    type: builtin
+    command: beads

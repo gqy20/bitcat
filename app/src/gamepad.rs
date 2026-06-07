@@ -594,6 +594,14 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                                         info!("→ 游戏取消");
                                         emit_game_input(app, GameInput::Cancel);
                                     }
+                                    "X" => {
+                                        info!("→ 游戏选项切换");
+                                        emit_game_input(app, GameInput::Cycle { dir: 1 });
+                                    }
+                                    "Y" => {
+                                        info!("→ 游戏撤销");
+                                        emit_game_input(app, GameInput::Undo);
+                                    }
                                     "Start" => {
                                         info!("→ 游戏暂停");
                                         emit_game_input(app, GameInput::Pause);

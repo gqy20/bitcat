@@ -53,6 +53,8 @@ pub enum Action {
     PlayGomokuDefault,
     /// Start the built-in 3D fighting arena mode.
     PlayArenaDefault,
+    /// Start the built-in pixel bead mode.
+    PlayBeadsDefault,
     /// 立即截图 + Vision 分析
     ScreenshotNow,
     /// 启动程序（launch 动作）
@@ -210,6 +212,12 @@ impl ActionBus {
                     warn!(error = %e, "play arena action failed");
                 }
             }
+            Action::PlayBeadsDefault => {
+                info!(?source, action = "PlayBeadsDefault", "action dispatch");
+                if let Err(e) = crate::game::start_default_beads(app) {
+                    warn!(error = %e, "play beads action failed");
+                }
+            }
             Action::ScreenshotNow => {
                 info!(?source, action = "ScreenshotNow", "action dispatch");
                 let app = app.clone();
@@ -286,6 +294,7 @@ pub(crate) fn action_for_start_game_kind(kind: bitcat_core::game_request::StartG
         bitcat_core::game_request::StartGameKind::Battle => Action::PlayBattleDefault,
         bitcat_core::game_request::StartGameKind::Gomoku => Action::PlayGomokuDefault,
         bitcat_core::game_request::StartGameKind::Arena => Action::PlayArenaDefault,
+        bitcat_core::game_request::StartGameKind::Beads => Action::PlayBeadsDefault,
     }
 }
 
@@ -398,6 +407,7 @@ mod tests {
             Action::PlayBattleDefault,
             Action::PlayGomokuDefault,
             Action::PlayArenaDefault,
+            Action::PlayBeadsDefault,
             Action::ScreenshotNow,
             Action::Launch {
                 program: "code".into(),
@@ -446,6 +456,10 @@ mod tests {
         assert_eq!(
             action_for_start_game_kind(StartGameKind::Arena),
             Action::PlayArenaDefault
+        );
+        assert_eq!(
+            action_for_start_game_kind(StartGameKind::Beads),
+            Action::PlayBeadsDefault
         );
     }
 

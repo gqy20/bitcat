@@ -19,6 +19,7 @@ pub enum MinigameType {
     Battle,
     Gomoku,
     Arena,
+    Beads,
 }
 
 /// 网格尺寸配置。
@@ -306,6 +307,44 @@ impl GameDef {
         }
     }
 
+    /// Built-in pixel bead preset. The frontend owns bead patterns and color
+    /// placement while Rust keeps the launch envelope bounded.
+    pub fn default_beads() -> Self {
+        Self {
+            game_type: MinigameType::Beads,
+            title: "Pixel Beads".into(),
+            grid: GameGrid {
+                width: 16,
+                height: 16,
+                cell_size: 36,
+            },
+            player: PlayerConfig {
+                speed_ms: 120,
+                initial_length: 3,
+            },
+            rules: GameRules {
+                walls_kill: false,
+                self_kill: false,
+                food_count: 0,
+                speed_ramp: 1.0,
+                win_length: 256,
+            },
+            theme: GameTheme {
+                head: "cat".into(),
+                body: "dot".into(),
+                food: "fish".into(),
+                trail_alpha: 0.55,
+            },
+            dialogue: GameDialogue {
+                start: "Place beads to match the pattern".into(),
+                win: "Pattern complete".into(),
+                lose: "Bead board closed".into(),
+            },
+            snake_vocab: None,
+            battle: None,
+        }
+    }
+
     /// 内置守护召唤战预设。
     pub fn default_battle() -> Self {
         Self {
@@ -383,6 +422,7 @@ pub fn validate_game_def(def: &GameDef) -> Result<(), String> {
         MinigameType::Battle => validate_battle(def),
         MinigameType::Gomoku => validate_gomoku(def),
         MinigameType::Arena => validate_arena(def),
+        MinigameType::Beads => validate_beads(def),
     }
 }
 
@@ -507,6 +547,25 @@ fn validate_arena(def: &GameDef) -> Result<(), String> {
     }
     if (def.rules.speed_ramp - 1.0).abs() > f32::EPSILON {
         return Err("arena speed_ramp must be 1.0".into());
+    }
+    Ok(())
+}
+
+fn validate_beads(def: &GameDef) -> Result<(), String> {
+    validate_common_game_fields(def)?;
+    ensure_range("grid.width", def.grid.width, 8, 32)?;
+    ensure_range("grid.height", def.grid.height, 8, 32)?;
+    ensure_range("grid.cell_size", def.grid.cell_size, 16, 80)?;
+    ensure_range("player.speed_ms", def.player.speed_ms, 60, 500)?;
+    let cells = def.grid.width.saturating_mul(def.grid.height);
+    if def.rules.win_length != cells {
+        return Err("beads win_length must match total grid cells".into());
+    }
+    if def.rules.food_count != 0 {
+        return Err("beads food_count must be 0".into());
+    }
+    if (def.rules.speed_ramp - 1.0).abs() > f32::EPSILON {
+        return Err("beads speed_ramp must be 1.0".into());
     }
     Ok(())
 }
@@ -643,6 +702,11 @@ mod tests {
     #[test]
     fn default_arena_is_valid() {
         assert!(validate_game_def(&GameDef::default_arena()).is_ok());
+    }
+
+    #[test]
+    fn default_beads_is_valid() {
+        assert!(validate_game_def(&GameDef::default_beads()).is_ok());
     }
 
     #[test]
