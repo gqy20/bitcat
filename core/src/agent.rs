@@ -906,7 +906,7 @@ const PLAY_DANCE_TOOL: ToolSpec = ToolSpec {
 };
 const START_GAME_TOOL: ToolSpec = ToolSpec {
     name: "start_game",
-    description: "启动内置小游戏。kind 只能是 snake、memory、catch、battle、gomoku、arena、beads；用户说玩游戏、来一局、下五子棋、猫猫擂台、拼豆、像素拼豆或玩贪吃蛇时使用。用户要求背单词、练词汇、指定主题/难度词汇时，kind=snake 并提供 vocab_pack。",
+    description: "启动内置小游戏。kind 只能是 snake、memory、catch、battle、gomoku、arena、beads、invasion；用户说玩游戏、来一局、下五子棋、猫猫擂台、拼豆、像素拼豆、桌面入侵、守护桌面或玩贪吃蛇时使用。用户要求背单词、练词汇、指定主题/难度词汇时，kind=snake 并提供 vocab_pack。",
     guidance: &[
         "snake 背单词组卷：vocab_pack.mode=\"meaning_choice\"，answer_count 默认 4，target_correct 建议 8-12",
         "每个 vocab_pack.entries 项必须有 id、term、meaning；distractors 给 3 个中文干扰项，不能重复正确释义",

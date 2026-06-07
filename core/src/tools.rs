@@ -724,6 +724,7 @@ fn start_game_kind_label(kind: StartGameKind) -> &'static str {
         StartGameKind::Gomoku => "gomoku",
         StartGameKind::Arena => "arena",
         StartGameKind::Beads => "beads",
+        StartGameKind::Invasion => "invasion",
     }
 }
 
@@ -1121,9 +1122,9 @@ mod tests {
 
     #[test]
     fn start_game_args_deserialize() {
-        let json = r#"{"kind":"gomoku"}"#;
+        let json = r#"{"kind":"invasion"}"#;
         let args: StartGameArgs = serde_json::from_str(json).unwrap();
-        assert_eq!(args.kind, StartGameKind::Gomoku);
+        assert_eq!(args.kind, StartGameKind::Invasion);
         assert!(args.title.is_none());
         assert!(args.vocab_pack.is_none());
     }

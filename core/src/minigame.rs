@@ -20,6 +20,7 @@ pub enum MinigameType {
     Gomoku,
     Arena,
     Beads,
+    Invasion,
 }
 
 /// 网格尺寸配置。
@@ -345,6 +346,45 @@ impl GameDef {
         }
     }
 
+    /// Built-in desktop invasion preset. The frontend owns the real-time
+    /// defense loop while Rust keeps the launch envelope and score targets
+    /// bounded.
+    pub fn default_invasion() -> Self {
+        Self {
+            game_type: MinigameType::Invasion,
+            title: "Desktop Invasion".into(),
+            grid: GameGrid {
+                width: 28,
+                height: 18,
+                cell_size: 32,
+            },
+            player: PlayerConfig {
+                speed_ms: 140,
+                initial_length: 3,
+            },
+            rules: GameRules {
+                walls_kill: false,
+                self_kill: false,
+                food_count: 5,
+                speed_ramp: 0.96,
+                win_length: 12,
+            },
+            theme: GameTheme {
+                head: "cat".into(),
+                body: "trail".into(),
+                food: "fish".into(),
+                trail_alpha: 0.55,
+            },
+            dialogue: GameDialogue {
+                start: "Guard the desktop targets".into(),
+                win: "Invasion cleared".into(),
+                lose: "Too many targets were taken".into(),
+            },
+            snake_vocab: None,
+            battle: None,
+        }
+    }
+
     /// 内置守护召唤战预设。
     pub fn default_battle() -> Self {
         Self {
@@ -423,6 +463,7 @@ pub fn validate_game_def(def: &GameDef) -> Result<(), String> {
         MinigameType::Gomoku => validate_gomoku(def),
         MinigameType::Arena => validate_arena(def),
         MinigameType::Beads => validate_beads(def),
+        MinigameType::Invasion => validate_invasion(def),
     }
 }
 
@@ -570,6 +611,20 @@ fn validate_beads(def: &GameDef) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_invasion(def: &GameDef) -> Result<(), String> {
+    validate_common_game_fields(def)?;
+    ensure_range("grid.width", def.grid.width, 16, 60)?;
+    ensure_range("grid.height", def.grid.height, 10, 36)?;
+    ensure_range("grid.cell_size", def.grid.cell_size, 16, 80)?;
+    ensure_range("player.speed_ms", def.player.speed_ms, 80, 300)?;
+    ensure_range("rules.food_count", def.rules.food_count, 3, 8)?;
+    ensure_range("rules.win_length", def.rules.win_length, 6, 40)?;
+    if !(0.70..=1.00).contains(&def.rules.speed_ramp) {
+        return Err("invasion speed_ramp must be within 0.70..=1.00".into());
+    }
+    Ok(())
+}
+
 fn validate_common_game_fields(def: &GameDef) -> Result<(), String> {
     if def.title.trim().is_empty() {
         return Err("game title must not be empty".into());
@@ -707,6 +762,11 @@ mod tests {
     #[test]
     fn default_beads_is_valid() {
         assert!(validate_game_def(&GameDef::default_beads()).is_ok());
+    }
+
+    #[test]
+    fn default_invasion_is_valid() {
+        assert!(validate_game_def(&GameDef::default_invasion()).is_ok());
     }
 
     #[test]

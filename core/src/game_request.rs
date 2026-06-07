@@ -28,6 +28,7 @@ pub enum StartGameKind {
     Gomoku,
     Arena,
     Beads,
+    Invasion,
 }
 
 /// Core -> app request payload for starting a built-in game.

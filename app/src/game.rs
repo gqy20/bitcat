@@ -4,6 +4,7 @@
 //! 并把游戏结果同步回宠物状态。实际游戏逻辑运行在前端 `game_engine.js`，
 //! core crate 只提供可序列化配置和参数边界。
 use bitcat_core::bridge::PetStateName;
+use bitcat_core::game_projection::GameProjection;
 use bitcat_core::gomoku_ai::{GomokuAiMove, GomokuCommentary, GomokuPoint};
 use bitcat_core::minigame::{validate_game_def, GameDef, MinigameType};
 use bitcat_core::pet_event::{PetEvent, PetMode, PetMood};
@@ -132,6 +133,11 @@ pub fn start_default_arena(app: &AppHandle) -> Result<(), String> {
 /// Start the built-in pixel bead mode.
 pub fn start_default_beads(app: &AppHandle) -> Result<(), String> {
     start_game(app, GameDef::default_beads())
+}
+
+/// Start the built-in desktop invasion mode.
+pub fn start_default_invasion(app: &AppHandle) -> Result<(), String> {
+    start_game(app, GameDef::default_invasion())
 }
 
 /// Return the current game type for gamepad input routing.
@@ -411,6 +417,13 @@ pub fn cmd_start_beads(app: AppHandle) -> Result<(), String> {
     start_default_beads(&app)
 }
 
+/// Frontend request to start the built-in desktop invasion mode.
+#[tauri::command]
+pub fn cmd_start_invasion(app: AppHandle) -> Result<(), String> {
+    info!("[game] cmd_start_invasion invoked");
+    start_default_invasion(&app)
+}
+
 /// Frontend or AI request to start a game from a definition.
 #[tauri::command]
 pub fn cmd_start_game_with_def(app: AppHandle, def: GameDef) -> Result<(), String> {
@@ -425,6 +438,12 @@ pub fn cmd_get_current_game(shared: tauri::State<'_, SharedGame>) -> Result<Game
     current
         .clone()
         .ok_or_else(|| "褰撳墠娌℃湁娲诲姩娓告垙".to_string())
+}
+
+/// Return safe game targets for the current invasion round.
+#[tauri::command]
+pub fn cmd_get_game_projection() -> Result<GameProjection, String> {
+    Ok(GameProjection::fallback())
 }
 
 /// Toggle whether the game window captures mouse events.

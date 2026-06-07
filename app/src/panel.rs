@@ -126,6 +126,17 @@ pub async fn cmd_execute_panel_action(id: String, app: AppHandle) -> Result<(), 
                 );
                 Ok(())
             }
+            "invasion" => {
+                hide_panel(&app)?;
+                crate::action_bus::ActionBus::dispatch(
+                    &app,
+                    crate::action_bus::Action::PlayInvasionDefault,
+                    crate::action_bus::ActionSource::Frontend {
+                        cmd: "cmd_execute_panel_action:invasion".into(),
+                    },
+                );
+                Ok(())
+            }
             "settings" => {
                 crate::settings::toggle_settings(&app);
                 hide_panel(&app)?;
@@ -355,9 +366,11 @@ mod tests {
         assert_eq!(config.defaults.width, 480);
         assert_eq!(config.defaults.height, 420);
         assert_eq!(config.defaults.columns, 3);
-        assert_eq!(config.defaults.rows, 2);
+        assert_eq!(config.defaults.rows, 3);
 
-        for action_id in ["game", "memory", "catch", "battle", "gomoku", "arena"] {
+        for action_id in [
+            "game", "memory", "catch", "battle", "gomoku", "arena", "beads", "invasion",
+        ] {
             assert!(config.actions.contains_key(action_id));
         }
     }
@@ -365,7 +378,9 @@ mod tests {
     #[test]
     fn test_panel_actions_are_builtin_games() {
         let config = bitcat_core::panel_action::PanelActionConfig::load(PANEL_CONFIG_PATH).unwrap();
-        for action_id in ["game", "memory", "catch", "battle", "gomoku", "arena"] {
+        for action_id in [
+            "game", "memory", "catch", "battle", "gomoku", "arena", "beads", "invasion",
+        ] {
             let action = config.actions.get(action_id).unwrap();
             assert_eq!(
                 action.action_type, "builtin",

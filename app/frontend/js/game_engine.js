@@ -1752,8 +1752,10 @@
       : engine instanceof MemoryEngine
         ? `${engine.matched.size}/${engine.cards.length} · ${engine.moves} moves${engine.combo > 1 ? ` x${engine.combo}` : ''}`
         : engine instanceof CatchEngine
-          ? `${engine.misses}/5${engine.combo > 1 ? ` x${engine.combo}` : ''}`
-          : `${engine.snake.length}${engine.boostHeld ? ' BOOST' : ''}`;
+        ? `${engine.misses}/5${engine.combo > 1 ? ` x${engine.combo}` : ''}`
+          : engine.snake
+            ? `${engine.snake.length}${engine.boostHeld ? ' BOOST' : ''}`
+            : '';
     if (engine.config?.game_type === 'arena' && typeof engine.hudState === 'function') {
       const hud = engine.hudState();
       document.body.classList.add('arena-active');
@@ -1947,7 +1949,7 @@
         e.preventDefault();
         engine.handleInput({ type: 'direction', dx: 0, dy: 0 });
       }
-      if (currentConfig && currentConfig.game_type === 'arena' && typeof engine.handleKeyUp === 'function') {
+      if (engine && typeof engine.handleKeyUp === 'function') {
         e.preventDefault();
         engine.handleKeyUp(e.key);
       }

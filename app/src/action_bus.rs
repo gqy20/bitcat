@@ -55,6 +55,8 @@ pub enum Action {
     PlayArenaDefault,
     /// Start the built-in pixel bead mode.
     PlayBeadsDefault,
+    /// Start the built-in desktop invasion mode.
+    PlayInvasionDefault,
     /// 立即截图 + Vision 分析
     ScreenshotNow,
     /// 启动程序（launch 动作）
@@ -218,6 +220,12 @@ impl ActionBus {
                     warn!(error = %e, "play beads action failed");
                 }
             }
+            Action::PlayInvasionDefault => {
+                info!(?source, action = "PlayInvasionDefault", "action dispatch");
+                if let Err(e) = crate::game::start_default_invasion(app) {
+                    warn!(error = %e, "play invasion action failed");
+                }
+            }
             Action::ScreenshotNow => {
                 info!(?source, action = "ScreenshotNow", "action dispatch");
                 let app = app.clone();
@@ -295,6 +303,7 @@ pub(crate) fn action_for_start_game_kind(kind: bitcat_core::game_request::StartG
         bitcat_core::game_request::StartGameKind::Gomoku => Action::PlayGomokuDefault,
         bitcat_core::game_request::StartGameKind::Arena => Action::PlayArenaDefault,
         bitcat_core::game_request::StartGameKind::Beads => Action::PlayBeadsDefault,
+        bitcat_core::game_request::StartGameKind::Invasion => Action::PlayInvasionDefault,
     }
 }
 
@@ -408,6 +417,7 @@ mod tests {
             Action::PlayGomokuDefault,
             Action::PlayArenaDefault,
             Action::PlayBeadsDefault,
+            Action::PlayInvasionDefault,
             Action::ScreenshotNow,
             Action::Launch {
                 program: "code".into(),
@@ -460,6 +470,10 @@ mod tests {
         assert_eq!(
             action_for_start_game_kind(StartGameKind::Beads),
             Action::PlayBeadsDefault
+        );
+        assert_eq!(
+            action_for_start_game_kind(StartGameKind::Invasion),
+            Action::PlayInvasionDefault
         );
     }
 

@@ -57,3 +57,10 @@ actions:
     order: 70
     type: builtin
     command: beads
+
+  invasion:
+    label: Desktop Invasion
+    icon: "I"
+    order: 80
+    type: builtin
+    command: invasion
