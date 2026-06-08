@@ -34,12 +34,14 @@ describe('Desktop Invasion rules', () => {
     const { InvasionEngine } = loadInvasion();
     const engine = new InvasionEngine(config, {});
     engine.state = 'playing';
-    engine.enemies = [{ id: 'enemy-0', x: engine.player.x + 0.5, y: engine.player.y, r: 13 }];
+    engine.enemies = [{ id: 'enemy-0', x: engine.player.x + 0.5, y: engine.player.y, r: 13, targetId: engine.targets[0].id }];
 
     engine.handleInput({ type: 'confirm' });
 
     expect(engine.enemies).toHaveLength(0);
     expect(engine.defeated).toBe(1);
+    expect(engine.maxCombo).toBe(1);
+    expect(engine.endDetails().guarded_targets).toBe(1);
     expect(engine.score).toBeGreaterThan(0);
   });
 
@@ -54,6 +56,85 @@ describe('Desktop Invasion rules', () => {
 
     expect(target.stolen).toBe(true);
     expect(engine.stolen).toBe(1);
+  });
+
+  it('supports pulse skill and cooldown for clustered enemies', () => {
+    const { InvasionEngine } = loadInvasion();
+    const engine = new InvasionEngine(config, {});
+    engine.state = 'playing';
+    engine.enemies = [
+      { id: 'enemy-0', variant: 'crawler', x: engine.player.x + 0.5, y: engine.player.y, r: 13, hp: 1, targetId: engine.targets[0].id },
+      { id: 'enemy-1', variant: 'skitter', x: engine.player.x, y: engine.player.y + 0.7, r: 10, hp: 1, targetId: engine.targets[1].id },
+      { id: 'enemy-2', variant: 'brute', x: engine.player.x + 0.8, y: engine.player.y + 0.8, r: 16, hp: 2, targetId: engine.targets[2].id },
+    ];
+
+    engine.handleInput({ type: 'skill', slot: 1 });
+
+    expect(engine.defeated).toBe(2);
+    expect(engine.enemies).toHaveLength(1);
+    expect(engine.enemies[0].hp).toBe(1);
+    expect(engine.pulseCooldownMs).toBeGreaterThan(0);
+  });
+
+  it('starts a sprint skill with cooldown', () => {
+    const { InvasionEngine } = loadInvasion();
+    const engine = new InvasionEngine(config, {});
+    engine.state = 'playing';
+
+    engine.handleInput({ type: 'skill', slot: 2 });
+
+    expect(engine.sprintMs).toBeGreaterThan(0);
+    expect(engine.sprintCooldownMs).toBeGreaterThan(0);
+  });
+
+  it('dash can collide with and defeat a nearby enemy', () => {
+    const { InvasionEngine } = loadInvasion();
+    const engine = new InvasionEngine(config, {});
+    engine.state = 'playing';
+    engine.sprintMs = 500;
+    engine.enemies = [{ id: 'enemy-0', variant: 'crawler', x: engine.player.x + 0.4, y: engine.player.y, r: 13, hp: 1, targetId: engine.targets[0].id }];
+
+    engine.handleSprintCollisions();
+
+    expect(engine.enemies).toHaveLength(0);
+    expect(engine.defeated).toBe(1);
+  });
+
+  it('saving a memory target reduces pulse cooldown', () => {
+    const { InvasionEngine } = loadInvasion();
+    const engine = new InvasionEngine(config, {});
+    const memory = engine.targets.find((target) => target.kind === 'memory_shard');
+    engine.pulseCooldownMs = 3000;
+
+    engine.applyTargetSave(memory);
+
+    expect(engine.pulseCooldownMs).toBeLessThan(3000);
+    expect(engine.savedTargets.has(memory.id)).toBe(true);
+  });
+
+  it('stealing a reminder target raises alarm pressure', () => {
+    const { InvasionEngine } = loadInvasion();
+    const engine = new InvasionEngine(config, {});
+    engine.state = 'playing';
+    const reminder = engine.targets.find((target) => target.kind === 'reminder_note');
+    engine.enemies = [{ id: 'enemy-0', variant: 'crawler', x: reminder.x, y: reminder.y, r: 13, hp: 1, speed: 0.001, targetId: reminder.id }];
+
+    engine.updateEnemies(16);
+
+    expect(reminder.stolen).toBe(true);
+    expect(engine.enemies.length).toBeGreaterThan(0);
+  });
+
+  it('end text summarizes protected targets and clutch saves', () => {
+    const { InvasionEngine } = loadInvasion();
+    const engine = new InvasionEngine(config, {});
+    engine.clutchSaves = 2;
+    engine.savedTargets.add(engine.targets[0].id);
+
+    const text = engine.endText('win');
+
+    expect(text).toContain('保住');
+    expect(text).toContain('最后一刻救场 2 次');
   });
 
   it('loads runtime projection from IPC', async () => {
@@ -77,5 +158,24 @@ describe('Desktop Invasion rules', () => {
     expect(engine.targets[0].title).toBe('release checklist');
     expect(engine.targets[0].kind).toBe('memory_shard');
     expect(engine.targets).toHaveLength(2);
+  });
+
+  it('reports detailed end metrics for flawless wins', () => {
+    const { InvasionEngine } = loadInvasion();
+    const engine = new InvasionEngine(config, {});
+    engine.state = 'playing';
+    engine.defeated = config.rules.win_length;
+    engine.maxCombo = 4;
+    engine.elapsedMs = 12345;
+
+    engine.finish('win');
+
+    expect(engine.endDetails()).toMatchObject({
+      defeated: config.rules.win_length,
+      stolen: 0,
+      max_combo: 4,
+      elapsed_ms: 12345,
+      flawless: true,
+    });
   });
 });

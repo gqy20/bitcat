@@ -19,6 +19,37 @@ function loadSettings(body = '') {
 }
 
 describe('settings reminder formatting', () => {
+  it('uses the in-app island confirmation instead of browser confirm', async () => {
+    const { dom, helpers } = loadSettings(`
+      <div id="confirm-layer" class="confirm-layer hidden" aria-hidden="true">
+        <div class="confirm-island" role="dialog">
+          <strong id="confirm-title"></strong>
+          <span id="confirm-message"></span>
+          <button id="confirm-cancel" type="button"></button>
+          <button id="confirm-ok" type="button"></button>
+        </div>
+      </div>
+    `);
+    let browserConfirmCalled = false;
+    dom.window.confirm = () => {
+      browserConfirmCalled = true;
+      return false;
+    };
+
+    const result = helpers.confirmDialog({
+      title: '删除提醒',
+      message: '这个提醒会被彻底删除。',
+      okText: '删除',
+    });
+    expect(dom.window.document.getElementById('confirm-layer').classList.contains('hidden')).toBe(false);
+    expect(dom.window.document.getElementById('confirm-title').textContent).toBe('删除提醒');
+    dom.window.document.getElementById('confirm-ok').click();
+
+    await expect(result).resolves.toBe(true);
+    expect(browserConfirmCalled).toBe(false);
+    expect(dom.window.document.getElementById('confirm-layer').classList.contains('hidden')).toBe(true);
+  });
+
   it('keeps one-shot schedule compact and avoids repeating the fire time', () => {
     const { helpers } = loadSettings();
 

@@ -233,6 +233,56 @@ function toast(text, kind = "ok") {
   toast._t = setTimeout(() => el.classList.add("hidden"), 2200);
 }
 
+function confirmDialog(options = {}) {
+  const layer = $("confirm-layer");
+  const title = $("confirm-title");
+  const message = $("confirm-message");
+  const ok = $("confirm-ok");
+  const cancel = $("confirm-cancel");
+  if (!layer || !title || !message || !ok || !cancel) {
+    return Promise.resolve(window.confirm(options.message || options.title || "确认操作？"));
+  }
+
+  title.textContent = options.title || "确认操作";
+  message.textContent = options.message || "";
+  ok.textContent = options.okText || "确认";
+  cancel.textContent = options.cancelText || "取消";
+  ok.classList.toggle("danger", options.tone !== "primary");
+
+  layer.classList.remove("hidden");
+  layer.setAttribute("aria-hidden", "false");
+  window.setTimeout(() => ok.focus(), 0);
+
+  return new Promise((resolve) => {
+    const finish = (value) => {
+      layer.classList.add("hidden");
+      layer.setAttribute("aria-hidden", "true");
+      ok.removeEventListener("click", onOk);
+      cancel.removeEventListener("click", onCancel);
+      layer.removeEventListener("click", onLayer);
+      window.removeEventListener("keydown", onKey);
+      resolve(value);
+    };
+    const onOk = () => finish(true);
+    const onCancel = () => finish(false);
+    const onLayer = (event) => {
+      if (event.target === layer) finish(false);
+    };
+    const onKey = (event) => {
+      if (event.key === "Escape") finish(false);
+      if (event.key === "Enter") finish(true);
+    };
+    ok.addEventListener("click", onOk);
+    cancel.addEventListener("click", onCancel);
+    layer.addEventListener("click", onLayer);
+    window.addEventListener("keydown", onKey);
+  });
+}
+
+function confirmDialogOpen() {
+  return !$("confirm-layer")?.classList.contains("hidden");
+}
+
 function $(id) { return document.getElementById(id); }
 
 function markDirty(tab) {
@@ -1346,9 +1396,13 @@ function renderMemoryReview(review) {
   `;
 
   box.querySelectorAll(".memory-delete").forEach(btn => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const id = btn.dataset.id;
-      if (id && confirm("确定删除这条长期记忆？")) {
+      if (id && await confirmDialog({
+        title: "删除长期记忆",
+        message: "这条记忆会从审查列表中移除。",
+        okText: "删除",
+      })) {
         deleteMemoryEntry(id);
       }
     });
@@ -1415,13 +1469,21 @@ function renderReminders(review) {
     btn.addEventListener("click", () => reminderAction("cmd_snooze_reminder", btn.dataset.id, { minutes: 10 }));
   });
   box.querySelectorAll(".reminder-cancel").forEach(btn => {
-    btn.addEventListener("click", () => {
-      if (confirm("确定取消这个提醒？")) reminderAction("cmd_cancel_reminder", btn.dataset.id);
+    btn.addEventListener("click", async () => {
+      if (await confirmDialog({
+        title: "取消提醒",
+        message: "提醒会保留记录，但不再触发。",
+        okText: "取消提醒",
+      })) reminderAction("cmd_cancel_reminder", btn.dataset.id);
     });
   });
   box.querySelectorAll(".reminder-delete").forEach(btn => {
-    btn.addEventListener("click", () => {
-      if (confirm("确定彻底删除这个提醒？")) reminderAction("cmd_delete_reminder", btn.dataset.id);
+    btn.addEventListener("click", async () => {
+      if (await confirmDialog({
+        title: "删除提醒",
+        message: "这个提醒会被彻底删除。",
+        okText: "删除",
+      })) reminderAction("cmd_delete_reminder", btn.dataset.id);
     });
   });
 }
@@ -1514,7 +1576,11 @@ async function saveAll() {
 
 async function resetCurrent() {
   if (["overview", "about", "usage", "memory", "reminders"].includes(currentTab)) return;
-  if (!confirm(`确定将「${tabLabel(currentTab)}」重置为默认？`)) return;
+  if (!await confirmDialog({
+    title: "恢复默认",
+    message: `将「${tabLabel(currentTab)}」恢复到默认配置。`,
+    okText: "恢复",
+  })) return;
   try {
     await invoke("cmd_settings_reset", { category: currentTab });
     toast("已重置", "ok");
@@ -1567,12 +1633,56 @@ async function loadSnapshot() {
 
 async function tryClose() {
   if (anyDirty()) {
-    if (!confirm("有未保存的修改，确定放弃？")) return;
+    if (!await confirmDialog({
+      title: "放弃未保存修改",
+      message: "当前设置有改动，关闭后不会保存。",
+      okText: "放弃",
+    })) return;
   }
   try { await invoke("cmd_settings_close"); } catch {}
 }
 
+function currentSettingsWindow() {
+  try {
+    return window.__TAURI__?.window?.getCurrentWindow?.() || null;
+  } catch (e) {
+    log("settings getCurrentWindow failed: " + e);
+    return null;
+  }
+}
+
+function isInteractiveDragTarget(target) {
+  return !!target?.closest?.([
+    "button",
+    "input",
+    "select",
+    "textarea",
+    "a",
+    "summary",
+    "[role='button']",
+    "[contenteditable='true']",
+    ".pet-asset-card",
+  ].join(","));
+}
+
+function bindWindowDrag() {
+  const win = currentSettingsWindow();
+  if (!win?.startDragging) return;
+  document.querySelectorAll(".nav-brand, .pane-head").forEach((handle) => {
+    handle.addEventListener("pointerdown", async (event) => {
+      if (event.button !== 0 || isInteractiveDragTarget(event.target)) return;
+      event.preventDefault();
+      try {
+        await win.startDragging();
+      } catch (e) {
+        log("settings drag failed: " + e);
+      }
+    });
+  });
+}
+
 function bindGlobal() {
+  bindWindowDrag();
   document.querySelectorAll(".nav-item").forEach(btn => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
@@ -1628,6 +1738,7 @@ function bindGlobal() {
     $("ai-key-toggle").setAttribute("aria-label", show ? "隐藏 API Key" : "显示 API Key");
   });
   window.addEventListener("keydown", (e) => {
+    if (confirmDialogOpen()) return;
     if (e.key === "Escape") tryClose();
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
       e.preventDefault();
@@ -2098,6 +2209,9 @@ function eventKindLabel(kind) {
     DancePerformed: "观看舞蹈",
     GamePlayed: "游戏一局",
     GameWon: "游戏胜利",
+    InvasionPlayed: "桌面入侵",
+    InvasionWon: "入侵守住",
+    InvasionFlawlessWin: "无损守护",
     ScreenshotObserved: "截图观察",
     CameraObserved: "摄像头观察",
     PetPraised: "夸奖宠物",
@@ -2113,6 +2227,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 if (typeof window !== "undefined") {
   window.__settingsTest = {
+    confirmDialog,
     formatReminderSchedule,
     reminderDescription,
     renderReminders,

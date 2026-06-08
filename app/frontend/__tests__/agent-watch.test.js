@@ -50,6 +50,23 @@ describe('agent watch metadata', () => {
     expect(parts.map((part) => part.className)).toContain('task-status-text');
   });
 
+  it('hides repeated project-only status text in collapsed rows', () => {
+    const parts = dom.window.__agentWatchTest.lineParts({
+      title: 'bx',
+      project: 'bx',
+      headline: 'bx',
+      source: 'Codex',
+      kind: 'Task',
+      statusText: 'bx',
+    }, {
+      status: 'working',
+      workspace_name: 'bx',
+      display: { project: 'bx' },
+    });
+
+    expect(parts).toEqual([]);
+  });
+
   it('assigns stable hues for device badges', () => {
     expect(dom.window.__agentWatchTest.deviceHue('qy113')).toBe(dom.window.__agentWatchTest.deviceHue('qy113'));
     expect(dom.window.__agentWatchTest.deviceHue('qy113')).not.toBe(dom.window.__agentWatchTest.deviceHue('android'));

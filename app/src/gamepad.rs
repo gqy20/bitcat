@@ -544,6 +544,7 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                                 Some(
                                     bitcat_core::minigame::MinigameType::Battle
                                         | bitcat_core::minigame::MinigameType::Arena
+                                        | bitcat_core::minigame::MinigameType::Invasion
                                 )
                             );
                             if is_combat_game {

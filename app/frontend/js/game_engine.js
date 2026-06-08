@@ -1521,6 +1521,10 @@
     canvas.height = Math.floor(window.innerHeight * dpr);
     canvas.style.width = `${window.innerWidth}px`;
     canvas.style.height = `${window.innerHeight}px`;
+  }
+
+  function resetCanvasTransform() {
+    const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
@@ -1674,7 +1678,8 @@
     closing = true;
     if (invoke) {
       try {
-        await invoke('cmd_game_end', { result, score: engine.score });
+        const details = typeof engine.endDetails === 'function' ? engine.endDetails() : null;
+        await invoke('cmd_game_end', { result, score: engine.score, details });
       } catch (e) {
         log(`cmd_game_end failed: ${e}`);
       }
@@ -1685,7 +1690,8 @@
     if (reported) return;
     reported = true;
     setOverlay(result);
-    log(`end screen shown result=${result} score=${engine.score}`);
+    const details = typeof engine.endDetails === 'function' ? engine.endDetails() : null;
+    log(`end screen shown result=${result} score=${engine.score} details=${JSON.stringify(details)}`);
     if (result === 'cancel') {
       closeEndedGame(result);
       return;
@@ -1780,6 +1786,7 @@
     const dt = Math.min(100, now - lastTime);
     lastTime = now;
     if (engine) {
+      resetCanvasTransform();
       engine.update(dt);
       engine.render(ctx, metricsFor(engine.config));
       updateHud();

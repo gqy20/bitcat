@@ -144,7 +144,7 @@ pub struct AppearanceSettings {
     #[serde(default)]
     pub camera_save_frames: bool,
     /// 外部宠物资产根 URL。为空时使用内置 sprite。
-    /// 开发期可填 `/__fixtures__/pets/default-cat` 或 file/server URL。
+    /// 开发期可填 `/__fixtures__/pets/cat-tabby` 或 file/server URL。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pet_asset_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -363,7 +363,7 @@ mod tests {
                 camera_observation_enabled: true,
                 camera_observation_interval_sec: 600,
                 camera_save_frames: true,
-                pet_asset_url: Some("/__fixtures__/pets/default-cat".into()),
+                pet_asset_url: Some("/__fixtures__/pets/cat-tabby".into()),
                 pet_position: Some(WindowPosition { x: 123, y: 456 }),
             },
             agent_watch: AgentWatchSettings {
@@ -403,7 +403,7 @@ mod tests {
         assert_eq!(restored.appearance, s.appearance);
         assert_eq!(
             restored.appearance.pet_asset_url.as_deref(),
-            Some("/__fixtures__/pets/default-cat")
+            Some("/__fixtures__/pets/cat-tabby")
         );
         assert_eq!(
             restored.appearance.pet_position,

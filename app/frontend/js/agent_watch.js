@@ -137,10 +137,28 @@
     if (!isNoisyActionLabel(view.kind, session)) {
       parts.push({ value: view.kind, className: "task-kind" });
     }
-    if (!expandedRow && view.statusText && !isDoneStatus(session?.status)) {
+    if (!expandedRow && shouldShowStatusText(view, session)) {
       parts.push({ value: view.statusText, className: "task-status-text" });
     }
     return parts;
+  }
+
+  function shouldShowStatusText(view, session) {
+    if (!view.statusText || isDoneStatus(session?.status)) return false;
+    const value = normalizeLine(view.statusText);
+    if (!value) return false;
+    const duplicates = [
+      view.title,
+      view.project,
+      view.headline,
+      session?.workspace_name,
+      session?.display?.project,
+    ].map(normalizeLine).filter(Boolean);
+    return !duplicates.includes(value);
+  }
+
+  function normalizeLine(value) {
+    return String(value || "").trim().toLowerCase();
   }
 
   function deviceHue(machine) {
@@ -266,9 +284,10 @@
       const meta = items.length
         ? `<div class="task-meta">${items.map(renderMetaItem).join("")}</div>`
         : "";
+      const compactClass = items.length ? "" : " compact";
       const style = view.machine ? ` style="--device-hue: ${deviceHue(view.machine)}"` : "";
       return `
-        <article class="task-card ${escapeAttr(status)} tone-${escapeAttr(view.tone)} ${view.quiet ? "quiet" : ""} ${expandedClass}"${style} data-id="${escapeAttr(id)}" data-status="${escapeAttr(status)}" tabindex="0" role="button" aria-expanded="${isExpanded ? "true" : "false"}" aria-label="${escapeAttr(detail || view.title)}">
+        <article class="task-card ${escapeAttr(status)} tone-${escapeAttr(view.tone)} ${view.quiet ? "quiet" : ""} ${expandedClass}${compactClass}"${style} data-id="${escapeAttr(id)}" data-status="${escapeAttr(status)}" tabindex="0" role="button" aria-expanded="${isExpanded ? "true" : "false"}" aria-label="${escapeAttr(detail || view.title)}">
           <div class="task-main">
             <div class="task-topline">
               ${renderTopline(view)}
