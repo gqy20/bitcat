@@ -30,6 +30,7 @@
 | 积分/等级/成就薄片 | 已落地（2026-05-30）；points JSONL + 聚合状态 + 设置页展示 |
 | Bubble reader / 工具状态 UI | 已增强（2026-05-30）；阅读态、工具状态条和表演型工具退场体验已接入 |
 | AI 流错误分类与用户友好兜底 | 已落地（2026-05-30）；可恢复错误进入 fallback 文案，避免空白失败 |
+| Invasion / 桌面入侵核心玩法 | MVP 已落地（提交 `cc6461c`）；真实 `GameProjection` 接入已完成本地数据验证，待提交和完整窗口触发回归 |
 
 ## 源码确认的技术栈
 
@@ -109,21 +110,21 @@ Agent 管理线应优先复用现有栈：
 
 ### A2. 迷你游戏引擎
 
-Phase 1 已完成（提交 `a2105ff`）：新增全屏透明 `game` 窗口并加入默认游戏入口，内置 Snake 可通过键盘/手柄游玩，结束后联动 `GamePlay` / `GameWin` / `GameLose` 宠物状态。当前内置游戏入口已扩展为 Snake / Memory / Catch / Battle / Gomoku，AI 可通过 `start_game(kind)` 启动这些内置游戏。
+Phase 1 已完成（提交 `a2105ff`）：新增全屏透明 `game` 窗口并加入默认游戏入口，内置 Snake 可通过键盘/手柄游玩，结束后联动 `GamePlay` / `GameWin` / `GameLose` 宠物状态。当前内置游戏入口已扩展为 Snake / Memory / Catch / Battle / Gomoku / Arena / Beads / Invasion，AI 可通过 `start_game(kind)` 启动这些内置游戏。
 
 当前已落地的数据流：
 
 ```
 panel / AI start_game → ActionBus 内置游戏动作
-      → cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle / cmd_start_gomoku
+      → cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle / cmd_start_gomoku / cmd_start_invasion
       → app/src/game.rs 动态创建 game 窗口
-      → game.html / game_engine.js 运行 Snake / Memory / Catch / Battle / Gomoku
+      → game.html / game_engine.js + js/games/* 运行 Snake / Memory / Catch / Battle / Gomoku / Invasion
       → cmd_game_end(result, score) → 关闭窗口 + 切换 pet 状态
 ```
 
-2026-05-30 增量：`start_game(kind)` 已作为 AI 工具注册，走 `core::game_request` bridge 到 app 的 ActionBus，只接受内置枚举，不生成代码。下一步继续复用 A1 的模式：模型通过未来 `perform_game` 提交结构化 `GameDef` → Rust validate / save → game 窗口运行游戏 → 结束联动 pet 状态。当前尚未完成的是 GameDef 持久化、用户自定义预设和分数 JSONL。
+2026-05-30 增量：`start_game(kind)` 已作为 AI 工具注册，走 `core::game_request` bridge 到 app 的 ActionBus，只接受内置枚举，不生成代码。2026-06-07 增量：`invasion` 已接入 `StartGameKind` / `MinigameType` / ActionBus / panel / Tauri IPC，玩法主体放在独立 `app/frontend/js/games/invasion.js`，`game_engine.js` 只保留外部游戏注册、HUD 和输入壳层。下一步继续复用 A1 的模式：模型通过未来 `perform_game` 提交结构化 `GameDef` → Rust validate / save → game 窗口运行游戏 → 结束联动 pet 状态。当前尚未完成的是 GameDef 持久化、用户自定义预设和分数 JSONL。
 
-五种原型游戏共享同一个 GameEngine 入口：
+内置原型游戏共享同一个 game window 生命周期：
 
 | 游戏 | 操作 | 复杂度 |
 |------|------|--------|
@@ -132,8 +133,11 @@ panel / AI start_game → ActionBus 内置游戏动作
 | 接食物（Catch） | 方向键移动篮子 | 已落地 |
 | 飞机守护战（Battle） | 方向键移动，A 射击，X/Y/L1 技能 | 已落地 |
 | 五子棋（Gomoku） | 棋盘落子 + AI 思路/讲解 | 已落地；结构化 commentary 已稳定 |
+| 猫猫擂台（Arena） | 3D 对战训练 | 已落地 |
+| Pixel Beads（Beads） | 调色/放置/撤销 | 已落地 |
+| Desktop Invasion（Invasion） | 方向键移动，A/点击守护目标 | MVP 已落地；真实投影接入待提交 |
 
-输入已改为游戏激活时独占：D-pad/A/B/Start 由 `gamepad_loop` 转发为 `game-input`，普通滚轮、宠物动作和面板动作暂停。胜利→`GameWin`，失败→`GameLose`，取消→`Idle`。
+输入已改为游戏激活时独占：D-pad/A/B/Start 由 `gamepad_loop` 转发为 `game-input`，普通滚轮、宠物动作和面板动作暂停。胜利→`GameWin`，失败→`GameLose`，取消→`Idle`。`Invasion` 当前使用安全 `GameProjection`：长期记忆、活跃提醒和 Agent Watch 会话只投影为短标题、类别和权重；小游戏不会获得隐私正文、提醒 message、raw hook 输入或真实控制/删除能力。
 
 详细设计：[plan/minigame-system.md](plan/minigame-system.md)
 
@@ -394,8 +398,8 @@ BitCat 当前已经具备可打包、可运行、可接 Steamworks 的 Windows �
 
 | 阶段 | 目标 | 必须完成 | 不做/后置 |
 |------|------|----------|-----------|
-| **Steam Demo / Playtest** | 验证安装、启动、权限说明、AI 对话、小游戏窗口和 Steam 链路 | 干净机器 smoke test、首次启动权限页、AI 内容披露草案、SteamPipe 上传脚本、最小 Steam init 诊断、1 个可反复玩的核心玩法切片 | DLC、Workshop、复杂社区功能、完整 RPG |
-| **Early Access** | 以“AI 桌面伙伴 + 轻游戏”诚实发售 | `Invasion` 或同等级 BitCat 语义化小游戏、积分/成就闭环、Steam Achievements、Steam Cloud、隐私/数据删除、崩溃恢复、商店素材 | 大规模 3D 重写、多人/借猫社区、生成完整 3D 关卡 |
+| **Steam Demo / Playtest** | 验证安装、启动、权限说明、AI 对话、小游戏窗口和 Steam 链路 | 干净机器 smoke test、首次启动权限页、AI 内容披露草案、SteamPipe 上传脚本、最小 Steam init 诊断、`Invasion` 可反复游玩的核心玩法切片 | DLC、Workshop、复杂社区功能、完整 RPG |
+| **Early Access** | 以“AI 桌面伙伴 + 轻游戏”诚实发售 | `Invasion` 语义化小游戏深化、积分/成就闭环、Steam Achievements、Steam Cloud、隐私/数据删除、崩溃恢复、商店素材 | 大规模 3D 重写、多人/借猫社区、生成完整 3D 关卡 |
 | **正式版** | 功能承诺、商店页和实际体验一致 | 核心玩法稳定、权限/合规成熟、Steam 平台功能完整、资产/包体策略稳定、长期存档迁移策略、回归测试矩阵 | 未验证的高风险 AI 控制能力 |
 
 ### D2. Steam 工程清单
@@ -427,12 +431,22 @@ Steam 版必须把 AI 能力和高权限能力做成可解释、可关闭、可�
 
 Steam 玩家需要一个明确理由每天打开 BitCat。下一阶段不建议只增加第 6 个传统小游戏，而是做一个能体现项目差异化的 BitCat 语义化小游戏。
 
-推荐主玩法原型：`Invasion / 桌面小怪入侵`。
+推荐主玩法原型：`Invasion / 桌面小怪入侵`。MVP 已落地，下一步从“能玩”转向“可作为 Steam Demo 核心切片反复玩”。
 
 - 小怪从游戏窗口或屏幕边缘出现，试图偷走鱼干、记忆碎片、提醒便签、Agent 任务卡等“投影目标”。
 - 这些目标只影响本局分数、反馈和宠物情绪，不直接修改真实记忆、提醒或 Agent 任务。
 - Rust 只暴露安全摘要，不把隐私正文、真实控制权或删除能力交给小游戏。
 - 胜负仍走现有 `game` 窗口生命周期、`GameWin` / `GameLose` 宠物状态、points 事件和成就系统。
+
+当前实现状态：
+
+| 项 | 状态 | 下一步 |
+|----|------|--------|
+| 独立前端玩法文件 | 已完成：`app/frontend/js/games/invasion.js`，外部注册到 `window.BitCatGames.invasion` | 调整敌人节奏、目标布局和视觉反馈 |
+| Rust 游戏入口 | 已完成：`MinigameType::Invasion`、`StartGameKind::Invasion`、`cmd_start_invasion`、panel/AI 启动路径 | 补游戏窗口真实触发回归，确认 panel 第 8 项、手柄/键盘路径一致 |
+| 安全投影模型 | 已完成：`core/src/game_projection.rs`，只含 `kind/title/weight` | 继续扩大投影来源，但坚持不传隐私正文和控制能力 |
+| 真实数据接入 | 已完成本地验证：长期记忆进入目标；提醒无活跃项时自动缺席；Agent Watch 使用 display 摘要 | 提交当前接入变更；补 app IPC 单元测试或 Tauri mock 测试 |
+| 成长/成就闭环 | 部分已有：游戏启动/胜利已进入 points | 增加 Invasion 专属事件：守护目标数、连击、每日防守、无损胜利 |
 
 这条线的目标不是做大 RPG，而是把 BitCat 已有系统变成可玩的闭环：
 
@@ -497,7 +511,7 @@ PetEvent + points + achievements + Steam stats
                   ↓
 短期        ┌─────────────────────────────────────┐
 1-3天      │  D1 Demo 闸门：权限向导 + smoke 清单    │  ← 先保证可审查、可解释、可回归
-           │  D4 Invasion 核心玩法 MVP              │  ← 把记忆/提醒/Agent 投影成玩法目标
+           │  D4 Invasion MVP 收口                  │  ← 已能玩；补真实窗口触发、手感、专属积分事件
            │  A2 分数 JSONL / GameDef 持久化         │  ← 为 Demo 分数、成就和云存档打底
            │  B7 成长上下文 / 权限 gate             │  ← points 已有，补发布版能力开关
            └─────────────────────────────────────┘
@@ -576,8 +590,9 @@ C1(3D化) ──→ C2/C3 渲染层就绪，但不阻塞 Demo/EA
 | **C2** | 动画增强 | ~300-500 行 | 0 | P3，1-3 天 |
 | **C3** | 3D 游戏生成 | ~700-1000 行 | cannon-es 等 | P3，3-6 天 |
 | **D1-D6** | Steam 发布主流程 | Demo/EA 闸门、权限合规、SteamPipe、成就/云存档、商店素材和 smoke 回归 | Steamworks SDK / SteamPipe | P0 主线，分阶段推进 |
+| **D4 Invasion** | BitCat 语义化核心玩法 | MVP 已完成；真实投影接入已验证，剩真实窗口触发回归、手感打磨、专属积分事件 | 0 | P0，1-2 天收口 |
 
-**当前可玩 Demo 的基础设施已超过原 MVP 预期；下一阶段最短路径是 D1 Demo 闸门 → D4 Invasion 核心玩法 MVP → A2/B7 分数、成长和权限闭环 → D2/D3 Steam 平台与合规收束。目标是先让 BitCat 成为可审查、可解释、可反复游玩的 Steam Demo，再推进 Early Access。**
+**当前可玩 Demo 的基础设施已超过原 MVP 预期；下一阶段最短路径是 D1 Demo 闸门 → D4 Invasion MVP 收口 → A2/B7 分数、成长和权限闭环 → D2/D3 Steam 平台与合规收束。目标是先让 BitCat 成为可审查、可解释、可反复游玩的 Steam Demo，再推进 Early Access。**
 
 ### 当前打磨队列
 
@@ -590,6 +605,7 @@ C1(3D化) ──→ C2/C3 渲染层就绪，但不阻塞 Demo/EA
 | B4 工具运行时 | 生命周期事件、bubble UI 和审计日志已可用 | 用真实 token/工具日志决定 schema 预算和 dynamic tools，不做关键词意图识别 |
 | B5 记忆 | grep-first 长期记忆主链路已可用 | 减少默认预塞上下文；让 `search_memory` 按需召回后再由模型压缩判断 |
 | B7 积分与成就 | points JSONL、等级、成就和设置页展示已可用 | 接成长上下文、权限 gate、商店、每日任务和心情系统 |
+| D4 Invasion | MVP 可运行，真实长期记忆投影已验证 | 提交真实投影接入；补窗口触发回归；调敌人节奏/目标反馈；加 Invasion 专属 points/achievement |
 | Pet v2 assets | 内置 v2 pack 已可切换 | 明确 bundle vs 外部包边界、用户目录加载、资源诊断和 Steam/DLC 分层 |
 | 音乐响应舞动 | 第一版音乐模式可用 | 增强舞感状态机、fake source 诊断、节奏/静音/高潮回落表现 |
 

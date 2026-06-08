@@ -47,6 +47,27 @@ impl GameProjection {
             (GameProjectionKind::Treat, "focus snack", 1),
         ])
     }
+
+    /// Build a projection from runtime labels that have already been selected
+    /// by the app layer. Empty input falls back to deterministic demo targets.
+    pub fn from_runtime_labels(items: Vec<(GameProjectionKind, String, u32)>) -> Self {
+        if items.is_empty() {
+            return Self::fallback();
+        }
+        let items = items
+            .into_iter()
+            .take(MAX_ITEMS)
+            .enumerate()
+            .map(|(index, (kind, title, weight))| GameProjectionItem {
+                id: format!("target-{index}"),
+                kind,
+                title: safe_title(kind, &title),
+                weight: weight.clamp(1, 5),
+            })
+            .collect();
+
+        GameProjection { version: 1, items }
+    }
 }
 
 /// Build a bounded projection from already-redacted labels.
@@ -116,5 +137,18 @@ mod tests {
 
         assert_eq!(projection.items[0].title, "agent task");
         assert_eq!(projection.items[0].weight, 1);
+    }
+
+    #[test]
+    fn runtime_labels_fall_back_when_empty() {
+        let projection = GameProjection::from_runtime_labels(Vec::new());
+
+        assert!(projection.items.len() >= 4);
+        assert!(
+            projection
+                .items
+                .iter()
+                .any(|item| item.kind == GameProjectionKind::MemoryShard)
+        );
     }
 }

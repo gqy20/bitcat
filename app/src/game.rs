@@ -4,10 +4,12 @@
 //! 并把游戏结果同步回宠物状态。实际游戏逻辑运行在前端 `game_engine.js`，
 //! core crate 只提供可序列化配置和参数边界。
 use bitcat_core::bridge::PetStateName;
-use bitcat_core::game_projection::GameProjection;
+use bitcat_core::game_projection::{GameProjection, GameProjectionKind};
 use bitcat_core::gomoku_ai::{GomokuAiMove, GomokuCommentary, GomokuPoint};
+use bitcat_core::memory::LongTermMemory;
 use bitcat_core::minigame::{validate_game_def, GameDef, MinigameType};
 use bitcat_core::pet_event::{PetEvent, PetMode, PetMood};
+use bitcat_core::reminder::{list_reminders, ListRemindersArgs};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::Write;
@@ -442,8 +444,41 @@ pub fn cmd_get_current_game(shared: tauri::State<'_, SharedGame>) -> Result<Game
 
 /// Return safe game targets for the current invasion round.
 #[tauri::command]
-pub fn cmd_get_game_projection() -> Result<GameProjection, String> {
-    Ok(GameProjection::fallback())
+pub fn cmd_get_game_projection(
+    monitor: tauri::State<'_, crate::agent_monitor::SharedAgentMonitor>,
+) -> Result<GameProjection, String> {
+    let mut labels: Vec<(GameProjectionKind, String, u32)> = Vec::new();
+
+    let memory = LongTermMemory::load();
+    for entry in memory.review_entries(3) {
+        let weight = entry.importance.unwrap_or(3).clamp(1, 5) as u32;
+        labels.push((GameProjectionKind::MemoryShard, entry.title, weight));
+    }
+
+    match list_reminders(&ListRemindersArgs {
+        include_inactive: false,
+    }) {
+        Ok(reminders) => {
+            for reminder in reminders.into_iter().take(3) {
+                labels.push((GameProjectionKind::ReminderNote, reminder.title, 3));
+            }
+        }
+        Err(e) => warn!(error = %e, "[game] reminder projection skipped"),
+    }
+
+    match monitor.snapshot(crate::agent_monitor::now_ms()) {
+        Ok(snapshot) => {
+            for session in snapshot.sessions.into_iter().take(2) {
+                let label = format!("{} · {}", session.display.project, session.display.headline);
+                let weight = if session.needs_user { 5 } else { 3 };
+                labels.push((GameProjectionKind::AgentTask, label, weight));
+            }
+        }
+        Err(e) => warn!(error = %e, "[game] agent projection skipped"),
+    }
+
+    labels.push((GameProjectionKind::Treat, "focus treat".into(), 1));
+    Ok(GameProjection::from_runtime_labels(labels))
 }
 
 /// Toggle whether the game window captures mouse events.

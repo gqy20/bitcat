@@ -55,4 +55,27 @@ describe('Desktop Invasion rules', () => {
     expect(target.stolen).toBe(true);
     expect(engine.stolen).toBe(1);
   });
+
+  it('loads runtime projection from IPC', async () => {
+    const { InvasionEngine } = loadInvasion();
+    const engine = new InvasionEngine(config, {
+      invoke: async (cmd) => {
+        expect(cmd).toBe('cmd_get_game_projection');
+        return {
+          version: 1,
+          items: [
+            { id: 'mem-1', kind: 'memory_shard', title: 'release checklist', weight: 5 },
+            { id: 'rem-1', kind: 'reminder_note', title: 'stand up', weight: 3 },
+          ],
+        };
+      },
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(engine.targets[0].title).toBe('release checklist');
+    expect(engine.targets[0].kind).toBe('memory_shard');
+    expect(engine.targets).toHaveLength(2);
+  });
 });
