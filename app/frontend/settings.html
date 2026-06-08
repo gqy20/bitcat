@@ -376,12 +376,38 @@
             <div>
               <h1>发布与权限</h1>
             </div>
-            <button id="perm-complete" class="btn small primary" type="button">已了解</button>
+            <button id="perm-complete" class="btn small primary" type="button">完成首次说明</button>
           </div>
 
           <div id="perm-onboarding" class="permission-callout hidden">
-            <strong>首次启动需要确认权限</strong>
-            <span>BitCat 会把会话、观察和系统工具分开授权。未开启的能力不会因为 AI 请求而自动执行。</span>
+            <strong>首次启动需要确认 Demo 权限</strong>
+            <span>BitCat 会把 AI 对话、屏幕/摄像头观察和系统工具分开授权。未开启的能力不会因为 AI 请求而自动执行。</span>
+          </div>
+
+          <div class="settings-card permission-gate-card" aria-label="Demo 权限闸门状态">
+            <div class="permission-gate-copy">
+              <span class="eyebrow">Demo gate</span>
+              <h2 id="perm-gate-title">等待首次确认</h2>
+              <p id="perm-gate-summary">确认后，BitCat 会按这里的开关执行观察和系统工具权限。</p>
+            </div>
+            <div class="permission-gate-grid">
+              <div class="permission-gate-item">
+                <span>截图观察</span>
+                <strong id="perm-status-screenshot">-</strong>
+              </div>
+              <div class="permission-gate-item">
+                <span>摄像头观察</span>
+                <strong id="perm-status-camera">-</strong>
+              </div>
+              <div class="permission-gate-item">
+                <span>高风险工具</span>
+                <strong id="perm-status-tools">-</strong>
+              </div>
+              <div class="permission-gate-item">
+                <span>远程看管</span>
+                <strong id="perm-status-remote">-</strong>
+              </div>
+            </div>
           </div>
 
           <div class="settings-card permission-card">

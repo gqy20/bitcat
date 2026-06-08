@@ -633,6 +633,7 @@ function renderPermissions(p = {}) {
   $("perm-agent-remote").checked = !!p.allow_agent_watch_remote;
   $("perm-diagnostics").checked = p.diagnostics_enabled !== false;
   $("perm-onboarding").classList.toggle("hidden", !!p.onboarding_completed);
+  updatePermissionGateSummary();
 
   [
     "perm-onboarding-completed",
@@ -647,13 +648,44 @@ function renderPermissions(p = {}) {
     "perm-hotkey",
     "perm-agent-remote",
     "perm-diagnostics",
-  ].forEach(id => { $(id).onchange = () => markDirty("permissions"); });
+  ].forEach(id => {
+    $(id).onchange = () => {
+      updatePermissionGateSummary();
+      markDirty("permissions");
+    };
+  });
 
   $("perm-complete").onclick = () => {
     $("perm-onboarding-completed").checked = true;
+    $("perm-steam-demo").checked = true;
     markDirty("permissions");
-    toast("已标记为了解，保存后生效", "ok");
+    updatePermissionGateSummary();
+    toast("首次说明已完成，保存后生效", "ok");
   };
+}
+
+function updatePermissionGateSummary() {
+  const completed = $("perm-onboarding-completed")?.checked;
+  const screenshot = $("perm-screenshot")?.checked;
+  const camera = $("perm-camera")?.checked;
+  const remote = $("perm-agent-remote")?.checked;
+  const highRiskEnabled = [
+    "perm-shell",
+    "perm-read-file",
+    "perm-clipboard",
+    "perm-foreground",
+    "perm-launch",
+    "perm-hotkey",
+  ].some(id => $(id)?.checked);
+
+  $("perm-gate-title").textContent = completed ? "Demo 权限已确认" : "等待首次确认";
+  $("perm-gate-summary").textContent = completed
+    ? "这些设置会持久化到 app_settings.json，重启后继续生效。"
+    : "完成前会自动打开本页，便于审查 AI、观察和系统工具边界。";
+  $("perm-status-screenshot").textContent = screenshot ? "可见开启" : "关闭";
+  $("perm-status-camera").textContent = camera ? "已允许" : "默认关闭";
+  $("perm-status-tools").textContent = highRiskEnabled ? "部分允许" : "默认拦截";
+  $("perm-status-remote").textContent = remote ? "已允许" : "关闭";
 }
 
 function collectPermissions() {

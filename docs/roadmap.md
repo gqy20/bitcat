@@ -32,6 +32,15 @@
 | AI 流错误分类与用户友好兜底 | 已落地（2026-05-30）；可恢复错误进入 fallback 文案，避免空白失败 |
 | Invasion / 桌面入侵核心玩法 | MVP 已落地（提交 `cc6461c`）；真实 `GameProjection` 接入已完成本地数据验证，待提交和完整窗口触发回归 |
 
+## 当前下一步（2026-06-08）
+
+宠物资源线已经收敛：最终软件只内置 15 个精修 `cat-*` 品种，旧的非猫形象不再进入前端 bundle。下一步不再继续扩资源包，而是转向 Steam Demo 最短路径：
+
+1. **D1 Demo 闸门**：补首次启动权限向导和干净 Windows smoke checklist，确保 AI、截图、摄像头、shell、文件、剪贴板等高权限能力可解释、可关闭、可回归。
+2. **D4 Invasion 收口**：把 `Invasion` 从 MVP 打磨成 Demo 核心切片，完成真实窗口触发回归、敌人节奏/目标反馈、手柄/键盘路径一致性和专属积分事件。
+3. **A2/B7 分数与成长闭环**：补分数 JSONL、Invasion 专属 points/achievement、以及发布版能力开关，为 Steam Achievements/Cloud 打本地事实基础。
+4. **D2/D3 Steam 平台与合规**：随后接 SteamPipe、成就/统计、云存档排除敏感目录、AI 内容披露和数据删除入口。
+
 ## 源码确认的技术栈
 
 BitCat 当前不是 Web 应用套壳，而是 **Windows-first 的 Rust 桌面自动化程序 + Tauri 多透明 WebView 界面 + rig Agent 运行时**。`oc-claw` 可参考产品模型和会话状态抽象，但不建议照搬它的前端/桌面技术栈；本项目已有更贴近宠物交互和手柄场景的底座。
@@ -43,7 +52,7 @@ BitCat 当前不是 Web 应用套壳，而是 **Windows-first 的 Rust 桌面自
 | App crate | Rust 2021 + Tauri 2 | `app/Cargo.toml`, `app/tauri.conf.json` | 桌面窗口、托盘、全局快捷键、IPC |
 | UI Runtime | WebView2 via Tauri | `tauri.conf.json` `frontendDist: ./frontend` | 多窗口透明桌宠，而非浏览器页应用 |
 | Frontend | Vanilla HTML/CSS/JS + Canvas | `app/frontend/*.html`, `app/frontend/js/*.js` | 无 React/Vue/构建步骤；Node 只用于测试 |
-| Pet Assets | v2 manifest + bundled fixture packs | `app/frontend/__fixtures__/pets/*/manifest.json`, `app/frontend/js/sprite-loader.js` | 宠物视觉不再依赖硬编码默认 sprite fallback；默认加载 `cat-tabby` |
+| Pet Assets | v2 manifest + 15 个内置猫咪品种 | `app/frontend/__fixtures__/pets/*/manifest.json`, `app/frontend/js/sprite-loader.js` | 宠物视觉不再依赖硬编码默认 sprite fallback；最终 bundle 只保留 `cat-*` 品种，默认加载 `cat-tabby` |
 | Frontend Tests | Vitest 3 + jsdom | `app/frontend/package.json`, `vitest.config.ts` | 测试 `bubble/pet/game/sprite` 等纯 JS 逻辑 |
 | AI Agent | `rig-core` 0.36 + Anthropic provider | `core/src/agent.rs`, `core/src/vision.rs` | 流式对话、Tool、Extractor、Vision 结构化输出 |
 | Reminder Personalizer | rig Extractor（no-tool） | `core/src/reminder_personalizer.rs`, `config/prompts.yml` | 到期提醒短文案可选 AI 润色，失败回退原始提醒 |
@@ -236,7 +245,7 @@ panel / AI start_game → ActionBus 内置游戏动作
 - ~~呼吸微动、眨眼、走路改进~~ ✅ **已完成 (2026-05-13)** — 非均匀帧时长 + 瞬态 repeat+fallback
 - ~~硬编码小猫迁移到资源包~~ ✅ **已完成 (2026-05-17)** — v2-only manifest loader，默认 `cat-tabby`；2026-06-08 收敛为 15 个内置猫咪品种
 - ~~语义短动作 overlay~~ ✅ **已完成 (2026-05-17)** — manifest action timeline，`observe/nudge/acknowledge/blocked/dragging` 可用于截图、输入和拖拽反馈
-- 宠物资源包发布策略：决定大 WebP pack 是进入 bundle 还是外置下载，见 [plan/pet-asset-packaging.md](plan/pet-asset-packaging.md)
+- ~~宠物资源包发布策略~~ ✅ **已完成 (2026-06-08)** — 最终 bundle 只打包 15 个 `cat-*` 品种，旧非猫形象从前端资源目录移除；见 [plan/pet-asset-packaging.md](plan/pet-asset-packaging.md)
 - 粒子系统迁移到 Three.js Points
 - 舞蹈系统 3D 化（真实抛物线轨迹、翻滚感）
 - 鼠标交互：hover 时猫转头看鼠标
@@ -520,7 +529,6 @@ PetEvent + points + achievements + Steam stats
 2-5天      │  D2 SteamPipe / Achievements / Cloud  │
            │  D3 AI 披露、隐私删除、敏感目录排除     │
            │  E2 Agent Watch panel 收敛             │  ← 作为 Early Access 差异化配套
-           │  宠物资源包发布策略                    │
            └─────────────────────────────────────┘
                   ↓
 大块        ┌─────────────────────────────────────┐
@@ -576,7 +584,7 @@ C1(3D化) ──→ C2/C3 渲染层就绪，但不阻塞 Demo/EA
 | **B2** | Token 追踪 + 设置页统计 | 已完成 MVP | 0 | Done |
 | **B3** | Extractor 改造主链路 | 已完成 | 0 | Done |
 | **B3 cleanup** | 删除旧 raw helper / parser / 惰性配置 | 已完成，净删为主 | 0 | Done |
-| **Pet v2 assets** | 宠物 manifest loader、默认 `cat-tabby`、15 个内置猫咪品种、catalog preset | 已完成；后续只剩用户目录加载和资源诊断 | 0 | Done/P1 packaging |
+| **Pet v2 assets** | 宠物 manifest loader、默认 `cat-tabby`、15 个内置猫咪品种、catalog preset、最终 bundle 收敛 | 已完成；用户目录加载和资源诊断转为 P2 可选扩展 | 0 | Done |
 | **B6** | 程序化提醒 + 顶部通知 + 提示音 | create/list/cancel、scheduler、notification island、AI personalizer 已完成；剩余费用/批量/更多动作工具打磨 | 0 | Done/P2 follow-up |
 | **E1** | AI 编码工具会话监听 | 本地 Claude/Codex hook + Remote LAN ingest/viewer MVP 已完成；剩余 JSONL watcher、PID 存活和端到端回归 | 0 | Done/P1 follow-up |
 | **E2** | 桌宠化 Agent 状态管理 | 独立浮动任务栈 + 顶部通知已完成；剩余 panel 收敛、已查看去重和手柄入口 | 0 | Done/P1 follow-up |
@@ -606,7 +614,7 @@ C1(3D化) ──→ C2/C3 渲染层就绪，但不阻塞 Demo/EA
 | B5 记忆 | grep-first 长期记忆主链路已可用 | 减少默认预塞上下文；让 `search_memory` 按需召回后再由模型压缩判断 |
 | B7 积分与成就 | points JSONL、等级、成就和设置页展示已可用 | 接成长上下文、权限 gate、商店、每日任务和心情系统 |
 | D4 Invasion | MVP 可运行，真实长期记忆投影已验证 | 提交真实投影接入；补窗口触发回归；调敌人节奏/目标反馈；加 Invasion 专属 points/achievement |
-| Pet v2 assets | 内置 v2 pack 已可切换 | 明确 bundle vs 外部包边界、用户目录加载、资源诊断和 Steam/DLC 分层 |
+| Pet v2 assets | 15 个内置猫咪品种已收敛，旧非猫资源不再打包 | P2 可选：用户目录加载、资源诊断、外部包/DLC 分层 |
 | 音乐响应舞动 | 第一版音乐模式可用 | 增强舞感状态机、fake source 诊断、节奏/静音/高潮回落表现 |
 
 ---

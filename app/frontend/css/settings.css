@@ -450,6 +450,65 @@ code {
   line-height: 1.45;
 }
 
+.permission-gate-card {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.95fr) minmax(360px, 1.05fr);
+  gap: 18px;
+  align-items: stretch;
+  padding: 20px;
+}
+
+.permission-gate-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.permission-gate-copy h2 {
+  margin: 0;
+  color: var(--text-main);
+  font-size: var(--text-xl);
+  line-height: 1.18;
+}
+
+.permission-gate-copy p {
+  margin: 0;
+  max-width: 48ch;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.permission-gate-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.permission-gate-item {
+  display: grid;
+  gap: 6px;
+  align-content: center;
+  min-height: 74px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: rgba(232, 242, 239, 0.055);
+  border: 1px solid rgba(232, 242, 239, 0.07);
+}
+
+.permission-gate-item span {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.permission-gate-item strong {
+  color: var(--text-main);
+  font-size: var(--text-md);
+  line-height: 1.2;
+}
+
 .permission-card .setting-row {
   min-height: 78px;
 }
@@ -2204,6 +2263,7 @@ input[type="checkbox"]:checked::after {
 
   .setting-row,
   .agent-watch-card,
+  .permission-gate-card,
   .switch-row,
   .action-item .ai-head,
   .usage-session,
@@ -2215,6 +2275,10 @@ input[type="checkbox"]:checked::after {
   .agent-session-sub {
     align-items: flex-start;
     text-align: left;
+  }
+
+  .permission-gate-grid {
+    grid-template-columns: 1fr;
   }
 
   .agent-watch-hero,

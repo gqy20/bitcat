@@ -59,6 +59,31 @@ pub fn toggle_settings(app: &AppHandle) {
     }
 }
 
+/// Show settings for first-run onboarding without behaving like a toggle.
+pub fn show_onboarding_if_needed(app: &AppHandle) {
+    if bitcat_core::app_settings::AppSettings::load()
+        .permissions
+        .onboarding_completed
+    {
+        return;
+    }
+
+    match app.get_webview_window(WINDOW_LABEL) {
+        Some(w) => {
+            let _ = w.show();
+            let _ = w.set_focus();
+            info!("[settings] onboarding pending, showing settings window");
+        }
+        None => match create_settings_window(app) {
+            Ok(w) => {
+                let _ = w.set_focus();
+                info!("[settings] onboarding pending, created settings window");
+            }
+            Err(e) => warn!(error = %e, "[settings] onboarding window create failed"),
+        },
+    }
+}
+
 /// 鎸夐渶鍒涘缓璁剧疆绐楀彛
 fn create_settings_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
     WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::App("settings.html".into()))

@@ -384,6 +384,7 @@ pub fn run() {
             if let Err(e) = camera::precreate_camera_window(app.handle()) {
                 warn!(error = %e, "precreate camera window failed");
             }
+            settings::show_onboarding_if_needed(app.handle());
 
             let app_handle = app.handle().clone();
             let hotkey_str = "CommandOrControl+Alt+Space";
