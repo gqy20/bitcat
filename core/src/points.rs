@@ -34,6 +34,12 @@ pub enum PointsEventKind {
     GamePlayed,
     /// 游戏胜利
     GameWon,
+    /// 开始一局桌面入侵
+    InvasionPlayed,
+    /// 桌面入侵胜利
+    InvasionWon,
+    /// 桌面入侵无目标被偷胜利
+    InvasionFlawlessWin,
     /// 截图观察分析完成
     ScreenshotObserved,
     /// 摄像头观察分析完成
@@ -56,6 +62,9 @@ impl PointsEventKind {
             Self::DancePerformed => 3,
             Self::GamePlayed => 2,
             Self::GameWon => 15,
+            Self::InvasionPlayed => 4,
+            Self::InvasionWon => 20,
+            Self::InvasionFlawlessWin => 30,
             Self::ScreenshotObserved => 4,
             Self::CameraObserved => 4,
             Self::PetPraised => 1,
@@ -74,6 +83,9 @@ impl PointsEventKind {
             Self::DancePerformed => "观看舞蹈",
             Self::GamePlayed => "游戏一局",
             Self::GameWon => "游戏胜利",
+            Self::InvasionPlayed => "桌面入侵",
+            Self::InvasionWon => "入侵守住",
+            Self::InvasionFlawlessWin => "无损守护",
             Self::ScreenshotObserved => "截图观察",
             Self::CameraObserved => "摄像头观察",
             Self::PetPraised => "夸奖宠物",
@@ -87,7 +99,12 @@ impl PointsEventKind {
             Self::ChatCompleted | Self::VoiceChat => PointsCategory::Chat,
             Self::MemoryCreated => PointsCategory::Memory,
             Self::ReminderCreated | Self::ReminderCompleted => PointsCategory::Routine,
-            Self::DancePerformed | Self::GamePlayed | Self::GameWon => PointsCategory::Fun,
+            Self::DancePerformed
+            | Self::GamePlayed
+            | Self::GameWon
+            | Self::InvasionPlayed
+            | Self::InvasionWon
+            | Self::InvasionFlawlessWin => PointsCategory::Fun,
             Self::ScreenshotObserved | Self::CameraObserved => PointsCategory::Observation,
             Self::PetPraised => PointsCategory::Bond,
             Self::DailyLogin => PointsCategory::Daily,
@@ -165,6 +182,12 @@ pub struct PointsCategories {
     pub dances: u64,
     pub games_played: u64,
     pub games_won: u64,
+    #[serde(default)]
+    pub invasion_played: u64,
+    #[serde(default)]
+    pub invasion_won: u64,
+    #[serde(default)]
+    pub invasion_flawless_won: u64,
     pub screenshots: u64,
     pub camera_obs: u64,
     pub praises: u64,
@@ -182,6 +205,15 @@ impl PointsCategories {
             PointsEventKind::DancePerformed => self.dances += 1,
             PointsEventKind::GamePlayed => self.games_played += 1,
             PointsEventKind::GameWon => self.games_won += 1,
+            PointsEventKind::InvasionPlayed => {
+                self.invasion_played += 1;
+            }
+            PointsEventKind::InvasionWon => {
+                self.invasion_won += 1;
+            }
+            PointsEventKind::InvasionFlawlessWin => {
+                self.invasion_flawless_won += 1;
+            }
             PointsEventKind::ScreenshotObserved => self.screenshots += 1,
             PointsEventKind::CameraObserved => self.camera_obs += 1,
             PointsEventKind::PetPraised => self.praises += 1,
@@ -425,6 +457,30 @@ pub fn all_achievements() -> &'static Vec<AchievementDef> {
                 hidden: false,
             },
             AchievementDef {
+                id: "desktop_guardian".into(),
+                name: "桌面守卫".into(),
+                description: "赢得第一次桌面入侵".into(),
+                icon: "\u{1F6E1}".into(), // 🛡
+                condition: AchievementCondition::EventCount {
+                    kind: PointsEventKind::InvasionWon,
+                    target: 1,
+                },
+                bonus_points: 25,
+                hidden: false,
+            },
+            AchievementDef {
+                id: "flawless_guardian".into(),
+                name: "无损守护".into(),
+                description: "完成一次无目标被偷的桌面入侵胜利".into(),
+                icon: "\u{2728}".into(), // ✨
+                condition: AchievementCondition::EventCount {
+                    kind: PointsEventKind::InvasionFlawlessWin,
+                    target: 1,
+                },
+                bonus_points: 35,
+                hidden: false,
+            },
+            AchievementDef {
                 id: "dance_fan".into(),
                 name: "舞蹈爱好者".into(),
                 description: "观看 20 次舞蹈表演".into(),
@@ -542,6 +598,9 @@ fn is_condition_met(condition: &AchievementCondition, state: &PointsState) -> bo
                 PointsEventKind::DancePerformed => state.categories.dances,
                 PointsEventKind::GamePlayed => state.categories.games_played,
                 PointsEventKind::GameWon => state.categories.games_won,
+                PointsEventKind::InvasionPlayed => state.categories.invasion_played,
+                PointsEventKind::InvasionWon => state.categories.invasion_won,
+                PointsEventKind::InvasionFlawlessWin => state.categories.invasion_flawless_won,
                 PointsEventKind::ScreenshotObserved => state.categories.screenshots,
                 PointsEventKind::CameraObserved => state.categories.camera_obs,
                 PointsEventKind::PetPraised => state.categories.praises,
@@ -840,6 +899,9 @@ mod tests {
             PointsEventKind::DancePerformed,
             PointsEventKind::GamePlayed,
             PointsEventKind::GameWon,
+            PointsEventKind::InvasionPlayed,
+            PointsEventKind::InvasionWon,
+            PointsEventKind::InvasionFlawlessWin,
             PointsEventKind::ScreenshotObserved,
             PointsEventKind::CameraObserved,
             PointsEventKind::PetPraised,
@@ -999,6 +1061,9 @@ mod tests {
             PointsEventKind::DancePerformed,
             PointsEventKind::GamePlayed,
             PointsEventKind::GameWon,
+            PointsEventKind::InvasionPlayed,
+            PointsEventKind::InvasionWon,
+            PointsEventKind::InvasionFlawlessWin,
             PointsEventKind::ScreenshotObserved,
             PointsEventKind::CameraObserved,
             PointsEventKind::PetPraised,
@@ -1011,7 +1076,7 @@ mod tests {
     #[test]
     fn all_achievements_initialized() {
         let achievements = all_achievements();
-        assert_eq!(achievements.len(), 12); // 12 predefined achievements
+        assert_eq!(achievements.len(), 14); // 14 predefined achievements
         // 验证所有 ID 唯一
         let ids: Vec<&String> = achievements.iter().map(|a| &a.id).collect();
         let unique_ids: std::collections::HashSet<&String> = ids.iter().copied().collect();

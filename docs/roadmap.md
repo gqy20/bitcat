@@ -30,7 +30,7 @@
 | 积分/等级/成就薄片 | 已落地（2026-05-30）；points JSONL + 聚合状态 + 设置页展示 |
 | Bubble reader / 工具状态 UI | 已增强（2026-05-30）；阅读态、工具状态条和表演型工具退场体验已接入 |
 | AI 流错误分类与用户友好兜底 | 已落地（2026-05-30）；可恢复错误进入 fallback 文案，避免空白失败 |
-| Invasion / 桌面入侵核心玩法 | MVP 已落地（提交 `cc6461c`）；真实 `GameProjection` 接入已完成本地数据验证，待提交和完整窗口触发回归 |
+| Invasion / 桌面入侵核心玩法 | MVP 已落地（提交 `cc6461c`）；D4 第一轮收口已补结束 details、专属 points、局内日志和 smoke checklist，待真机窗口/手柄回归 |
 
 ## 当前下一步（2026-06-08）
 
@@ -455,7 +455,7 @@ Steam 玩家需要一个明确理由每天打开 BitCat。下一阶段不建议�
 | Rust 游戏入口 | 已完成：`MinigameType::Invasion`、`StartGameKind::Invasion`、`cmd_start_invasion`、panel/AI 启动路径 | 补游戏窗口真实触发回归，确认 panel 第 8 项、手柄/键盘路径一致 |
 | 安全投影模型 | 已完成：`core/src/game_projection.rs`，只含 `kind/title/weight` | 继续扩大投影来源，但坚持不传隐私正文和控制能力 |
 | 真实数据接入 | 已完成本地验证：长期记忆进入目标；提醒无活跃项时自动缺席；Agent Watch 使用 display 摘要 | 提交当前接入变更；补 app IPC 单元测试或 Tauri mock 测试 |
-| 成长/成就闭环 | 部分已有：游戏启动/胜利已进入 points | 增加 Invasion 专属事件：守护目标数、连击、每日防守、无损胜利 |
+| 成长/成就闭环 | 部分已有：游戏启动/胜利已进入 points；D4 第一轮已加 `InvasionPlayed` / `InvasionWon` / `InvasionFlawlessWin` | 后续继续补每日防守、连击里程碑和 Steam Achievements 映射 |
 
 这条线的目标不是做大 RPG，而是把 BitCat 已有系统变成可玩的闭环：
 
@@ -598,7 +598,7 @@ C1(3D化) ──→ C2/C3 渲染层就绪，但不阻塞 Demo/EA
 | **C2** | 动画增强 | ~300-500 行 | 0 | P3，1-3 天 |
 | **C3** | 3D 游戏生成 | ~700-1000 行 | cannon-es 等 | P3，3-6 天 |
 | **D1-D6** | Steam 发布主流程 | Demo/EA 闸门、权限合规、SteamPipe、成就/云存档、商店素材和 smoke 回归 | Steamworks SDK / SteamPipe | P0 主线，分阶段推进 |
-| **D4 Invasion** | BitCat 语义化核心玩法 | MVP 已完成；真实投影接入已验证，剩真实窗口触发回归、手感打磨、专属积分事件 | 0 | P0，1-2 天收口 |
+| **D4 Invasion** | BitCat 语义化核心玩法 | MVP 已完成；D4 第一轮已补局内反馈、结束 details、专属积分事件和回归清单；剩真机窗口/手柄 smoke 与节奏微调 | 0 | P0，1 天收口 |
 
 **当前可玩 Demo 的基础设施已超过原 MVP 预期；下一阶段最短路径是 D1 Demo 闸门 → D4 Invasion MVP 收口 → A2/B7 分数、成长和权限闭环 → D2/D3 Steam 平台与合规收束。目标是先让 BitCat 成为可审查、可解释、可反复游玩的 Steam Demo，再推进 Early Access。**
 
@@ -613,7 +613,7 @@ C1(3D化) ──→ C2/C3 渲染层就绪，但不阻塞 Demo/EA
 | B4 工具运行时 | 生命周期事件、bubble UI 和审计日志已可用 | 用真实 token/工具日志决定 schema 预算和 dynamic tools，不做关键词意图识别 |
 | B5 记忆 | grep-first 长期记忆主链路已可用 | 减少默认预塞上下文；让 `search_memory` 按需召回后再由模型压缩判断 |
 | B7 积分与成就 | points JSONL、等级、成就和设置页展示已可用 | 接成长上下文、权限 gate、商店、每日任务和心情系统 |
-| D4 Invasion | MVP 可运行，真实长期记忆投影已验证 | 提交真实投影接入；补窗口触发回归；调敌人节奏/目标反馈；加 Invasion 专属 points/achievement |
+| D4 Invasion | MVP 可运行，真实投影、结束 details、专属 points/checklist 已接入 | 跑真机窗口/手柄 smoke；继续微调敌人节奏、目标反馈和 Steam achievement 映射 |
 | Pet v2 assets | 15 个内置猫咪品种已收敛，旧非猫资源不再打包 | P2 可选：用户目录加载、资源诊断、外部包/DLC 分层 |
 | 音乐响应舞动 | 第一版音乐模式可用 | 增强舞感状态机、fake source 诊断、节奏/静音/高潮回落表现 |
 

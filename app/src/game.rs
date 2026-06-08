@@ -54,6 +54,23 @@ pub struct BattlePetEventPayload {
     pub interrupted: bool,
 }
 
+/// Optional result details sent by frontend game engines.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct GameEndDetails {
+    #[serde(default)]
+    pub defeated: Option<u32>,
+    #[serde(default)]
+    pub stolen: Option<u32>,
+    #[serde(default)]
+    pub max_combo: Option<u32>,
+    #[serde(default)]
+    pub guarded_targets: Option<u32>,
+    #[serde(default)]
+    pub elapsed_ms: Option<u32>,
+    #[serde(default)]
+    pub flawless: Option<bool>,
+}
+
 impl Default for SharedGame {
     fn default() -> Self {
         Self {
@@ -201,7 +218,20 @@ pub fn start_game(app: &AppHandle, def: GameDef) -> Result<(), String> {
         });
     }
 
-    info!(startup_id, title = %def.title, "[game] start requested");
+    if matches!(def.game_type, MinigameType::Invasion) {
+        bitcat_core::points::award(
+            bitcat_core::points::PointsEventKind::InvasionPlayed,
+            Some(&def.title),
+        );
+    }
+
+    info!(
+        startup_id,
+        title = %def.title,
+        game_type = ?def.game_type,
+        overlay_mode,
+        "[game] start requested"
+    );
 
     info!(startup_id, "[game] set pet state begin");
     if let Err(e) = set_pet_state(app, PetStateName::GamePlay) {
@@ -478,6 +508,22 @@ pub fn cmd_get_game_projection(
     }
 
     labels.push((GameProjectionKind::Treat, "focus treat".into(), 1));
+    let memory_count = labels
+        .iter()
+        .filter(|(kind, _, _)| matches!(kind, GameProjectionKind::MemoryShard))
+        .count();
+    let reminder_count = labels
+        .iter()
+        .filter(|(kind, _, _)| matches!(kind, GameProjectionKind::ReminderNote))
+        .count();
+    let agent_count = labels
+        .iter()
+        .filter(|(kind, _, _)| matches!(kind, GameProjectionKind::AgentTask))
+        .count();
+    info!(
+        total = labels.len(),
+        memory_count, reminder_count, agent_count, "[game] invasion projection built"
+    );
     Ok(GameProjection::from_runtime_labels(labels))
 }
 
@@ -524,7 +570,12 @@ fn current_cursor_position_physical() -> Result<(i32, i32), String> {
 
 /// Finish the game and restore hidden companion windows.
 #[tauri::command]
-pub fn cmd_game_end(app: AppHandle, result: String, score: u32) -> Result<(), String> {
+pub fn cmd_game_end(
+    app: AppHandle,
+    result: String,
+    score: u32,
+    details: Option<GameEndDetails>,
+) -> Result<(), String> {
     let normalized = result.trim().to_ascii_lowercase();
     if !matches!(normalized.as_str(), "win" | "lose" | "cancel") {
         return Err(format!("unknown game result: {result}"));
@@ -533,9 +584,11 @@ pub fn cmd_game_end(app: AppHandle, result: String, score: u32) -> Result<(), St
     let state: tauri::State<'_, SharedGame> = app.state();
     state.starting.store(false, Ordering::SeqCst);
     state.active.store(false, Ordering::SeqCst);
-    if let Ok(mut current) = state.current_def.lock() {
-        *current = None;
-    }
+    let current_def = state
+        .current_def
+        .lock()
+        .map(|mut current| current.take())
+        .unwrap_or(None);
 
     if let Some(w) = app.get_webview_window("game") {
         configure_game_input_capture(&w, true);
@@ -545,6 +598,7 @@ pub fn cmd_game_end(app: AppHandle, result: String, score: u32) -> Result<(), St
     let pet_state = match normalized.as_str() {
         "win" => {
             bitcat_core::points::award(bitcat_core::points::PointsEventKind::GameWon, None);
+            award_invasion_result(current_def.as_ref(), details.as_ref());
             Some(PetStateName::GameWin)
         }
         "lose" => Some(PetStateName::GameLose),
@@ -557,8 +611,44 @@ pub fn cmd_game_end(app: AppHandle, result: String, score: u32) -> Result<(), St
     }
     restore_companion_windows(&app);
 
-    info!(result = %normalized, score, "[game] ended");
+    info!(
+        result = %normalized,
+        score,
+        game_type = ?current_def.as_ref().map(|def| def.game_type),
+        details = ?details,
+        "[game] ended"
+    );
     Ok(())
+}
+
+fn award_invasion_result(def: Option<&GameDef>, details: Option<&GameEndDetails>) {
+    if !matches!(def.map(|def| def.game_type), Some(MinigameType::Invasion)) {
+        return;
+    }
+
+    let extra = details.map(invasion_points_extra);
+    bitcat_core::points::award(
+        bitcat_core::points::PointsEventKind::InvasionWon,
+        extra.as_deref(),
+    );
+    if details.and_then(|d| d.flawless).unwrap_or(false) {
+        bitcat_core::points::award(
+            bitcat_core::points::PointsEventKind::InvasionFlawlessWin,
+            extra.as_deref(),
+        );
+    }
+}
+
+fn invasion_points_extra(details: &GameEndDetails) -> String {
+    format!(
+        "defeated={};stolen={};max_combo={};guarded_targets={};elapsed_ms={};flawless={}",
+        details.defeated.unwrap_or(0),
+        details.stolen.unwrap_or(0),
+        details.max_combo.unwrap_or(0),
+        details.guarded_targets.unwrap_or(0),
+        details.elapsed_ms.unwrap_or(0),
+        details.flawless.unwrap_or(false)
+    )
 }
 
 /// Receive a low-frequency battle event for pet reactions.

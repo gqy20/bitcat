@@ -472,13 +472,15 @@
       if (this.boostHeld) drawBoostBadge(ctx, grid.width * cell, cell);
       ctx.restore();
       if (this.vocab) {
-        drawVocabTopPanel(ctx, this.question, metrics, {
+        const vocabProgress = {
           score: this.score,
           correct: this.correctCount,
           target: this.vocab.targetCorrect,
           combo: this.combo,
           wrong: this.wrongCount,
-        }, this.questionPulseMs);
+        };
+        metrics.vocabProgress = vocabProgress;
+        drawVocabTopPanel(ctx, this.question, metrics, vocabProgress, this.questionPulseMs);
         drawVocabBottomPanel(ctx, this.lastReview, this.hudFeedback, metrics, this.animMs);
       }
     }
@@ -531,9 +533,9 @@
 
   function fillBoardPanel(ctx, width, height) {
     const gradient = ctx.createLinearGradient(0, 0, width, height);
-    gradient.addColorStop(0, 'rgba(10,16,22,0.46)');
-    gradient.addColorStop(0.52, 'rgba(16,24,32,0.30)');
-    gradient.addColorStop(1, 'rgba(8,12,18,0.48)');
+    gradient.addColorStop(0, 'rgba(9,15,20,0.58)');
+    gradient.addColorStop(0.52, 'rgba(13,20,27,0.42)');
+    gradient.addColorStop(1, 'rgba(7,11,17,0.62)');
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
   }
@@ -542,20 +544,20 @@
     const width = grid.width * cell;
     const height = grid.height * cell;
     ctx.save();
-    ctx.strokeStyle = 'rgba(8,12,16,0.58)';
-    ctx.lineWidth = 6;
-    ctx.strokeRect(3, 3, width - 6, height - 6);
-    ctx.strokeStyle = 'rgba(255,255,255,0.42)';
+    ctx.strokeStyle = 'rgba(5,8,12,0.72)';
+    ctx.lineWidth = 5;
+    ctx.strokeRect(2.5, 2.5, width - 5, height - 5);
+    ctx.strokeStyle = 'rgba(247,251,255,0.22)';
     ctx.lineWidth = 2;
     ctx.strokeRect(1, 1, width - 2, height - 2);
-    ctx.strokeStyle = 'rgba(112,214,255,0.36)';
+    ctx.strokeStyle = 'rgba(112,214,255,0.18)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(7.5, 7.5, width - 15, height - 15);
+    ctx.strokeRect(8.5, 8.5, width - 17, height - 17);
     if (cell >= 14) {
-      ctx.fillStyle = 'rgba(255,255,255,0.065)';
+      ctx.fillStyle = 'rgba(247,251,255,0.042)';
       const dot = Math.max(1, cell * 0.055);
-      for (let y = 1; y < grid.height; y += 2) {
-        for (let x = 1; x < grid.width; x += 2) {
+      for (let y = 1; y < grid.height; y += 3) {
+        for (let x = 1; x < grid.width; x += 3) {
           ctx.beginPath();
           ctx.arc(x * cell, y * cell, dot, 0, Math.PI * 2);
           ctx.fill();
@@ -822,6 +824,10 @@
   }
 
   function drawVocabTopPanel(ctx, question, metrics, progress, pulseMs = 0) {
+    if (metrics?.vocabLayout?.mode === 'side') {
+      drawVocabQuestionSidePanel(ctx, question, metrics.vocabLayout.left, pulseMs);
+      return;
+    }
     if (!question || !metrics?.vocabLayout?.top) return;
     const panel = metrics.vocabLayout.top;
     const compact = panel.w < 560;
@@ -890,6 +896,10 @@
   }
 
   function drawVocabBottomPanel(ctx, review, feedback, metrics, timeMs = 0) {
+    if (metrics?.vocabLayout?.mode === 'side') {
+      drawVocabStatusSidePanel(ctx, review, feedback, metrics.vocabLayout.right, metrics, timeMs);
+      return;
+    }
     if (!metrics?.vocabLayout?.bottom) return;
     const panel = metrics.vocabLayout.bottom;
     const compact = panel.w < 560;
@@ -942,13 +952,141 @@
     ctx.restore();
   }
 
+  function drawVocabQuestionSidePanel(ctx, question, panel, pulseMs = 0) {
+    if (!question || !panel) return;
+    const pulse = 1 + clamp(pulseMs / 380, 0, 1) * 0.018;
+    const pad = clamp(panel.w * 0.10, 14, 22);
+    const labelSize = clamp(panel.w * 0.055, 10, 12);
+    const termSize = clamp(panel.w * 0.145, 24, 34);
+    const bodySize = clamp(panel.w * 0.066, 12, 15);
+    const textW = panel.w - pad * 2;
+
+    ctx.save();
+    ctx.translate(panel.x + panel.w / 2, panel.y + panel.h / 2);
+    ctx.scale(pulse, pulse);
+    ctx.translate(-(panel.x + panel.w / 2), -(panel.y + panel.h / 2));
+    drawInfoPanel(ctx, panel, pulseMs > 0 ? 'rgba(184, 242, 230, 0.58)' : 'rgba(255, 209, 102, 0.32)');
+
+    ctx.fillStyle = 'rgba(247, 251, 255, 0.62)';
+    ctx.font = `800 ${labelSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('WORD', panel.x + pad, panel.y + pad);
+
+    ctx.fillStyle = '#ffd166';
+    ctx.font = `900 ${termSize}px "Segoe UI", sans-serif`;
+    ctx.textBaseline = 'alphabetic';
+    drawPanelLines(ctx, question.term, panel.x + pad, panel.y + pad + labelSize + termSize * 0.95, textW, termSize * 1.08, 2);
+
+    const ruleY = panel.y + panel.h * 0.38;
+    ctx.fillStyle = 'rgba(247, 251, 255, 0.82)';
+    ctx.font = `760 ${bodySize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    drawPanelLines(ctx, '吃掉正确中文释义，避开干扰项。', panel.x + pad, ruleY, textW, bodySize * 1.42, 3);
+
+    if (question.example) {
+      ctx.fillStyle = 'rgba(247, 251, 255, 0.62)';
+      ctx.font = `650 ${Math.max(11, bodySize - 1)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      drawPanelLines(ctx, question.example, panel.x + pad, panel.y + panel.h * 0.68, textW, bodySize * 1.35, 5);
+    }
+    ctx.restore();
+  }
+
+  function drawVocabStatusSidePanel(ctx, review, feedback, panel, metrics, timeMs = 0) {
+    if (!panel) return;
+    const progress = currentVocabProgress(metrics);
+    const active = feedback || review;
+    const accent = feedback
+      ? (feedback.correct ? '#b8f2e6' : '#ffafcc')
+      : (review?.correct ? '#b8f2e6' : '#ffd166');
+    const pad = clamp(panel.w * 0.10, 14, 22);
+    const textW = panel.w - pad * 2;
+    const labelSize = clamp(panel.w * 0.055, 10, 12);
+    const numberSize = clamp(panel.w * 0.16, 26, 36);
+    const bodySize = clamp(panel.w * 0.062, 12, 15);
+
+    drawInfoPanel(ctx, panel, active ? colorToStroke(accent, 0.46) : 'rgba(184, 242, 230, 0.24)');
+    ctx.save();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+
+    ctx.fillStyle = 'rgba(247, 251, 255, 0.58)';
+    ctx.font = `800 ${labelSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.fillText('PROGRESS', panel.x + pad, panel.y + pad);
+
+    const scoreY = panel.y + pad + labelSize + 6;
+    ctx.fillStyle = '#b8f2e6';
+    ctx.font = `900 ${numberSize}px "Segoe UI", sans-serif`;
+    ctx.fillText(`${progress.correct}/${progress.target}`, panel.x + pad, scoreY);
+
+    ctx.fillStyle = 'rgba(247, 251, 255, 0.70)';
+    ctx.font = `750 ${bodySize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    const meta = progress.combo > 1
+      ? `score ${progress.score}  x${progress.combo}`
+      : `score ${progress.score}${progress.wrong ? `  miss ${progress.wrong}` : ''}`;
+    ctx.fillText(meta, panel.x + pad, scoreY + numberSize + 8);
+
+    drawSideDivider(ctx, panel.x + pad, panel.y + panel.h * 0.34, textW);
+
+    if (feedback) {
+      const progressRatio = clamp(feedback.age / feedback.life, 0, 1);
+      const alpha = progressRatio < 0.12 ? progressRatio / 0.12 : clamp((1 - progressRatio) / 0.34, 0, 1);
+      ctx.globalAlpha = Math.max(0.24, alpha);
+      ctx.fillStyle = accent;
+      ctx.font = `900 ${clamp(panel.w * 0.084, 16, 21)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.fillText(feedback.label, panel.x + pad, panel.y + panel.h * 0.39);
+      ctx.fillStyle = 'rgba(247, 251, 255, 0.84)';
+      ctx.font = `720 ${bodySize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      const text = feedback.correct
+        ? `${feedback.term} = ${feedback.meaning}${feedback.delta ? `  ${feedback.delta}` : ''}`
+        : (feedback.explanation || `${feedback.term} = ${feedback.meaning}；刚才选了：${feedback.picked}`);
+      drawPanelLines(ctx, text, panel.x + pad, panel.y + panel.h * 0.47, textW, bodySize * 1.42, 8);
+      ctx.restore();
+      return;
+    }
+
+    if (review) {
+      ctx.fillStyle = accent;
+      ctx.font = `850 ${clamp(panel.w * 0.066, 13, 16)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.fillText(review.correct ? '上一题 · 正确' : '上一题 · 再记一次', panel.x + pad, panel.y + panel.h * 0.39);
+      ctx.fillStyle = '#f7fbff';
+      ctx.font = `780 ${bodySize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      const picked = !review.correct && review.picked ? `  刚才选了：${review.picked}` : '';
+      const text = !review.correct && review.explanation
+        ? review.explanation
+        : `${review.term} = ${review.meaning}${picked}`;
+      drawPanelLines(ctx, text, panel.x + pad, panel.y + panel.h * 0.47, textW, bodySize * 1.42, 8);
+      ctx.restore();
+      return;
+    }
+
+    ctx.fillStyle = 'rgba(247, 251, 255, 0.62)';
+    ctx.font = `720 ${bodySize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    drawPanelLines(ctx, '上一题反馈会显示在这里。', panel.x + pad, panel.y + panel.h * 0.42, textW, bodySize * 1.42, 3);
+    ctx.restore();
+  }
+
+  function currentVocabProgress(metrics) {
+    return metrics?.vocabProgress || { score: 0, correct: 0, target: 0, combo: 0, wrong: 0 };
+  }
+
+  function drawSideDivider(ctx, x, y, w) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + w, y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function drawInfoPanel(ctx, panel, strokeStyle) {
     ctx.save();
-    ctx.fillStyle = 'rgba(9, 13, 18, 0.76)';
+    ctx.fillStyle = 'rgba(8, 12, 17, 0.74)';
     ctx.strokeStyle = strokeStyle;
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 1.25;
     ctx.beginPath();
-    ctx.roundRect(panel.x, panel.y, panel.w, panel.h, 8);
+    ctx.roundRect(panel.x, panel.y, panel.w, panel.h, 7);
     ctx.fill();
     ctx.stroke();
     ctx.restore();

@@ -1539,6 +1539,52 @@
       };
     }
     if (config.snake_vocab) {
+      const sidePanelW = clamp(Math.floor(window.innerWidth * 0.105), 176, 230);
+      const sideGap = clamp(Math.floor(window.innerWidth * 0.008), 10, 16);
+      const sideMarginX = clamp(Math.floor(window.innerWidth * 0.018), 18, 36);
+      const sideMarginY = clamp(Math.floor(window.innerHeight * 0.026), 18, 34);
+      const sideAvailableW = window.innerWidth - sideMarginX * 2 - sidePanelW * 2 - sideGap * 2;
+      const sideAvailableH = window.innerHeight - sideMarginY * 2;
+      const canUseSideLayout = window.innerWidth >= 980
+        && sideAvailableW >= config.grid.width * 14
+        && sideAvailableH >= config.grid.height * 14;
+
+      if (canUseSideLayout) {
+        const maxCell = Math.min(
+          Math.floor(sideAvailableW / config.grid.width),
+          Math.floor(sideAvailableH / config.grid.height)
+        );
+        const cell = Math.max(8, maxCell);
+        const w = config.grid.width * cell;
+        const h = config.grid.height * cell;
+        const x = Math.floor((window.innerWidth - w) / 2);
+        const y = Math.floor((window.innerHeight - h) / 2);
+        const panelH = Math.min(h, window.innerHeight - sideMarginY * 2);
+        const panelY = Math.floor((window.innerHeight - panelH) / 2);
+        return {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          cell,
+          x,
+          y,
+          vocabLayout: {
+            mode: 'side',
+            left: {
+              x: sideMarginX,
+              y: panelY,
+              w: Math.max(150, x - sideGap - sideMarginX),
+              h: panelH,
+            },
+            right: {
+              x: x + w + sideGap,
+              y: panelY,
+              w: Math.max(150, window.innerWidth - (x + w + sideGap) - sideMarginX),
+              h: panelH,
+            },
+          },
+        };
+      }
+
       const marginX = clamp(Math.floor(window.innerWidth * 0.035), 18, 72);
       const topY = clamp(Math.floor(window.innerHeight * 0.014), 10, 14);
       const topH = clamp(Math.floor(window.innerHeight * 0.105), 72, 92);
@@ -1563,6 +1609,7 @@
         x,
         y,
         vocabLayout: {
+          mode: 'stack',
           top: {
             x: marginX,
             y: topY,
