@@ -97,7 +97,10 @@
         }
         // walk 状态来回翻转方向
         if (s === 'walk' && a.frame === 0 && a.t < 50) a.facing = !a.facing;
-        SpriteRenderer.renderSprite(previewCtxs[s], s, a.frame, a.facing, 8);
+        SpriteRenderer.renderSprite(previewCtxs[s], s, a.frame, a.facing, SpriteRenderer.renderScale, {
+          width: SpriteRenderer.displayWidth,
+          height: SpriteRenderer.displayHeight,
+        });
       });
       requestAnimationFrame(previewLoop);
     }

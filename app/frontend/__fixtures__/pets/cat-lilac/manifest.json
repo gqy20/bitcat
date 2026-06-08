@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "id": "cat-black",
-  "displayName": "Black Cat",
-  "description": "A high-resolution black cat companion with soft night-mode contrast.",
+  "id": "cat-lilac",
+  "displayName": "Lilac Cat",
+  "description": "A high-resolution lilac cat companion with soft lavender-gray shading.",
   "render": {
     "mode": "sheet",
     "displayWidth": 74,
@@ -874,14 +874,14 @@
     ],
     "assetClass": "default-companion",
     "qualityTier": "polished",
-    "breed": "black",
-    "style": "smooth-scaled expressive black cat companion with subtle charcoal highlights",
-    "recommendedUse": "night mode pet, quiet focus, and compact desktop feedback",
+    "breed": "lilac",
+    "style": "smooth-scaled lilac companion with muted lavender gray coat",
+    "recommendedUse": "soft pet, pastel themes, and gentle reactions",
     "visualDetails": {
-      "eyeDx": 18,
+      "eyeDx": 19,
       "eyeRx": 10,
       "eyeRy": 12,
-      "eyeYOffset": -1
+      "fluff": 0.3
     },
     "releaseTier": "builtin",
     "optimizedFor": "smooth-scaled desktop pet window",

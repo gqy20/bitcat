@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "id": "cat-black",
-  "displayName": "Black Cat",
-  "description": "A high-resolution black cat companion with soft night-mode contrast.",
+  "id": "cat-tortie",
+  "displayName": "Tortie Cat",
+  "description": "A high-resolution tortoiseshell cat companion with tiny mottled patches.",
   "render": {
     "mode": "sheet",
     "displayWidth": 74,
@@ -874,14 +874,14 @@
     ],
     "assetClass": "default-companion",
     "qualityTier": "polished",
-    "breed": "black",
-    "style": "smooth-scaled expressive black cat companion with subtle charcoal highlights",
-    "recommendedUse": "night mode pet, quiet focus, and compact desktop feedback",
+    "breed": "tortie",
+    "style": "smooth-scaled tortoiseshell companion with warm mottled coat patches",
+    "recommendedUse": "expressive pet, cozy reactions, and richly colored moods",
     "visualDetails": {
       "eyeDx": 18,
       "eyeRx": 10,
-      "eyeRy": 12,
-      "eyeYOffset": -1
+      "eyeRy": 11,
+      "fluff": 0.2
     },
     "releaseTier": "builtin",
     "optimizedFor": "smooth-scaled desktop pet window",

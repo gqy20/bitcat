@@ -877,6 +877,13 @@
     "breed": "calico",
     "style": "smooth-scaled expressive calico companion with patchwork coat markings",
     "recommendedUse": "colorful pet, cheerful reactions, and cozy desktop feedback",
+    "visualDetails": {
+      "eyeDx": 19,
+      "eyeRx": 10,
+      "eyeRy": 12,
+      "heterochromia": true,
+      "fluff": 0.25
+    },
     "releaseTier": "builtin",
     "optimizedFor": "smooth-scaled desktop pet window",
     "frameLabels": [

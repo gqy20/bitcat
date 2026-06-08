@@ -877,6 +877,12 @@
     "breed": "tabby",
     "style": "smooth-scaled expressive orange tabby companion",
     "recommendedUse": "default pet, game reactions, and status feedback",
+    "visualDetails": {
+      "eyeDx": 18,
+      "eyeRx": 10,
+      "eyeRy": 12,
+      "accent": "freckles"
+    },
     "releaseTier": "builtin",
     "optimizedFor": "smooth-scaled desktop pet window",
     "frameLabels": [

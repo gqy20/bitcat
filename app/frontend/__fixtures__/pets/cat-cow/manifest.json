@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "id": "cat-black",
-  "displayName": "Black Cat",
-  "description": "A high-resolution black cat companion with soft night-mode contrast.",
+  "id": "cat-cow",
+  "displayName": "Cow Cat",
+  "description": "A high-resolution cow cat companion with playful black-and-white patches.",
   "render": {
     "mode": "sheet",
     "displayWidth": 74,
@@ -874,14 +874,14 @@
     ],
     "assetClass": "default-companion",
     "qualityTier": "polished",
-    "breed": "black",
-    "style": "smooth-scaled expressive black cat companion with subtle charcoal highlights",
-    "recommendedUse": "night mode pet, quiet focus, and compact desktop feedback",
+    "breed": "cow",
+    "style": "smooth-scaled playful cow cat companion with bold irregular patches",
+    "recommendedUse": "comic pet, playful reactions, and high-contrast themes",
     "visualDetails": {
-      "eyeDx": 18,
-      "eyeRx": 10,
+      "eyeDx": 19,
+      "eyeRx": 11,
       "eyeRy": 12,
-      "eyeYOffset": -1
+      "accent": "milkdrop"
     },
     "releaseTier": "builtin",
     "optimizedFor": "smooth-scaled desktop pet window",

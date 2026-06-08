@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "id": "cat-black",
-  "displayName": "Black Cat",
-  "description": "A high-resolution black cat companion with soft night-mode contrast.",
+  "id": "cat-cream",
+  "displayName": "Cream Cat",
+  "description": "A high-resolution cream cat companion with soft vanilla shading.",
   "render": {
     "mode": "sheet",
     "displayWidth": 74,
@@ -874,14 +874,14 @@
     ],
     "assetClass": "default-companion",
     "qualityTier": "polished",
-    "breed": "black",
-    "style": "smooth-scaled expressive black cat companion with subtle charcoal highlights",
-    "recommendedUse": "night mode pet, quiet focus, and compact desktop feedback",
+    "breed": "cream",
+    "style": "smooth-scaled gentle cream companion with vanilla coat shadows",
+    "recommendedUse": "cozy pet, low-contrast themes, and gentle moods",
     "visualDetails": {
-      "eyeDx": 18,
-      "eyeRx": 10,
+      "eyeDx": 20,
+      "eyeRx": 11,
       "eyeRy": 12,
-      "eyeYOffset": -1
+      "fluff": 0.35
     },
     "releaseTier": "builtin",
     "optimizedFor": "smooth-scaled desktop pet window",

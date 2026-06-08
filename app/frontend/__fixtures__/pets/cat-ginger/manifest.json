@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "id": "cat-black",
-  "displayName": "Black Cat",
-  "description": "A high-resolution black cat companion with soft night-mode contrast.",
+  "id": "cat-ginger",
+  "displayName": "Ginger Cat",
+  "description": "A high-resolution ginger cat companion with bright marmalade stripes.",
   "render": {
     "mode": "sheet",
     "displayWidth": 74,
@@ -874,14 +874,14 @@
     ],
     "assetClass": "default-companion",
     "qualityTier": "polished",
-    "breed": "black",
-    "style": "smooth-scaled expressive black cat companion with subtle charcoal highlights",
-    "recommendedUse": "night mode pet, quiet focus, and compact desktop feedback",
+    "breed": "ginger",
+    "style": "smooth-scaled cheerful ginger tabby companion with sunny orange stripes",
+    "recommendedUse": "playful pet, upbeat reactions, and warm desktop feedback",
     "visualDetails": {
       "eyeDx": 18,
       "eyeRx": 10,
       "eyeRy": 12,
-      "eyeYOffset": -1
+      "accent": "freckles"
     },
     "releaseTier": "builtin",
     "optimizedFor": "smooth-scaled desktop pet window",

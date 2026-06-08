@@ -877,6 +877,12 @@
     "breed": "tuxedo",
     "style": "smooth-scaled expressive tuxedo companion with white chest and face blaze",
     "recommendedUse": "crisp pet, terminal-adjacent themes, and status feedback",
+    "visualDetails": {
+      "eyeDx": 18,
+      "eyeRx": 10,
+      "eyeRy": 11,
+      "accent": "bowtie"
+    },
     "releaseTier": "builtin",
     "optimizedFor": "smooth-scaled desktop pet window",
     "frameLabels": [

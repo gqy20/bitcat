@@ -1,45 +1,43 @@
 # 宠物资源包发布计划
 
 > 状态：活跃  
-> 更新日期：2026-05-17
+> 更新日期：2026-06-08
 
 当前宠物渲染已经进入 v2-only 资源包模式。内置默认不再走 `sprite.js` 硬编码 fallback，而是加载 bundled v2 pack；配置了资源包时加载失败会直接暴露错误，避免旧版本兼容路径掩盖问题。
 
 ## 当前基线
 
-Bundled 资源包位于 `app/frontend/__fixtures__/pets/`：
+最终软件只打包 15 个内置猫咪资源包，目录位于 `app/frontend/__fixtures__/pets/`：
 
 | 资源包 | 类型 | 尺寸策略 | 备注 |
 |------|------|----------|------|
 | `cat-tabby` | 192x208 WebP v2 sheet | 74x80 显示 | 当前默认内置狸花/橘色虎斑小猫 |
-| `cat` | 192x208 WebP v2 sheet | 74x80 显示 | 经典小猫资源包，保留为可选 |
-| `piggy` | 192x208 WebP v2 sheet | 74x80 显示 | 小猪资源包，保留为可选 |
-| `status` / `core` / `stacky` / `bsod` / `null-signal` | 192x208 WebP v2 sheet | 69x75 显示 | `polished` 终端状态风资源 |
-| `dewey` / `fireball` / `rocky` / `seedy` | 192x208 WebP v2 sheet | 69x75 显示 | `standard` 角色风可选资源 |
+| `cat-black` / `cat-blue-gray` / `cat-calico` / `cat-cow` / `cat-cream` | 192x208 WebP v2 sheet | 74x80 显示 | 内置猫咪品种 |
+| `cat-ginger` / `cat-gray` / `cat-lilac` / `cat-ragdoll` / `cat-siamese` | 192x208 WebP v2 sheet | 74x80 显示 | 内置猫咪品种 |
+| `cat-snowshoe` / `cat-tortie` / `cat-tuxedo` / `cat-white` | 192x208 WebP v2 sheet | 74x80 显示 | 内置猫咪品种 |
 
 代码入口：
 
 - `app/frontend/js/sprite-loader.js`：v2 manifest loader，默认 URL 为 `/__fixtures__/pets/cat-tabby`。
 - `app/frontend/js/settings.js`：设置页资源包 preset 列表。
 - `app/frontend/__tests__/pet-catalog-fixtures.test.js`：确保 bundled catalog 可加载。
-- `app/frontend/__tests__/piggy-fixture.test.js` / `pet-fixture.test.js`：确保轻量内置资源覆盖基础状态。
+- `app/frontend/__tests__/pet-fixture.test.js`：确保默认内置资源覆盖基础状态。
 
 ## 已完成
 
 - v1 schema 与硬编码 fallback 已清理。
 - `cat-tabby` 成为默认 v2 内置资源包。
-- `cat` 去掉 `default-` 命名，仅作为普通可选资源包。
-- catalog 资源包统一使用 manifest 加载。
-- catalog 资源包已补 `metadata.qualityTier` / `assetClass` / `releaseTier`，设置页按推荐、终端状态、角色、经典资源分组展示。
-- manifest `actions` 已支持 timeline；`piggy` 提供 `observe` / `nudge` / `acknowledge` / `blocked` / `dragging` 语义动作，用于截图、输入和拖拽反馈。
+- 内置 catalog 收敛为 15 个猫咪品种，不再随最终软件打包 `piggy`、终端状态风或其他角色资源。
+- catalog 资源包统一使用 manifest 加载，并补 `metadata.qualityTier` / `assetClass` / `releaseTier`。
+- manifest `actions` 已支持 timeline；15 个猫咪资源包均提供语义动作，用于截图、输入和拖拽反馈。
 - 配置了外部资源时加载失败直接失败，不回退内置宠物。
 - 设置页已经提供 bundled preset 选择和自定义地址入口。
 
 ## 待决策
 
 1. **发布包体积预算**
-   - `cat-tabby` / `cat` 很小，可以长期内置。
-   - 大尺寸 WebP 资源包会让发布包增加数 MB，需要决定哪些进入正式 bundle。
+   - 固定内置 15 个猫咪资源包。
+   - 其他实验资源不放入 `app/frontend/__fixtures__/pets/`，避免进入最终软件包。
 
 2. **外部资源包目录**
    - 推荐正式入口：`~/.bitcat/pets/<id>/manifest.json`。
@@ -51,9 +49,8 @@ Bundled 资源包位于 `app/frontend/__fixtures__/pets/`：
    - 自定义地址失败时给出 UI toast，而不是只依赖 console。
 
 4. **资源包分层**
-   - 必选内置：`cat-tabby`、`cat`。
-   - 候选内置：`status`、`core`、`stacky`。
-   - 候选外置/下载：`dewey`、`fireball`、`rocky`、`seedy`、`bsod`、`null-signal`。
+   - 必选内置：15 个 `cat-*` 品种。
+   - 非内置资源：后续若恢复，应放到用户目录或外部下载，不放入最终软件包。
 
 ## 下一步
 

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "id": "cat-black",
-  "displayName": "Black Cat",
-  "description": "A high-resolution black cat companion with soft night-mode contrast.",
+  "id": "cat-blue-gray",
+  "displayName": "Blue Gray Cat",
+  "description": "A high-resolution blue-gray cat companion with plush cool-toned fur.",
   "render": {
     "mode": "sheet",
     "displayWidth": 74,
@@ -874,14 +874,13 @@
     ],
     "assetClass": "default-companion",
     "qualityTier": "polished",
-    "breed": "black",
-    "style": "smooth-scaled expressive black cat companion with subtle charcoal highlights",
-    "recommendedUse": "night mode pet, quiet focus, and compact desktop feedback",
+    "breed": "blue-gray",
+    "style": "smooth-scaled plush blue gray companion with cool velvet shading",
+    "recommendedUse": "focused pet, cool themes, and quiet desktop feedback",
     "visualDetails": {
-      "eyeDx": 18,
-      "eyeRx": 10,
-      "eyeRy": 12,
-      "eyeYOffset": -1
+      "eyeDx": 17,
+      "eyeRx": 9,
+      "eyeRy": 11
     },
     "releaseTier": "builtin",
     "optimizedFor": "smooth-scaled desktop pet window",

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "id": "cat-black",
-  "displayName": "Black Cat",
-  "description": "A high-resolution black cat companion with soft night-mode contrast.",
+  "id": "cat-snowshoe",
+  "displayName": "Snowshoe Cat",
+  "description": "A high-resolution snowshoe cat companion with dark points and bright white mitts.",
   "render": {
     "mode": "sheet",
     "displayWidth": 74,
@@ -874,14 +874,14 @@
     ],
     "assetClass": "default-companion",
     "qualityTier": "polished",
-    "breed": "black",
-    "style": "smooth-scaled expressive black cat companion with subtle charcoal highlights",
-    "recommendedUse": "night mode pet, quiet focus, and compact desktop feedback",
+    "breed": "snowshoe",
+    "style": "smooth-scaled snowshoe companion with crisp mittens and point markings",
+    "recommendedUse": "smart pet, focused feedback, and crisp desktop themes",
     "visualDetails": {
-      "eyeDx": 18,
-      "eyeRx": 10,
+      "eyeDx": 17,
+      "eyeRx": 9,
       "eyeRy": 12,
-      "eyeYOffset": -1
+      "accent": "milkdrop"
     },
     "releaseTier": "builtin",
     "optimizedFor": "smooth-scaled desktop pet window",

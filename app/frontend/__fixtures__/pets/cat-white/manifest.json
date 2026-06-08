@@ -877,6 +877,12 @@
     "breed": "white",
     "style": "smooth-scaled expressive white cat companion with soft cream shadows",
     "recommendedUse": "minimal pet, gentle moods, and clean desktop feedback",
+    "visualDetails": {
+      "eyeDx": 19,
+      "eyeRx": 11,
+      "eyeRy": 12,
+      "fluff": 0.45
+    },
     "releaseTier": "builtin",
     "optimizedFor": "smooth-scaled desktop pet window",
     "frameLabels": [

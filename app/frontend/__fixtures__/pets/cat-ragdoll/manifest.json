@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "id": "cat-black",
-  "displayName": "Black Cat",
-  "description": "A high-resolution black cat companion with soft night-mode contrast.",
+  "id": "cat-ragdoll",
+  "displayName": "Ragdoll Cat",
+  "description": "A high-resolution ragdoll cat companion with soft mitted point markings.",
   "render": {
     "mode": "sheet",
     "displayWidth": 74,
@@ -874,14 +874,14 @@
     ],
     "assetClass": "default-companion",
     "qualityTier": "polished",
-    "breed": "black",
-    "style": "smooth-scaled expressive black cat companion with subtle charcoal highlights",
-    "recommendedUse": "night mode pet, quiet focus, and compact desktop feedback",
+    "breed": "ragdoll",
+    "style": "smooth-scaled fluffy ragdoll companion with pale coat and soft point markings",
+    "recommendedUse": "gentle pet, relaxed moods, and cozy desktop feedback",
     "visualDetails": {
-      "eyeDx": 18,
-      "eyeRx": 10,
-      "eyeRy": 12,
-      "eyeYOffset": -1
+      "eyeDx": 20,
+      "eyeRx": 11,
+      "eyeRy": 13,
+      "fluff": 0.85
     },
     "releaseTier": "builtin",
     "optimizedFor": "smooth-scaled desktop pet window",

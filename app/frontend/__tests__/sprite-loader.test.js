@@ -11,8 +11,26 @@ import {
 
 const fixtureDir = path.join(process.cwd(), '__fixtures__', 'pets', 'cat-tabby');
 const manifest = JSON.parse(readFileSync(path.join(fixtureDir, 'manifest.json'), 'utf8'));
-const statusFixtureDir = path.join(process.cwd(), '__fixtures__', 'pets', 'status');
-const statusManifest = JSON.parse(readFileSync(path.join(statusFixtureDir, 'manifest.json'), 'utf8'));
+const compactManifest = {
+  ...manifest,
+  id: 'cat-compact-test',
+  render: {
+    ...manifest.render,
+    displayWidth: 69,
+    displayHeight: 75,
+    scale: 75 / 208,
+  },
+  states: {
+    ...Object.fromEntries(
+      Object.entries(manifest.states).filter(([state]) => state !== 'focused' && state !== 'confused'),
+    ),
+  },
+  aliases: { focused: 'working', confused: 'failed' },
+  actions: {
+    ...manifest.actions,
+    jump: { spriteFrames: [0], frames: [{ sprite: 0, duration: 220 }], repeat: 1, fallback: 'idle' },
+  },
+};
 
 function zeroImageData(manifest) {
   return {
@@ -27,7 +45,7 @@ function zeroImageData(manifest) {
 describe('sprite-loader', () => {
   it('validates manifest basics', () => {
     expect(validateManifest(manifest)).toBe(manifest);
-    expect(validateManifest(statusManifest)).toBe(statusManifest);
+    expect(validateManifest(compactManifest)).toBe(compactManifest);
     expect(() => validateManifest({ ...manifest, schemaVersion: 3 })).toThrow(/schemaVersion/);
     expect(() => validateManifest({
       ...manifest,
@@ -61,22 +79,22 @@ describe('sprite-loader', () => {
     expect(runtime.actionConfig.observe.frames.map((frame) => frame.sprite)).toEqual([0, 1, 2, 4, 3, 5]);
   });
 
-  it('builds a status-sized v2 sheet runtime with aliases from the status fixture', () => {
+  it('builds a compact v2 sheet runtime with aliases', () => {
     const imageData = {
-      width: statusManifest.sprite.columns * statusManifest.sprite.frameWidth,
-      height: statusManifest.sprite.rows * statusManifest.sprite.frameHeight,
-      data: new Uint8ClampedArray(statusManifest.sprite.columns * statusManifest.sprite.frameWidth * statusManifest.sprite.rows * statusManifest.sprite.frameHeight * 4),
+      width: compactManifest.sprite.columns * compactManifest.sprite.frameWidth,
+      height: compactManifest.sprite.rows * compactManifest.sprite.frameHeight,
+      data: new Uint8ClampedArray(compactManifest.sprite.columns * compactManifest.sprite.frameWidth * compactManifest.sprite.rows * compactManifest.sprite.frameHeight * 4),
     };
-    const runtime = buildRuntimeFromManifest(statusManifest, imageData);
+    const runtime = buildRuntimeFromManifest(compactManifest, imageData);
 
     expect(runtime.frameWidth).toBe(192);
     expect(runtime.frameHeight).toBe(208);
     expect(runtime.renderScale).toBeCloseTo(75 / 208);
     expect(runtime.displayWidth).toBe(69);
     expect(runtime.displayHeight).toBe(75);
-    expect(runtime.hotspots.observe).toEqual(statusManifest.hotspots.observe);
-    expect(runtime.hotspots.input).toEqual(statusManifest.hotspots.input);
-    expect(runtime.sprites.working).toHaveLength(6);
+    expect(runtime.hotspots.observe).toEqual(compactManifest.hotspots.observe);
+    expect(runtime.hotspots.input).toEqual(compactManifest.hotspots.input);
+    expect(runtime.sprites.working).toHaveLength(12);
     expect(runtime.sprites.focused).toBe(runtime.sprites.working);
     expect(runtime.sprites.confused).toBe(runtime.sprites.failed);
     expect(runtime.actionConfig.jump.frames).toEqual([{ sprite: 0, duration: 220 }]);
@@ -130,15 +148,15 @@ describe('sprite-loader', () => {
           expect(command).toBe('cmd_settings_load');
           return {
             appearance: {
-              pet_asset_url: '/__fixtures__/pets/status',
+            pet_asset_url: '/__fixtures__/pets/cat-snowshoe',
             },
           };
         },
       },
     };
 
-    await expect(configuredPetAssetUrlAsync()).resolves.toBe('/__fixtures__/pets/status');
-    expect(window.sessionStorage.getItem('bitcat.petAssetUrl')).toBe('/__fixtures__/pets/status');
+    await expect(configuredPetAssetUrlAsync()).resolves.toBe('/__fixtures__/pets/cat-snowshoe');
+    expect(window.sessionStorage.getItem('bitcat.petAssetUrl')).toBe('/__fixtures__/pets/cat-snowshoe');
 
     window.__TAURI__ = previousTauri;
     window.__PET_ASSET_URL__ = previousPetAssetUrl;
@@ -179,31 +197,32 @@ describe('sprite-loader', () => {
     await expect(loadPetAssetPack(null)).rejects.toThrow(/baseUrl is required/);
   });
 
-  it('loads the status v2 pack through injected fetch and imageData hooks', async () => {
+  it('loads a compact v2 pack through injected fetch and imageData hooks', async () => {
     const imageData = {
-      width: statusManifest.sprite.columns * statusManifest.sprite.frameWidth,
-      height: statusManifest.sprite.rows * statusManifest.sprite.frameHeight,
-      data: new Uint8ClampedArray(statusManifest.sprite.columns * statusManifest.sprite.frameWidth * statusManifest.sprite.rows * statusManifest.sprite.frameHeight * 4),
+      width: compactManifest.sprite.columns * compactManifest.sprite.frameWidth,
+      height: compactManifest.sprite.rows * compactManifest.sprite.frameHeight,
+      data: new Uint8ClampedArray(compactManifest.sprite.columns * compactManifest.sprite.frameWidth * compactManifest.sprite.rows * compactManifest.sprite.frameHeight * 4),
     };
-    const renderer = await loadPetAssetPack('/fixtures/status', {
+    const renderer = await loadPetAssetPack('/fixtures/cat-compact-test', {
       fetch: async (url) => ({
         ok: url.endsWith('/manifest.json'),
         status: 200,
-        json: async () => statusManifest,
+        json: async () => compactManifest,
       }),
       imageData: async () => imageData,
     });
 
     expect(renderer.assetSource.kind).toBe('manifest');
-    expect(renderer.assetSource.id).toBe('status');
+    expect(renderer.assetSource.id).toBe('cat-compact-test');
     expect(renderer.SPRITE_W).toBe(192);
     expect(renderer.SPRITE_H).toBe(208);
     expect(renderer.renderScale).toBeCloseTo(75 / 208);
     expect(renderer.displayWidth).toBe(69);
     expect(renderer.displayHeight).toBe(75);
-    expect(renderer.hotspots.observe).toEqual(statusManifest.hotspots.observe);
-    expect(renderer.hotspots.input).toEqual(statusManifest.hotspots.input);
-    expect(renderer.getSprite('preparing', 0)).toBe(renderer.SPRITES.working[0]);
+    expect(renderer.hotspots.observe).toEqual(compactManifest.hotspots.observe);
+    expect(renderer.hotspots.input).toEqual(compactManifest.hotspots.input);
+    expect(renderer.getSprite('focused', 0)).toBe(renderer.SPRITES.working[0]);
+    expect(renderer.getSprite('confused', 0)).toBe(renderer.SPRITES.failed[0]);
   });
 
   it('rejects configured packs when external loading fails', async () => {

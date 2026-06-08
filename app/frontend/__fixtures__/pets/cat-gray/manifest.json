@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "id": "cat-black",
-  "displayName": "Black Cat",
-  "description": "A high-resolution black cat companion with soft night-mode contrast.",
+  "id": "cat-gray",
+  "displayName": "Gray Cat",
+  "description": "A high-resolution gray tabby cat companion with soft smoke stripes.",
   "render": {
     "mode": "sheet",
     "displayWidth": 74,
@@ -874,14 +874,14 @@
     ],
     "assetClass": "default-companion",
     "qualityTier": "polished",
-    "breed": "black",
-    "style": "smooth-scaled expressive black cat companion with subtle charcoal highlights",
-    "recommendedUse": "night mode pet, quiet focus, and compact desktop feedback",
+    "breed": "gray",
+    "style": "smooth-scaled cozy gray tabby companion with gentle smoke markings",
+    "recommendedUse": "calm pet, neutral themes, and soft status feedback",
     "visualDetails": {
-      "eyeDx": 18,
-      "eyeRx": 10,
+      "eyeDx": 17,
+      "eyeRx": 9,
       "eyeRy": 12,
-      "eyeYOffset": -1
+      "fluff": 0.1
     },
     "releaseTier": "builtin",
     "optimizedFor": "smooth-scaled desktop pet window",

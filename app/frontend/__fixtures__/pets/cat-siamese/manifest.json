@@ -877,6 +877,12 @@
     "breed": "siamese",
     "style": "smooth-scaled expressive Siamese companion with cool blue-eyed point markings",
     "recommendedUse": "elegant pet, focused states, and calm desktop feedback",
+    "visualDetails": {
+      "eyeDx": 17,
+      "eyeRx": 9,
+      "eyeRy": 12,
+      "eyeYOffset": 1
+    },
     "releaseTier": "builtin",
     "optimizedFor": "smooth-scaled desktop pet window",
     "frameLabels": [

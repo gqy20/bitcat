@@ -9,7 +9,7 @@
 
 | 能力 | 状态 |
 |------|------|
-| v2 宠物资源包系统（manifest + spritesheet + 设置页选择） | 已落地（2026-05-17）；默认 `cat-tabby`，`cat/piggy/status/core/...` 可选 |
+| v2 宠物资源包系统（manifest + spritesheet + 设置页选择） | 已落地（2026-05-17）；最终内置只保留 15 个 `cat-*` 品种，默认 `cat-tabby` |
 | 语义宠物动画（非均匀帧时长 + 瞬态 repeat+fallback + idle variants） | 已有（2026-05-13 增强，2026-05-17 收敛到 v2 pack） |
 | AI 对话（Anthropic Claude via rig-core，流式输出） | 已有 |
 | 16 个内置工具（launch/shell/read_file/get_time/recent_screenshots/search_memory/remember/reminder/hotkey/clipboard/foreground/dance/start_game 等） | 已有；工具说明以 rig schema 为主，prompt 只保留高风险政策 |
@@ -234,7 +234,7 @@ panel / AI start_game → ActionBus 内置游戏动作
 ### C2. 动画增强
 
 - ~~呼吸微动、眨眼、走路改进~~ ✅ **已完成 (2026-05-13)** — 非均匀帧时长 + 瞬态 repeat+fallback
-- ~~硬编码小猫迁移到资源包~~ ✅ **已完成 (2026-05-17)** — v2-only manifest loader，默认 `cat-tabby`，`cat` 作为普通可选包
+- ~~硬编码小猫迁移到资源包~~ ✅ **已完成 (2026-05-17)** — v2-only manifest loader，默认 `cat-tabby`；2026-06-08 收敛为 15 个内置猫咪品种
 - ~~语义短动作 overlay~~ ✅ **已完成 (2026-05-17)** — manifest action timeline，`observe/nudge/acknowledge/blocked/dragging` 可用于截图、输入和拖拽反馈
 - 宠物资源包发布策略：决定大 WebP pack 是进入 bundle 还是外置下载，见 [plan/pet-asset-packaging.md](plan/pet-asset-packaging.md)
 - 粒子系统迁移到 Three.js Points
@@ -576,7 +576,7 @@ C1(3D化) ──→ C2/C3 渲染层就绪，但不阻塞 Demo/EA
 | **B2** | Token 追踪 + 设置页统计 | 已完成 MVP | 0 | Done |
 | **B3** | Extractor 改造主链路 | 已完成 | 0 | Done |
 | **B3 cleanup** | 删除旧 raw helper / parser / 惰性配置 | 已完成，净删为主 | 0 | Done |
-| **Pet v2 assets** | 宠物 manifest loader、默认 `cat-tabby`、`cat` 资源包命名、catalog preset | 已完成；后续只剩发布包体积分层和用户目录加载 | 0 | Done/P1 packaging |
+| **Pet v2 assets** | 宠物 manifest loader、默认 `cat-tabby`、15 个内置猫咪品种、catalog preset | 已完成；后续只剩用户目录加载和资源诊断 | 0 | Done/P1 packaging |
 | **B6** | 程序化提醒 + 顶部通知 + 提示音 | create/list/cancel、scheduler、notification island、AI personalizer 已完成；剩余费用/批量/更多动作工具打磨 | 0 | Done/P2 follow-up |
 | **E1** | AI 编码工具会话监听 | 本地 Claude/Codex hook + Remote LAN ingest/viewer MVP 已完成；剩余 JSONL watcher、PID 存活和端到端回归 | 0 | Done/P1 follow-up |
 | **E2** | 桌宠化 Agent 状态管理 | 独立浮动任务栈 + 顶部通知已完成；剩余 panel 收敛、已查看去重和手柄入口 | 0 | Done/P1 follow-up |

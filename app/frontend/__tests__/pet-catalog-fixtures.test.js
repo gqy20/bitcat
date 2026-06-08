@@ -4,29 +4,21 @@ import { describe, expect, it } from 'vitest';
 import { loadPetAssetPack } from '../js/sprite-loader.js';
 
 const packs = [
-  { id: 'padlet', dir: 'padlet', image: 'spritesheet.webp', minSize: 50_000, displayWidth: 74, displayHeight: 80, qualityTier: 'generated', assetClass: 'bitcat-original' },
-  { id: 'hackmark', dir: 'hackmark', image: 'spritesheet.webp', minSize: 50_000, displayWidth: 74, displayHeight: 80, qualityTier: 'generated', assetClass: 'geek-logo' },
   { id: 'cat-tabby', dir: 'cat-tabby', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
   { id: 'cat-calico', dir: 'cat-calico', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
   { id: 'cat-siamese', dir: 'cat-siamese', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
   { id: 'cat-tuxedo', dir: 'cat-tuxedo', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
   { id: 'cat-black', dir: 'cat-black', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
   { id: 'cat-white', dir: 'cat-white', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
-  { id: 'piggy', dir: 'piggy', image: 'spritesheet.webp', minSize: 50_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
-  { id: 'cat', dir: 'cat', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
-  { id: 'core', dir: 'core', image: 'spritesheet.webp', qualityTier: 'polished', assetClass: 'terminal-status' },
-  { id: 'status', dir: 'status', image: 'spritesheet.webp', qualityTier: 'polished', assetClass: 'terminal-status' },
-  { id: 'dewey', dir: 'dewey', image: 'spritesheet.webp', qualityTier: 'standard', assetClass: 'character' },
-  { id: 'fireball', dir: 'fireball', image: 'spritesheet.webp', qualityTier: 'standard', assetClass: 'character' },
-  { id: 'rocky', dir: 'rocky', image: 'spritesheet.webp', qualityTier: 'standard', assetClass: 'character' },
-  { id: 'seedy', dir: 'seedy', image: 'spritesheet.webp', qualityTier: 'standard', assetClass: 'character' },
-  { id: 'byte-bun', dir: 'byte-bun', image: 'spritesheet.webp', qualityTier: 'generated', assetClass: 'character', displayWidth: 74, displayHeight: 80 },
-  { id: 'mossbot', dir: 'mossbot', image: 'spritesheet.webp', qualityTier: 'generated', assetClass: 'character', displayWidth: 74, displayHeight: 80 },
-  { id: 'moonbit', dir: 'moonbit', image: 'spritesheet.webp', qualityTier: 'generated', assetClass: 'character', displayWidth: 74, displayHeight: 80 },
-  { id: 'sparkle', dir: 'sparkle', image: 'spritesheet.webp', qualityTier: 'generated', assetClass: 'character', displayWidth: 74, displayHeight: 80 },
-  { id: 'stacky', dir: 'stacky', image: 'spritesheet.webp', qualityTier: 'polished', assetClass: 'terminal-status' },
-  { id: 'bsod', dir: 'bsod', image: 'spritesheet.webp', qualityTier: 'polished', assetClass: 'terminal-status' },
-  { id: 'null-signal', dir: 'null-signal', image: 'spritesheet.webp', qualityTier: 'polished', assetClass: 'terminal-status' },
+  { id: 'cat-ginger', dir: 'cat-ginger', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
+  { id: 'cat-gray', dir: 'cat-gray', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
+  { id: 'cat-cream', dir: 'cat-cream', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
+  { id: 'cat-blue-gray', dir: 'cat-blue-gray', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
+  { id: 'cat-cow', dir: 'cat-cow', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
+  { id: 'cat-tortie', dir: 'cat-tortie', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
+  { id: 'cat-ragdoll', dir: 'cat-ragdoll', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
+  { id: 'cat-snowshoe', dir: 'cat-snowshoe', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
+  { id: 'cat-lilac', dir: 'cat-lilac', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
 ];
 
 const fixturesRoot = path.join(process.cwd(), '__fixtures__', 'pets');

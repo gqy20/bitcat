@@ -106,7 +106,7 @@ function rendererFromRuntime(runtime, source) {
     ctx.save();
     ctx.imageSmoothingEnabled = !pixelated;
     if (facingRight === false) {
-      ctx.translate(bx + totalW, by);
+      ctx.translate(bx + canvasW, by);
       ctx.scale(-1, 1);
     } else {
       ctx.translate(bx, by);

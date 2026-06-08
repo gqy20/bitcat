@@ -46,7 +46,11 @@ const C = {
   furLight: breedColor('furLight', '#ffd2a4'),
   cream: breedColor('cream', '#fff0d6'),
   blush: breedColor('blush', '#ff9db1', 210),
+  cheek: breedColor('blush', '#ff9db1', 92),
   eye: breedColor('eye', '#1b2638'),
+  iris: breedColor('iris', '#486a88'),
+  irisAlt: breedColor('irisAlt', '#6aa7a2'),
+  nose: breedColor('nose', '#ff8fa6'),
   cyan: rgba('#76f6e5', 255),
   cyanDim: rgba('#39b8bf', 230),
   green: rgba('#8df09d', 255),
@@ -63,6 +67,10 @@ const C = {
 function shapeValue(key, fallback = 1) {
   const value = breed.shape && breed.shape[key];
   return Number.isFinite(value) ? value : fallback;
+}
+
+function detailValue(key, fallback = null) {
+  return breed.details && breed.details[key] != null ? breed.details[key] : fallback;
 }
 
 function blendPixel(x, y, color) {
@@ -194,40 +202,67 @@ function drawLens(fx, fy, cx, cy, color) {
 }
 
 function drawEyes(fx, fy, cfg, y) {
+  const eyeDx = detailValue('eyeDx', 18);
+  const eyeY = y + 13 + detailValue('eyeYOffset', 0);
+  const eyeRx = detailValue('eyeRx', 10);
+  const eyeRy = detailValue('eyeRy', 12);
+  const leftX = 96 - eyeDx;
+  const rightX = 96 + eyeDx;
+  const irisAlt = detailValue('heterochromia', false);
+  const leftIris = irisAlt ? C.irisAlt : C.iris;
+  const rightIris = C.iris;
+
+  function beanEye(cx, cy, iris, rx = eyeRx, ry = eyeRy) {
+    ellipse(fx, fy, cx, cy, rx, ry, C.eye);
+    ellipse(fx, fy, cx + 1, cy + 1, Math.max(3, rx - 4), Math.max(4, ry - 5), iris);
+    ellipse(fx, fy, cx + 4, cy - 5, 3, 4, C.white);
+    ellipse(fx, fy, cx - 3, cy + 4, 2, 2, C.white);
+  }
+
   if (cfg.mode === 'failed') {
-    line(fx, fy, 73, y + 4, 84, y + 15, 5, C.red);
-    line(fx, fy, 84, y + 4, 73, y + 15, 5, C.red);
-    line(fx, fy, 108, y + 4, 119, y + 15, 5, C.red);
-    line(fx, fy, 119, y + 4, 108, y + 15, 5, C.red);
-    rect(fx, fy, 81, y + 32, 30, 5, C.red);
+    line(fx, fy, leftX - 10, eyeY + 2, leftX, eyeY - 3, 5, C.eye);
+    line(fx, fy, leftX, eyeY - 3, leftX + 10, eyeY + 2, 5, C.eye);
+    line(fx, fy, rightX - 10, eyeY + 2, rightX, eyeY - 3, 5, C.eye);
+    line(fx, fy, rightX, eyeY - 3, rightX + 10, eyeY + 2, 5, C.eye);
+    ellipse(fx, fy, leftX + 10, eyeY + 10, 3, 5, C.cyanDim);
+    line(fx, fy, 88, y + 36, 96, y + 30, 4, C.eye);
+    line(fx, fy, 96, y + 30, 104, y + 36, 4, C.eye);
     return;
   }
   if (cfg.mode === 'review' || cfg.mode === 'delight') {
-    drawSpark(fx, fy, 78, y + 11, 7, cfg.mode === 'delight' ? C.yellow : C.green);
-    drawSpark(fx, fy, 114, y + 11, 7, cfg.mode === 'delight' ? C.green : C.magenta);
-    line(fx, fy, 82, y + 28, 96, y + 35, 5, C.eye);
-    line(fx, fy, 96, y + 35, 110, y + 28, 5, C.eye);
+    beanEye(leftX, eyeY, leftIris);
+    beanEye(rightX, eyeY, rightIris);
+    drawSpark(fx, fy, leftX, eyeY, 4, cfg.mode === 'delight' ? C.yellow : C.green);
+    drawSpark(fx, fy, rightX, eyeY, 4, cfg.mode === 'delight' ? C.green : C.magenta);
+    line(fx, fy, 83, y + 31, 96, y + 39, 5, C.eye);
+    line(fx, fy, 96, y + 39, 109, y + 31, 5, C.eye);
     return;
   }
   if (cfg.mode === 'waiting') {
-    rect(fx, fy, 72, y + 12, 18, 5, cfg.blink ? C.eye : C.cyanDim);
-    rect(fx, fy, 106, y + 12, 18, 5, cfg.blink ? C.eye : C.cyanDim);
-    rect(fx, fy, 87, y + 31, 18, 4, C.eye);
+    if (cfg.blink) {
+      line(fx, fy, leftX - 9, eyeY, leftX + 9, eyeY, 5, C.eye);
+      beanEye(rightX, eyeY, rightIris);
+    } else {
+      beanEye(leftX, eyeY, leftIris);
+      beanEye(rightX, eyeY, rightIris);
+    }
+    line(fx, fy, 88, y + 33, 96, y + 37, 4, C.eye);
+    line(fx, fy, 96, y + 37, 104, y + 33, 4, C.eye);
     return;
   }
   if (cfg.mode === 'working') {
-    line(fx, fy, 70 + cfg.scan, y + 13, 82 + cfg.scan, y + 7, 5, C.cyan);
-    line(fx, fy, 82 + cfg.scan, y + 7, 94 + cfg.scan, y + 16, 5, C.cyan);
-    rect(fx, fy, 106, y + 17, 20, 5, C.cyan);
-    glow(fx, fy, 68 + cfg.scan, y - 5, 5, 2, C.cyanDim);
+    beanEye(leftX, eyeY, C.cyanDim, eyeRx - 1, eyeRy - 1);
+    beanEye(rightX, eyeY, C.cyanDim, eyeRx - 1, eyeRy - 1);
+    ellipse(fx, fy, leftX + 3 + (cfg.scan || 0) * 0.08, eyeY - 5, 2, 3, C.cyan);
+    ellipse(fx, fy, rightX + 3 + (cfg.scan || 0) * 0.08, eyeY - 5, 2, 3, C.cyan);
+    line(fx, fy, 86, y + 31, 96, y + 35, 4, C.eye);
+    line(fx, fy, 96, y + 35, 106, y + 31, 4, C.eye);
     return;
   }
-  ellipse(fx, fy, 78, y + 12, 8, 10, C.eye);
-  ellipse(fx, fy, 114, y + 12, 8, 10, C.eye);
-  ellipse(fx, fy, 81, y + 8, 2, 3, C.white);
-  ellipse(fx, fy, 117, y + 8, 2, 3, C.white);
-  line(fx, fy, 87, y + 31, 96, y + 37, 4, C.eye);
-  line(fx, fy, 96, y + 37, 105, y + 31, 4, C.eye);
+  beanEye(leftX, eyeY, leftIris);
+  beanEye(rightX, eyeY, rightIris);
+  line(fx, fy, 87, y + 32, 96, y + 38, 4, C.eye);
+  line(fx, fy, 96, y + 38, 105, y + 32, 4, C.eye);
 }
 
 function drawBreedMarkings(fx, fy, lean, headY, bodyY, bob, tail) {
@@ -245,10 +280,23 @@ function drawBreedMarkings(fx, fy, lean, headY, bodyY, bob, tail) {
     }
   } else if (pattern === 'calico') {
     ellipse(fx, fy, 74 + lean, headY - 12, 22, 24, C.patchA);
+    ellipse(fx, fy, 61 + lean, headY - 2, 10, 14, C.patchA);
     ellipse(fx, fy, 121 + lean, headY - 16, 24, 25, C.patchB);
+    triangle(fx, fy, 109 + lean, headY - 27, 128 + lean, headY - 45, 136 + lean, headY - 13, C.patchB);
     ellipse(fx, fy, 72 + lean, bodyY + 14, 20, 24, C.patchB);
     ellipse(fx, fy, 119 + lean, bodyY + 12, 22, 23, C.patchA);
+    ellipse(fx, fy, 106 + lean, bodyY + 26, 12, 10, C.patchA);
     ellipse(fx, fy, 154 + lean + tail, bodyY - 12, 9, 9, C.patchA);
+  } else if (pattern === 'tortie') {
+    ellipse(fx, fy, 74 + lean, headY - 17, 18, 22, C.patchA);
+    ellipse(fx, fy, 105 + lean, headY - 25, 15, 18, C.patchB);
+    ellipse(fx, fy, 121 + lean, headY + 2, 22, 18, C.patchA);
+    line(fx, fy, 67 + lean, headY + 8, 86 + lean, headY - 7, 5, C.patchB);
+    line(fx, fy, 111 + lean, headY - 5, 128 + lean, headY - 17, 5, C.patchA);
+    ellipse(fx, fy, 71 + lean, bodyY + 13, 19, 19, C.patchA);
+    ellipse(fx, fy, 104 + lean, bodyY + 18, 14, 18, C.patchB);
+    ellipse(fx, fy, 123 + lean, bodyY + 7, 18, 18, C.patchA);
+    line(fx, fy, 137 + lean, bodyY + 17, 153 + lean + tail, bodyY - 1, 6, C.patchB);
   } else if (pattern === 'point') {
     ellipse(fx, fy, 96 + lean, headY + 8, 32, 28, C.point);
     triangle(fx, fy, 56 + lean, headY - 35, 69 + lean, headY - 62, 81 + lean, headY - 35, C.point);
@@ -256,12 +304,58 @@ function drawBreedMarkings(fx, fy, lean, headY, bodyY, bob, tail) {
     ellipse(fx, fy, 45 + lean, bodyY + 20, 11, 27, C.point);
     ellipse(fx, fy, 147 + lean, bodyY + 20, 11, 27, C.point);
     line(fx, fy, 132 + lean, bodyY + 21, 161 + lean + tail, bodyY - 10, 10, C.point);
+  } else if (pattern === 'mitted') {
+    ellipse(fx, fy, 96 + lean, headY + 8, 30, 26, C.point);
+    triangle(fx, fy, 56 + lean, headY - 35, 69 + lean, headY - 62, 81 + lean, headY - 35, C.point);
+    triangle(fx, fy, 112 + lean, headY - 35, 124 + lean, headY - 62, 136 + lean, headY - 35, C.point);
+    line(fx, fy, 132 + lean, bodyY + 21, 160 + lean + tail, bodyY - 8, 10, C.point);
+    ellipse(fx, fy, 45 + lean, bodyY + 29, 10, 12, C.cream);
+    ellipse(fx, fy, 147 + lean, bodyY + 29, 10, 12, C.cream);
+    ellipse(fx, fy, 79 + lean, bodyY + 39, 10, 9, C.cream);
+    ellipse(fx, fy, 113 + lean, bodyY + 39, 10, 9, C.cream);
   } else if (pattern === 'tuxedo') {
     ellipse(fx, fy, 96 + lean, headY + 22, 33, 21, C.cream);
     line(fx, fy, 96 + lean, headY - 34, 96 + lean, headY + 12, 9, C.cream);
     triangle(fx, fy, 78 + lean, bodyY + 4, 96 + lean, bodyY + 42, 114 + lean, bodyY + 4, C.cream);
     ellipse(fx, fy, 79 + lean, bodyY + 42, 12, 16, C.cream);
     ellipse(fx, fy, 113 + lean, bodyY + 42, 12, 16, C.cream);
+  } else if (pattern === 'cow') {
+    ellipse(fx, fy, 74 + lean, headY - 8, 22, 24, C.patchB);
+    ellipse(fx, fy, 62 + lean, headY + 6, 11, 13, C.patchB);
+    ellipse(fx, fy, 124 + lean, headY + 5, 18, 20, C.patchB);
+    triangle(fx, fy, 117 + lean, headY - 8, 137 + lean, headY - 2, 126 + lean, headY + 19, C.patchB);
+    ellipse(fx, fy, 73 + lean, bodyY + 10, 20, 23, C.patchB);
+    ellipse(fx, fy, 119 + lean, bodyY + 14, 22, 20, C.patchB);
+    ellipse(fx, fy, 95 + lean, bodyY + 28, 11, 9, C.patchB);
+    line(fx, fy, 135 + lean, bodyY + 19, 158 + lean + tail, bodyY - 7, 9, C.patchB);
+  }
+}
+
+function drawFurTufts(fx, fy, lean, headY, bodyY, fluff) {
+  if (fluff <= 0) return;
+  const side = 4 + fluff * 4;
+  triangle(fx, fy, 35 + lean, headY + 10, 22 + lean, headY + 6, 35 + lean, headY + 20, C.furDark);
+  triangle(fx, fy, 157 + lean, headY + 10, 170 + lean, headY + 6, 157 + lean, headY + 20, C.furDark);
+  triangle(fx, fy, 58 + lean, bodyY + 2, 48 + lean - side, bodyY - 1, 58 + lean, bodyY + 13, C.furDark);
+  triangle(fx, fy, 134 + lean, bodyY + 2, 144 + lean + side, bodyY - 1, 134 + lean, bodyY + 13, C.furDark);
+  if (fluff > 0.7) {
+    triangle(fx, fy, 88 + lean, headY - 51, 96 + lean, headY - 62, 104 + lean, headY - 51, C.furDark);
+  }
+}
+
+function drawBreedAccessories(fx, fy, lean, headY, bodyY) {
+  const accent = detailValue('accent', null);
+  if (accent === 'bowtie') {
+    triangle(fx, fy, 88 + lean, bodyY + 5, 73 + lean, bodyY - 3, 88 + lean, bodyY - 12, C.red);
+    triangle(fx, fy, 104 + lean, bodyY + 5, 119 + lean, bodyY - 3, 104 + lean, bodyY - 12, C.red);
+    ellipse(fx, fy, 96 + lean, bodyY - 3, 5, 5, C.red);
+  } else if (accent === 'milkdrop') {
+    ellipse(fx, fy, 96 + lean, headY + 34, 7, 4, C.white);
+  } else if (accent === 'freckles') {
+    ellipse(fx, fy, 84 + lean, headY + 25, 2, 2, C.furDark);
+    ellipse(fx, fy, 88 + lean, headY + 29, 2, 2, C.furDark);
+    ellipse(fx, fy, 108 + lean, headY + 25, 2, 2, C.furDark);
+    ellipse(fx, fy, 104 + lean, headY + 29, 2, 2, C.furDark);
   }
 }
 
@@ -273,40 +367,50 @@ function drawSleepingCat(index, cfg) {
   const bob = cfg.bob || 0;
   const breathe = cfg.breathe || 0;
   const lean = cfg.lean || 0;
-  const faceWidth = shapeValue('faceWidth');
-  const faceHeight = shapeValue('faceHeight');
-  const earScale = shapeValue('earScale');
-  const bodyWidth = shapeValue('bodyWidth');
+  const faceWidth = shapeValue('faceWidth') * 1.08;
+  const faceHeight = shapeValue('faceHeight') * 1.04;
+  const earScale = shapeValue('earScale') * 0.9;
+  const bodyWidth = shapeValue('bodyWidth') * 0.94;
   const tailLength = shapeValue('tailLength');
-  const tailFluff = shapeValue('tailFluff');
+  const tailFluff = shapeValue('tailFluff') * 1.08;
+  const fluff = detailValue('fluff', 0);
   const cx = 96 + lean;
-  const bodyY = 142 + bob;
-  const headY = 106 + bob;
+  const bodyY = 146 + bob;
+  const headY = 111 + bob;
 
-  ellipse(fx, fy, cx, 184, 58 * bodyWidth, 10, C.shadow);
-  ellipse(fx, fy, cx, bodyY + 18, 58 * bodyWidth, 34 + breathe, C.outline);
-  softEllipse(fx, fy, cx, bodyY + 13, 52 * bodyWidth, 30 + breathe, C.furLight, C.furDark);
-  ellipse(fx, fy, cx - 3, bodyY + 19, 30 * bodyWidth, 18, C.cream);
+  ellipse(fx, fy, cx, 184, 55 * bodyWidth, 10, C.shadow);
+  ellipse(fx, fy, cx, bodyY + 16, 55 * bodyWidth, 31 + breathe, C.outline);
+  softEllipse(fx, fy, cx, bodyY + 12, 50 * bodyWidth, 28 + breathe, C.furLight, C.furDark);
+  ellipse(fx, fy, cx - 3, bodyY + 18, 30 * bodyWidth, 17, C.cream);
 
   line(fx, fy, cx + 32, bodyY + 18, cx + 55 * tailLength, bodyY - 9, 18 * tailFluff, C.outline);
   line(fx, fy, cx + 32, bodyY + 18, cx + 55 * tailLength, bodyY - 9, 12 * tailFluff, C.fur);
   ellipse(fx, fy, cx + 57 * tailLength, bodyY - 10, 10 * tailFluff, 8 * tailFluff, C.furLight);
 
-  triangle(fx, fy, cx - 39 * faceWidth, headY - 20, cx - 25 * faceWidth, headY - 50 * earScale, cx - 11 * faceWidth, headY - 19, C.outline);
-  triangle(fx, fy, cx + 11 * faceWidth, headY - 19, cx + 25 * faceWidth, headY - 50 * earScale, cx + 39 * faceWidth, headY - 20, C.outline);
-  triangle(fx, fy, cx - 34 * faceWidth, headY - 22, cx - 25 * faceWidth, headY - 42 * earScale, cx - 16 * faceWidth, headY - 22, C.blush);
-  triangle(fx, fy, cx + 16 * faceWidth, headY - 22, cx + 25 * faceWidth, headY - 42 * earScale, cx + 34 * faceWidth, headY - 22, C.blush);
-  softEllipse(fx, fy, cx, headY, 45 * faceWidth, 37 * faceHeight, C.furLight, C.furDark);
-  ellipse(fx, fy, cx, headY + 14, 21 * faceWidth, 13 * faceHeight, C.cream);
+  triangle(fx, fy, cx - 41 * faceWidth, headY - 20, cx - 26 * faceWidth, headY - 50 * earScale, cx - 9 * faceWidth, headY - 19, C.outline);
+  triangle(fx, fy, cx + 9 * faceWidth, headY - 19, cx + 26 * faceWidth, headY - 50 * earScale, cx + 41 * faceWidth, headY - 20, C.outline);
+  triangle(fx, fy, cx - 35 * faceWidth, headY - 22, cx - 26 * faceWidth, headY - 42 * earScale, cx - 16 * faceWidth, headY - 22, C.blush);
+  triangle(fx, fy, cx + 16 * faceWidth, headY - 22, cx + 26 * faceWidth, headY - 42 * earScale, cx + 35 * faceWidth, headY - 22, C.blush);
+  softEllipse(fx, fy, cx, headY, 49 * faceWidth, 39 * faceHeight, C.furLight, C.furDark);
+  drawFurTufts(fx, fy, lean, headY, bodyY, fluff);
+  ellipse(fx, fy, cx, headY + 15, 23 * faceWidth, 14 * faceHeight, C.cream);
+  ellipse(fx, fy, cx - 21, headY + 17, 8, 5, C.cheek);
+  ellipse(fx, fy, cx + 21, headY + 17, 8, 5, C.cheek);
 
   if (breed.pattern === 'point') {
     ellipse(fx, fy, cx, headY + 8, 25 * faceWidth, 22 * faceHeight, C.point);
-  } else if (breed.pattern === 'tuxedo') {
+  } else if (breed.pattern === 'tuxedo' || breed.pattern === 'cow') {
     ellipse(fx, fy, cx, headY + 14, 25 * faceWidth, 16 * faceHeight, C.cream);
     line(fx, fy, cx, headY - 22, cx, headY + 5, 7, C.cream);
   } else if (breed.pattern === 'calico') {
     ellipse(fx, fy, cx - 17 * faceWidth, headY - 6, 17, 18, C.patchA);
     ellipse(fx, fy, cx + 19 * faceWidth, headY - 8, 18, 18, C.patchB);
+  } else if (breed.pattern === 'tortie') {
+    ellipse(fx, fy, cx - 17 * faceWidth, headY - 8, 16, 17, C.patchA);
+    ellipse(fx, fy, cx + 18 * faceWidth, headY + 2, 18, 16, C.patchB);
+  } else if (breed.pattern === 'mitted') {
+    ellipse(fx, fy, cx, headY + 9, 23 * faceWidth, 19 * faceHeight, C.point);
+    ellipse(fx, fy, cx, headY + 17, 15 * faceWidth, 10 * faceHeight, C.cream);
   } else if (breed.pattern === 'tabby') {
     line(fx, fy, cx - 10, headY - 25, cx - 5, headY - 9, 3, C.furDark);
     line(fx, fy, cx, headY - 27, cx, headY - 10, 3, C.furDark);
@@ -341,46 +445,51 @@ function drawCat(index, cfg) {
   const arm = cfg.arm || 0;
   const tail = cfg.tail || 0;
   const mood = cfg.mode || 'idle';
-  const faceWidth = shapeValue('faceWidth');
-  const faceHeight = shapeValue('faceHeight');
-  const earScale = shapeValue('earScale') * (mood === 'failed' ? 0.86 : 1);
-  const bodyWidth = shapeValue('bodyWidth') * (cfg.squash ? 1 + cfg.squash * 0.08 : 1);
-  const bodyHeight = shapeValue('bodyHeight') * (cfg.squash ? 1 - cfg.squash * 0.10 : 1);
+  const faceWidth = shapeValue('faceWidth') * 1.08;
+  const faceHeight = shapeValue('faceHeight') * 1.04;
+  const earScale = shapeValue('earScale') * (mood === 'failed' ? 0.74 : 0.9);
+  const bodyWidth = shapeValue('bodyWidth') * 0.9 * (cfg.squash ? 1 + cfg.squash * 0.08 : 1);
+  const bodyHeight = shapeValue('bodyHeight') * 0.86 * (cfg.squash ? 1 - cfg.squash * 0.10 : 1);
   const tailLength = shapeValue('tailLength');
-  const tailFluff = shapeValue('tailFluff');
-  const pawScale = shapeValue('pawScale');
-  const headY = 72 + bob;
-  const bodyY = 126 + bob;
+  const tailFluff = shapeValue('tailFluff') * 1.08;
+  const pawScale = shapeValue('pawScale') * 1.08;
+  const fluff = detailValue('fluff', 0);
+  const headY = 76 + bob;
+  const bodyY = 133 + bob;
 
-  ellipse(fx, fy, 97 + lean * 0.2, 184, 50, 10, C.shadow);
-  line(fx, fy, 132 + lean, bodyY + 21, 132 + lean + 29 * tailLength + tail, bodyY - 10, 15 * tailFluff, C.outline);
-  line(fx, fy, 132 + lean, bodyY + 21, 132 + lean + 29 * tailLength + tail, bodyY - 10, 10 * tailFluff, C.fur);
-  ellipse(fx, fy, 133 + lean + 30 * tailLength + tail, bodyY - 12, 8 * tailFluff, 8 * tailFluff, C.furLight);
+  ellipse(fx, fy, 97 + lean * 0.2, 184, 45, 9, C.shadow);
+  line(fx, fy, 128 + lean, bodyY + 18, 128 + lean + 27 * tailLength + tail, bodyY - 5, 17 * tailFluff, C.outline);
+  line(fx, fy, 128 + lean, bodyY + 18, 128 + lean + 27 * tailLength + tail, bodyY - 5, 11 * tailFluff, C.fur);
+  ellipse(fx, fy, 129 + lean + 28 * tailLength + tail, bodyY - 7, 9 * tailFluff, 9 * tailFluff, C.furLight);
+
+  roundRect(fx, fy, 96 + lean - 33 * bodyWidth, bodyY, 66 * bodyWidth, 39 * bodyHeight, 18, C.furDark);
+  roundRect(fx, fy, 96 + lean - 27 * bodyWidth, bodyY + 4, 54 * bodyWidth, 28 * bodyHeight, 14, C.fur);
+  ellipse(fx, fy, 96 + lean, bodyY + 21, 25 * bodyWidth, 21 * bodyHeight, C.cream);
+  ellipse(fx, fy, 78 + lean, bodyY + 39, 13 * pawScale, 13 * pawScale, C.furDark);
+  ellipse(fx, fy, 114 + lean, bodyY + 39, 13 * pawScale, 13 * pawScale, C.furDark);
+  ellipse(fx, fy, 45 + lean + arm, bodyY + 18, 11 * pawScale, 23 * pawScale, C.furDark);
+  ellipse(fx, fy, 147 + lean - arm, bodyY + 18, 11 * pawScale, 23 * pawScale, C.furDark);
 
   const earLean = mood === 'waiting' ? 3 : mood === 'failed' ? -5 : 0;
-  triangle(fx, fy, 48 + lean, headY - 31, 68 + lean - earLean, headY - 31 - 45 * earScale, 88 + lean, headY - 31, C.outline);
-  triangle(fx, fy, 104 + lean, headY - 31, 124 + lean + earLean, headY - 31 - 45 * earScale, 144 + lean, headY - 31, C.outline);
-  triangle(fx, fy, 56 + lean, headY - 35, 69 + lean - earLean * 0.5, headY - 35 - 27 * earScale, 81 + lean, headY - 35, C.blush);
-  triangle(fx, fy, 112 + lean, headY - 35, 124 + lean + earLean * 0.5, headY - 35 - 27 * earScale, 136 + lean, headY - 35, C.blush);
-  softEllipse(fx, fy, 96 + lean, headY, 61 * faceWidth, 55 * faceHeight, C.furLight, C.furDark);
-  ellipse(fx, fy, 55 + lean, headY + 5, 15, 22, C.fur);
-  ellipse(fx, fy, 137 + lean, headY + 5, 15, 22, C.fur);
-  ellipse(fx, fy, 96 + lean, headY + 20, 30 * faceWidth, 20 * faceHeight, C.cream);
-  ellipse(fx, fy, 96 + lean, headY + 23, 5, 4, C.blush);
+  triangle(fx, fy, 49 + lean, headY - 31, 69 + lean - earLean, headY - 31 - 43 * earScale, 90 + lean, headY - 29, C.outline);
+  triangle(fx, fy, 102 + lean, headY - 29, 123 + lean + earLean, headY - 31 - 43 * earScale, 143 + lean, headY - 31, C.outline);
+  triangle(fx, fy, 58 + lean, headY - 35, 69 + lean - earLean * 0.5, headY - 35 - 25 * earScale, 81 + lean, headY - 34, C.blush);
+  triangle(fx, fy, 113 + lean, headY - 34, 123 + lean + earLean * 0.5, headY - 35 - 25 * earScale, 134 + lean, headY - 35, C.blush);
+  softEllipse(fx, fy, 96 + lean, headY, 64 * faceWidth, 58 * faceHeight, C.furLight, C.furDark);
+  drawFurTufts(fx, fy, lean, headY, bodyY, fluff);
+  ellipse(fx, fy, 54 + lean, headY + 6, 17, 23, C.fur);
+  ellipse(fx, fy, 138 + lean, headY + 6, 17, 23, C.fur);
+  ellipse(fx, fy, 96 + lean, headY + 22, 32 * faceWidth, 21 * faceHeight, C.cream);
+  ellipse(fx, fy, 70 + lean, headY + 24, 10, 6, C.cheek);
+  ellipse(fx, fy, 122 + lean, headY + 24, 10, 6, C.cheek);
+  ellipse(fx, fy, 96 + lean, headY + 24, 5, 4, C.blush);
   drawBreedMarkings(fx, fy, lean, headY, bodyY, bob, tail);
+  drawBreedAccessories(fx, fy, lean, headY, bodyY);
   line(fx, fy, 54 + lean, headY + 20, 25 + lean, headY + 12, 3, C.outline);
   line(fx, fy, 55 + lean, headY + 28, 26 + lean, headY + 30, 3, C.outline);
   line(fx, fy, 138 + lean, headY + 20, 167 + lean, headY + 12, 3, C.outline);
   line(fx, fy, 137 + lean, headY + 28, 166 + lean, headY + 30, 3, C.outline);
   drawEyes(fx, fy, cfg, headY - 7);
-
-  roundRect(fx, fy, 96 + lean - 34 * bodyWidth, bodyY, 68 * bodyWidth, 46 * bodyHeight, 15, C.furDark);
-  roundRect(fx, fy, 96 + lean - 28 * bodyWidth, bodyY + 5, 56 * bodyWidth, 32 * bodyHeight, 11, C.fur);
-  ellipse(fx, fy, 96 + lean, bodyY + 23, 24 * bodyWidth, 24 * bodyHeight, C.cream);
-  ellipse(fx, fy, 79 + lean, bodyY + 42, 12 * pawScale, 16 * pawScale, C.furDark);
-  ellipse(fx, fy, 113 + lean, bodyY + 42, 12 * pawScale, 16 * pawScale, C.furDark);
-  ellipse(fx, fy, 45 + lean + arm, bodyY + 20, 11, 27, C.furDark);
-  ellipse(fx, fy, 147 + lean - arm, bodyY + 20, 11, 27, C.furDark);
 
   if (cfg.mode === 'working') {
     rect(fx, fy, 79 + lean, bodyY + 23, 36 + (cfg.scan || 0), 5, C.cyan);
@@ -550,6 +659,7 @@ const manifest = {
     breed: breed.breed,
     style: breed.style,
     recommendedUse: breed.recommendedUse,
+    visualDetails: breed.details || {},
     releaseTier: 'builtin',
     optimizedFor: 'smooth-scaled desktop pet window',
     frameLabels: frameSpecs.slice(0, frameCount).map(([mode], index) => `${mode}:${index}`),
