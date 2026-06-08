@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-const fixtureDir = path.join(process.cwd(), '__fixtures__', 'pets', 'cat');
+const fixtureDir = path.join(process.cwd(), '__fixtures__', 'pets', 'cat-tabby');
 const manifest = JSON.parse(readFileSync(path.join(fixtureDir, 'manifest.json'), 'utf8'));
 
 const requiredStates = [
@@ -77,10 +77,10 @@ function readWebpDimensions(bytes) {
   throw new Error('unable to read WebP dimensions');
 }
 
-describe('cat pet fixture pack', () => {
+describe('tabby cat pet fixture pack', () => {
   it('declares the manifest v2 sprite sheet shape', () => {
     expect(manifest.schemaVersion).toBe(2);
-    expect(manifest.id).toBe('cat');
+    expect(manifest.id).toBe('cat-tabby');
     expect(manifest.sprite).toEqual({
       image: 'spritesheet.webp',
       frameWidth: 192,
@@ -145,6 +145,7 @@ describe('cat pet fixture pack', () => {
       qualityTier: 'polished',
       assetClass: 'default-companion',
       releaseTier: 'builtin',
+      breed: 'tabby',
     });
   });
 

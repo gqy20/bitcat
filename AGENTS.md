@@ -90,6 +90,44 @@ cargo run -p xtask -- package-portable --version v0.1.0 --release-dir target/rel
 
 `make build` / `make release` 的配置复制、`make test*` 的测试入口、`make clean` 的 dist 清理、`make dist` / `make dist-upx` 和 GitHub Release workflow 都必须调用这条 Rust 工具链路径；不要新增第二套 shell/PowerShell 复制或 zip 逻辑。
 
+### 快速定位与检索约定
+
+本仓库在 Windows 下偶尔会出现 shell 启动、递归枚举或大范围搜索卡住；排查时优先“窄路径、明确文件、短超时、必要时非 login shell”。如果 `git status --short`、`Get-ChildItem`、`Get-Content` 这类简单命令超过 8-10 秒，下一步不要原样重试或扩大范围，改用非 login shell、明确文件路径和更小输出。
+
+常用入口先看这些文件，减少重复搜索：
+
+| 场景 | 优先入口 |
+|------|----------|
+| 设置页 / 覆盖层配置 | `app/frontend/settings.html`、`app/frontend/js/settings.js`、`app/frontend/css/settings.css`、`app/src/settings.rs`、`core/src/app_settings.rs` |
+| 摄像头 / 截图观察 | `app/src/camera.rs`、`app/src/screenshot.rs`、`core/src/camera_observation.rs`、`core/src/screenshot.rs`、`core/src/vision.rs` |
+| Agent Watch / 通知 | `app/src/agent_monitor.rs`、`app/src/agent_watch_window.rs`、`app/src/notification_window.rs`、`core/src/agent_session.rs`、`core/src/agent_nudge.rs` |
+| 小游戏 / AI 启动游戏 | `app/frontend/game.html`、`app/frontend/js/game_engine.js`、`app/frontend/js/games/`、`app/src/game.rs`、`core/src/minigame.rs`、`core/src/game_request.rs` |
+| Steam / 发布 / 打包 | `docs/roadmap.md`、`app/src/steam.rs`、`app/tauri.conf.json`、`Makefile`、`xtask/src` |
+| 记忆 / 提醒 / 工具权限 | `core/src/memory.rs`、`core/src/reminder.rs`、`core/src/tools.rs`、`core/src/permission_hook.rs`、`app/src/reminder_scheduler.rs` |
+
+推荐搜索模板：
+
+```powershell
+rg -n "pattern" app/src core/src app/frontend/js app/frontend/css app/frontend/*.html config docs `
+  -g "*.rs" -g "*.js" -g "*.css" -g "*.html" -g "*.yml" -g "*.md" `
+  --glob "!app/frontend/js/vendor/**" `
+  --glob "!app/frontend/assets/**" `
+  --glob "!app/gen/**" `
+  --glob "!app/frontend/pnpm-lock.yaml"
+```
+
+大范围调研先用 `rg -l "pattern" ...` 找文件名，再读具体文件；不要直接把 `app/gen/schemas`、`vendor/three`、`pnpm-lock.yaml` 或大型资源目录扫进全文输出。读取中文 Markdown、Rust 注释或历史记录时，PowerShell 统一加 `-Encoding utf8`，例如 `Get-Content docs\roadmap.md -Encoding utf8 -TotalCount 220`、`Select-String -Path AGENTS.md -Encoding utf8 -Pattern "搜索"`。
+
+静态前端调试优先在 `app/frontend` 起本地服务，不必先启动完整 Tauri：
+
+```powershell
+$port=4178
+Start-Process -FilePath python -ArgumentList @('-m','http.server',"$port",'--bind','127.0.0.1') -WorkingDirectory 'D:\C\Desktop\ai\8bit\app\frontend' -WindowStyle Hidden
+Invoke-WebRequest -Uri "http://127.0.0.1:$port/settings.html" -UseBasicParsing -TimeoutSec 5
+```
+
+随后再用 in-app browser 打开对应页面，并核对 `location.href`、`document.title` 和关键 DOM 数量后再截图或下结论。
+
 ## 架构
 
 Rust workspace（`core` + `app` + `xtask`），Tauri 2.0 多窗口桌面应用。无 npm 打包，前端是纯静态 HTML/JS/CSS。
@@ -214,8 +252,8 @@ AI Agent 通过 `create_reminder` / `list_reminders` / `cancel_reminder` Tool �
 - **结构化输出对齐**：使用 rig `Extractor<T>` 或工具 schema 时，Rust schema、提示词、候选/事实表、示例文本和校验逻辑必须同词同格式。提示词里出现的枚举值必须全部是 schema 可接受值；候选表字段名应直接使用模型要返回的字段名（如 `reason=` 而不是另起 `role=`）。坐标、点位等结构化字段不要在同一链路里混用对象、字符串和数组；若 schema 期望 `[x,y]`，提示词和候选表也必须展示 `[x,y]`，不要写成 `(x, y)` 或 `"x,y"`。可由 Rust 从候选报告反推的解释字段不要让模型重复硬填；若必须硬填，应拆成语义明确的字段（如 `blocked_immediate_wins`、`blocked_forks`），并在无适用项时明确要求 `[]` 或 `null`。新增或修改结构化输出后，必须补覆盖 schema/prompt/校验一致性的回归测试，并在失败路径写入可复盘的诊断日志。
 - **记忆检索**：默认用可 grep 的结构化文本，不做 Embeddings / Vector RAG。若未来有人想重新评估，必须先更新 `docs/architecture/design-tradeoffs.md` 说明收益大于复杂度。
 - **临时产物**：浏览器自动化截图/快照等会话级临时文件放在 `.playwright-cli/`（已 gitignore）。调研等需要留存的文档放 `docs/research/`，不要散落在项目根目录。`--filename` 参数的 playwright-cli 快照输出到 `.playwright-cli/` 目录内，不要写到项目根。
-- **搜索与文件枚举**：本仓库在 Windows 下全仓库递归搜索/枚举偶尔会卡住，排查时先用窄路径、已知入口文件和 git 跟踪文件收敛范围，不要一上来扫整个工作区。优先用 `rg <pattern> app/src core/src app/frontend/js -g "*.rs" -g "*.js" -g "*.html" -g "*.css"`；如果连 `rg` / `git ls-files` 都变慢，改用非 login shell 读取明确文件（如 `Get-Content -TotalCount 260 app\src\game.rs`），并给命令设置短超时。避免递归扫 `target/`、`node_modules/`、大型资源目录和 `.playwright-cli/`；需要定位小游戏/前端入口时优先看 `app/frontend/game.html`、`app/frontend/js/game_engine.js`、`app/frontend/js/games/`、`app/src/game.rs`、`core/src/minigame.rs`、`core/src/game_request.rs`。
-- **浏览器调试三步**：本地页面先用稳定后台进程启动服务，并用 `Invoke-WebRequest` 确认 HTTP 200 和关键 HTML 内容。使用 in-app browser 前必须核对 `tab.url()`、`tab.title()`、`evaluate(() => location.href)`、`document.title` 一致，且关键 DOM 节点数量符合预期。只有上下文对齐后才截图、读 DOM 或下 UI 结论；若进入 `about:blank#codex-browser-sidebar...`，先重新附着/导航，不要把空白上下文当作页面结果。
+- **搜索与文件枚举**：遵循上方“快速定位与检索约定”。优先用高频入口表和带排除项的 `rg` 模板；大范围调研先 `rg -l` 再读具体文件；避免递归扫 `target/`、`node_modules/`、`app/frontend/js/vendor/`、`app/frontend/assets/`、`app/gen/`、`pnpm-lock.yaml` 和 `.playwright-cli/`。
+- **浏览器调试三步**：本地页面先按上方静态前端调试流程启动服务，并用 `Invoke-WebRequest` 确认 HTTP 200 和关键 HTML 内容。使用 in-app browser 前必须核对 `tab.url()`、`tab.title()`、`evaluate(() => location.href)`、`document.title` 一致，且关键 DOM 节点数量符合预期。只有上下文对齐后才截图、读 DOM 或下 UI 结论；若进入 `about:blank#codex-browser-sidebar...`，先重新附着/导航，不要把空白上下文当作页面结果。
 
 ## 测试规范
 

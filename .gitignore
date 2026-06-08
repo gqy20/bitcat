@@ -57,6 +57,8 @@ app/config/
 
 # Claude Code worktrees (temporary)
 .claude/worktrees/
+.claude/skills/
+.github/skills/
 
 .playwright*
 # playwright-cli snapshot outputs (use --filename=.playwright-cli/xxx.yml)

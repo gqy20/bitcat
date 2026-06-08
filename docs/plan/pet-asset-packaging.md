@@ -11,14 +11,15 @@ Bundled 资源包位于 `app/frontend/__fixtures__/pets/`：
 
 | 资源包 | 类型 | 尺寸策略 | 备注 |
 |------|------|----------|------|
-| `piggy` | 192x208 PNG v2 sheet | 74x80 显示 | 当前默认内置小猪，高分辨率终端状态风资源 |
-| `cat` | 16x16 PNG v2 pack | 128x128 显示 | 旧小猫资源包，保留为可选 |
+| `cat-tabby` | 192x208 WebP v2 sheet | 74x80 显示 | 当前默认内置狸花/橘色虎斑小猫 |
+| `cat` | 192x208 WebP v2 sheet | 74x80 显示 | 经典小猫资源包，保留为可选 |
+| `piggy` | 192x208 WebP v2 sheet | 74x80 显示 | 小猪资源包，保留为可选 |
 | `status` / `core` / `stacky` / `bsod` / `null-signal` | 192x208 WebP v2 sheet | 69x75 显示 | `polished` 终端状态风资源 |
 | `dewey` / `fireball` / `rocky` / `seedy` | 192x208 WebP v2 sheet | 69x75 显示 | `standard` 角色风可选资源 |
 
 代码入口：
 
-- `app/frontend/js/sprite-loader.js`：v2 manifest loader，默认 URL 为 `/__fixtures__/pets/piggy`。
+- `app/frontend/js/sprite-loader.js`：v2 manifest loader，默认 URL 为 `/__fixtures__/pets/cat-tabby`。
 - `app/frontend/js/settings.js`：设置页资源包 preset 列表。
 - `app/frontend/__tests__/pet-catalog-fixtures.test.js`：确保 bundled catalog 可加载。
 - `app/frontend/__tests__/piggy-fixture.test.js` / `pet-fixture.test.js`：确保轻量内置资源覆盖基础状态。
@@ -26,7 +27,7 @@ Bundled 资源包位于 `app/frontend/__fixtures__/pets/`：
 ## 已完成
 
 - v1 schema 与硬编码 fallback 已清理。
-- `piggy` 成为默认 v2 内置资源包。
+- `cat-tabby` 成为默认 v2 内置资源包。
 - `cat` 去掉 `default-` 命名，仅作为普通可选资源包。
 - catalog 资源包统一使用 manifest 加载。
 - catalog 资源包已补 `metadata.qualityTier` / `assetClass` / `releaseTier`，设置页按推荐、终端状态、角色、经典资源分组展示。
@@ -37,7 +38,7 @@ Bundled 资源包位于 `app/frontend/__fixtures__/pets/`：
 ## 待决策
 
 1. **发布包体积预算**
-   - `piggy` / `cat` 很小，可以长期内置。
+   - `cat-tabby` / `cat` 很小，可以长期内置。
    - 大尺寸 WebP 资源包会让发布包增加数 MB，需要决定哪些进入正式 bundle。
 
 2. **外部资源包目录**
@@ -50,7 +51,7 @@ Bundled 资源包位于 `app/frontend/__fixtures__/pets/`：
    - 自定义地址失败时给出 UI toast，而不是只依赖 console。
 
 4. **资源包分层**
-   - 必选内置：`piggy`、`cat`。
+   - 必选内置：`cat-tabby`、`cat`。
    - 候选内置：`status`、`core`、`stacky`。
    - 候选外置/下载：`dewey`、`fireball`、`rocky`、`seedy`、`bsod`、`null-signal`。
 

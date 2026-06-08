@@ -34,10 +34,12 @@
 
   <div id="summary" class="summary"></div>
 
-  <script type="module" src="/js/sprite.js"></script>
+  <script type="module" src="/js/sprite-loader.js"></script>
   <script type="module" src="/js/pet.js"></script>
   <script src="/js/particles.js"></script>
   <script type="module">
+    const SpriteRenderer = await window.SpriteRendererReady;
+
     function renderResults(containerId, results) {
       const el = document.getElementById(containerId);
       let passed = 0, failed = 0;
@@ -102,7 +104,10 @@
     requestAnimationFrame(previewLoop);
 
     // 运行测试
-    const spriteResults = { passed: 0, failed: 0 };
+    const spriteResults = [
+      { name: 'manifest_sprite_renderer_ready', pass: !!SpriteRenderer },
+      { name: 'manifest_default_pack_loaded', pass: SpriteRenderer.assetSource && SpriteRenderer.assetSource.id === 'cat-tabby' },
+    ];
     const sr = renderResults('sprite-results', spriteResults);
 
     const petResults = PetState.runPetTests();

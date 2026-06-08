@@ -9,10 +9,8 @@ import {
   validateManifest,
 } from '../js/sprite-loader.js';
 
-const fixtureDir = path.join(process.cwd(), '__fixtures__', 'pets', 'cat');
+const fixtureDir = path.join(process.cwd(), '__fixtures__', 'pets', 'cat-tabby');
 const manifest = JSON.parse(readFileSync(path.join(fixtureDir, 'manifest.json'), 'utf8'));
-const pigFixtureDir = path.join(process.cwd(), '__fixtures__', 'pets', 'piggy');
-const pigManifest = JSON.parse(readFileSync(path.join(pigFixtureDir, 'manifest.json'), 'utf8'));
 const statusFixtureDir = path.join(process.cwd(), '__fixtures__', 'pets', 'status');
 const statusManifest = JSON.parse(readFileSync(path.join(statusFixtureDir, 'manifest.json'), 'utf8'));
 
@@ -41,7 +39,7 @@ describe('sprite-loader', () => {
     })).toThrow(/missing required state/);
   });
 
-  it('builds a runtime renderer model from the cat fixture', () => {
+  it('builds a runtime renderer model from the default tabby cat fixture', () => {
     const imageData = zeroImageData(manifest);
     const runtime = buildRuntimeFromManifest(manifest, imageData);
 
@@ -105,7 +103,7 @@ describe('sprite-loader', () => {
 
   it('loads a configured pack through injected fetch and imageData hooks', async () => {
     const imageData = zeroImageData(manifest);
-    const renderer = await loadPetAssetPack('/fixtures/cat', {
+    const renderer = await loadPetAssetPack('/fixtures/cat-tabby', {
       fetch: async (url) => ({
         ok: url.endsWith('/manifest.json'),
         status: 200,
@@ -115,12 +113,12 @@ describe('sprite-loader', () => {
     });
 
     expect(renderer.assetSource.kind).toBe('manifest');
-    expect(renderer.assetSource.id).toBe('cat');
+    expect(renderer.assetSource.id).toBe('cat-tabby');
     expect(renderer.getSprite('focused', 0)).toBe(renderer.SPRITES.focused[0]);
     expect(renderer.getSprite('unknown', 0)).toBe(renderer.SPRITES.idle[0]);
   });
 
-  it('reads the persisted pet asset setting before falling back to the default pack', async () => {
+  it('reads the persisted pet asset setting before using the default pack', async () => {
     const previousTauri = window.__TAURI__;
     const previousPetAssetUrl = window.__PET_ASSET_URL__;
     window.__PET_ASSET_URL__ = '';
@@ -147,17 +145,17 @@ describe('sprite-loader', () => {
     window.sessionStorage.removeItem('bitcat.petAssetUrl');
   });
 
-  it('loads the piggy v2 pack when no asset url is configured', async () => {
+  it('loads the tabby cat v2 pack when no asset url is configured', async () => {
     const imageData = {
-      width: pigManifest.sprite.columns * pigManifest.sprite.frameWidth,
-      height: pigManifest.sprite.rows * pigManifest.sprite.frameHeight,
-      data: new Uint8ClampedArray(pigManifest.sprite.columns * pigManifest.sprite.frameWidth * pigManifest.sprite.rows * pigManifest.sprite.frameHeight * 4),
+      width: manifest.sprite.columns * manifest.sprite.frameWidth,
+      height: manifest.sprite.rows * manifest.sprite.frameHeight,
+      data: new Uint8ClampedArray(manifest.sprite.columns * manifest.sprite.frameWidth * manifest.sprite.rows * manifest.sprite.frameHeight * 4),
     };
-    const renderer = await loadPetAssetPack(null, {
+    const renderer = await loadPetAssetPack(DEFAULT_PET_ASSET_URL, {
       fetch: async (url) => ({
         ok: url === `${DEFAULT_PET_ASSET_URL}/manifest.json`,
         status: 200,
-        json: async () => pigManifest,
+        json: async () => manifest,
       }),
       imageData: async (url) => {
         expect(url).toBe(`${DEFAULT_PET_ASSET_URL}/spritesheet.webp`);
@@ -166,7 +164,7 @@ describe('sprite-loader', () => {
     });
 
     expect(renderer.assetSource.kind).toBe('manifest');
-    expect(renderer.assetSource.id).toBe('piggy');
+    expect(renderer.assetSource.id).toBe('cat-tabby');
     expect(renderer.assetSource.baseUrl).toBe(DEFAULT_PET_ASSET_URL);
     expect(renderer.SPRITE_W).toBe(192);
     expect(renderer.SPRITE_H).toBe(208);
@@ -175,6 +173,10 @@ describe('sprite-loader', () => {
     expect(renderer.pixelated).toBe(false);
     expect(renderer.actionConfig.observe.frames.map((frame) => frame.sprite)).toEqual([0, 1, 2, 4, 3, 5]);
     expect(renderer.getSprite('observe', 0)).toBe(renderer.SPRITES.observe[0]);
+  });
+
+  it('requires an explicit asset URL when loading a pack directly', async () => {
+    await expect(loadPetAssetPack(null)).rejects.toThrow(/baseUrl is required/);
   });
 
   it('loads the status v2 pack through injected fetch and imageData hooks', async () => {

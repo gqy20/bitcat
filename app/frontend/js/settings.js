@@ -8,10 +8,16 @@ const invoke = window.__TAURI__?.core?.invoke || mockInvoke;
 const ACTION_TYPES = ["unbound", "launch", "hotkey", "script", "voice", "screenshot"];
 const PET_ASSET_PRESETS = [
   { value: "", label: "默认", group: "推荐" },
+  { value: "/__fixtures__/pets/cat-tabby", label: "Tabby Cat", group: "推荐" },
+  { value: "/__fixtures__/pets/cat-calico", label: "Calico Cat", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-siamese", label: "Siamese Cat", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-tuxedo", label: "Tuxedo Cat", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-black", label: "Black Cat", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-white", label: "White Cat", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat", label: "Classic Cat", group: "推荐" },
   { value: "/__fixtures__/pets/hackmark", label: "Hackmark", group: "推荐" },
   { value: "/__fixtures__/pets/padlet", label: "Padlet", group: "推荐" },
   { value: "/__fixtures__/pets/piggy", label: "Piggy", group: "推荐" },
-  { value: "/__fixtures__/pets/cat", label: "Cat", group: "推荐" },
   { value: "/__fixtures__/pets/status", label: "Status", group: "终端状态" },
   { value: "/__fixtures__/pets/core", label: "Core", group: "终端状态" },
   { value: "/__fixtures__/pets/stacky", label: "Stacky", group: "终端状态" },
@@ -26,8 +32,8 @@ const PET_ASSET_PRESETS = [
   { value: "/__fixtures__/pets/rocky", label: "Rocky", group: "角色" },
   { value: "/__fixtures__/pets/seedy", label: "Seedy", group: "角色" },
 ];
-const PET_ASSET_PIGGY = "/__fixtures__/pets/piggy";
-const PET_ASSET_DEFAULT_PREVIEW = PET_ASSET_PIGGY;
+const PET_ASSET_DEFAULT = "/__fixtures__/pets/cat-tabby";
+const PET_ASSET_DEFAULT_PREVIEW = PET_ASSET_DEFAULT;
 const PET_ASSET_PRESET_VALUES = new Set(PET_ASSET_PRESETS.map(item => item.value).filter(Boolean));
 const petAssetPreviewCache = new Map();
 let selectedPetAssetPreset = "";
@@ -46,6 +52,11 @@ let currentTab = "overview";
 let selectedUsageModel = "__all";
 let agentWatchCopyBound = false;
 let agentWatchTimer = null;
+let pointsSnakeRaf = null;
+let pointsSnakeLastFrame = 0;
+let pointsSnakePath = [];
+let pointsSnakeOffset = 0;
+let pointsSnakeLength = 0;
 
 async function mockInvoke(command) {
   if (command === "cmd_settings_load") {
@@ -186,6 +197,33 @@ async function mockInvoke(command) {
   }
   if (command === "cmd_get_pet_event_log") {
     return { entries: [] };
+  }
+  if (command === "cmd_get_points_state") {
+    return {
+      state: {
+        total_points: 42,
+        level: 2,
+        level_title: "熟悉",
+        experience_in_current: 42,
+        experience_to_next: 80,
+        current_streak_days: 3,
+        longest_streak_days: 5,
+        categories: {
+          chats: 18,
+          memories: 4,
+          reminders_completed: 3,
+          games_played: 2,
+          screenshots: 11,
+          praises: 4,
+        },
+      },
+      achievements: [],
+      recent_events: [
+        { event_kind: "ChatCompleted", points_awarded: 5, timestamp: new Date().toISOString() },
+        { event_kind: "ScreenshotObserved", points_awarded: 3, timestamp: new Date().toISOString() },
+        { event_kind: "MemoryCreated", points_awarded: 4, timestamp: new Date().toISOString() },
+      ],
+    };
   }
   return null;
 }
@@ -662,7 +700,7 @@ function renderPetAssetChoice(value) {
 function applyPetAssetPreset(value) {
   selectedPetAssetPreset = value;
   if (value === "__custom") {
-    if (!$("a-pet-asset").value.trim()) $("a-pet-asset").value = PET_ASSET_PIGGY;
+    if (!$("a-pet-asset").value.trim()) $("a-pet-asset").value = PET_ASSET_DEFAULT;
   } else {
     $("a-pet-asset").value = value;
   }
@@ -1780,6 +1818,7 @@ async function loadPointsState() {
   try {
     const view = await invoke("cmd_get_points_state");
     renderPointsLevel(view.state);
+    renderPointsActivityGrid(view.state, view.recent_events);
     renderPointsBreakdown(view.state);
     renderAchievements(view.achievements, view.state);
     renderPointsEvents(view.recent_events);
@@ -1837,6 +1876,137 @@ function renderPointsBreakdown(state) {
         </div>`
     )
     .join("") || '<div class="points-empty">暂无成长记录</div>';
+}
+
+function renderPointsActivityGrid(state, events) {
+  const grid = document.getElementById("points-activity-grid");
+  if (!grid) return;
+
+  const total = Number(state?.total_points || 0);
+  const cats = state?.categories || {};
+  const eventCount = Array.isArray(events) ? events.length : 0;
+  const categoryScore = Object.values(cats).reduce((sum, value) => sum + Number(value || 0), 0);
+  const levelBase = Number(state?.level || 1) * 6;
+  const seed = Math.max(total, categoryScore, eventCount, levelBase);
+  const cellCount = 52 * 7;
+  const activeCells = Math.min(cellCount, Math.max(18, Math.round(seed * 1.65)));
+  pointsSnakeLength = Math.min(8, Math.max(5, Math.round(activeCells / 16)));
+  pointsSnakePath = buildPointsSnakePath();
+  pointsSnakeOffset = Math.max(0, pointsSnakePath.length - pointsSnakeLength - 12);
+
+  grid.innerHTML = Array.from({ length: cellCount }, (_, i) => {
+    const col = Math.floor(i / 7);
+    const row = i % 7;
+    const wave = (i * 31 + total * 7 + categoryScore * 3 + eventCount * 11) % 101;
+    const rightBias = col / 51;
+    const clusterBoost = col > 32 ? 13 : col > 24 ? 6 : 0;
+    const rowTexture = row === 0 || row === 6 ? -3 : 0;
+    const threshold = Math.min(48, 4 + seed / 8 + rightBias * 22 + clusterBoost + rowTexture);
+    const isActive = wave < threshold;
+    const level = isActive ? Math.max(1, Math.min(4, Math.ceil((wave + rightBias * 35) / 22))) : 0;
+    const classes = ["points-activity-cell", `level-${level}`];
+    return `<span class="${classes.join(" ")}" data-cell="${i}" aria-hidden="true"></span>`;
+  }).join("");
+  ensurePointsSnakeLayer(grid);
+  drawPointsSnake();
+  startPointsSnake();
+}
+
+function buildPointsSnakePath() {
+  const path = [];
+  const route = [
+    [38, 5], [39, 5], [40, 5], [41, 5],
+    [41, 4], [42, 4], [43, 4], [44, 4],
+    [44, 3], [45, 3], [46, 3], [47, 3],
+    [47, 4], [48, 4], [49, 4], [50, 4],
+    [50, 5], [49, 5], [48, 5], [47, 5],
+    [47, 6], [46, 6], [45, 6], [44, 6],
+    [44, 5], [43, 5], [42, 5], [41, 5],
+    [40, 5], [39, 5], [38, 5],
+  ];
+
+  for (const [col, row] of route) {
+    const index = col * 7 + row;
+    if (path[path.length - 1] !== index) {
+      path.push(index);
+    }
+  }
+  return path;
+}
+
+function startPointsSnake() {
+  if (pointsSnakeRaf) return;
+  pointsSnakeLastFrame = performance.now();
+  pointsSnakeRaf = window.requestAnimationFrame(animatePointsSnake);
+}
+
+function animatePointsSnake(now) {
+  const elapsed = Math.min(80, now - pointsSnakeLastFrame);
+  pointsSnakeLastFrame = now;
+  if (pointsSnakePath.length) {
+    pointsSnakeOffset = (pointsSnakeOffset + (elapsed / 1000) * 3.2) % pointsSnakePath.length;
+    drawPointsSnake();
+  }
+  pointsSnakeRaf = window.requestAnimationFrame(animatePointsSnake);
+}
+
+function ensurePointsSnakeLayer(grid) {
+  if (grid.querySelector(".points-snake-layer")) return;
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "points-snake-layer");
+  svg.setAttribute("viewBox", "0 0 828 108");
+  svg.setAttribute("aria-hidden", "true");
+  svg.innerHTML = `
+    <polyline class="points-snake-line" points=""></polyline>
+    <circle class="points-snake-head-dot" r="5"></circle>
+  `;
+  grid.appendChild(svg);
+}
+
+function drawPointsSnake() {
+  const grid = document.getElementById("points-activity-grid");
+  const line = grid?.querySelector(".points-snake-line");
+  const head = grid?.querySelector(".points-snake-head-dot");
+  if (!line || !head || !pointsSnakePath.length || !pointsSnakeLength) return;
+
+  const sampleCount = pointsSnakeLength * 5;
+  const points = [];
+  for (let i = 0; i <= sampleCount; i += 1) {
+    const offset = pointsSnakeOffset - pointsSnakeLength + (i / sampleCount) * pointsSnakeLength;
+    const point = pointsSnakePointAt(offset);
+    points.push(`${point.x.toFixed(2)},${point.y.toFixed(2)}`);
+  }
+
+  const headPoint = pointsSnakePointAt(pointsSnakeOffset);
+  line.setAttribute("points", points.join(" "));
+  head.setAttribute("cx", headPoint.x.toFixed(2));
+  head.setAttribute("cy", headPoint.y.toFixed(2));
+}
+
+function pointsSnakePointAt(offset) {
+  const length = pointsSnakePath.length;
+  const normalized = ((offset % length) + length) % length;
+  const startIndex = Math.floor(normalized);
+  const progress = normalized - startIndex;
+  const from = pointsCellPoint(pointsSnakePath[startIndex]);
+  const to = pointsCellPoint(pointsSnakePath[(startIndex + 1) % length]);
+  return {
+    x: from.x + (to.x - from.x) * progress,
+    y: from.y + (to.y - from.y) * progress,
+  };
+}
+
+function pointsCellPoint(index) {
+  const size = 12;
+  const gap = 4;
+  const col = Math.floor(index / 7);
+  const row = index % 7;
+  return {
+    col,
+    row,
+    x: col * (size + gap) + size / 2,
+    y: row * (size + gap) + size / 2,
+  };
 }
 
 function renderAchievements(achievements, state) {

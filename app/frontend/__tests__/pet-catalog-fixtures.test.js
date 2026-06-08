@@ -6,6 +6,12 @@ import { loadPetAssetPack } from '../js/sprite-loader.js';
 const packs = [
   { id: 'padlet', dir: 'padlet', image: 'spritesheet.webp', minSize: 50_000, displayWidth: 74, displayHeight: 80, qualityTier: 'generated', assetClass: 'bitcat-original' },
   { id: 'hackmark', dir: 'hackmark', image: 'spritesheet.webp', minSize: 50_000, displayWidth: 74, displayHeight: 80, qualityTier: 'generated', assetClass: 'geek-logo' },
+  { id: 'cat-tabby', dir: 'cat-tabby', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
+  { id: 'cat-calico', dir: 'cat-calico', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
+  { id: 'cat-siamese', dir: 'cat-siamese', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
+  { id: 'cat-tuxedo', dir: 'cat-tuxedo', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
+  { id: 'cat-black', dir: 'cat-black', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
+  { id: 'cat-white', dir: 'cat-white', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
   { id: 'piggy', dir: 'piggy', image: 'spritesheet.webp', minSize: 50_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
   { id: 'cat', dir: 'cat', image: 'spritesheet.webp', minSize: 100_000, displayWidth: 74, displayHeight: 80, qualityTier: 'polished', assetClass: 'default-companion' },
   { id: 'core', dir: 'core', image: 'spritesheet.webp', qualityTier: 'polished', assetClass: 'terminal-status' },
