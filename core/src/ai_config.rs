@@ -100,10 +100,14 @@ impl AiConfig {
 
 /// Model max output token mapping.
 ///
-/// The current app treats all models as 256K-capable. Providers still stop
-/// generation naturally, so this value is an upper bound rather than a target.
+/// Keep this as a provider-safe upper bound. Some Anthropic-compatible
+/// providers reject requests before generation starts when `max_tokens` is
+/// above their advertised range.
 fn model_max_tokens(model: &str) -> u64 {
-    let _ = model;
+    let normalized = model.to_ascii_lowercase();
+    if normalized.starts_with("glm-") {
+        return 131_072;
+    }
     256_000
 }
 
@@ -290,9 +294,11 @@ mod tests {
     }
 
     #[test]
-    fn test_max_tokens_always_256k() {
+    fn test_model_max_tokens_caps_glm_models() {
         assert_eq!(model_max_tokens("claude-sonnet-4-20250514"), 256_000);
-        assert_eq!(model_max_tokens("glm-5.1"), 256_000);
+        assert_eq!(model_max_tokens("glm-5v-turbo"), 131_072);
+        assert_eq!(model_max_tokens("glm-5.1"), 131_072);
+        assert_eq!(model_max_tokens("GLM-5V-TURBO"), 131_072);
         assert_eq!(model_max_tokens("deepseek-chat"), 256_000);
         assert_eq!(model_max_tokens("qwen-max"), 256_000);
         assert_eq!(model_max_tokens("some-unknown-model"), 256_000);

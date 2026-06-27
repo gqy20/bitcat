@@ -211,6 +211,7 @@ impl std::fmt::Display for ChatError {
 /// | timeout / connection / socket / network / dns / eof | `Fatal(network)` | 网络/连接类 |
 /// | unauthorized / 401 / 403 / authentication / api_key | `Fatal(auth)` | 认证/权限 |
 /// | rate_limit / 429 / too many requests | `Fatal(rate_limit)` | 限流 |
+/// | invalid_request / max_tokens 参数非法 / 1210 | `Fatal(provider_request)` | provider 参数校验失败 |
 /// | 未知 + accumulated > 20 字符 | `RecoverableStream(unknown_with_content)` | 倾向视为可恢复 |
 /// | 其他 | `Fatal(unknown)` | 默认致命 |
 fn classify_stream_error(
@@ -227,6 +228,22 @@ fn classify_stream_error(
             original: raw.to_string(),
             accumulated_chars,
             chunk_count,
+            tool_call_count,
+        };
+    }
+
+    // Provider request validation. Some SSE endpoints send `event: error`
+    // followed by `[DONE]`; keep the provider error as fatal instead of
+    // treating the trailing done marker as a recoverable parser hiccup.
+    if lower.contains("invalid_request")
+        || lower.contains("max_tokens")
+        || lower.contains("max_tokens参数非法")
+        || lower.contains("1210")
+    {
+        return ChatError::Fatal {
+            reason: "provider_request".into(),
+            original: raw.to_string(),
+            accumulated_chars,
             tool_call_count,
         };
     }
@@ -715,11 +732,14 @@ impl PetAgent {
                     // 结构化诊断日志（每条错误都记录，方便后续复盘）
                     warn!(
                         session_id = %session_id,
+                        model = %self.config.model,
+                        base_url = %self.config.base_url,
+                        max_tokens = self.config.max_tokens(),
                         error_kind = %classified.short_kind(),
                         error_reason = %match &classified {
                             ChatError::RecoverableStream { reason, .. } | ChatError::Fatal { reason, .. } => reason.as_str(),
                         },
-                        error_original = %crate::logging::log_preview(&error_str, 200),
+                        error_original = %crate::logging::log_preview(&error_str, 1000),
                         accumulated_chars = acc_chars,
                         chunk_count,
                         tool_call_count,
@@ -1218,6 +1238,17 @@ mod tests {
 
         assert_eq!(error.reason(), "sse_parse");
         assert!(!should_retry_stepfun_non_streaming(&stepfun, &error));
+    }
+
+    #[test]
+    fn test_provider_error_with_done_is_not_classified_as_sse_parse() {
+        let raw = r#"event: error
+data: {"type":"error","error":{"type":"invalid_request_error","code":"1210","message":"[1210][max_tokens参数非法：限制数值范围[1,131072]]"}}
+data: [DONE]"#;
+        let error = classify_stream_error(raw, 0, 0, 0);
+
+        assert_eq!(error.reason(), "provider_request");
+        assert!(!error.is_recoverable());
     }
 
     #[tokio::test]
