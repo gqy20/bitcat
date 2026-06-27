@@ -29,7 +29,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowExW, PostMessageW, W
 
 const BUBBLE_SUBCLASS_ID: usize = 100;
 
-const BUBBLE_W: f64 = 260.0;
+const BUBBLE_W: f64 = 300.0;
 const BUBBLE_H: f64 = 120.0;
 const EDGE_MARGIN_LP: f64 = 12.0;
 const PET_GAP_LP: f64 = 4.0;
@@ -286,7 +286,7 @@ pub fn show_agent_toast(app: &AppHandle, payload: AgentToastPayload) -> Result<(
 
     let scale = window.scale_factor().unwrap_or(1.0).max(0.5);
     let _ = window.set_size(PhysicalSize::new(
-        (260.0 * scale).round() as u32,
+        (BUBBLE_W * scale).round() as u32,
         (72.0 * scale).round() as u32,
     ));
     position_above_pet(app, &window);
@@ -312,7 +312,7 @@ pub fn precreate_bubble_window(app: &AppHandle) -> Result<(), tauri::Error> {
         .title("BitCat Bubble")
         .inner_size(BUBBLE_W, BUBBLE_H)
         .min_inner_size(220.0, 104.0)
-        .max_inner_size(420.0, 680.0)
+        .max_inner_size(480.0, 680.0)
         .decorations(false)
         .transparent(true)
         .background_color(tauri::webview::Color(0, 0, 0, 0))
@@ -507,7 +507,7 @@ pub fn create_bubble_window(app: &AppHandle) -> Result<tauri::WebviewWindow, tau
         .title("BitCat Bubble")
         .inner_size(BUBBLE_W, BUBBLE_H)
         .min_inner_size(220.0, 104.0)
-        .max_inner_size(420.0, 680.0)
+        .max_inner_size(480.0, 680.0)
         .decorations(false)
         .transparent(true)
         .background_color(tauri::webview::Color(0, 0, 0, 0))
@@ -631,7 +631,7 @@ mod tests {
 
     #[test]
     fn test_bubble_constants_reasonable() {
-        // 260x120 keeps the default bubble compact while leaving room for 13px text.
+        // 300x120 keeps the default bubble compact while leaving room for Chinese text.
         assert!(BUBBLE_W >= 240.0 && BUBBLE_W <= 320.0);
         assert!(BUBBLE_H >= 100.0 && BUBBLE_H <= 200.0);
     }

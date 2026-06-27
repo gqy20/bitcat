@@ -21,19 +21,27 @@
       <span></span><span></span><span></span>
     </div>
     <div class="chat-controls" id="chatControls" style="display: none;">
-      <button class="control-chip stop" id="stopBtn" type="button" style="display: none;">停止</button>
+      <button class="control-chip stop" id="stopBtn" type="button" style="display: none;" title="停止" aria-label="停止回复">
+        <span class="control-icon" aria-hidden="true">■</span><span class="control-label">停止</span>
+      </button>
       <span class="control-note" id="controlNote" style="display: none;">已停止</span>
-      <button class="control-chip" id="replyChip" type="button" style="display: none;">继续说</button>
-      <button class="control-chip" id="readChip" type="button" style="display: none;">展开阅读</button>
-      <button class="control-chip" id="copyChip" type="button" style="display: none;">复制</button>
+      <button class="control-chip" id="replyChip" type="button" style="display: none;" title="继续说" aria-label="继续说">
+        <span class="control-icon" aria-hidden="true">+</span><span class="control-label">继续说</span>
+      </button>
+      <button class="control-chip" id="readChip" type="button" style="display: none;" title="展开阅读" aria-label="展开阅读">
+        <span class="control-icon" aria-hidden="true">□</span><span class="control-label">展开阅读</span>
+      </button>
+      <button class="control-chip" id="copyChip" type="button" style="display: none;" title="复制" aria-label="复制回复">
+        <span class="control-icon" aria-hidden="true">⧉</span><span class="control-label">复制</span>
+      </button>
     </div>
     <div class="input-row" id="inputRow" style="display: none;">
       <input type="text" id="chatInput" placeholder="说点什么..." autocomplete="off" />
-      <button id="chatSend">发送</button>
+      <button id="chatSend" title="发送" aria-label="发送消息">发送</button>
     </div>
     <!-- 调整大小手柄（hover 渐显，右下角） -->
     <div class="resize-grip" id="resizeGrip"></div>
-    <!-- 三角箭头（DOM 元素，继承毛玻璃背景） -->
+    <!-- 三角箭头（DOM 元素，跟随气泡方向） -->
     <div class="bubble-arrow"></div>
   </div>
   <script src="/js/vendor/marked.min.js"></script>

@@ -15,17 +15,17 @@
   const POLL_INTERVAL_MS = 120;
   const HIDE_ANIM_MS = 180;
   const MIN_H = 120;
-  const READING_H = 220;
-  const EXPANDED_H = 380;
-  const MAX_H = 420;
-  const READER_W = 420;
-  const READER_MAX_H = 520;
-  const STREAM_READING_W = 340;
+  const READING_H = 230;
+  const EXPANDED_H = 390;
+  const MAX_H = 440;
+  const READER_W = 440;
+  const READER_MAX_H = 560;
+  const STREAM_READING_W = 360;
   const STREAM_EXPANDED_W = 400;
-  const COMPOSE_W = 320;
-  const NOTICE_W = 260;
-  const MIN_W = 220;
-  const MAX_W = 420;
+  const COMPOSE_W = 360;
+  const NOTICE_W = 300;
+  const MIN_W = 260;
+  const MAX_W = 480;
   const ABS_MAX_H = 680;      // 用户手动拖拽时的绝对最大高度
   const PADDING_TOTAL = 50;   // body top(6) + bubble padding-top(14) + padding-bottom(14) + body bottom(12) + 余量(4)
   const INPUT_ROW_H = 50;     // input-row extra height, including divider and spacing
@@ -39,7 +39,7 @@
   let toolStatusEl = null;
   let pollTimer = null;
   let currentWinH = MIN_H;
-  let currentWinW = 260;
+  let currentWinW = NOTICE_W;
   let lastRawText = '';       // 记录最近一次原始文本，用于最终渲染去光标
   let inputRowEl = null;
   let inputEl = null;
@@ -237,13 +237,25 @@
     if (readChipEl) {
       var canRead = isReplyControlState(mode) && hasLongReplyText();
       readChipEl.style.display = canRead ? 'inline-flex' : 'none';
-      readChipEl.textContent = readingMode ? '收起' : '展开阅读';
+      setChipLabel(readChipEl, readingMode ? '收起' : '展开阅读');
+      readChipEl.setAttribute('aria-label', readingMode ? '收起阅读' : '展开阅读');
+      readChipEl.title = readingMode ? '收起' : '展开阅读';
     }
     if (copyChipEl) {
       copyChipEl.style.display = isReplyControlState(mode) && hasReplyText() ? 'inline-flex' : 'none';
-      if (copyChipEl.dataset.state !== 'copied') copyChipEl.textContent = '复制';
+      if (copyChipEl.dataset.state !== 'copied') setChipLabel(copyChipEl, '复制');
     }
     if (controlNoteEl) controlNoteEl.style.display = mode === 'stopped' ? 'inline-flex' : 'none';
+  }
+
+  function setChipLabel(chip, text) {
+    if (!chip) return;
+    var label = chip.querySelector('.control-label');
+    if (label) {
+      label.textContent = text;
+    } else {
+      chip.textContent = text;
+    }
   }
 
   function copyLastReply() {
@@ -252,11 +264,11 @@
     var done = function() {
       if (!copyChipEl) return;
       copyChipEl.dataset.state = 'copied';
-      copyChipEl.textContent = '已复制';
+      setChipLabel(copyChipEl, '已复制');
       setTimeout(function() {
         if (!copyChipEl) return;
         delete copyChipEl.dataset.state;
-        copyChipEl.textContent = '复制';
+        setChipLabel(copyChipEl, '复制');
       }, 1200);
     };
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -422,7 +434,7 @@
     var neededH = Math.min(MAX_H, Math.max(MIN_H, rawNeededH));
 
     // MANUAL 模式：以用户偏好为下界，绝对最大高度也放宽
-    var targetW = 260;
+    var targetW = NOTICE_W;
     if (readingMode) {
       neededH = Math.min(READER_MAX_H, Math.max(EXPANDED_H, rawNeededH));
       targetW = READER_W;
@@ -581,7 +593,7 @@
     }
     if (inputEl) inputEl.value = '';
     hideThinking();
-    resizeBubbleWindow(300, 64, true);
+    resizeBubbleWindow(NOTICE_W, 68, true);
     lastRawText = '';
     if (bodyEl) {
       var tone = payload && payload.tone ? String(payload.tone) : 'info';
@@ -646,7 +658,7 @@
          (userPrefSize ? (userPrefSize.w + 'x' + userPrefSize.h) : 'none') +
          ' current=' + currentWinW + 'x' + currentWinH);
     if (!userPrefSize) {
-      resizeBubbleWindow(260, MIN_H, false);
+      resizeBubbleWindow(NOTICE_W, MIN_H, false);
     }
     document.body.classList.remove('show');
     document.body.classList.add('hidden');
@@ -999,7 +1011,7 @@
     setBubbleMode('notice');
     hideChatControls();
     hideInput('notice');
-    resizeBubbleWindow(260, MIN_H, true);
+    resizeBubbleWindow(NOTICE_W, MIN_H, true);
     setText(text, { forceScrollBottom: true });
     ensureVisible();
     startHideTimer();
