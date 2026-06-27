@@ -104,6 +104,13 @@ pub fn is_policy_block_reason(text: &str) -> bool {
 
 fn disabled_by_settings(tool_name: &str) -> Option<String> {
     let permissions = crate::app_settings::AppSettings::load().permissions;
+    disabled_by_permissions(tool_name, &permissions)
+}
+
+fn disabled_by_permissions(
+    tool_name: &str,
+    permissions: &crate::app_settings::PermissionSettings,
+) -> Option<String> {
     let allowed = match tool_name {
         "shell" => permissions.allow_shell_tool,
         "read_file" => permissions.allow_read_file_tool,
@@ -126,14 +133,15 @@ mod tests {
 
     #[test]
     fn default_settings_block_high_risk_tools() {
+        let permissions = crate::app_settings::PermissionSettings::default();
         assert_eq!(
-            disabled_by_settings("shell").as_deref(),
+            disabled_by_permissions("shell", &permissions).as_deref(),
             Some(PERMISSION_DISABLED_REASON)
         );
         assert_eq!(
-            disabled_by_settings("read_file").as_deref(),
+            disabled_by_permissions("read_file", &permissions).as_deref(),
             Some(PERMISSION_DISABLED_REASON)
         );
-        assert!(disabled_by_settings("get_time").is_none());
+        assert!(disabled_by_permissions("get_time", &permissions).is_none());
     }
 }
