@@ -642,6 +642,24 @@ function actionSummary(type, def) {
   return ACTION_TYPE_LABELS[type] || type;
 }
 
+// 提示词徽标：留空 = 使用内置默认值（overlay 语义），非空 = 已自定义。
+const PROMPT_BADGE_PAIRS = [
+  ["p-agent", "p-agent-custom"],
+  ["p-vision", "p-vision-custom"],
+  ["p-vision-multi", "p-vision-multi-custom"],
+  ["p-reminder-personalizer", "p-reminder-personalizer-custom"],
+];
+
+function updatePromptBadges() {
+  for (const [inputId, badgeId] of PROMPT_BADGE_PAIRS) {
+    const badge = $(badgeId);
+    if (!badge) continue;
+    const custom = !!$(inputId)?.value.trim();
+    badge.textContent = custom ? "已自定义" : "默认";
+    badge.classList.toggle("custom", custom);
+  }
+}
+
 function renderPrompts(p) {
   $("p-agent").value = p.agent.preamble;
   $("p-vision").value = p.vision.prompt;
@@ -650,9 +668,13 @@ function renderPrompts(p) {
   $("p-mem-max").value = p.memory.max_entries;
   $("p-mem-ctx").value = p.memory.max_context_chars;
   $("p-ss-interval").value = p.screen_summary.interval_min;
+  updatePromptBadges();
 
   ["p-agent","p-vision","p-vision-multi","p-reminder-personalizer","p-mem-max","p-mem-ctx","p-ss-interval"].forEach(id => {
-    $(id).oninput = () => markDirty("prompts");
+    $(id).oninput = () => {
+      markDirty("prompts");
+      updatePromptBadges();
+    };
   });
 }
 

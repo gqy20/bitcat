@@ -441,35 +441,67 @@
           </div>
 
           <div class="expert-page" data-expert-pane="prompts">
-            <p class="hint">自动备份；留空使用内置默认值</p>
-            <div class="editor-stack">
+            <p class="hint">留空使用内置默认值；保存前会自动备份当前版本</p>
+
+            <div class="section-panel">
+              <div class="section-head">
+                <div>
+                  <h3>人设</h3>
+                  <p class="group-sub">它的性格与说话方式，每次对话都会带上</p>
+                </div>
+              </div>
               <div class="editor-panel">
                 <div class="editor-head">
                   <label for="p-agent">Agent 人设</label>
+                  <span id="p-agent-custom" class="custom-badge">默认</span>
                 </div>
                 <textarea id="p-agent" rows="8" spellcheck="false"></textarea>
               </div>
-              <div class="editor-panel">
-                <div class="editor-head">
-                  <label for="p-vision">视觉提示词</label>
+            </div>
+
+            <div class="section-panel">
+              <div class="section-head">
+                <div>
+                  <h3>视觉理解</h3>
+                  <p class="group-sub">它看屏幕时怎么描述，强调反幻觉和保守表述</p>
                 </div>
-                <textarea id="p-vision" rows="6" spellcheck="false"></textarea>
+              </div>
+              <div class="editor-stack embedded">
+                <div class="editor-panel">
+                  <div class="editor-head">
+                    <label for="p-vision">单屏</label>
+                    <span id="p-vision-custom" class="custom-badge">默认</span>
+                  </div>
+                  <textarea id="p-vision" rows="6" spellcheck="false"></textarea>
+                </div>
+                <div class="editor-panel">
+                  <div class="editor-head">
+                    <label for="p-vision-multi">多屏</label>
+                    <span id="p-vision-multi-custom" class="custom-badge">默认</span>
+                  </div>
+                  <textarea id="p-vision-multi" rows="3" spellcheck="false"></textarea>
+                </div>
+              </div>
+            </div>
+
+            <div class="section-panel">
+              <div class="section-head">
+                <div>
+                  <h3>提醒润色</h3>
+                  <p class="group-sub">到期提醒的措辞风格；失败或超时会回退原始文案</p>
+                </div>
               </div>
               <div class="editor-panel">
                 <div class="editor-head">
-                  <label for="p-vision-multi">视觉提示词 · 多屏</label>
-                </div>
-                <textarea id="p-vision-multi" rows="3" spellcheck="false"></textarea>
-              </div>
-              <div class="editor-panel">
-                <div class="editor-head">
-                  <label for="p-reminder-personalizer">提醒润色提示词</label>
+                  <label for="p-reminder-personalizer">润色提示词</label>
+                  <span id="p-reminder-personalizer-custom" class="custom-badge">默认</span>
                 </div>
                 <textarea id="p-reminder-personalizer" rows="6" spellcheck="false"></textarea>
               </div>
             </div>
+
             <details class="quiet-details advanced-settings">
-              <summary>高级参数</summary>
+              <summary>记忆与摘要参数</summary>
               <div class="settings-card compact embedded">
                 <div class="setting-row">
                   <div class="setting-copy">
@@ -479,7 +511,7 @@
                 </div>
                 <div class="setting-row">
                   <div class="setting-copy">
-                    <label for="p-mem-ctx">记忆上下文</label>
+                    <label for="p-mem-ctx">记忆上下文（字符）</label>
                   </div>
                   <input id="p-mem-ctx" type="number" min="0" />
                 </div>
@@ -496,7 +528,7 @@
           <div class="expert-page hidden" data-expert-pane="agent-watch">
             <div class="pane-head agent-watch-hero">
               <div class="agent-watch-hero-copy">
-                <p class="hint">看管 Claude Code / Codex 的任务状态（开发者功能，只读）</p>
+                <p class="hint">只读看管 Claude Code / Codex 的任务状态；数据来自本机 hook 连接</p>
                 <div class="agent-watch-chips" aria-label="支持的 agent">
                   <span>Claude Code</span>
                   <span>Codex</span>
@@ -508,72 +540,89 @@
               </div>
             </div>
 
-            <div class="settings-card agent-watch-card">
-              <div class="setting-row switch-row">
-                <div class="setting-copy">
-                  <label for="aw-enabled">启用看管</label>
-                  <span>需要安装连接脚本</span>
+            <div class="section-panel">
+              <div class="section-head">
+                <div>
+                  <h3>启用与提醒</h3>
+                  <p class="group-sub">先开总开关，再定什么时候提醒你；全屏时通知自动降级为静默计数</p>
                 </div>
-                <input id="aw-enabled" type="checkbox" />
               </div>
-              <div class="setting-row switch-row">
-                <div class="setting-copy">
-                  <label for="aw-away">离开提醒</label>
+              <div class="settings-card compact embedded">
+                <div class="setting-row switch-row">
+                  <div class="setting-copy">
+                    <label for="aw-enabled">启用看管</label>
+                    <span>需要连接脚本正常工作；顶部按钮可一键修复</span>
+                  </div>
+                  <input id="aw-enabled" type="checkbox" />
                 </div>
-                <input id="aw-away" type="checkbox" />
-              </div>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <label for="aw-first">首次提醒（秒）</label>
+                <div class="setting-row switch-row">
+                  <div class="setting-copy">
+                    <label for="aw-away">离开时提醒</label>
+                    <span>你不在屏幕前而任务还在跑</span>
+                  </div>
+                  <input id="aw-away" type="checkbox" />
                 </div>
-                <input id="aw-first" type="number" min="10" max="3600" step="5" />
-              </div>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <label for="aw-repeat">重复冷却（分钟）</label>
+                <div class="setting-row">
+                  <div class="setting-copy">
+                    <label for="aw-first">首次提醒（秒）</label>
+                    <span>离开多久后第一次提醒</span>
+                  </div>
+                  <input id="aw-first" type="number" min="10" max="3600" step="5" />
                 </div>
-                <input id="aw-repeat" type="number" min="1" max="240" step="1" />
-              </div>
-              <div class="setting-row switch-row">
-                <div class="setting-copy">
-                  <label for="aw-waiting">等待时提醒</label>
+                <div class="setting-row">
+                  <div class="setting-copy">
+                    <label for="aw-repeat">重复冷却（分钟）</label>
+                    <span>同一会话两次提醒的最小间隔</span>
+                  </div>
+                  <input id="aw-repeat" type="number" min="1" max="240" step="1" />
                 </div>
-                <input id="aw-waiting" type="checkbox" />
-              </div>
-              <div class="setting-row switch-row">
-                <div class="setting-copy">
-                  <label for="aw-done">完成时提醒</label>
+                <div class="setting-row switch-row">
+                  <div class="setting-copy">
+                    <label for="aw-waiting">等待你输入时提醒</label>
+                    <span>任务停下来等你确认，是最需要你回来的时刻</span>
+                  </div>
+                  <input id="aw-waiting" type="checkbox" />
                 </div>
-                <input id="aw-done" type="checkbox" />
-              </div>
-              <div class="setting-row switch-row">
-                <div class="setting-copy">
-                  <label for="aw-tts">语音提醒</label>
+                <div class="setting-row switch-row">
+                  <div class="setting-copy">
+                    <label for="aw-done">完成时提醒</label>
+                  </div>
+                  <input id="aw-done" type="checkbox" />
                 </div>
-                <input id="aw-tts" type="checkbox" />
-              </div>
-              <div class="setting-row switch-row">
-                <div class="setting-copy">
-                  <label for="aw-remote-view">远程看板</label>
-                  <span>只读</span>
+                <div class="setting-row switch-row">
+                  <div class="setting-copy">
+                    <label for="aw-tts">语音提醒</label>
+                  </div>
+                  <input id="aw-tts" type="checkbox" />
                 </div>
-                <input id="aw-remote-view" type="checkbox" />
-              </div>
-              <div class="setting-row switch-row">
-                <div class="setting-copy">
-                  <label for="aw-remote-install">远程安装脚本</label>
-                </div>
-                <input id="aw-remote-install" type="checkbox" />
               </div>
             </div>
 
-            <details class="quiet-details agent-watch-remote-panel">
-              <summary>远程设备</summary>
-              <div class="section-panel embedded">
-                <div class="section-head">
-                  <h3>安装命令</h3>
-                  <span id="aw-remote-status">等待</span>
+            <div class="section-panel">
+              <div class="section-head">
+                <div>
+                  <h3>远程访问</h3>
+                  <p class="group-sub">在其他设备上看管这台机器的任务（只读）</p>
                 </div>
+              </div>
+              <div class="settings-card compact embedded">
+                <div class="setting-row switch-row">
+                  <div class="setting-copy">
+                    <label for="aw-remote-view">远程看板</label>
+                    <span>开启后局域网设备可以只读查看</span>
+                  </div>
+                  <input id="aw-remote-view" type="checkbox" />
+                </div>
+                <div class="setting-row switch-row">
+                  <div class="setting-copy">
+                    <label for="aw-remote-install">远程安装脚本</label>
+                    <span>允许生成给其他机器用的连接脚本</span>
+                  </div>
+                  <input id="aw-remote-install" type="checkbox" />
+                </div>
+              </div>
+              <details class="quiet-details embedded">
+                <summary>已连接设备与安装命令</summary>
                 <div class="remote-install-box">
                   <code id="aw-remote-command">读取中...</code>
                   <button id="aw-remote-copy" class="btn small" type="button">复制</button>
@@ -583,11 +632,12 @@
                   <button id="aw-remote-url-copy" class="btn small ghost" type="button">复制</button>
                 </div>
                 <div id="aw-remote-devices" class="remote-devices"></div>
-              </div>
-            </details>
+                <span id="aw-remote-status" class="status-line">等待</span>
+              </details>
+            </div>
 
             <details class="quiet-details agent-watch-sessions-panel">
-              <summary>当前会话</summary>
+              <summary>当前会话与诊断</summary>
               <div class="section-panel embedded">
                 <div class="section-head">
                   <h3>会话状态</h3>
@@ -600,38 +650,56 @@
           </div>
 
           <div class="expert-page hidden" data-expert-pane="actions">
-            <p class="hint">热键改动重启后生效</p>
-            <div class="settings-card compact">
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <label for="actions-term">默认终端</label>
+            <p class="hint">热键与动作改动重启后生效</p>
+
+            <div class="section-panel">
+              <div class="section-head">
+                <div>
+                  <h3>全局默认</h3>
+                  <p class="group-sub">启动程序和呼出窗口的通用行为</p>
                 </div>
-                <select id="actions-term">
-                  <option value="powershell">PowerShell 5.1</option>
-                  <option value="pwsh">PowerShell 7</option>
-                  <option value="cmd">Command Prompt</option>
-                  <option value="wt">Windows Terminal</option>
-                </select>
               </div>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <label for="actions-win">默认窗口</label>
+              <div class="settings-card compact embedded">
+                <div class="setting-row">
+                  <div class="setting-copy">
+                    <label for="actions-term">默认终端</label>
+                  </div>
+                  <select id="actions-term">
+                    <option value="powershell">PowerShell 5.1</option>
+                    <option value="pwsh">PowerShell 7</option>
+                    <option value="cmd">Command Prompt</option>
+                    <option value="wt">Windows Terminal</option>
+                  </select>
                 </div>
-                <select id="actions-win">
-                  <option value="maximized">最大化</option>
-                  <option value="normal">默认尺寸</option>
-                  <option value="minimized">最小化后台</option>
-                </select>
-              </div>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <label for="a-shortcut">全局快捷键</label>
-                  <span>重启生效</span>
+                <div class="setting-row">
+                  <div class="setting-copy">
+                    <label for="actions-win">默认窗口</label>
+                  </div>
+                  <select id="actions-win">
+                    <option value="maximized">最大化</option>
+                    <option value="normal">默认尺寸</option>
+                    <option value="minimized">最小化后台</option>
+                  </select>
                 </div>
-                <input id="a-shortcut" type="text" placeholder="CommandOrControl+Alt+Space" spellcheck="false" />
+                <div class="setting-row">
+                  <div class="setting-copy">
+                    <label for="a-shortcut">全局快捷键</label>
+                    <span>随时呼出它的组合键</span>
+                  </div>
+                  <input id="a-shortcut" type="text" placeholder="CommandOrControl+Alt+Space" spellcheck="false" />
+                </div>
               </div>
             </div>
-            <div id="actions-list"></div>
+
+            <div class="section-panel">
+              <div class="section-head">
+                <div>
+                  <h3>按键映射</h3>
+                  <p class="group-sub">手柄每个按键触发什么；未绑定的按键不会有动作</p>
+                </div>
+              </div>
+              <div id="actions-list"></div>
+            </div>
           </div>
 
           <div class="expert-page hidden" data-expert-pane="permissions">
@@ -661,179 +729,229 @@
               </div>
             </div>
 
-            <div class="settings-card permission-card">
-              <div class="setting-row switch-row">
-                <div class="setting-copy">
-                  <label for="perm-onboarding-completed">已完成首次说明</label>
-                  <span>用于 Steam Demo 的启动闸门</span>
+            <div class="section-panel">
+              <div class="section-head">
+                <div>
+                  <h3>发布闸门</h3>
+                  <p class="group-sub">Steam Demo 的启动口径；首页首次说明会同时置灰这两项</p>
                 </div>
-                <input id="perm-onboarding-completed" type="checkbox" />
               </div>
-              <div class="setting-row switch-row">
-                <div class="setting-copy">
-                  <label for="perm-steam-demo">Steam Demo 模式</label>
-                  <span>按发布版口径收敛高风险能力</span>
+              <div class="settings-card compact embedded">
+                <div class="setting-row switch-row">
+                  <div class="setting-copy">
+                    <label for="perm-onboarding-completed">已完成首次说明</label>
+                    <span>未完成时每次启动自动打开首页分区</span>
+                  </div>
+                  <input id="perm-onboarding-completed" type="checkbox" />
                 </div>
-                <input id="perm-steam-demo" type="checkbox" />
+                <div class="setting-row switch-row">
+                  <div class="setting-copy">
+                    <label for="perm-steam-demo">Steam Demo 模式</label>
+                    <span>按发布版口径收敛高风险能力</span>
+                  </div>
+                  <input id="perm-steam-demo" type="checkbox" />
+                </div>
               </div>
-              <div class="setting-row switch-row">
-                <div class="setting-copy">
-                  <label for="perm-camera">摄像头观察（权限层）</label>
-                  <span>首页的摄像头开关会同时切换这一项</span>
+            </div>
+
+            <div class="section-panel">
+              <div class="section-head">
+                <div>
+                  <h3>观察与执行</h3>
+                  <p class="group-sub">与首页“它看得见什么 / 它能动手做什么”同一批能力的细粒度开关</p>
                 </div>
-                <input id="perm-camera" type="checkbox" />
               </div>
-              <div class="setting-row switch-row">
-                <div class="setting-copy">
-                  <label for="perm-shell">AI 执行 shell</label>
-                  <span>允许 PowerShell 命令，仍受危险命令策略拦截</span>
+              <div class="settings-card compact embedded">
+                <div class="setting-row switch-row">
+                  <div class="setting-copy">
+                    <label for="perm-camera">摄像头观察（权限层）</label>
+                    <span>与诊断子页的功能层开关同时开启才会真正观察</span>
+                  </div>
+                  <input id="perm-camera" type="checkbox" />
                 </div>
-                <input id="perm-shell" type="checkbox" />
+                <div class="setting-row switch-row">
+                  <div class="setting-copy">
+                    <label for="perm-shell">AI 执行 shell</label>
+                    <span>允许 PowerShell 命令，仍受危险命令策略拦截</span>
+                  </div>
+                  <input id="perm-shell" type="checkbox" />
+                </div>
+                <div class="setting-row switch-row">
+                  <div class="setting-copy">
+                    <label for="perm-read-file">AI 读取文件</label>
+                    <span>关闭时 read_file 工具会被拒绝</span>
+                  </div>
+                  <input id="perm-read-file" type="checkbox" />
+                </div>
+                <div class="setting-row switch-row">
+                  <div class="setting-copy">
+                    <label for="perm-clipboard">AI 读取剪贴板</label>
+                    <span>关闭时不会读取当前剪贴板文本</span>
+                  </div>
+                  <input id="perm-clipboard" type="checkbox" />
+                </div>
+                <div class="setting-row switch-row">
+                  <div class="setting-copy">
+                    <label for="perm-foreground">AI 切换前台窗口</label>
+                    <span>关闭时 force_foreground 工具不可用</span>
+                  </div>
+                  <input id="perm-foreground" type="checkbox" />
+                </div>
+                <div class="setting-row switch-row">
+                  <div class="setting-copy">
+                    <label for="perm-launch">AI 启动程序</label>
+                    <span>关闭时 launch_program 工具不可用</span>
+                  </div>
+                  <input id="perm-launch" type="checkbox" />
+                </div>
+                <div class="setting-row switch-row">
+                  <div class="setting-copy">
+                    <label for="perm-hotkey">AI 发送热键</label>
+                    <span>关闭时 send_hotkey 工具不可用</span>
+                  </div>
+                  <input id="perm-hotkey" type="checkbox" />
+                </div>
               </div>
-              <div class="setting-row switch-row">
-                <div class="setting-copy">
-                  <label for="perm-read-file">AI 读取文件</label>
-                  <span>关闭时 read_file 工具会被拒绝</span>
+            </div>
+
+            <div class="section-panel">
+              <div class="section-head">
+                <div>
+                  <h3>远程</h3>
+                  <p class="group-sub">看管功能对外暴露的总闸；子项开关在“编程助手看管”子页</p>
                 </div>
-                <input id="perm-read-file" type="checkbox" />
               </div>
-              <div class="setting-row switch-row">
-                <div class="setting-copy">
-                  <label for="perm-clipboard">AI 读取剪贴板</label>
-                  <span>关闭时不会读取当前剪贴板文本</span>
+              <div class="settings-card compact embedded">
+                <div class="setting-row switch-row">
+                  <div class="setting-copy">
+                    <label for="perm-agent-remote">看管远程访问</label>
+                    <span>关闭时远程查看和安装脚本都会拒绝</span>
+                  </div>
+                  <input id="perm-agent-remote" type="checkbox" />
                 </div>
-                <input id="perm-clipboard" type="checkbox" />
-              </div>
-              <div class="setting-row switch-row">
-                <div class="setting-copy">
-                  <label for="perm-foreground">AI 切换前台窗口</label>
-                  <span>关闭时 force_foreground 工具不可用</span>
-                </div>
-                <input id="perm-foreground" type="checkbox" />
-              </div>
-              <div class="setting-row switch-row">
-                <div class="setting-copy">
-                  <label for="perm-launch">AI 启动程序</label>
-                  <span>关闭时 launch_program 工具不可用</span>
-                </div>
-                <input id="perm-launch" type="checkbox" />
-              </div>
-              <div class="setting-row switch-row">
-                <div class="setting-copy">
-                  <label for="perm-hotkey">AI 发送热键</label>
-                  <span>关闭时 send_hotkey 工具不可用</span>
-                </div>
-                <input id="perm-hotkey" type="checkbox" />
-              </div>
-              <div class="setting-row switch-row">
-                <div class="setting-copy">
-                  <label for="perm-agent-remote">看管远程访问</label>
-                  <span>关闭时远程查看和安装脚本都会拒绝</span>
-                </div>
-                <input id="perm-agent-remote" type="checkbox" />
               </div>
             </div>
           </div>
 
           <div class="expert-page hidden" data-expert-pane="diagnostics">
-            <div class="pane-head usage-head">
-              <div>
-                <p class="hint">本机诊断数据</p>
+            <div class="section-panel">
+              <div class="section-head">
+                <div>
+                  <h3>运行状态</h3>
+                  <p class="group-sub">性能与用量事实，回答“它现在卡不卡、今天用了多少”</p>
+                </div>
+                <div class="usage-toolbar">
+                  <select id="usage-model" aria-label="按模型筛选用量">
+                    <option value="__all">全部模型</option>
+                  </select>
+                  <button id="usage-refresh" class="btn small" type="button">刷新</button>
+                </div>
               </div>
-              <div class="usage-toolbar">
-                <select id="usage-model" aria-label="按模型筛选用量">
-                  <option value="__all">全部模型</option>
-                </select>
-                <button id="usage-refresh" class="btn small" type="button">刷新</button>
-              </div>
-            </div>
-
-            <div class="usage-block">
-              <div class="usage-block-title">资源占用</div>
-              <div class="resource-grid">
+              <div class="resource-grid embedded">
                 <div class="resource-card">
                   <span>进程 CPU</span>
                   <strong id="resource-cpu">-</strong>
-                  <small id="resource-updated">等待采样</small>
                 </div>
                 <div class="resource-card">
                   <span>进程内存</span>
                   <strong id="resource-process-memory">-</strong>
                 </div>
-              </div>
-            </div>
-
-            <div class="usage-block">
-              <div class="usage-block-title">它的反应（宠物事件决策）</div>
-              <div id="pet-events" class="pet-events"></div>
-            </div>
-
-            <div class="usage-block">
-              <div class="usage-block-title">观察与提醒参数</div>
-              <div class="settings-card compact embedded">
-                <div class="setting-row">
-                  <div class="setting-copy">
-                    <label for="a-ss-interval">屏幕观察间隔（秒）</label>
-                    <span>对话进行中会自动暂停</span>
-                  </div>
-                  <input id="a-ss-interval" type="number" min="5" max="3600" step="5" placeholder="30" />
-                </div>
-                <div class="setting-row switch-row">
-                  <div class="setting-copy">
-                    <label for="a-ss-bubble">屏幕观察弹气泡</label>
-                  </div>
-                  <input id="a-ss-bubble" type="checkbox" />
-                </div>
-                <div class="setting-row switch-row">
-                  <div class="setting-copy">
-                    <label for="a-camera-enabled">摄像头观察（功能层）</label>
-                    <span>首页的摄像头开关会同时切换这一项</span>
-                  </div>
-                  <input id="a-camera-enabled" type="checkbox" />
-                </div>
-                <div class="setting-row switch-row">
-                  <div class="setting-copy">
-                    <label for="a-camera-save">保存摄像头原图</label>
-                    <span>默认只保存分析结果</span>
-                  </div>
-                  <input id="a-camera-save" type="checkbox" />
-                </div>
-                <div class="setting-row">
-                  <div class="setting-copy">
-                    <label for="a-reminder-ai-timeout">提醒润色超时（毫秒）</label>
-                    <span>超时用原文</span>
-                  </div>
-                  <input id="a-reminder-ai-timeout" type="number" min="500" max="10000" step="500" placeholder="3000" />
+                <div class="resource-card">
+                  <span>更新时间</span>
+                  <strong id="resource-updated" class="resource-time">等待采样</strong>
                 </div>
               </div>
+              <div id="usage-status" class="status-line embedded"></div>
             </div>
 
-            <div class="usage-block">
-              <div class="usage-block-title">提示音细分</div>
-              <div class="settings-card compact embedded">
-                <div class="setting-row switch-row">
-                  <div class="setting-copy">
-                    <label for="a-notify-sound-reminder">提醒到期时</label>
-                  </div>
-                  <input id="a-notify-sound-reminder" type="checkbox" />
-                </div>
-                <div class="setting-row switch-row">
-                  <div class="setting-copy">
-                    <label for="a-notify-sound-agent">编程助手状态变化时</label>
-                  </div>
-                  <input id="a-notify-sound-agent" type="checkbox" />
-                </div>
-                <div class="setting-row switch-row">
-                  <div class="setting-copy">
-                    <label for="a-notify-sound-skip-tts">语音提醒时静音</label>
-                  </div>
-                  <input id="a-notify-sound-skip-tts" type="checkbox" />
+            <div class="section-panel">
+              <div class="section-head">
+                <div>
+                  <h3>它的反应</h3>
+                  <p class="group-sub">最近 50 条宠物事件决策：已发送 / 去重 / 节流 / 失败</p>
                 </div>
               </div>
+              <div id="pet-events" class="pet-events embedded"></div>
             </div>
 
-            <div class="usage-block">
-              <div class="usage-block-title">存储位置</div>
+            <div class="section-panel">
+              <div class="section-head">
+                <div>
+                  <h3>观察与提醒</h3>
+                  <p class="group-sub">低频参数默认收起；改动保存后立即生效</p>
+                </div>
+              </div>
+              <details class="quiet-details embedded">
+                <summary>屏幕与摄像头</summary>
+                <div class="settings-card compact embedded">
+                  <div class="setting-row">
+                    <div class="setting-copy">
+                      <label for="a-ss-interval">屏幕观察间隔（秒）</label>
+                      <span>对话进行中会自动暂停</span>
+                    </div>
+                    <input id="a-ss-interval" type="number" min="5" max="3600" step="5" placeholder="30" />
+                  </div>
+                  <div class="setting-row switch-row">
+                    <div class="setting-copy">
+                      <label for="a-ss-bubble">屏幕观察弹气泡</label>
+                    </div>
+                    <input id="a-ss-bubble" type="checkbox" />
+                  </div>
+                  <div class="setting-row switch-row">
+                    <div class="setting-copy">
+                      <label for="a-camera-enabled">摄像头观察（功能层）</label>
+                      <span>与权限明细子页的权限层开关同时开启才会真正观察</span>
+                    </div>
+                    <input id="a-camera-enabled" type="checkbox" />
+                  </div>
+                  <div class="setting-row switch-row">
+                    <div class="setting-copy">
+                      <label for="a-camera-save">保存摄像头原图</label>
+                      <span>默认只保存分析结果</span>
+                    </div>
+                    <input id="a-camera-save" type="checkbox" />
+                  </div>
+                </div>
+              </details>
+              <details class="quiet-details embedded">
+                <summary>提醒与提示音</summary>
+                <div class="settings-card compact embedded">
+                  <div class="setting-row">
+                    <div class="setting-copy">
+                      <label for="a-reminder-ai-timeout">提醒润色超时（毫秒）</label>
+                      <span>超时用原文</span>
+                    </div>
+                    <input id="a-reminder-ai-timeout" type="number" min="500" max="10000" step="500" placeholder="3000" />
+                  </div>
+                  <div class="setting-row switch-row">
+                    <div class="setting-copy">
+                      <label for="a-notify-sound-reminder">提醒到期时</label>
+                    </div>
+                    <input id="a-notify-sound-reminder" type="checkbox" />
+                  </div>
+                  <div class="setting-row switch-row">
+                    <div class="setting-copy">
+                      <label for="a-notify-sound-agent">编程助手状态变化时</label>
+                    </div>
+                    <input id="a-notify-sound-agent" type="checkbox" />
+                  </div>
+                  <div class="setting-row switch-row">
+                    <div class="setting-copy">
+                      <label for="a-notify-sound-skip-tts">语音提醒时静音</label>
+                    </div>
+                    <input id="a-notify-sound-skip-tts" type="checkbox" />
+                  </div>
+                </div>
+              </details>
+            </div>
+
+            <div class="section-panel">
+              <div class="section-head">
+                <div>
+                  <h3>数据与文件</h3>
+                  <p class="group-sub">改存储位置需要重启；记忆与记录的内容在“它记住了我什么”里管理</p>
+                </div>
+              </div>
               <div class="settings-card compact embedded">
                 <div class="setting-row">
                   <div class="setting-copy">
@@ -848,11 +966,7 @@
                   <input id="a-storage-app-data" type="text" placeholder="C:\\Users\\you\\AppData\\Roaming\\bitcat" spellcheck="false" />
                 </div>
               </div>
-            </div>
-
-            <div class="section-panel about-details">
-              <div class="about-files-title">本机文件</div>
-              <div class="about-file-list">
+              <div class="about-file-list embedded">
                 <div class="file-line"><span>版本</span><code id="about-version">-</code></div>
                 <div class="file-line"><span>设置覆盖</span><code id="about-settings-path">-</code></div>
                 <div class="file-line"><span>应用数据目录</span><code id="about-app-data-dir">-</code></div>

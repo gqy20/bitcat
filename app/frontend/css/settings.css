@@ -3328,3 +3328,81 @@ input[type="checkbox"]:checked::after {
   align-items: center;
   gap: 8px;
 }
+
+/* ─── 专家模式打磨：组副标题、状态徽标、嵌入式区块 ─── */
+
+/* 组标题下的任务说明：每组先说清“这组管什么” */
+.group-sub {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+/* 提示词“默认 / 已自定义”徽标：留空即内置默认的 overlay 语义显性化 */
+.custom-badge {
+  flex: none;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line-subtle);
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  user-select: none;
+}
+
+.custom-badge.custom {
+  border-color: rgba(var(--accent-green-rgb), 0.45);
+  background: rgba(var(--accent-green-rgb), 0.1);
+  color: var(--text-main);
+}
+
+/* 组内编辑器：不再是独立大块，跟随 section-panel 分组容器 */
+.editor-stack.embedded,
+.section-panel .editor-panel {
+  margin: 0;
+}
+
+.section-panel .editor-stack.embedded {
+  border-top: 1px solid var(--line-subtle);
+}
+
+/* 组内嵌 details：细分参数默认收起 */
+.quiet-details.embedded {
+  margin: 0;
+  border-top: 1px solid var(--line-subtle);
+  border-radius: 0;
+}
+
+/* 诊断：资源三卡 + 状态行的嵌入式布局 */
+.resource-grid.embedded {
+  margin: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-subtle);
+}
+
+.resource-card .resource-time {
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.status-line.embedded {
+  margin-top: 10px;
+}
+
+.pet-events.embedded,
+.about-file-list.embedded {
+  margin: 0;
+  border-top: 1px solid var(--line-subtle);
+  padding-top: 12px;
+}
+
+/* 组标题右侧的工具条（模型筛选 + 刷新） */
+.section-head .usage-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
