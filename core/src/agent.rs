@@ -1395,6 +1395,8 @@ data: [DONE]"#;
 
     #[tokio::test]
     async fn test_tool_call_shell() {
+        // CI 高负载时 shell 冷启动可达 20-30s，见 tools::relax_shell_timeout_for_tests
+        crate::tools::relax_shell_timeout_for_tests();
         let args = ShellArgs {
             command: "echo hello_test".into(),
         };

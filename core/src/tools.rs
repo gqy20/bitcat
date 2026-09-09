@@ -48,6 +48,20 @@ pub fn truncate_chars(s: &str, max: usize) -> String {
 }
 
 const SHELL_TIMEOUT_SECS: u64 = 30;
+
+/// shell 命令超时，可用 `BITCAT_SHELL_TIMEOUT_SECS` 环境变量覆盖（秒，>0 生效）。
+///
+/// 默认 30s 对 AI 交互命令足够；但高负载 CI runner 或开了实时杀毒扫描的机器上，
+/// shell 进程冷启动本身可能就要 20-30s（2026-09-09 实测把“无效命令”测试顶穿了
+/// 30s 超时）。慢机器用户与测试可通过环境变量放宽，非法/零值回退默认。
+fn shell_timeout() -> Duration {
+    let secs = std::env::var("BITCAT_SHELL_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(SHELL_TIMEOUT_SECS);
+    Duration::from_secs(secs)
+}
 const MAX_OUTPUT_CHARS: usize = 8000;
 const DEFAULT_MEMORY_TOOL_BUDGET_CHARS: usize = 12_000;
 const DEFAULT_LONG_TERM_MEMORY_MAX_ENTRIES: usize = 200;
@@ -192,6 +206,14 @@ impl ToolResult {
 
 // ---- Tool 执行逻辑（纯函数，方便测试） ----
 
+#[cfg(test)]
+/// CI 高负载时 shell 进程冷启动可能需要 20-31s（2026-09-09 实测 powershell
+/// 启动就把“无效命令”测试顶穿了 30s 超时）。产品默认 30s 不变；测试只验证
+/// 语义不验证限时，统一放宽到 180s。三个会真实拉起 shell 的测试都先调它。
+pub(crate) fn relax_shell_timeout_for_tests() {
+    unsafe { std::env::set_var("BITCAT_SHELL_TIMEOUT_SECS", "180") };
+}
+
 /// 返回当前平台执行单条命令所用的 shell 程序与参数开关。
 ///
 /// Windows 用 `powershell -Command`（与 `execute_launch` 的默认终端一致）；
@@ -240,7 +262,7 @@ pub async fn execute_shell(args: &ShellArgs) -> Result<ToolResult, ToolError> {
         "AI executes shell command"
     );
     let result = tokio::time::timeout(
-        Duration::from_secs(SHELL_TIMEOUT_SECS),
+        shell_timeout(),
         tokio::process::Command::new(&program)
             .args([&flag, &args.command])
             .output(),
@@ -800,6 +822,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_shell_echo() {
+        crate::tools::relax_shell_timeout_for_tests();
         let args = ShellArgs {
             command: "echo 'hello_world'".into(),
         };
@@ -827,6 +850,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_shell_invalid_command() {
+        // 慢机器上“命令不存在”的报错路径也可能被冷启动拖过默认超时，
+        // 所以这里同样放宽：超时本身也证明命令没有成功执行。
+        crate::tools::relax_shell_timeout_for_tests();
         let args = ShellArgs {
             command: "nonexistent_command_xyz_12345".into(),
         };
