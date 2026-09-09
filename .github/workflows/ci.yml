@@ -10,6 +10,11 @@ env:
   CARGO_TERM_COLOR: always
   # CI 上降低 proptest 用例数，日常足够发现回归，又不拖慢 pipeline
   PROPTEST_CASES: "64"
+  # SDL2 bundled 静态编译必需：runner 上的 CMake 已移除对 < 3.5 的兼容，
+  # 不设会在 sdl2-sys 的 build script 里报
+  # "Compatibility with CMake < 3.5 has been removed from CMake" 而直接失败。
+  # Makefile、release.yml、dev-build.yml 都已设，这里以前漏了。
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
 
 jobs:
   # ───── 秒级任务：fmt + clippy 独立并行，不被测试阻塞 ─────
