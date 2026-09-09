@@ -356,6 +356,7 @@ textarea::-webkit-scrollbar-thumb {
 }
 
 .tab.hidden { display: none; }
+.expert-page.hidden { display: none; }
 
 .tab {
   max-width: 1280px;
@@ -443,7 +444,7 @@ code {
 }
 
 .settings-card.compact .setting-row {
-  min-height: 68px;
+  min-height: 0;
 }
 
 .permission-callout {
@@ -528,17 +529,32 @@ code {
 }
 
 .permission-card .setting-row {
-  min-height: 64px;
+  min-height: 0;
 }
 
 .setting-row {
-  min-height: 56px;
+  min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 424px);
   grid-template-areas: "label control";
   align-items: center;
   gap: 4px 24px;
-  padding: 12px 24px;
+  padding: 10px 24px;
+}
+
+/* 控件列固定 424px：所有控件右对齐，右边界统一（mac 风格） */
+.setting-row > input,
+.setting-row > select,
+.setting-row > textarea,
+.setting-row > .input-with-action {
+  grid-area: control;
+  justify-self: end;
+}
+
+/* 设置行内输入高 36px（全局 token 40px 偏大） */
+.setting-row input:not([type="checkbox"]),
+.setting-row select {
+  height: 36px;
 }
 
 /* 数字输入隐藏浏览器 spinner：纯净输入面 */
@@ -555,13 +571,6 @@ input[type="number"] {
 
 .setting-row > .setting-copy {
   grid-area: label;
-}
-
-.setting-row > input,
-.setting-row > select,
-.setting-row > textarea,
-.setting-row > .input-with-action {
-  grid-area: control;
 }
 
 /* 说明内联：label 右侧小字，永不换行，窄窗口省略兜底 */
@@ -729,10 +738,6 @@ input[type="checkbox"]:checked {
 input[type="checkbox"]:checked::after {
   transform: translateX(16px);
   background: white;
-}
-
-.switch-row {
-  grid-template-columns: minmax(0, 1fr) 52px;
 }
 
 .switch-row input[type="checkbox"] {
@@ -2102,7 +2107,7 @@ input[type="checkbox"]:checked::after {
 }
 
 .about-card .setting-row {
-  min-height: 58px;
+  min-height: 0;
 }
 
 .about-details {
@@ -3202,7 +3207,6 @@ input[type="checkbox"]:checked::after {
 
 .section-panel .settings-card.embedded .setting-row:first-child {
   border-top: 0;
-  padding-top: 4px;
 }
 
 /* “它能动手做什么”状态行：一行结论替代 N 个开关 */
