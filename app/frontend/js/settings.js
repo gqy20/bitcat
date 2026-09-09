@@ -342,6 +342,9 @@ function switchTab(name) {
   document.querySelectorAll(".pane > .tab").forEach(s => {
     s.classList.toggle("hidden", s.dataset.pane !== name);
   });
+  // 分区切换回到顶部：避免停留在上个分区的滚动深度
+  const pane = document.querySelector(".pane");
+  if (pane) pane.scrollTop = 0;
   if (name === "home") {
     loadUsageDiagnostics();
     loadMemoryReview();
@@ -368,6 +371,9 @@ function switchExpertPage(name) {
   document.querySelectorAll(".expert-page").forEach(s => {
     s.classList.toggle("hidden", s.dataset.expertPane !== name);
   });
+  // 子页切换回到顶部，避免停留在上一子页的滚动深度
+  const pane = document.querySelector(".pane");
+  if (pane) pane.scrollTop = 0;
   if (name === "agent-watch") {
     startAgentWatchRefresh();
   } else {
@@ -393,7 +399,9 @@ function renderAi(ai) {
   $("ai-model-current").title = eff.model || "";
   $("ai-maxtokens-current").textContent = eff.max_tokens == null ? "" : formatNumber(eff.max_tokens);
   renderOverviewNotices(ai);
-  $("ov-ai-model").textContent = eff.model || "-";
+  // 状态条显示短模型名：去掉 -20250514 之类的日期版本后缀
+  $("ov-ai-model").textContent = eff.model ? eff.model.replace(/-\d{8}$/, "") : "-";
+  $("ov-ai-model").title = eff.model || "";
   $("ov-ai-key").textContent = ai.has_effective_key ? "已配置" : "未配置";
 
   ["ai-key", "ai-baseurl", "ai-model", "ai-maxtokens"].forEach(id => {
@@ -2171,6 +2179,14 @@ function renderPointsLevel(state) {
   if (expText) expText.textContent = `${formatNumber(expIn)} / ${formatNumber(expNext)}`;
   if (streak) streak.textContent = state.current_streak_days || 0;
   if (longestStreak) longestStreak.textContent = state.longest_streak_days || 0;
+
+  // 折叠态摘要行：Lv5 · 1,200 分 · 连续 12 天
+  const recall = el("recall-summary");
+  if (recall) {
+    const parts = [`Lv.${state.level || 1}`, `${formatNumber(state.total_points || 0)} 分`];
+    if (state.current_streak_days) parts.push(`连续 ${state.current_streak_days} 天`);
+    recall.textContent = parts.join(" · ");
+  }
 }
 
 function renderPointsBreakdown(state) {

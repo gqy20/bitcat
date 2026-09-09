@@ -1,0 +1,9 @@
+MiSans 字体
+来源: 小米 (https://hyperos.mi.com/font/)，官方发布包 MiSans.zip
+许可: 免费商用，允许软件内置与分发（详见官网知识产权声明）
+处理: 本目录下 woff2 为 GB2312 字符集 + 基础拉丁/标点的子集化版本，
+      使用 fonttools pyftsubset 生成，仅保留 Regular / Semibold / Bold 三字重。
+Source Code Pro 字体
+来源: Google Fonts / Adobe (https://github.com/adobe-fonts/source-code-pro)
+许可: SIL Open Font License 1.1
+处理: 拉丁 + 常用标点子集化，可变字重（200-900）。

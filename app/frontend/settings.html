@@ -40,32 +40,34 @@
             <button id="overview-refresh" class="btn small" type="button">刷新</button>
           </div>
 
-          <div class="overview-grid answer-grid">
-            <div class="status-card status-brain" data-goto="cost" tabindex="0" role="button">
+          <div class="status-strip" role="list" aria-label="四个疑问速答">
+            <div class="strip-item" data-goto="cost" role="button" tabindex="0">
               <span>连接</span>
               <strong id="ov-ai-model">-</strong>
               <small id="ov-ai-key">-</small>
             </div>
-            <div class="status-card status-observe">
+            <div class="strip-item">
               <span>屏幕观察</span>
               <strong id="qs-screenshot">-</strong>
               <small id="ss-interval-hint">每 30 秒一次</small>
             </div>
-            <div class="status-card status-memory" data-goto="memory" tabindex="0" role="button">
+            <div class="strip-item" data-goto="memory" role="button" tabindex="0">
               <span>记住了</span>
               <strong id="ov-memory-total">-</strong>
               <small id="ov-memory-time">件事</small>
             </div>
-            <div class="status-card status-usage" data-goto="cost" tabindex="0" role="button">
+            <div class="strip-item" data-goto="cost" role="button" tabindex="0">
               <span>今日用量</span>
               <strong id="ov-usage-total">-</strong>
             </div>
           </div>
 
           <div id="perm-onboarding" class="permission-callout hidden">
-            <strong>第一次见面，先说说边界</strong>
-            <span>它会聊天、跳舞、陪你玩游戏；看屏幕、用摄像头、动你的电脑，每一项都由你亲手开启。完成下面这份说明后随时可以改。</span>
-            <button id="perm-complete" class="btn small primary" type="button">完成首次说明</button>
+            <div class="callout-head">
+              <strong>第一次见面，先说说边界</strong>
+              <button id="perm-complete" class="btn small" type="button">完成首次说明</button>
+            </div>
+            <span>它会聊天、跳舞、陪你玩游戏；看屏幕、用摄像头、动你的电脑，每一项都由你亲手开启。完成后随时可以改。</span>
           </div>
 
           <div class="section-panel">
@@ -77,16 +79,16 @@
             <div class="settings-card compact embedded">
               <div class="setting-row switch-row">
                 <div class="setting-copy">
-                  <label for="perm-screenshot">屏幕观察</label>
-                  <span>开启后它会定期看到你的屏幕，帮你留意正在做的事。关掉就完全看不到。</span>
-                </div>
+                <label for="perm-screenshot">屏幕观察</label><span class="row-hint">定期看一眼屏幕，帮你留意正在做的事</span>
+              </div>
+
                 <input id="perm-screenshot" type="checkbox" />
               </div>
               <div class="setting-row switch-row">
                 <div class="setting-copy">
-                  <label for="camera-master">摄像头观察</label>
-                  <span>开启后它会看到摄像头画面，只做保守的描述，不识别身份。</span>
-                </div>
+                <label for="camera-master">摄像头观察</label><span class="row-hint">只做保守描述，不识别身份</span>
+              </div>
+
                 <input id="camera-master" type="checkbox" />
               </div>
             </div>
@@ -107,15 +109,6 @@
             </div>
           </div>
 
-          <div class="section-panel">
-            <div class="section-head">
-              <div>
-                <h3>当前状态</h3>
-              </div>
-            </div>
-            <div id="overview-notices" class="notice-list"></div>
-          </div>
-
           <div class="section-panel revoke-panel">
             <div class="section-head">
               <div>
@@ -123,9 +116,18 @@
               </div>
             </div>
             <div class="revoke-bar">
-              <span>关掉屏幕观察、摄像头和所有动手能力，只保留聊天和陪伴。收权后不会再反复弹窗请求重开。</span>
+              <span>关掉它看屏幕、动电脑的全部能力，只保留聊天与陪伴。收权后不会再反复弹窗请求重开。</span>
               <button id="revoke-all" class="btn danger" type="button">全部收权</button>
             </div>
+          </div>
+
+          <div class="section-panel">
+            <div class="section-head">
+              <div>
+                <h3>当前状态</h3>
+              </div>
+            </div>
+            <div id="overview-notices" class="notice-list"></div>
           </div>
         </section>
 
@@ -162,9 +164,9 @@
               </div>
               <div class="setting-row tall">
                 <div class="setting-copy">
-                  <label for="u-preferences">偏好</label>
-                  <span>一行一个偏好，例如“回答简洁”或“先给结论”。</span>
-                </div>
+                <label for="u-preferences">偏好</label><span class="row-hint">一行一条</span>
+              </div>
+
                 <textarea id="u-preferences" rows="4" placeholder="回答先给结论&#10;代码改动保持克制"></textarea>
               </div>
               <div class="setting-row tall">
@@ -194,16 +196,16 @@
             <div class="settings-card compact embedded">
               <div class="setting-row">
                 <div class="setting-copy">
-                  <label>数据目录</label>
-                  <span>记忆、提醒和记录文件都存在这里，可在专家模式里修改位置。</span>
-                </div>
+                <label>数据目录</label><span class="row-hint">记忆、提醒和记录都存在这里</span>
+              </div>
+
                 <code id="about-data-dir" class="ro value">-</code>
               </div>
               <div class="setting-row switch-row">
                 <div class="setting-copy">
-                  <label for="perm-diagnostics">保留运行记录</label>
-                  <span>用于排查问题的日志。关闭后出问题时较难定位，不含聊天正文。</span>
-                </div>
+                <label for="perm-diagnostics">保留运行记录</label><span class="row-hint">出问题时用来定位原因</span>
+              </div>
+
                 <input id="perm-diagnostics" type="checkbox" />
               </div>
             </div>
@@ -257,34 +259,33 @@
             <div class="settings-card compact embedded">
               <div class="setting-row">
                 <div class="setting-copy">
-                  <label for="ai-key">API Key</label>
-                  <span>它的“大脑”钥匙，在 Anthropic 官网申请，只保存在本机<small id="ai-key-current" class="field-current"></small></span>
-                </div>
+                <label for="ai-key">API Key</label><small id="ai-key-current" class="field-current"></small><span class="row-hint">官网申请，只存在本机</span>
+              </div>
+
                 <div class="input-with-action">
                   <input id="ai-key" type="password" placeholder="已保存则留空" autocomplete="off" spellcheck="false" />
                   <button class="icon-btn" id="ai-key-toggle" type="button" title="显示或隐藏 API Key" aria-label="显示或隐藏 API Key"><span class="icon-eye"></span></button>
                 </div>
+                </div>
+              <div class="setting-row">
+                <div class="setting-copy">
+                <label for="ai-model">模型</label><small id="ai-model-current" class="field-current"></small>
+              </div>
+                <input id="ai-model" type="text" placeholder="留空用当前模型" spellcheck="false" />
               </div>
               <div class="setting-row">
                 <div class="setting-copy">
-                  <label for="ai-model">模型</label>
-                  <span><small id="ai-model-current" class="field-current"></small></span>
-                </div>
-                <input id="ai-model" type="text" placeholder="claude-sonnet-4-20250514" spellcheck="false" />
+                <label for="ai-baseurl">服务地址</label><small id="ai-baseurl-current" class="field-current"></small>
+              </div>
+
+                <input id="ai-baseurl" type="text" placeholder="留空用默认地址" spellcheck="false" />
               </div>
               <div class="setting-row">
                 <div class="setting-copy">
-                  <label for="ai-baseurl">服务地址</label>
-                  <span>兼容接口可选，不确定就留空<small id="ai-baseurl-current" class="field-current"></small></span>
-                </div>
-                <input id="ai-baseurl" type="text" placeholder="https://api.anthropic.com" spellcheck="false" />
+                <label for="ai-maxtokens">回复长度上限</label><small id="ai-maxtokens-current" class="field-current"></small>
               </div>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <label for="ai-maxtokens">回复长度上限</label>
-                  <span>留空自动<small id="ai-maxtokens-current" class="field-current"></small></span>
-                </div>
-                <input id="ai-maxtokens" type="number" min="1" placeholder="256000" />
+
+                <input id="ai-maxtokens" type="number" min="1" placeholder="留空自动" />
               </div>
             </div>
           </div>
@@ -336,16 +337,16 @@
             <div class="settings-card compact embedded">
               <div class="setting-row switch-row">
                 <div class="setting-copy">
-                  <label for="a-tts">开口说话</label>
-                  <span>回复时用语音念出来</span>
-                </div>
+                <label for="a-tts">开口说话</label><span class="row-hint">回复时用语音念出来</span>
+              </div>
+
                 <input id="a-tts" type="checkbox" />
               </div>
               <div class="setting-row switch-row">
                 <div class="setting-copy">
-                  <label for="a-notify-sound">提示音</label>
-                  <span>提醒和任务状态变化时轻轻响一声</span>
-                </div>
+                <label for="a-notify-sound">提示音</label><span class="row-hint">提醒和状态变化时轻响一声</span>
+              </div>
+
                 <input id="a-notify-sound" type="checkbox" />
               </div>
             </div>
@@ -362,9 +363,9 @@
             <div class="settings-card compact embedded">
               <div class="setting-row switch-row">
                 <div class="setting-copy">
-                  <label for="a-reminder-ai">让它把提醒说得自然一点</label>
-                  <span>到期提醒由它顺一遍措辞，失败了就用原话</span>
-                </div>
+                <label for="a-reminder-ai">让它把提醒说得自然一点</label><span class="row-hint">到期提醒顺一遍措辞，失败用原话</span>
+              </div>
+
                 <input id="a-reminder-ai" type="checkbox" />
               </div>
             </div>
@@ -372,54 +373,56 @@
           </div>
 
           <div class="section-panel overview-growth">
-            <div class="section-head">
-              <div>
-                <h3>你们的回忆</h3>
-              </div>
-            </div>
-            <div class="usage-block points-overview">
-              <div class="usage-block-title">互动积分</div>
-              <div class="points-level-card">
-                <div class="points-level-badge points-metric">
-                  <span class="points-level-number" id="points-level">1</span>
-                  <span class="points-level-title" id="points-level-title">初识</span>
-                </div>
-                <div class="points-main">
-                  <div class="points-total points-metric">
-                    <strong id="points-total">0</strong>
-                    <span>总积分</span>
+            <details class="quiet-details memories-details">
+              <summary>
+                你们的回忆
+                <span class="recall-summary" id="recall-summary">-</span>
+              </summary>
+              <div class="memories-body">
+                <div class="usage-block points-overview">
+                  <div class="points-level-card">
+                    <div class="points-level-badge points-metric">
+                      <span class="points-level-number" id="points-level">1</span>
+                      <span class="points-level-title" id="points-level-title">初识</span>
+                    </div>
+                    <div class="points-main">
+                      <div class="points-total points-metric">
+                        <strong id="points-total">0</strong>
+                        <span>总积分</span>
+                      </div>
+                      <div class="points-exp-bar">
+                        <div class="points-exp-fill" id="points-exp-fill" style="width:0%"></div>
+                        <span id="points-exp-text">0 / 50</span>
+                      </div>
+                    </div>
+                    <div class="points-streak">
+                      <span class="points-metric"><strong id="points-streak">0</strong><small>连续天数</small></span>
+                      <span class="points-metric"><strong id="points-longest-streak">0</strong><small>最长连续</small></span>
+                    </div>
                   </div>
-                  <div class="points-exp-bar">
-                    <div class="points-exp-fill" id="points-exp-fill" style="width:0%"></div>
-                    <span id="points-exp-text">0 / 50</span>
+                  <div class="points-activity-panel" aria-label="积分活动">
+                    <div class="points-activity-grid" id="points-activity-grid"></div>
+                  </div>
+                  <div class="points-categories" id="points-breakdown">
+                    <div class="points-empty">暂无成长记录</div>
                   </div>
                 </div>
-                <div class="points-streak">
-                  <span class="points-metric"><strong id="points-streak">0</strong><small>连续天数</small></span>
-                  <span class="points-metric"><strong id="points-longest-streak">0</strong><small>最长连续</small></span>
+
+                <div class="usage-block">
+                  <div class="usage-block-title">成就徽章 (<span id="achievement-count">0</span>/12)</div>
+                  <div class="achievements-grid" id="achievements-grid">
+                    <div class="points-empty">暂无成长记录</div>
+                  </div>
+                </div>
+
+                <div class="usage-block">
+                  <div class="usage-block-title">最近互动</div>
+                  <div class="points-events" id="points-events">
+                    <div class="points-empty">暂无成长记录</div>
+                  </div>
                 </div>
               </div>
-              <div class="points-activity-panel" aria-label="积分活动">
-                <div class="points-activity-grid" id="points-activity-grid"></div>
-              </div>
-              <div class="points-categories" id="points-breakdown">
-                <div class="points-empty">暂无成长记录</div>
-              </div>
-            </div>
-
-            <div class="usage-block">
-              <div class="usage-block-title">成就徽章 (<span id="achievement-count">0</span>/12)</div>
-              <div class="achievements-grid" id="achievements-grid">
-                <div class="points-empty">暂无成长记录</div>
-              </div>
-            </div>
-
-            <div class="usage-block">
-              <div class="usage-block-title">最近互动</div>
-              <div class="points-events" id="points-events">
-                <div class="points-empty">暂无成长记录</div>
-              </div>
-            </div>
+            </details>
           </div>
         </section>
 
@@ -447,7 +450,7 @@
               <div class="section-head">
                 <div>
                   <h3>人设</h3>
-                  <p class="group-sub">它的性格与说话方式，每次对话都会带上</p>
+                  <p class="group-sub">它的性格与说话方式</p>
                 </div>
               </div>
               <div class="editor-panel">
@@ -463,7 +466,7 @@
               <div class="section-head">
                 <div>
                   <h3>视觉理解</h3>
-                  <p class="group-sub">它看屏幕时怎么描述，强调反幻觉和保守表述</p>
+                  <p class="group-sub">它看屏幕时怎么描述</p>
                 </div>
               </div>
               <div class="editor-stack embedded">
@@ -488,7 +491,7 @@
               <div class="section-head">
                 <div>
                   <h3>提醒润色</h3>
-                  <p class="group-sub">到期提醒的措辞风格；失败或超时会回退原始文案</p>
+                  <p class="group-sub">到期提醒的措辞风格</p>
                 </div>
               </div>
               <div class="editor-panel">
@@ -544,43 +547,43 @@
               <div class="section-head">
                 <div>
                   <h3>启用与提醒</h3>
-                  <p class="group-sub">先开总开关，再定什么时候提醒你；全屏时通知自动降级为静默计数</p>
+                  <p class="group-sub">先开总开关，再定提醒时机</p>
                 </div>
               </div>
               <div class="settings-card compact embedded">
                 <div class="setting-row switch-row">
                   <div class="setting-copy">
-                    <label for="aw-enabled">启用看管</label>
-                    <span>需要连接脚本正常工作；顶部按钮可一键修复</span>
-                  </div>
+                <label for="aw-enabled">启用看管</label><span class="row-hint">需要连接脚本；顶部按钮可修复</span>
+              </div>
+
                   <input id="aw-enabled" type="checkbox" />
                 </div>
                 <div class="setting-row switch-row">
                   <div class="setting-copy">
-                    <label for="aw-away">离开时提醒</label>
-                    <span>你不在屏幕前而任务还在跑</span>
-                  </div>
+                <label for="aw-away">离开时提醒</label><span class="row-hint">你不在屏幕前而任务还在跑</span>
+              </div>
+
                   <input id="aw-away" type="checkbox" />
                 </div>
                 <div class="setting-row">
                   <div class="setting-copy">
-                    <label for="aw-first">首次提醒（秒）</label>
-                    <span>离开多久后第一次提醒</span>
-                  </div>
+                <label for="aw-first">首次提醒（秒）</label><span class="row-hint">离开多久后第一次提醒</span>
+              </div>
+
                   <input id="aw-first" type="number" min="10" max="3600" step="5" />
                 </div>
                 <div class="setting-row">
                   <div class="setting-copy">
-                    <label for="aw-repeat">重复冷却（分钟）</label>
-                    <span>同一会话两次提醒的最小间隔</span>
-                  </div>
+                <label for="aw-repeat">重复冷却（分钟）</label><span class="row-hint">两次提醒的最小间隔</span>
+              </div>
+
                   <input id="aw-repeat" type="number" min="1" max="240" step="1" />
                 </div>
                 <div class="setting-row switch-row">
                   <div class="setting-copy">
-                    <label for="aw-waiting">等待你输入时提醒</label>
-                    <span>任务停下来等你确认，是最需要你回来的时刻</span>
-                  </div>
+                <label for="aw-waiting">等待你输入时提醒</label><span class="row-hint">任务停下来等你确认时</span>
+              </div>
+
                   <input id="aw-waiting" type="checkbox" />
                 </div>
                 <div class="setting-row switch-row">
@@ -602,22 +605,22 @@
               <div class="section-head">
                 <div>
                   <h3>远程访问</h3>
-                  <p class="group-sub">在其他设备上看管这台机器的任务（只读）</p>
+                  <p class="group-sub">在其他设备查看（只读）</p>
                 </div>
               </div>
               <div class="settings-card compact embedded">
                 <div class="setting-row switch-row">
                   <div class="setting-copy">
-                    <label for="aw-remote-view">远程看板</label>
-                    <span>开启后局域网设备可以只读查看</span>
-                  </div>
+                <label for="aw-remote-view">远程看板</label><span class="row-hint">局域网设备只读查看</span>
+              </div>
+
                   <input id="aw-remote-view" type="checkbox" />
                 </div>
                 <div class="setting-row switch-row">
                   <div class="setting-copy">
-                    <label for="aw-remote-install">远程安装脚本</label>
-                    <span>允许生成给其他机器用的连接脚本</span>
-                  </div>
+                <label for="aw-remote-install">远程安装脚本</label><span class="row-hint">生成给其他机器的连接脚本</span>
+              </div>
+
                   <input id="aw-remote-install" type="checkbox" />
                 </div>
               </div>
@@ -683,9 +686,9 @@
                 </div>
                 <div class="setting-row">
                   <div class="setting-copy">
-                    <label for="a-shortcut">全局快捷键</label>
-                    <span>随时呼出它的组合键</span>
-                  </div>
+                <label for="a-shortcut">全局快捷键</label><span class="row-hint">随时呼出它的组合键</span>
+              </div>
+
                   <input id="a-shortcut" type="text" placeholder="CommandOrControl+Alt+Space" spellcheck="false" />
                 </div>
               </div>
@@ -705,7 +708,6 @@
           <div class="expert-page hidden" data-expert-pane="permissions">
             <div class="settings-card permission-gate-card" aria-label="Demo 权限闸门状态">
               <div class="permission-gate-copy">
-                <span class="eyebrow">Demo gate</span>
                 <h2 id="perm-gate-title">等待首次确认</h2>
                 <p id="perm-gate-summary">确认后，BitCat 会按这里的开关执行观察和系统工具权限。</p>
               </div>
@@ -733,22 +735,22 @@
               <div class="section-head">
                 <div>
                   <h3>发布闸门</h3>
-                  <p class="group-sub">Steam Demo 的启动口径；首页首次说明会同时置灰这两项</p>
+                  <p class="group-sub">Steam Demo 的启动口径</p>
                 </div>
               </div>
               <div class="settings-card compact embedded">
                 <div class="setting-row switch-row">
                   <div class="setting-copy">
-                    <label for="perm-onboarding-completed">已完成首次说明</label>
-                    <span>未完成时每次启动自动打开首页分区</span>
-                  </div>
+                <label for="perm-onboarding-completed">已完成首次说明</label><span class="row-hint">未完成时每次启动打开首页</span>
+              </div>
+
                   <input id="perm-onboarding-completed" type="checkbox" />
                 </div>
                 <div class="setting-row switch-row">
                   <div class="setting-copy">
-                    <label for="perm-steam-demo">Steam Demo 模式</label>
-                    <span>按发布版口径收敛高风险能力</span>
-                  </div>
+                <label for="perm-steam-demo">Steam Demo 模式</label><span class="row-hint">按发布版口径收敛高风险能力</span>
+              </div>
+
                   <input id="perm-steam-demo" type="checkbox" />
                 </div>
               </div>
@@ -758,57 +760,57 @@
               <div class="section-head">
                 <div>
                   <h3>观察与执行</h3>
-                  <p class="group-sub">与首页“它看得见什么 / 它能动手做什么”同一批能力的细粒度开关</p>
+                  <p class="group-sub">首页权限的细粒度开关</p>
                 </div>
               </div>
               <div class="settings-card compact embedded">
                 <div class="setting-row switch-row">
                   <div class="setting-copy">
-                    <label for="perm-camera">摄像头观察（权限层）</label>
-                    <span>与诊断子页的功能层开关同时开启才会真正观察</span>
-                  </div>
+                <label for="perm-camera">摄像头观察（权限层）</label><span class="row-hint">需诊断子页功能层一起打开</span>
+              </div>
+
                   <input id="perm-camera" type="checkbox" />
                 </div>
                 <div class="setting-row switch-row">
                   <div class="setting-copy">
-                    <label for="perm-shell">AI 执行 shell</label>
-                    <span>允许 PowerShell 命令，仍受危险命令策略拦截</span>
-                  </div>
+                <label for="perm-shell">AI 执行 shell</label><span class="row-hint">允许运行命令，危险命令仍会被拦下</span>
+              </div>
+
                   <input id="perm-shell" type="checkbox" />
                 </div>
                 <div class="setting-row switch-row">
                   <div class="setting-copy">
-                    <label for="perm-read-file">AI 读取文件</label>
-                    <span>关闭时 read_file 工具会被拒绝</span>
-                  </div>
+                <label for="perm-read-file">AI 读取文件</label><span class="row-hint">关闭时读取文件会被拒绝</span>
+              </div>
+
                   <input id="perm-read-file" type="checkbox" />
                 </div>
                 <div class="setting-row switch-row">
                   <div class="setting-copy">
-                    <label for="perm-clipboard">AI 读取剪贴板</label>
-                    <span>关闭时不会读取当前剪贴板文本</span>
-                  </div>
+                <label for="perm-clipboard">AI 读取剪贴板</label><span class="row-hint">关闭时不读剪贴板</span>
+              </div>
+
                   <input id="perm-clipboard" type="checkbox" />
                 </div>
                 <div class="setting-row switch-row">
                   <div class="setting-copy">
-                    <label for="perm-foreground">AI 切换前台窗口</label>
-                    <span>关闭时 force_foreground 工具不可用</span>
-                  </div>
+                <label for="perm-foreground">AI 切换前台窗口</label><span class="row-hint">关闭时不能切换前台窗口</span>
+              </div>
+
                   <input id="perm-foreground" type="checkbox" />
                 </div>
                 <div class="setting-row switch-row">
                   <div class="setting-copy">
-                    <label for="perm-launch">AI 启动程序</label>
-                    <span>关闭时 launch_program 工具不可用</span>
-                  </div>
+                <label for="perm-launch">AI 启动程序</label><span class="row-hint">关闭时不能启动程序</span>
+              </div>
+
                   <input id="perm-launch" type="checkbox" />
                 </div>
                 <div class="setting-row switch-row">
                   <div class="setting-copy">
-                    <label for="perm-hotkey">AI 发送热键</label>
-                    <span>关闭时 send_hotkey 工具不可用</span>
-                  </div>
+                <label for="perm-hotkey">AI 发送热键</label><span class="row-hint">关闭时不能发送热键</span>
+              </div>
+
                   <input id="perm-hotkey" type="checkbox" />
                 </div>
               </div>
@@ -818,15 +820,15 @@
               <div class="section-head">
                 <div>
                   <h3>远程</h3>
-                  <p class="group-sub">看管功能对外暴露的总闸；子项开关在“编程助手看管”子页</p>
+                  <p class="group-sub">看管功能对外暴露的总闸</p>
                 </div>
               </div>
               <div class="settings-card compact embedded">
                 <div class="setting-row switch-row">
                   <div class="setting-copy">
-                    <label for="perm-agent-remote">看管远程访问</label>
-                    <span>关闭时远程查看和安装脚本都会拒绝</span>
-                  </div>
+                <label for="perm-agent-remote">看管远程访问</label><span class="row-hint">关掉后其他设备无法连接</span>
+              </div>
+
                   <input id="perm-agent-remote" type="checkbox" />
                 </div>
               </div>
@@ -838,7 +840,7 @@
               <div class="section-head">
                 <div>
                   <h3>运行状态</h3>
-                  <p class="group-sub">性能与用量事实，回答“它现在卡不卡、今天用了多少”</p>
+                  <p class="group-sub">性能与用量</p>
                 </div>
                 <div class="usage-toolbar">
                   <select id="usage-model" aria-label="按模型筛选用量">
@@ -868,7 +870,7 @@
               <div class="section-head">
                 <div>
                   <h3>它的反应</h3>
-                  <p class="group-sub">最近 50 条宠物事件决策：已发送 / 去重 / 节流 / 失败</p>
+                  <p class="group-sub">最近 50 条决策</p>
                 </div>
               </div>
               <div id="pet-events" class="pet-events embedded"></div>
@@ -878,7 +880,7 @@
               <div class="section-head">
                 <div>
                   <h3>观察与提醒</h3>
-                  <p class="group-sub">低频参数默认收起；改动保存后立即生效</p>
+                  <p class="group-sub">低频参数，默认收起</p>
                 </div>
               </div>
               <details class="quiet-details embedded">
@@ -886,9 +888,9 @@
                 <div class="settings-card compact embedded">
                   <div class="setting-row">
                     <div class="setting-copy">
-                      <label for="a-ss-interval">屏幕观察间隔（秒）</label>
-                      <span>对话进行中会自动暂停</span>
-                    </div>
+                <label for="a-ss-interval">屏幕观察间隔（秒）</label><span class="row-hint">对话进行中会自动暂停</span>
+              </div>
+
                     <input id="a-ss-interval" type="number" min="5" max="3600" step="5" placeholder="30" />
                   </div>
                   <div class="setting-row switch-row">
@@ -899,16 +901,16 @@
                   </div>
                   <div class="setting-row switch-row">
                     <div class="setting-copy">
-                      <label for="a-camera-enabled">摄像头观察（功能层）</label>
-                      <span>与权限明细子页的权限层开关同时开启才会真正观察</span>
-                    </div>
+                <label for="a-camera-enabled">摄像头观察（功能层）</label><span class="row-hint">需权限明细权限层一起打开</span>
+              </div>
+
                     <input id="a-camera-enabled" type="checkbox" />
                   </div>
                   <div class="setting-row switch-row">
                     <div class="setting-copy">
-                      <label for="a-camera-save">保存摄像头原图</label>
-                      <span>默认只保存分析结果</span>
-                    </div>
+                <label for="a-camera-save">保存摄像头原图</label><span class="row-hint">默认只保存分析结果</span>
+              </div>
+
                     <input id="a-camera-save" type="checkbox" />
                   </div>
                 </div>
@@ -918,9 +920,9 @@
                 <div class="settings-card compact embedded">
                   <div class="setting-row">
                     <div class="setting-copy">
-                      <label for="a-reminder-ai-timeout">提醒润色超时（毫秒）</label>
-                      <span>超时用原文</span>
-                    </div>
+                <label for="a-reminder-ai-timeout">提醒润色超时（毫秒）</label><span class="row-hint">超时用原文</span>
+              </div>
+
                     <input id="a-reminder-ai-timeout" type="number" min="500" max="10000" step="500" placeholder="3000" />
                   </div>
                   <div class="setting-row switch-row">
@@ -949,7 +951,7 @@
               <div class="section-head">
                 <div>
                   <h3>数据与文件</h3>
-                  <p class="group-sub">改存储位置需要重启；记忆与记录的内容在“它记住了我什么”里管理</p>
+                  <p class="group-sub">改后重启生效</p>
                 </div>
               </div>
               <div class="settings-card compact embedded">

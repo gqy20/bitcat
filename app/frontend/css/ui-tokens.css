@@ -7,13 +7,42 @@
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122;
 }
 
+/* MiSans：中文主力（GB2312 子集，三字重覆盖 UI 权重） */
 @font-face {
-  font-family: "JetBrains Mono BitCat";
-  src: url("/assets/fonts/jetbrains-mono-latin-variable.woff2") format("woff2");
+  font-family: "MiSans BitCat";
+  src: url("/assets/fonts/misans-Regular.woff2") format("woff2");
   font-display: swap;
   font-style: normal;
-  font-weight: 100 800;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122;
+  font-weight: 100 450;
+  unicode-range: U+0020-007E, U+00A0-00FF, U+2013-2026, U+3001-3017, U+4E00-9FFF, U+FF00-FFEF;
+}
+
+@font-face {
+  font-family: "MiSans BitCat";
+  src: url("/assets/fonts/misans-Semibold.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 451 680;
+  unicode-range: U+0020-007E, U+00A0-00FF, U+2013-2026, U+3001-3017, U+4E00-9FFF, U+FF00-FFEF;
+}
+
+@font-face {
+  font-family: "MiSans BitCat";
+  src: url("/assets/fonts/misans-Bold.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 681 900;
+  unicode-range: U+0020-007E, U+00A0-00FF, U+2013-2026, U+3001-3017, U+4E00-9FFF, U+FF00-FFEF;
+}
+
+/* Source Code Pro：等宽（提示词/路径/命令），可变字重 */
+@font-face {
+  font-family: "Source Code Pro BitCat";
+  src: url("/assets/fonts/source-code-pro.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 200 900;
+  unicode-range: U+0020-007E, U+00A0-00FF, U+2013-2026, U+2190-2193;
 }
 
 :root {
@@ -33,9 +62,9 @@
   --line-strong: rgba(34, 48, 64, 0.2);
 
   --text-main: #22303d;
-  --text-secondary: #52606f;
-  --text-muted: #7a8795;
-  --text-faint: #a3adb8;
+  --text-secondary: #47555f;
+  --text-muted: #5c6977;
+  --text-faint: #88939e;
   --text: var(--text-main);
   --muted: var(--text-muted);
 
@@ -65,10 +94,10 @@
   --radius-sm: 6px;
   --radius-lg: 12px;
 
-  --font-ui: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  --font-ui: "MiSans BitCat", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
   --font-sans: var(--font-ui);
-  --font-brand: "Geist BitCat", "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", sans-serif;
-  --font-mono: "JetBrains Mono BitCat", "Cascadia Mono", "JetBrains Mono", "Consolas", monospace;
+  --font-brand: "Geist BitCat", "MiSans BitCat", "Segoe UI", sans-serif;
+  --font-mono: "Source Code Pro BitCat", "Cascadia Mono", "Consolas", monospace;
 
   --text-xs: 11px;
   --text-sm: 12px;
