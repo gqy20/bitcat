@@ -65,8 +65,11 @@ jobs:
       - name: Prepare frontend dist
         run: cargo run -p xtask -- prepare-frontend
 
+      # 只构建 bitcat-app：不带 -p 会把整个 workspace 都过一遍 dist profile，
+      # 而 xtask 在 Prepare frontend dist 步骤里已经用 dev profile 编过一次，
+      # 相当于同一个小工具编两遍（实测多花约 15-20 秒，占热缓存构建的 ~7%）。
       - name: Build (dist profile)
-        run: cargo build --profile dist
+        run: cargo build --profile dist -p bitcat-app
 
       # 产物名带短 sha，方便和 commit 对应；zip 内含 bitcat.exe + config/*.yml
       - name: Package portable zip
