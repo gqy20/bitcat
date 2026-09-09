@@ -44,7 +44,7 @@ jobs:
     name: Portable ZIP (dist profile)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -97,7 +97,7 @@ jobs:
 
       # artifact 名固定，`gh run download -n bitcat-dev-windows-x64` 才能稳定命中
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bitcat-dev-windows-x64
           path: dev-out/*

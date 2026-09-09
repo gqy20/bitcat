@@ -22,7 +22,7 @@ jobs:
     name: Rustfmt
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -32,7 +32,7 @@ jobs:
     name: Clippy
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -60,7 +60,7 @@ jobs:
     name: Test (Windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -91,7 +91,7 @@ jobs:
 
       - name: Upload JUnit report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: junit-report
           path: target/nextest/ci/junit.xml
@@ -113,7 +113,7 @@ jobs:
       # cargo-husky 会在 cargo test 时往 .git/hooks 写脚本，CI 里不需要
       CARGO_HUSKY_DONT_INSTALL_HOOKS: "true"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -137,7 +137,7 @@ jobs:
 
       - name: Upload JUnit report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: junit-report-linux
           path: target/nextest/ci/junit.xml
@@ -154,14 +154,14 @@ jobs:
       # 实测 187/187），钉 UTC 能在有人重新引入时区相关断言时立即报警。
       TZ: UTC
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # pnpm 必须在 setup-node 之前装好，否则 cache: pnpm 无法解析
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           # 钉 Node 22 只为可复现，不是因为更高版本会红：Node ≥ 22 的实验性全局
           # localStorage 会遮蔽 jsdom 26.1 的 window.localStorage（实测 Node 22 容器里
