@@ -1257,7 +1257,8 @@ mod tests {
     #[test]
     fn test_visible_frame_is_not_skipped() {
         let mut pixels = repeated_bgra([0, 0, 0, 255], 256);
-        for chunk in pixels.chunks_exact_mut(4).take(32) {
+        // as_chunks_mut::<4> 静态给出 &mut [u8; 4]，不再需要运行期长度判断
+        for chunk in pixels.as_chunks_mut::<4>().0.iter_mut().take(32) {
             chunk[0] = 80;
             chunk[1] = 120;
             chunk[2] = 200;

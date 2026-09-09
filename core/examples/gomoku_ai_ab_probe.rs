@@ -477,9 +477,9 @@ fn push_unique_limited(points: &mut Vec<Point>, source: &[Point], limit: usize) 
 
 fn list_stones(board: &[Vec<u8>], stone: u8) -> Vec<Point> {
     let mut points = Vec::new();
-    for y in 0..BOARD_SIZE {
-        for x in 0..BOARD_SIZE {
-            if board[y][x] == stone {
+    for (y, row) in board.iter().enumerate() {
+        for (x, &cell) in row.iter().enumerate() {
+            if cell == stone {
                 points.push(Point { x, y });
             }
         }

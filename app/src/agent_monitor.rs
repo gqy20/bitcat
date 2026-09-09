@@ -1661,8 +1661,10 @@ mod tests {
 
     #[test]
     fn remote_access_switches_gate_view_and_installer() {
-        let mut settings = AgentWatchSettings::default();
-        settings.remote_view_enabled = false;
+        let mut settings = AgentWatchSettings {
+            remote_view_enabled: false,
+            ..AgentWatchSettings::default()
+        };
         assert_eq!(
             remote_access_forbidden("/watch", &settings, true).map(|response| response.status),
             Some("403 Forbidden")

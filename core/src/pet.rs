@@ -284,10 +284,12 @@ mod tests {
 
     #[test]
     fn test_set_state_resets_frame_and_timer() {
-        let mut pet = Pet::default();
-        pet.frame_time_ms = 999;
-        pet.state_time_ms = 9999;
-        pet.frame = 3;
+        let mut pet = Pet {
+            frame_time_ms: 999,
+            state_time_ms: 9999,
+            frame: 3,
+            ..Pet::default()
+        };
 
         pet.set_state(PetState::Talk);
 
@@ -299,8 +301,10 @@ mod tests {
 
     #[test]
     fn test_set_same_state_no_reset() {
-        let mut pet = Pet::default();
-        pet.frame_time_ms = 100;
+        let mut pet = Pet {
+            frame_time_ms: 100,
+            ..Pet::default()
+        };
         pet.set_state(PetState::Idle);
         assert_eq!(pet.frame_time_ms, 100); // 不重置
     }

@@ -632,6 +632,9 @@ mod tests {
     }
 
     #[test]
+    // 常量范围哨兵：编译期常量的断言在 clippy 看来恒为真，但这里要的
+    // 正是“有人把尺寸改到不合理区间就让测试失败”。
+    #[allow(clippy::assertions_on_constants)]
     fn test_bubble_constants_reasonable() {
         // 300x120 keeps the default bubble compact while leaving room for Chinese text.
         assert!(BUBBLE_W >= 240.0 && BUBBLE_W <= 320.0);

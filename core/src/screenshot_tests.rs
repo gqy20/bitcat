@@ -79,15 +79,19 @@ min_width: 480
 
     #[test]
     fn test_validate_quality_zero() {
-        let mut cfg = ScreenshotConfig::default();
-        cfg.jpeg_quality = 0;
+        let cfg = ScreenshotConfig {
+            jpeg_quality: 0,
+            ..ScreenshotConfig::default()
+        };
         assert!(cfg.validate().is_err());
     }
 
     #[test]
     fn test_validate_quality_over_100() {
-        let mut cfg = ScreenshotConfig::default();
-        cfg.jpeg_quality = 101;
+        let cfg = ScreenshotConfig {
+            jpeg_quality: 101,
+            ..ScreenshotConfig::default()
+        };
         assert!(cfg.validate().is_err());
     }
 
@@ -99,8 +103,10 @@ min_width: 480
 
     #[test]
     fn test_validate_max_width_zero() {
-        let mut cfg = ScreenshotConfig::default();
-        cfg.max_width = 0;
+        let cfg = ScreenshotConfig {
+            max_width: 0,
+            ..ScreenshotConfig::default()
+        };
         assert!(cfg.validate().is_err());
     }
 
@@ -265,7 +271,7 @@ min_width: 480
 
     #[test]
     fn test_screen_info_sort_by_left() {
-        let mut screens = vec![
+        let mut screens = [
             ScreenInfo {
                 left: 1920,
                 top: 0,
@@ -442,10 +448,8 @@ min_width: 480
         let mut removed = 0u32;
         for entry in std::fs::read_dir(&base).unwrap().flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
-            if name < cutoff {
-                if std::fs::remove_dir_all(entry.path()).is_ok() {
-                    removed += 1;
-                }
+            if name < cutoff && std::fs::remove_dir_all(entry.path()).is_ok() {
+                removed += 1;
             }
         }
         assert_eq!(removed, 2);

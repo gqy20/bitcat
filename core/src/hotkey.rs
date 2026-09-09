@@ -456,6 +456,6 @@ mod tests {
     fn test_trigger_hotkey_valid_keys() {
         let codes = parse_keys(&["ctrl", "win"]);
         assert_eq!(codes, vec![0x11, 0x5B]);
-        assert!(!codes.iter().any(|&v| v == 0));
+        assert!(!codes.contains(&0));
     }
 }

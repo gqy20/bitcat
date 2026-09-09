@@ -285,12 +285,16 @@ mod tests {
     }
 
     #[test]
+    // 常量范围哨兵：编译期常量的断言在 clippy 看来恒为真，但这里要的
+    // 正是“有人把尺寸/坐标改到不合理区间就让测试失败”。
+    #[allow(clippy::assertions_on_constants)]
     fn test_voice_constants_reasonable() {
         assert!(VOICE_W >= 200 && VOICE_W <= 500);
         assert!(VOICE_H >= 30 && VOICE_H <= 80);
     }
 
     #[test]
+    #[allow(clippy::assertions_on_constants)]
     fn test_offscreen_constant_far_enough() {
         assert!(OFFSCREEN < -5000);
     }

@@ -1957,7 +1957,7 @@ mod tests {
     #[test]
     fn test_profile_apply_patch_adds_structured_fact() {
         let mut store = ProfileStore::empty();
-        let entries = vec![LongTermEntry {
+        let entries = [LongTermEntry {
             id: "mem_test_1".into(),
             created_at: "2026-05-12T14:23:00+08:00".into(),
             timestamp: "05-12 14:23".into(),
@@ -2054,7 +2054,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let entries = vec![LongTermEntry {
+        let entries = [LongTermEntry {
             id: "mem_test_1".into(),
             created_at: "2026-05-12T14:23:00+08:00".into(),
             timestamp: "05-12 14:23".into(),
@@ -2123,7 +2123,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let entries = vec![LongTermEntry {
+        let entries = [LongTermEntry {
             id: "mem_test_2".into(),
             created_at: "2026-05-12T15:00:00+08:00".into(),
             timestamp: "05-12 15:00".into(),
@@ -2175,7 +2175,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let entries = vec![LongTermEntry {
+        let entries = [LongTermEntry {
             id: "mem_test_3".into(),
             created_at: "2026-05-12T14:23:00+08:00".into(),
             timestamp: "05-12 14:23".into(),

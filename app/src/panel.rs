@@ -392,6 +392,6 @@ mod tests {
     #[test]
     fn test_unknown_action_errors() {
         let config = bitcat_core::panel_action::PanelActionConfig::load(PANEL_CONFIG_PATH).unwrap();
-        assert!(config.actions.get("nonexistent").is_none());
+        assert!(!config.actions.contains_key("nonexistent"));
     }
 }

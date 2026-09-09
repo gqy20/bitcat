@@ -2464,8 +2464,8 @@ mod tests {
     #[test]
     fn prompt_lists_human_immediate_win_to_block() {
         let mut board = vec![vec![0u8; BOARD_SIZE]; BOARD_SIZE];
-        for x in 3..7 {
-            board[7][x] = HUMAN;
+        for cell in &mut board[7][3..7] {
+            *cell = HUMAN;
         }
         let prompt = build_prompt(&board, Some(GomokuPoint { x: 6, y: 7 }));
         assert!(prompt.contains("Black immediate winning points"));

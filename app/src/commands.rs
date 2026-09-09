@@ -716,7 +716,7 @@ mod tests {
         assert_eq!(status.state, "idle");
         assert_eq!(status.frame, 2);
         assert_eq!(pet.x, 64.0);
-        assert_eq!(pet.facing_right, true);
+        assert!(pet.facing_right);
         assert_eq!(status.bubble, Some("test".to_string()));
     }
 

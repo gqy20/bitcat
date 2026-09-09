@@ -1035,9 +1035,11 @@ mod tests {
 
     #[test]
     fn achievement_streak_unlocks_at_target() {
-        let mut state = PointsState::default();
-        state.current_streak_days = 6;
-        state.total_points = 100;
+        let mut state = PointsState {
+            current_streak_days: 6,
+            total_points: 100,
+            ..PointsState::default()
+        };
 
         let newly = check_achievements(&mut state);
         assert!(!newly.contains(&"streak_7".to_string()));
