@@ -368,6 +368,10 @@ fn package_portable(options: PackageOptions) -> Result<()> {
     Ok(())
 }
 
+/// 把 config/ 复制到目标目录：顶层收 *.yml，子目录（如 dances/*.yaml）递归收 yml/yaml。
+///
+/// 曾经只扫顶层 yml，dances/ 整个子目录被落下——便携包用户因此拿不到内置舞蹈
+/// （配合 dance.rs 里 bundled_dance_dir 的编译期路径问题，发布包的内置舞蹈完全失效）。
 fn copy_config(src: &Path, dest: &Path) -> Result<()> {
     if !src.is_dir() {
         return Ok(());
@@ -377,7 +381,15 @@ fn copy_config(src: &Path, dest: &Path) -> Result<()> {
     for entry in fs::read_dir(src)? {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) == Some("yml") {
+        if path.is_dir() {
+            copy_config(&path, &dest.join(entry.file_name()))?;
+            continue;
+        }
+        let is_yaml = matches!(
+            path.extension().and_then(|ext| ext.to_str()),
+            Some("yml") | Some("yaml")
+        );
+        if is_yaml {
             fs::copy(&path, dest.join(entry.file_name()))?;
         }
     }

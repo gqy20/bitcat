@@ -133,13 +133,44 @@ pub fn dance_dir() -> Option<PathBuf> {
         .ok()
 }
 
-/// 返回项目内置舞蹈目录 config/dances/
+/// 内置舞蹈预设的所有候选目录，按优先级排序：
+/// exe 同目录 config/dances/ → CWD config/dances/ → 编译期源码树 config/dances/。
+///
+/// 最后一级是 `env!("CARGO_MANIFEST_DIR")`，指向**构建机**上的源码树：
+/// 开发和 `cargo test` 时能命中；发布到用户机器后不存在（dir.exists() == false，
+/// 静默跳过）。前两级与 prompts.rs 的 config 查找策略保持一致，
+/// 保证便携包/安装版只要把 config/dances/ 放在 exe 旁就能用。
+pub fn bundled_dance_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::with_capacity(3);
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        dirs.push(dir.join("config").join("dances"));
+    }
+    dirs.push(PathBuf::from("config").join("dances"));
+    dirs.push(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("core crate should live under workspace root")
+            .join("config")
+            .join("dances"),
+    );
+    dirs
+}
+
+/// 返回第一个真实存在的内置舞蹈目录；都不存在时回退到编译期源码路径，
+/// 保持旧签名与旧行为（对不存在的目录 read_dir 只会得到空列表，不会报错）。
 pub fn bundled_dance_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("core crate should live under workspace root")
-        .join("config")
-        .join("dances")
+    bundled_dance_dirs()
+        .into_iter()
+        .find(|dir| dir.exists())
+        .unwrap_or_else(|| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .expect("core crate should live under workspace root")
+                .join("config")
+                .join("dances")
+        })
 }
 
 /// 确保目录存在
@@ -175,7 +206,7 @@ fn load_dance_from_path(path: &Path) -> Result<DanceDef, String> {
     serde_yaml::from_str(&content).map_err(|e| format!("解析 YAML 失败: {e}"))
 }
 
-/// 加载舞蹈定义：优先用户目录，找不到再读项目内置预设。
+/// 加载舞蹈定义：优先用户目录，找不到再逐个尝试内置预设目录。
 pub fn load_dance(name: &str) -> Result<DanceDef, String> {
     if let Some(dir) = dance_dir() {
         let path = dir.join(format!("{name}.yaml"));
@@ -185,10 +216,12 @@ pub fn load_dance(name: &str) -> Result<DanceDef, String> {
         }
     }
 
-    let path = bundled_dance_dir().join(format!("{name}.yaml"));
-    debug!(name = %name, path = %path.display(), "[dance] 加载舞蹈定义");
-    if path.exists() {
-        return load_dance_from_path(&path);
+    for dir in bundled_dance_dirs() {
+        let path = dir.join(format!("{name}.yaml"));
+        debug!(name = %name, path = %path.display(), "[dance] 加载内置舞蹈定义");
+        if path.exists() {
+            return load_dance_from_path(&path);
+        }
     }
 
     Err(format!("舞蹈定义不存在: {name}"))
@@ -197,7 +230,9 @@ pub fn load_dance(name: &str) -> Result<DanceDef, String> {
 /// 列出所有可用舞蹈名称
 pub fn list_dances() -> Vec<String> {
     let mut names = BTreeSet::new();
-    collect_dance_names(&bundled_dance_dir(), &mut names);
+    for dir in bundled_dance_dirs() {
+        collect_dance_names(&dir, &mut names);
+    }
     if let Some(dir) = dance_dir() {
         collect_dance_names(&dir, &mut names);
     }
@@ -405,6 +440,32 @@ mod tests {
         assert_eq!(def.steps[0].action, DanceAction::Jump);
         assert_eq!(def.steps[1].repeat, 3);
         assert_eq!(def.steps[3].repeat, 2);
+    }
+
+    // 内置舞蹈目录的回退链：exe 同目录 → CWD → 编译期源码树。
+    // 曾经只有第三级（CARGO_MANIFEST_DIR，指向构建机源码树），
+    // 发布包用户永远拿不到内置舞蹈；这个测试锁死三级顺序与去重。
+    #[test]
+    fn bundled_dance_dirs_fallback_order() {
+        let dirs = bundled_dance_dirs();
+        assert_eq!(dirs.len(), 3);
+
+        // 前两级是 exe/CWD 相对路径，最后一级是编译期源码树路径
+        let tail = Path::new("config").join("dances");
+        let compile_time = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join(&tail);
+        assert_eq!(dirs.last().unwrap(), &compile_time);
+        assert!(dirs[0].ends_with(&tail));
+        assert_eq!(dirs[1], tail);
+
+        // 编译期路径在源码树里必然存在，且能读到预设
+        assert!(compile_time.exists());
+        assert!(compile_time.join("default.yaml").is_file());
+
+        // 兼容旧接口：返回第一个存在的候选
+        assert_eq!(bundled_dance_dir(), compile_time);
     }
 
     #[test]
