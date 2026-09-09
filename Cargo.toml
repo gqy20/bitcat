@@ -2,8 +2,38 @@
 members = ["core", "app", "xtask"]
 resolver = "2"
 
+# 开发 profile：只保留行号表，不生成完整调试信息。
+#
+# Rust 的 debug 信息在 MSVC 上落成 PDB，通常占 target\debug 的 40~60%，
+# 是 Windows 开发机磁盘被吃满的主因之一。line-tables-only 仍然能给出
+# panic backtrace 和崩溃栈的函数/行号，只是不能用调试器看局部变量。
+# 需要完整调试信息时改回 `debug = "full"` 即可。
+[profile.dev]
+debug = "line-tables-only"
+
 [profile.release]
 opt-level = "z"
 lto = true
 codegen-units = 1
 strip = true
+
+# 开发验收用的快速构建 profile（.github/workflows/dev-build.yml 用它出 portable zip）。
+#
+# 为什么单独一个 profile：`release` 是 opt-level=z + LTO + codegen-units=1，体积最优
+# 但编译最慢（单轮 CI 15-30 分钟），不适合“改一批代码 → 拿个 exe 到 Windows 上验收”
+# 的日常循环。`dist` 关掉 LTO、放开并行度，构建时间大幅下降；代价是体积变大
+# （约 13MB → 25-35MB）。
+#
+# 正式发布仍走 [profile.release]。两者产物目录不同（target/dist 与 target/release；
+# 指定 --target 时是 target/<triple>/dist），调用 xtask package-portable 时必须显式
+# 传 --release-dir。
+#
+# 注意：自定义 profile 的键是 `inherits`，不是 `inherit`（后者是 .cargo/config.toml
+# 里的写法），写错会让 cargo 报 "missing an inherits directive" 并且整个仓库无法构建。
+[profile.dist]
+inherits = "release"
+opt-level = 2
+lto = false
+codegen-units = 16
+strip = true
+debug = false

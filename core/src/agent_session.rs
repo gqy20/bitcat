@@ -3,10 +3,14 @@
 //! 本模块把外部编码 Agent 的原始事件压缩成稳定的 `AgentSession` 状态，
 //! 让 app 和前端不需要理解 Claude Code hook 的字段细节。它只保存短 preview
 //! 和可排序的状态元数据，避免把大工具输入或完整对话历史写进 UI 状态。
+//!
+//! 路径派生（项目名、文件名 preview）刻意不用 `std::path::Path`：Agent Watch
+//! 会展示远程机器上报的会话，本机可能是 Linux/macOS 而远端是 Windows，
+//! `Path::file_name()` 只认当前平台分隔符，会把 `D:\work\abc` 整串当成文件名。
+//! 因此这里统一按 `\` 和 `/` 双分隔符切分。
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
 
 const DONE_QUIET_AFTER_SEC: u64 = 60;
 
@@ -636,13 +640,24 @@ fn compact_middle(value: &str, max_chars: usize) -> String {
     format!("{start}…{end}")
 }
 
+/// 取路径最后一段，同时识别 Windows（`\`）和 POSIX（`/`）分隔符。
+///
+/// 返回 `None` 表示路径为空或只由分隔符组成，调用方自行决定回退值。
+/// 尾部分隔符会被忽略，因此 `D:\work\abc\` 和 `/home/x/abc/` 都能得到 `abc`。
+fn path_last_segment(path: &str) -> Option<String> {
+    let is_sep = |c: char| c == '\\' || c == '/';
+    let trimmed = path.trim().trim_end_matches(is_sep);
+    trimmed
+        .rsplit(is_sep)
+        .next()
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty())
+        .map(|v| v.to_string())
+}
+
+/// 从工具输入的文件路径里取出文件名，用于 Agent Watch 的短 preview。
 fn basename(path: &str) -> String {
-    Path::new(path)
-        .file_name()
-        .and_then(|v| v.to_str())
-        .filter(|v| !v.trim().is_empty())
-        .unwrap_or(path)
-        .to_string()
+    path_last_segment(path).unwrap_or_else(|| path.to_string())
 }
 
 fn age_label(age_sec: u64) -> String {
@@ -700,22 +715,19 @@ pub fn preview_text(value: impl AsRef<str>, max_chars: usize) -> Option<String> 
     Some(out)
 }
 
+/// 从会话 workspace 路径派生可读项目名，供浮窗和 nudge 文案使用。
 fn workspace_name(path: &str) -> String {
     let trimmed = path.trim();
     if trimmed.is_empty() {
         return "未知项目".to_string();
     }
-    Path::new(trimmed)
-        .file_name()
-        .and_then(|v| v.to_str())
-        .filter(|v| !v.trim().is_empty())
-        .unwrap_or(trimmed)
-        .to_string()
+    path_last_segment(trimmed).unwrap_or_else(|| trimmed.to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     fn event(id: &str, status: AgentStatus, at_ms: u64) -> AgentSessionEvent {
         AgentSessionEvent {
@@ -802,6 +814,43 @@ mod tests {
         assert_eq!(view.status, "done");
         assert_eq!(view.age_sec, 5);
         assert_eq!(view.display.headline, "已完成");
+    }
+
+    // ---- 跨平台路径派生 ----
+    //
+    // Agent Watch 会展示远程机器上报的会话：本机是 Linux/macOS 时，
+    // 远端 Windows 路径必须同样能切出最后一段。这组用例锁死该行为，
+    // 防止改回 `std::path::Path`（只认当前平台分隔符）。
+
+    #[rstest]
+    #[case("D:\\work\\abc", "abc")]
+    #[case("D:\\C\\Desktop\\ai\\bitcat", "bitcat")]
+    #[case("D:\\work\\abc\\", "abc")]
+    #[case("/home/qy113/workspace/bitcat", "bitcat")]
+    #[case("/home/qy113/workspace/bitcat/", "bitcat")]
+    #[case("C:\\repo", "repo")]
+    #[case("relative/path/proj", "proj")]
+    #[case("single", "single")]
+    #[case("  D:\\work\\abc  ", "abc")]
+    fn workspace_name_splits_windows_and_posix_paths(#[case] path: &str, #[case] expected: &str) {
+        assert_eq!(workspace_name(path), expected);
+    }
+
+    #[rstest]
+    #[case("", "未知项目")]
+    #[case("   ", "未知项目")]
+    #[case("/", "/")]
+    #[case("\\", "\\")]
+    fn workspace_name_falls_back_on_degenerate_paths(#[case] path: &str, #[case] expected: &str) {
+        assert_eq!(workspace_name(path), expected);
+    }
+
+    #[rstest]
+    #[case("D:\\work\\abc\\src\\main.rs", "main.rs")]
+    #[case("/home/x/bitcat/core/src/tools.rs", "tools.rs")]
+    #[case("main.rs", "main.rs")]
+    fn basename_takes_last_segment_on_any_platform(#[case] path: &str, #[case] expected: &str) {
+        assert_eq!(basename(path), expected);
     }
 
     #[test]

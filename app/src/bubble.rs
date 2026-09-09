@@ -27,6 +27,8 @@ use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowExW, PostMessageW, WM_MOUSEWHEEL};
 
+// 子类化只用于 Windows 上的滚轮转发；非 Windows 编译时保留定义不报警。
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 const BUBBLE_SUBCLASS_ID: usize = 100;
 
 const BUBBLE_W: f64 = 300.0;

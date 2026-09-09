@@ -7,6 +7,7 @@
 //!
 //! 工具不内置权限分级，由 `agent.rs` 在注册时决定哪些工具暴露给 AI。
 //! 执行器均为纯函数（async 用 `tokio::process`），方便独立测试。
+//! shell 执行按平台选择 shell（Windows 用 powershell，其他平台用 `$SHELL`），
 //! 与 `agent.rs`（注册工具到 rig Agent）和 `bridge.rs`（解析工具调用）交互。
 
 use crate::action::launch_program;
@@ -191,6 +192,27 @@ impl ToolResult {
 
 // ---- Tool 执行逻辑（纯函数，方便测试） ----
 
+/// 返回当前平台执行单条命令所用的 shell 程序与参数开关。
+///
+/// Windows 用 `powershell -Command`（与 `execute_launch` 的默认终端一致）；
+/// 其他平台用 `$SHELL -c`，未设置时回退 `/bin/sh -c`。这样 shell 工具在
+/// Linux/macOS 开发机上也能真实执行，测试不必按平台跳过。
+fn shell_invocation() -> (String, String) {
+    #[cfg(target_os = "windows")]
+    {
+        ("powershell".into(), "-Command".into())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let program = std::env::var("SHELL")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| "/bin/sh".into());
+        (program, "-c".into())
+    }
+}
+
 /// 启动程序
 pub fn execute_launch(args: &LaunchArgs) -> ToolResult {
     let terminal_name = std::env::var("TERMINAL").unwrap_or_else(|_| "powershell".into());
@@ -210,15 +232,17 @@ pub fn execute_launch(args: &LaunchArgs) -> ToolResult {
 /// 执行 shell 命令（async，带超时和输出截断）
 pub async fn execute_shell(args: &ShellArgs) -> Result<ToolResult, ToolError> {
     let command_preview = log_preview(&args.command, 120);
+    let (program, flag) = shell_invocation();
     debug!(
         command_chars = args.command.chars().count(),
         command_preview = %command_preview,
+        shell = %program,
         "AI executes shell command"
     );
     let result = tokio::time::timeout(
         Duration::from_secs(SHELL_TIMEOUT_SECS),
-        tokio::process::Command::new("powershell")
-            .args(["-Command", &args.command])
+        tokio::process::Command::new(&program)
+            .args([&flag, &args.command])
             .output(),
     )
     .await;
@@ -243,7 +267,7 @@ pub async fn execute_shell(args: &ShellArgs) -> Result<ToolResult, ToolError> {
                 Ok(ToolResult::err(err_msg))
             }
         }
-        Ok(Err(e)) => Ok(ToolResult::err(format!("执行错误: {e}"))),
+        Ok(Err(e)) => Ok(ToolResult::err(format!("执行错误 ({program}): {e}"))),
         Err(_) => Err(ToolError::Timeout),
     }
 }
@@ -782,6 +806,23 @@ mod tests {
         let result = execute_shell(&args).await.unwrap();
         assert!(result.success);
         assert!(result.output.contains("hello_world") || !result.output.is_empty());
+    }
+
+    /// 锁死 shell 执行的平台契约：Windows 走 powershell -Command，
+    /// 其他平台走 `$SHELL -c`（回退 /bin/sh -c）。
+    #[test]
+    fn test_shell_invocation_matches_platform() {
+        let (program, flag) = shell_invocation();
+        assert!(!program.trim().is_empty(), "shell 程序名不应为空");
+        #[cfg(target_os = "windows")]
+        {
+            assert_eq!(program, "powershell");
+            assert_eq!(flag, "-Command");
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert_eq!(flag, "-c");
+        }
     }
 
     #[tokio::test]

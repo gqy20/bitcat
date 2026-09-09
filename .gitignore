@@ -35,6 +35,8 @@ pnpm-debug.log*
 .pnpm-store/
 app/frontend/.pnpm-store/
 !app/frontend/pnpm-lock.yaml
+# tauri-build 在非 Windows 开发机上生成的平台 schema（仓库只跟 Windows/desktop 两份）
+app/gen/schemas/linux-schema.json
 
 # Env / Secrets
 .env

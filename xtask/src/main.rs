@@ -1,3 +1,9 @@
+//! 仓库维护工具：配置复制、前端 dist 准备、测试入口、portable zip 打包。
+//!
+//! 把发布与构建流程集中在 Rust 里，避免同一逻辑在 PowerShell / bash / Makefile
+//! 里各写一份，保证 Windows、Linux 开发机和 CI 上行为一致。由 Makefile 和
+//! `.github/workflows/release.yml` 调用。
+
 use std::{
     env,
     fs::{self, File},
@@ -195,21 +201,70 @@ fn collect_dir_stats(dir: &Path, file_count: &mut usize, total_bytes: &mut u64) 
     Ok(())
 }
 
+/// 运行测试：优先 cargo-nextest，未安装时回退到 `cargo test`。
+///
+/// nextest 不属于 Rust 工具链，新机器（尤其是非 Windows 开发机）常常没装。
+/// Makefile 声称“nextest → 回退 cargo test”，这里把该承诺落实，避免
+/// `make test-core` 在没装 nextest 的环境上直接失败。
 fn run_nextest<const N: usize>(args: [&str; N], env_var: Option<(&str, &str)>) -> Result<()> {
     copy_config_cmd(PathBuf::from("core"))?;
 
+    let use_nextest = nextest_available();
+    let has_filter = args.iter().any(|arg| arg.starts_with("-E"));
+
     let mut cmd = Command::new("cargo");
-    cmd.args(["nextest", "run"]);
-    cmd.args(args);
+    if use_nextest {
+        cmd.args(["nextest", "run"]);
+        cmd.args(args);
+    } else {
+        let mut note =
+            String::from("xtask: 未检测到 cargo-nextest，回退到 `cargo test`（安装：cargo install cargo-nextest --locked）");
+        if has_filter {
+            note.push_str("\nxtask: `cargo test` 不支持 nextest 的 -E 过滤表达式，已丢弃该参数；proptest 用例数仍由 PROPTEST_CASES 控制");
+        }
+        println!("{note}");
+        cmd.arg("test");
+        let mut skip_next = false;
+        for arg in args {
+            if skip_next {
+                skip_next = false;
+                continue;
+            }
+            if arg == "-E" {
+                skip_next = true;
+                continue;
+            }
+            if arg.starts_with("-E") {
+                continue;
+            }
+            cmd.arg(arg);
+        }
+    }
     if let Some((key, value)) = env_var {
         cmd.env(key, value);
     }
 
+    let runner = if use_nextest {
+        "cargo nextest"
+    } else {
+        "cargo test"
+    };
     let status = cmd.status()?;
     if !status.success() {
-        return Err(format!("cargo nextest failed with status: {status}").into());
+        return Err(format!("{runner} failed with status: {status}").into());
     }
     Ok(())
+}
+
+/// 探测 cargo-nextest 是否可用（一次轻量级子进程调用）。
+fn nextest_available() -> bool {
+    Command::new("cargo")
+        .args(["nextest", "--version"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }
 
 fn parse_package_args(args: Vec<String>) -> Result<PackageOptions> {

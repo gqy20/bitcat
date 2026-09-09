@@ -33,6 +33,9 @@ pub struct MusicDanceFrame {
 }
 
 const FAKE_FRAME_MS: u64 = 100;
+// WASAPI 采集与下方 analyze_samples 只在 Windows 路径上被调用；
+// 保留定义以便非 Windows 下也能编译和跑单测，故在这里放行 dead_code。
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 const WASAPI_POLL_MS: u64 = 80;
 
 #[tauri::command]
@@ -201,12 +204,14 @@ fn spawn_wasapi_music_loop(app: AppHandle, session_id: u64, stop: Arc<AtomicBool
 }
 
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 struct EnergyStats {
     energy: f32,
     bass: f32,
     silence: bool,
 }
 
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 fn analyze_samples(samples: &[f32], channels: usize) -> EnergyStats {
     if samples.is_empty() || channels == 0 {
         return EnergyStats {

@@ -780,13 +780,17 @@ fn schedule_label(schedule: &ReminderSchedule) -> String {
     }
 }
 
+// 进程 CPU 时间采样依赖 Windows 的 GetProcessTimes；非 Windows 下
+// 保留定义以便统一编译，仅放行 dead_code。
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 struct ResourceSample {
     at: Instant,
     process_kernel_100ns: u64,
     process_user_100ns: u64,
 }
 
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 fn resource_sample_slot() -> &'static Mutex<Option<ResourceSample>> {
     static SLOT: OnceLock<Mutex<Option<ResourceSample>>> = OnceLock::new();
     SLOT.get_or_init(|| Mutex::new(None))

@@ -3,6 +3,11 @@
 //! 将按键名解析为 Windows Virtual Key Code，通过 SendInput API 模拟按键组合、
 //! 单键按下/释放、鼠标滚轮和窗口前置。供 hotkey.rs（动作热键）、panel.rs（导航）
 //! 和 bridge.rs（AI 工具调用）等模块共用。
+//!
+//! 平台约定：按键名解析（`parse_keys` / `parse_key`）是纯逻辑，跨平台可用；
+//! 实际输入模拟（`send_hotkey` / `key_down` / `key_up` / `send_scroll` /
+//! `send_scroll_h` / `force_foreground`）只在 Windows 上生效，其他平台提供
+//! 签名一致的 stub 并返回 Err，使 app 层无需到处写 cfg 即可全 workspace 编译。
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -174,6 +179,44 @@ pub fn key_up(vk: u16) -> Result<(), String> {
         return Err("key_up failed".into());
     }
     Ok(())
+}
+
+// ── 非 Windows 平台的输入模拟 stub ──
+//
+// SendInput 是 Windows 独有 API，但 app 层（gamepad.rs 的十字键滚动、
+// alt-tab 按住态、输入法语音热键）会无条件调用这些函数。为了让整个
+// workspace 在非 Windows 上也能通过 `cargo check`（含 rust-analyzer 索引
+// 和 CI 跨平台护栏），这里提供签名一致的空实现，统一返回 Err 说明原因。
+// 所有调用点都用 `let _ = ...` 忽略结果，因此不会改变 Windows 行为。
+
+/// 通过系统输入 API 模拟按键组合（非 Windows 平台不支持）
+#[cfg(not(target_os = "windows"))]
+pub fn send_hotkey(_vk_codes: &[u16], _hold: f64) -> Result<(), String> {
+    Err("send_hotkey 仅支持 Windows".into())
+}
+
+/// 按下单个按键（非 Windows 平台不支持）
+#[cfg(not(target_os = "windows"))]
+pub fn key_down(_vk: u16) -> Result<(), String> {
+    Err("key_down 仅支持 Windows".into())
+}
+
+/// 释放单个按键（非 Windows 平台不支持）
+#[cfg(not(target_os = "windows"))]
+pub fn key_up(_vk: u16) -> Result<(), String> {
+    Err("key_up 仅支持 Windows".into())
+}
+
+/// 模拟鼠标滚轮滚动（非 Windows 平台不支持）
+#[cfg(not(target_os = "windows"))]
+pub fn send_scroll(_delta: i32) -> Result<(), String> {
+    Err("send_scroll 仅支持 Windows".into())
+}
+
+/// 模拟鼠标水平滚轮滚动（非 Windows 平台不支持）
+#[cfg(not(target_os = "windows"))]
+pub fn send_scroll_h(_delta: i32) -> Result<(), String> {
+    Err("send_scroll_h 仅支持 Windows".into())
 }
 
 /// 按键名解析为 VK code
@@ -391,7 +434,16 @@ mod tests {
     #[test]
     fn test_trigger_hotkey_empty() {
         let result = trigger_hotkey(&[], 0.05);
-        assert!(result.is_ok());
+        // 空按键列表绝不能被当成“未知按键”错误：这是跨平台不变量。
+        if let Err(e) = &result {
+            assert!(!e.contains("未知按键"), "空列表不应报未知按键错误: {e}");
+        }
+        // Windows：空列表在 send_hotkey 里短路，直接 Ok。
+        // 其他平台：输入模拟本身不支持，返回说明原因的 Err。
+        #[cfg(target_os = "windows")]
+        assert!(result.is_ok(), "Windows 上空热键应成功: {result:?}");
+        #[cfg(not(target_os = "windows"))]
+        assert!(result.is_err(), "非 Windows 应明确报告不支持: {result:?}");
     }
 
     #[test]
