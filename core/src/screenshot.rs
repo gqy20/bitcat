@@ -222,7 +222,9 @@ pub fn resize_bgra(
         (max_width, (h as f64 * scale).round() as u32)
     };
     let mut rgba = Vec::with_capacity((w * h * 4) as usize);
-    for chunk in bgra[..expected].chunks_exact(4) {
+    // expected = w*h*4 恒为 4 的倍数，余数必为空；用 as_chunks 而不是
+    // chunks_exact(4) 让编译器静态知道块长（clippy::chunks_exact_to_as_chunks）。
+    for chunk in bgra[..expected].as_chunks::<4>().0 {
         rgba.push(chunk[2]);
         rgba.push(chunk[1]);
         rgba.push(chunk[0]);

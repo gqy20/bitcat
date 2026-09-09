@@ -971,15 +971,10 @@ pub async fn cmd_settings_save_ai(payload: AiOverride) -> Result<(), String> {
     }
     let mut s = AppSettings::load();
     s.ai = AiOverride {
-        api_key: payload
-            .api_key
-            .and_then(|k| if k.trim().is_empty() { None } else { Some(k) }),
-        base_url: payload
-            .base_url
-            .and_then(|v| if v.trim().is_empty() { None } else { Some(v) }),
-        model: payload
-            .model
-            .and_then(|v| if v.trim().is_empty() { None } else { Some(v) }),
+        // 空字符串视为“未设置”，统一用 Option::filter（clippy::manual_filter）
+        api_key: payload.api_key.filter(|k| !k.trim().is_empty()),
+        base_url: payload.base_url.filter(|v| !v.trim().is_empty()),
+        model: payload.model.filter(|v| !v.trim().is_empty()),
         max_tokens: payload.max_tokens,
     };
     s.save()?;

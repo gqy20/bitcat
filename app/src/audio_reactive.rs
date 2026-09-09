@@ -462,13 +462,15 @@ fn decode_samples(bytes: &[u8], format: SampleFormat, _bits: u16, channels: usiz
     let mut out = Vec::with_capacity(bytes.len() / 2);
     match format {
         SampleFormat::F32 => {
-            for chunk in bytes.chunks_exact(4) {
-                out.push(f32::from_ne_bytes(chunk.try_into().unwrap()).clamp(-1.0, 1.0));
+            // as_chunks::<N> 静态给出 &[u8; N]，不用再 try_into().unwrap()；
+            // 不足一块的尾巴被丢弃，与原 chunks_exact 行为一致。
+            for chunk in bytes.as_chunks::<4>().0 {
+                out.push(f32::from_ne_bytes(*chunk).clamp(-1.0, 1.0));
             }
         }
         SampleFormat::I16 => {
-            for chunk in bytes.chunks_exact(2) {
-                out.push(i16::from_ne_bytes(chunk.try_into().unwrap()) as f32 / i16::MAX as f32);
+            for chunk in bytes.as_chunks::<2>().0 {
+                out.push(i16::from_ne_bytes(*chunk) as f32 / i16::MAX as f32);
             }
         }
         SampleFormat::U8 => {
@@ -477,8 +479,8 @@ fn decode_samples(bytes: &[u8], format: SampleFormat, _bits: u16, channels: usiz
             }
         }
         SampleFormat::I32 => {
-            for chunk in bytes.chunks_exact(4) {
-                out.push(i32::from_ne_bytes(chunk.try_into().unwrap()) as f32 / i32::MAX as f32);
+            for chunk in bytes.as_chunks::<4>().0 {
+                out.push(i32::from_ne_bytes(*chunk) as f32 / i32::MAX as f32);
             }
         }
     }
