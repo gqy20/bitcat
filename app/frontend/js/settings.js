@@ -40,7 +40,8 @@ const ACTION_TYPE_LABELS = {
 
 let SNAPSHOT = null;
 const dirty = { ai: false, user: false, actions: false, prompts: false, appearance: false, permissions: false, agent_watch: false };
-let currentTab = "overview";
+let currentTab = "home";
+let currentExpertPage = "prompts";
 let selectedUsageModel = "__all";
 let agentWatchCopyBound = false;
 let agentWatchTimer = null;
@@ -285,33 +286,97 @@ function confirmDialogOpen() {
 
 function $(id) { return document.getElementById(id); }
 
+// ─── 4+1 分区导航 ───
+// 用户分区按四个疑问组织；专家模式内部再分五个子页。
+// dirty / reset 的 category 仍是后端的保存类别（ai/user/actions/...），与分区导航解耦。
+
+// category → 用户分区导航项
+const DIRTY_NAV_TAB = {
+  ai: "cost",
+  user: "memory",
+  appearance: "companion",
+  permissions: "home",
+  actions: "expert",
+  prompts: "expert",
+  agent_watch: "expert",
+};
+
+// category → 专家模式子页
+const DIRTY_EXPERT_PAGE = {
+  prompts: "prompts",
+  actions: "actions",
+  agent_watch: "agent-watch",
+};
+
 function markDirty(tab) {
   dirty[tab] = true;
-  const nav = document.querySelector(`.nav-item[data-tab="${tab === "user" ? "memory" : tab === "agent_watch" ? "agent-watch" : tab}"]`);
+  const navTab = DIRTY_NAV_TAB[tab] || tab;
+  const nav = document.querySelector(`.nav-item[data-tab="${navTab}"]`);
   if (nav) nav.classList.add("dirty");
+  const expertPage = DIRTY_EXPERT_PAGE[tab];
+  if (expertPage) {
+    const sub = document.querySelector(`.expert-subnav-item[data-expert="${expertPage}"]`);
+    if (sub) sub.classList.add("dirty");
+  }
 }
 
 function clearDirty(tab) {
   dirty[tab] = false;
-  const nav = document.querySelector(`.nav-item[data-tab="${tab === "user" ? "memory" : tab === "agent_watch" ? "agent-watch" : tab}"]`);
+  const navTab = DIRTY_NAV_TAB[tab] || tab;
+  const nav = document.querySelector(`.nav-item[data-tab="${navTab}"]`);
   if (nav) nav.classList.remove("dirty");
+  const expertPage = DIRTY_EXPERT_PAGE[tab];
+  if (expertPage) {
+    const sub = document.querySelector(`.expert-subnav-item[data-expert="${expertPage}"]`);
+    if (sub) sub.classList.remove("dirty");
+  }
 }
 
 function anyDirty() { return Object.values(dirty).some(Boolean); }
 
 function switchTab(name) {
   currentTab = name;
-  document.querySelectorAll(".nav-item").forEach(b => {
+  document.querySelectorAll(".nav > .nav-item").forEach(b => {
     b.classList.toggle("active", b.dataset.tab === name);
   });
-  document.querySelectorAll(".tab").forEach(s => {
+  document.querySelectorAll(".pane > .tab").forEach(s => {
     s.classList.toggle("hidden", s.dataset.pane !== name);
   });
-  if (name === "usage") loadUsageDiagnostics();
-  if (name === "memory") loadMemoryReview();
-  if (name === "reminders") loadReminders();
-  if (name === "agent-watch") startAgentWatchRefresh();
-  else stopAgentWatchRefresh();
+  if (name === "home") {
+    loadUsageDiagnostics();
+    loadMemoryReview();
+    loadReminders();
+  } else if (name === "memory") {
+    loadMemoryReview();
+  } else if (name === "cost") {
+    loadTokenStats();
+  } else if (name === "companion") {
+    loadReminders();
+    loadPointsState();
+  } else if (name === "expert") {
+    switchExpertPage(currentExpertPage);
+    return;
+  }
+  stopAgentWatchRefresh();
+}
+
+function switchExpertPage(name) {
+  currentExpertPage = name;
+  document.querySelectorAll(".expert-subnav-item").forEach(b => {
+    b.classList.toggle("active", b.dataset.expert === name);
+  });
+  document.querySelectorAll(".expert-page").forEach(s => {
+    s.classList.toggle("hidden", s.dataset.expertPane !== name);
+  });
+  if (name === "agent-watch") {
+    startAgentWatchRefresh();
+  } else {
+    stopAgentWatchRefresh();
+  }
+  if (name === "diagnostics") {
+    loadPetEventLog();
+    loadResourceUsage();
+  }
 }
 
 function renderAi(ai) {
@@ -712,6 +777,64 @@ function renderPermissions(p = {}) {
     updatePermissionGateSummary();
     toast("首次说明已完成，保存后生效", "ok");
   };
+
+  updateHomePermissionCards();
+}
+
+// 首页“它能做什么”分区的状态行：把分散的权限开关压缩成人话结论。
+function updateHomePermissionCards() {
+  const screenshotOn = $("perm-screenshot")?.checked;
+  const qs = $("qs-screenshot");
+  if (qs) qs.textContent = screenshotOn ? "开启" : "关闭";
+  const interval = Number(SNAPSHOT?.appearance?.screenshot_interval_sec ?? 30);
+  const hint = $("ss-interval-hint");
+  if (hint) hint.textContent = screenshotOn ? `每 ${formatNumber(interval)} 秒一次` : "看不到你的屏幕";
+
+  const toolIds = ["perm-shell", "perm-read-file", "perm-clipboard", "perm-foreground", "perm-launch", "perm-hotkey"];
+  const enabledCount = toolIds.filter(id => $(id)?.checked).length;
+  const summary = $("perm-tools-summary");
+  if (summary) {
+    if (!enabledCount) summary.textContent = "动手能力全部关闭";
+    else if (enabledCount === toolIds.length) summary.textContent = "6 类操作已全部允许，危险命令仍会拦截";
+    else summary.textContent = `已允许 ${enabledCount} 类操作，危险命令仍会拦截`;
+  }
+
+  const master = $("camera-master");
+  if (master) master.checked = !!($("perm-camera")?.checked) && !!($("a-camera-enabled")?.checked);
+}
+
+// 首页摄像头开关是一个用户能力，底层同步权限层和功能层两个设置。
+function bindCameraMaster() {
+  const master = $("camera-master");
+  if (!master) return;
+  master.onchange = () => {
+    const on = master.checked;
+    if ($("perm-camera")) $("perm-camera").checked = on;
+    if ($("a-camera-enabled")) $("a-camera-enabled").checked = on;
+    markDirty("permissions");
+    markDirty("appearance");
+    updatePermissionGateSummary();
+    updateHomePermissionCards();
+  };
+}
+
+async function revokeAllPermissions() {
+  if (!await confirmDialog({
+    title: "全部收权",
+    message: "会关掉屏幕观察、摄像头观察和所有动手能力，只保留聊天和陪伴。保存后生效。",
+    okText: "全部收权",
+  })) return;
+  ["perm-screenshot", "perm-camera", "a-camera-enabled",
+   "perm-shell", "perm-read-file", "perm-clipboard",
+   "perm-foreground", "perm-launch", "perm-hotkey",
+   "perm-agent-remote"].forEach(id => {
+    if ($(id)) $(id).checked = false;
+  });
+  markDirty("permissions");
+  markDirty("appearance");
+  updatePermissionGateSummary();
+  updateHomePermissionCards();
+  toast("已全部收权，点击保存后生效", "ok");
 }
 
 function updatePermissionGateSummary() {
@@ -1080,7 +1203,7 @@ function startAgentWatchRefresh() {
   loadAgentSessions();
   if (agentWatchTimer) return;
   agentWatchTimer = setInterval(() => {
-    if (currentTab === "agent-watch") loadAgentSessions();
+    if (currentTab === "expert" && currentExpertPage === "agent-watch") loadAgentSessions();
   }, 2000);
 }
 
@@ -1574,18 +1697,40 @@ async function saveAll() {
   }
 }
 
+// 每个分区恰好对应一个可重置的保存类别；专家模式按当前子页决定。
+const SECTION_RESET_CATEGORY = {
+  home: "permissions",
+  memory: "user",
+  cost: "ai",
+  companion: "appearance",
+};
+const EXPERT_RESET_CATEGORY = {
+  prompts: "prompts",
+  "agent-watch": "agent_watch",
+  actions: "actions",
+  permissions: "permissions",
+  diagnostics: "appearance",
+};
+
 async function resetCurrent() {
-  if (["overview", "about", "usage", "memory", "reminders"].includes(currentTab)) return;
+  let category = null;
+  if (currentTab === "expert") {
+    category = EXPERT_RESET_CATEGORY[currentExpertPage];
+  } else {
+    category = SECTION_RESET_CATEGORY[currentTab];
+  }
+  if (!category) return;
+  const label = currentTab === "expert" ? `专家模式 · ${tabLabel(currentExpertPage)}` : tabLabel(currentTab);
   if (!await confirmDialog({
     title: "恢复默认",
-    message: `将「${tabLabel(currentTab)}」恢复到默认配置。`,
+    message: `将「${label}」恢复到默认配置。`,
     okText: "恢复",
   })) return;
   try {
-    await invoke("cmd_settings_reset", { category: currentTab });
+    await invoke("cmd_settings_reset", { category });
     toast("已重置", "ok");
     await loadSnapshot();
-    clearDirty(currentTab);
+    clearDirty(category);
   } catch (e) {
     toast("重置失败：" + String(e), "err");
   }
@@ -1593,17 +1738,20 @@ async function resetCurrent() {
 
 function tabLabel(t) {
   return ({
-    ai: "对话方式",
-    user: "记得什么",
-    actions: "互动方式",
+    home: "它能做什么",
+    memory: "它记住了我什么",
+    cost: "它花了多少钱",
+    companion: "它怎么陪着我",
+    expert: "专家模式",
     prompts: "提示词",
-    appearance: "猫猫表现",
-    permissions: "发布与权限",
-    "agent-watch": "陪你盯任务",
-    agent_watch: "陪你盯任务",
-    reminders: "不会忘的事",
-    usage: "运行记录",
-    about: "关于",
+    actions: "按键与动作",
+    permissions: "权限明细",
+    diagnostics: "诊断与日志",
+    "agent-watch": "编程助手看管",
+    agent_watch: "编程助手看管",
+    ai: "连接",
+    user: "你告诉它的",
+    appearance: "它的表现",
   })[t] || t;
 }
 
@@ -1622,7 +1770,7 @@ async function loadSnapshot() {
     loadMemoryReview();
     loadReminders();
     if (!SNAPSHOT.permissions?.onboarding_completed) {
-      switchTab("permissions");
+      switchTab("home");
     }
     ["ai", "user", "actions", "prompts", "appearance", "permissions", "agent_watch"].forEach(clearDirty);
   } catch (e) {
@@ -1686,6 +1834,25 @@ function bindGlobal() {
   document.querySelectorAll(".nav-item").forEach(btn => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
+  document.querySelectorAll(".expert-subnav-item").forEach(btn => {
+    btn.addEventListener("click", () => switchExpertPage(btn.dataset.expert));
+  });
+  document.querySelectorAll("[data-goto]").forEach(el => {
+    const go = () => switchTab(el.dataset.goto);
+    el.addEventListener("click", go);
+    el.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        go();
+      }
+    });
+  });
+  $("perm-tools-jump").addEventListener("click", () => {
+    switchTab("expert");
+    switchExpertPage("permissions");
+  });
+  $("revoke-all").addEventListener("click", revokeAllPermissions);
+  bindCameraMaster();
   $("btn-close").addEventListener("click", tryClose);
   $("btn-cancel").addEventListener("click", async () => {
     await loadSnapshot();
@@ -1708,7 +1875,7 @@ function bindGlobal() {
   $("aw-install").addEventListener("click", async () => {
     try {
       const msg = await invoke("cmd_install_claude_code_hooks");
-      toast(msg || "Hook 已检查并修复", "ok");
+      toast(msg || "Claude 连接已检查并修复", "ok");
     } catch (e) {
       toast("修复失败：" + String(e), "err");
     }
@@ -1716,7 +1883,7 @@ function bindGlobal() {
   $("aw-install-codex").addEventListener("click", async () => {
     try {
       const msg = await invoke("cmd_install_codex_hooks");
-      toast(msg || "Codex Hook 已检查并修复", "ok");
+      toast(msg || "Codex 连接已检查并修复", "ok");
     } catch (e) {
       toast("Codex 修复失败：" + String(e), "err");
     }
@@ -1724,10 +1891,10 @@ function bindGlobal() {
   const eventApi = window.__TAURI__?.event;
   if (eventApi?.listen) {
     eventApi.listen("agent-session-update", (event) => {
-      if (currentTab === "agent-watch") renderAgentSessions(event.payload);
+      if (currentTab === "expert" && currentExpertPage === "agent-watch") renderAgentSessions(event.payload);
     });
     eventApi.listen("reminders-updated", () => {
-      if (currentTab === "reminders") loadReminders();
+      if (currentTab === "companion" || currentTab === "home") loadReminders();
     });
   }
   bindAgentWatchCopyActions();
@@ -1837,12 +2004,16 @@ function formatDateTime(value) {
 }
 
 function updateOverviewAppearance(appearance) {
-  $("ov-screenshot").textContent = `${formatNumber(appearance?.screenshot_interval_sec ?? 30)} 秒`;
+  const hint = $("ss-interval-hint");
+  const screenshotOn = $("perm-screenshot")?.checked;
+  const interval = Number(appearance?.screenshot_interval_sec ?? 30);
+  if (hint) hint.textContent = screenshotOn ? `每 ${formatNumber(interval)} 秒一次` : "看不到你的屏幕";
+  updateHomePermissionCards();
 }
 
 function updateOverviewMemory(review) {
   $("ov-memory-total").textContent = formatNumber(review?.total_entries || 0);
-  $("ov-memory-time").textContent = review?.generated_at ? "" : "等待";
+  $("ov-memory-time").textContent = review?.generated_at ? "件事" : "等待";
 }
 
 function formatPetDecision(value) {

@@ -3162,3 +3162,169 @@ input[type="checkbox"]:checked::after {
   background: rgba(var(--accent-amber-rgb), 0.78);
   transform: none;
 }
+
+/* ─── F1 4+1 分区重组：导航分隔、速答卡、专家模式 ─── */
+
+.nav-sep {
+  height: 1px;
+  margin: 10px 14px;
+  background: var(--line-subtle);
+}
+
+/* 可点击的速答卡：键盘可达，视觉上与普通状态卡一致 */
+.answer-grid .status-card[data-goto] {
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.answer-grid .status-card[data-goto]:hover,
+.answer-grid .status-card[data-goto]:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(31, 45, 61, 0.12);
+  outline: none;
+  border-color: rgba(var(--accent-blue-rgb), 0.4);
+}
+
+/* 分组卡内嵌设置卡：去掉独立卡片边框，跟随 section-panel 的分组容器 */
+.section-panel .settings-card.embedded {
+  margin: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  border-top: 1px solid var(--line-subtle);
+  border-radius: 0;
+}
+
+.section-panel .settings-card.embedded .setting-row:first-child {
+  border-top: 0;
+}
+
+/* “它能动手做什么”状态行：一行结论替代 N 个开关 */
+.perm-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--line-subtle);
+}
+
+.perm-summary-row > div {
+  display: grid;
+  gap: 4px;
+}
+
+.perm-summary-row strong {
+  font-size: var(--text-md);
+  color: var(--text-main);
+}
+
+.perm-summary-row span {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+/* 一键收权：安心动作，放在分组底部 */
+.revoke-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--line-subtle);
+}
+
+.revoke-bar > span {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: 1.45;
+  flex: 1;
+}
+
+/* 首次说明 callout 带主按钮 */
+.permission-callout {
+  align-items: start;
+}
+
+.permission-callout .btn {
+  justify-self: start;
+  margin-top: 4px;
+}
+
+/* 专家模式二级导航 */
+.expert-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.expert-subnav-item {
+  appearance: none;
+  border: 1px solid var(--line-subtle);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  padding: 6px 14px;
+  cursor: pointer;
+  position: relative;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.expert-subnav-item:hover {
+  color: var(--text-main);
+  border-color: rgba(var(--accent-blue-rgb), 0.4);
+}
+
+.expert-subnav-item.active {
+  color: var(--text-main);
+  border-color: rgba(var(--accent-blue-rgb), 0.55);
+  background: rgba(var(--accent-blue-rgb), 0.12);
+}
+
+.expert-subnav-item.dirty::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--warn, #e0a13a);
+  vertical-align: middle;
+}
+
+/* 专家子页头部与提示 */
+.expert-page > .hint {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.expert-page .pane-head {
+  margin-bottom: 14px;
+}
+
+.expert-page .pane-head h1 {
+  font-size: var(--text-lg, 18px);
+}
+
+/* ② 你告诉它的：折叠画像 */
+.profile-details {
+  margin-bottom: 18px;
+}
+
+.profile-details .settings-card.embedded {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--line-subtle);
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: transparent;
+  box-shadow: none;
+}
+
+/* ③ 连接卡内 API Key 输入组 */
+.section-panel .input-with-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
