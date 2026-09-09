@@ -6,6 +6,16 @@ import { resolve } from 'node:path';
 
 const bubbleScript = readFileSync(resolve(process.cwd(), 'js/bubble.js'), 'utf8');
 
+// 从 CSS 文本里取出指定选择器的规则块，用于做“结构契约”断言。
+// 相比 toContain('min-height: 44px') 这种钉死具体数值的写法，
+// 取块后再判断属性能避免每次调参都把测试改红。
+function readCssBlock(sheet, selector) {
+  const start = sheet.indexOf(`${selector} {`);
+  if (start < 0) return '';
+  const end = sheet.indexOf('}', start);
+  return sheet.slice(start, end < 0 ? sheet.length : end + 1);
+}
+
 function createBubbleDOM() {
   document.body.innerHTML = `
     <body class="hidden">
@@ -717,17 +727,45 @@ describe('agent toast copy', () => {
     const sheet = readFileSync(resolve(process.cwd(), 'css/bubble.css'), 'utf8');
     const script = bubbleScript;
 
-    expect(script).toContain('resizeBubbleWindow(300, 64, true)');
+    // agent toast 必须收窄成单行 notice 尺寸：用 NOTICE_W 而不是常规宽度，
+    // 高度低于 MIN_H（常规气泡的最小高度）。这里不钉死具体数字，
+    // 只锁“必须比常规气泡矮”这个语义，避免每次调参都要改测试。
+    const toastResize = script.match(/resizeBubbleWindow\(NOTICE_W,\s*(\d+),\s*true\)/);
+    expect(toastResize, 'agent toast 应使用 NOTICE_W 收窄尺寸').toBeTruthy();
+    const minHMatch = script.match(/const MIN_H = (\d+);/);
+    expect(minHMatch, '应能从脚本里读出 MIN_H 常量').toBeTruthy();
+    const toastHeight = Number(toastResize[1]);
+    const minHeight = Number(minHMatch[1]);
+    expect(toastHeight).toBeGreaterThan(0);
+    expect(toastHeight).toBeLessThan(minHeight);
+    // 单行文案由 compactAgentToastLine 生成，不能把 title/context/detail 全部展开
+    expect(script).toContain('compactAgentToastLine(payload)');
+    expect(script).toContain('agent-toast-line');
+
     expect(sheet).toContain('body.notice .collapse-btn');
     expect(sheet).toContain('body.notice .bubble-arrow');
     expect(sheet).toContain('body.notice.hidden .bubble');
     expect(sheet).toContain('body.notice.show .bubble');
     expect(sheet).toContain('body.notice:has(.agent-toast.tone-task_done) .bubble');
-    expect(sheet).toContain('grid-template-columns: minmax(0, 1fr);');
     expect(sheet).toContain('@keyframes notice-soft-in');
-    expect(sheet).toContain('min-height: 44px;');
     expect(sheet).toContain('font-size: 13.5px;');
-    expect(sheet).toContain('font-weight: 680;');
+
+    // 布局契约：固定图标列 + 可收缩文本列，高度紧凑（单行）
+    const toastBlock = readCssBlock(sheet, '.agent-toast');
+    expect(toastBlock, '应有 .agent-toast 规则块').not.toBe('');
+    expect(toastBlock).toContain('display: grid');
+    expect(toastBlock).toMatch(/grid-template-columns:\s*\d+px\s+minmax\(0,\s*1fr\)/);
+    const toastMinHeight = Number(/min-height:\s*(\d+)px/.exec(toastBlock)?.[1]);
+    expect(toastMinHeight).toBeGreaterThan(0);
+    expect(toastMinHeight).toBeLessThanOrEqual(64);
+
+    // 单行省略契约：这才是“轻量”的真正保证
+    const lineBlock = readCssBlock(sheet, '.agent-toast-line');
+    expect(lineBlock).toContain('white-space: nowrap');
+    expect(lineBlock).toContain('text-overflow: ellipsis');
+    expect(lineBlock).toContain('overflow: hidden');
+    // grid 子项里省略号生效的前提
+    expect(readCssBlock(sheet, '.agent-toast-copy')).toContain('min-width: 0');
   });
 });
 

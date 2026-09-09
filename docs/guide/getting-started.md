@@ -32,6 +32,47 @@ make build
 
 日常建议通过 Makefile 构建和测试。Windows 下 `make build` 已设置 SDL2 所需的 `CMAKE_POLICY_VERSION_MINIMUM=3.5`。
 
+### 在非 Windows 开发机上开发（Linux / macOS）
+
+`core` 是零 UI 依赖的纯逻辑 crate，`app/frontend` 是纯静态 HTML/JS/CSS，两者都能在非 Windows
+机器上完整开发和测试：
+
+```bash
+cargo test -p bitcat-core          # 469 个测试，约 1.5 秒
+cd app/frontend && npx vitest run  # 187 个测试，约 1.7 秒
+python3 -m http.server 4178        # 静态起前端页，在浏览器里调 UI
+```
+
+不能做的事：`app` crate 依赖 Win32（截图 BitBlt、WASAPI、SendInput、TTS、托盘），
+无法在非 Windows 上链接和运行；`make dist` / UPX / Tauri bundle 同理。
+
+两个环境注意点：
+
+- **Node 版本**：Node ≥ 22 的实验性全局 `localStorage` 会遮蔽 jsdom 实现（实测 Node 22
+  容器里 `sprite-loader.test.js` 同样会红，**不是 Node 26 独有**）。`app/frontend/vitest.setup.js`
+  已做兼容修补，因此本地任意 Node 版本都能跑通；CI 钉 Node 22 只为可复现。
+- **时区**：`settings.test.js` 的提醒时间断言按 `Asia/Shanghai` 编写，在 UTC 环境下会有
+  2 个测试因 8 小时偏移而失败。跑前端测试前设 `TZ=Asia/Shanghai`。
+
+### 不装 Windows 工具链也能拿到 exe
+
+改完代码推到 GitHub，用 `dev-build` workflow 出一个 portable zip（约 5-10 分钟，
+用 `[profile.dist]`：关 LTO、放开并行度，比 `release` 快很多），再下载到 Windows 上验收：
+
+```bash
+# 手动触发一次构建
+gh workflow run dev-build.yml
+
+# 取回最新一次的产物
+gh run download "$(gh run list --workflow=dev-build.yml --limit=1 \
+  --json databaseId --jq '.[0].databaseId')" \
+  -n bitcat-dev-windows-x64 -D ./dist-dev
+```
+
+分工建议：编译正确性靠 push（`ci.yml` 在 windows-latest 上编译并测试整个 workspace，
+同时有 ubuntu 的 core-only 护栏和前端 vitest job）；只有需要真机跑效果时才用
+`dev-build` 取 exe。正式发布仍然走 tag 触发的 `release.yml`。
+
 ## 配置 AI
 
 配置优先级从高到低：

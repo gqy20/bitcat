@@ -1,0 +1,93 @@
+name: Dev Build
+
+# 用途：给"在 Linux 上开发、Windows 上验收"的流程快速出一个可运行的 exe。
+#
+# 与 release.yml 的区别：
+#   - release.yml：打 tag 触发，跑完整测试，用 tauri-action 出 MSI + NSIS + portable，
+#     并创建 GitHub Release。单轮 15-30 分钟，是"发布"动作。
+#   - dev-build.yml（本文件）：手动触发，不跑测试（ci.yml 已在 push 时覆盖），
+#     只出 portable zip，用 [profile.dist]（无 LTO）加速。单轮约 5-10 分钟，是"验收"动作。
+#
+# ⚠ 不要用 release.yml 的 workflow_dispatch 做日常构建：它在分支上触发时
+#   RELEASE_TAG 会取 ref_name（如 "master"），最后的 release job 会创建一个
+#   tag_name=master 的 GitHub Release，污染 Releases 列表并生成同名 git tag。
+#
+# 取回产物（本地无需任何 Windows 工具链）：
+#   gh run list --workflow dev-build.yml --limit 3
+#   gh run download <RUN_ID> -n bitcat-dev-windows-x64 -D ./dist-dev
+# 一条命令取最新一次：
+#   gh run download "$(gh run list --workflow=dev-build.yml --limit=1 \
+#     --json databaseId --jq '.[0].databaseId')" -n bitcat-dev-windows-x64 -D ./dist-dev
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "dev-build/**"
+
+# 开发迭代只关心最新一次构建，旧的同分支构建直接取消
+concurrency:
+  group: dev-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # SDL2 bundled 静态编译需要（VS2026 + 新 CMake 兼容），与 Makefile 保持一致
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+
+jobs:
+  build:
+    name: Portable ZIP (dist profile)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      # dist profile 的产物与 release 分开缓存，避免互相踢掉
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}-cargo-dist
+
+      # core/app 的测试与构建都要从 crate 目录读 config/*.yml
+      - name: Copy config fixtures
+        run: |
+          mkdir core\config
+          copy config\*.yml core\config\
+          mkdir app\config
+          copy config\*.yml app\config\
+
+      - name: Prepare frontend dist
+        run: cargo run -p xtask -- prepare-frontend
+
+      - name: Build (dist profile)
+        run: cargo build --profile dist
+
+      # 产物名带短 sha，方便和 commit 对应；zip 内含 bitcat.exe + config/*.yml
+      - name: Package portable zip
+        shell: pwsh
+        run: |
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          $version = "dev-$sha"
+          cargo run -p xtask -- package-portable `
+            --version $version `
+            --release-dir target/dist `
+            --out-dir dev-out
+          Write-Host "--- dev-out ---"
+          Get-ChildItem dev-out | ForEach-Object {
+            Write-Host ("  {0}  ({1:N1} MB)" -f $_.Name, ($_.Length / 1MB))
+          }
+
+      # artifact 名固定，`gh run download -n bitcat-dev-windows-x64` 才能稳定命中
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bitcat-dev-windows-x64
+          path: dev-out/*.zip
+          if-no-files-found: error
+          retention-days: 7

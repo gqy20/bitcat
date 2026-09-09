@@ -85,3 +85,84 @@ jobs:
           name: junit-report
           path: target/nextest/ci/junit.xml
           if-no-files-found: ignore
+
+  # ───── core 跨平台护栏：只能跑 core，app 层依赖 Win32 ─────
+  #
+  # 为什么需要这个 job：开发主力可以在 Linux/macOS 上（core 纯逻辑 + 前端静态页），
+  # 而 windows-latest 的 job 看不见跨平台回归。已知的典型回归：
+  #   - 路径处理用 std::path 导致非 Windows 主机误解远程 Windows 会话（agent_session）
+  #   - shell 工具硬编码 powershell（tools::execute_shell）
+  #
+  # 注意：不在 Linux 上跑 clippy。app 层大量 `#[cfg(windows)]` 代码在 Linux 下
+  # 会变成 dead_code，`-D warnings` 会产生误报；clippy 由上面的 Windows job 负责。
+  test-linux:
+    name: Test (Linux, core only)
+    runs-on: ubuntu-latest
+    env:
+      # cargo-husky 会在 cargo test 时往 .git/hooks 写脚本，CI 里不需要
+      CARGO_HUSKY_DONT_INSTALL_HOOKS: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: linux-core
+
+      # core 测试从 crate 目录读 config/*.yml fixture
+      - name: Copy fixture configs
+        run: |
+          mkdir -p core/config
+          cp config/*.yml core/config/
+
+      - name: Install nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - name: Run core tests (nextest)
+        run: cargo nextest run --profile ci -p bitcat-core
+
+      - name: Upload JUnit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-report-linux
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+
+  # ───── 前端单测：纯 Node，跑 ubuntu 就够（不占 Windows runner）─────
+  frontend:
+    name: Frontend (Vitest)
+    runs-on: ubuntu-latest
+    env:
+      # settings.test.js 的提醒时间断言按 Asia/Shanghai 写死；ubuntu runner 默认 UTC，
+      # 不设 TZ 会有 2 个测试因为 8 小时偏移而失败。实测：宿主 TZ=Asia/Shanghai 全绿，
+      # TZ=UTC 时 `每天 · 06/02 09:30` 变成 `每天 · 06/02 01:30`。
+      TZ: Asia/Shanghai
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm 必须在 setup-node 之前装好，否则 cache: pnpm 无法解析
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          # 钉 Node 22 只为可复现，不是因为更高版本会红：Node ≥ 22 的实验性全局
+          # localStorage 会遮蔽 jsdom 26.1 的 window.localStorage（实测 Node 22 容器里
+          # 同样复现，不是 Node 26 独有），app/frontend/vitest.setup.js 已做兼容修补。
+          # 若将来删掉 vitest.setup.js，这个 job 会在任意 Node ≥ 22 上失败。
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: app/frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: app/frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        working-directory: app/frontend
+        run: pnpm test
