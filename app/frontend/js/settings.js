@@ -1875,19 +1875,19 @@ function formatPetPayload(payload) {
   if (type === "notify") {
     const kind = formatPetKind(payload.kind);
     const parts = [`通知：${kind}`];
-    if (payload.body) parts.push(shortText(repairMojibake(payload.body), 48));
+    if (payload.body) parts.push(shortText(payload.body, 48));
     if (payload.ttl_ms) parts.push(`${formatDuration(payload.ttl_ms)} 后恢复`);
     if (payload.refresh) parts.push("刷新现有状态");
     return parts.join(" · ");
   }
   if (type === "react") {
     const parts = [`反应：${formatPetMood(payload.mood)}`];
-    if (payload.speech) parts.push(shortText(repairMojibake(payload.speech), 48));
+    if (payload.speech) parts.push(shortText(payload.speech, 48));
     if (payload.ttl_ms) parts.push(`${formatDuration(payload.ttl_ms)} 后恢复`);
     return parts.join(" · ");
   }
   if (type === "set_mode") return `模式：${formatPetMode(payload.mode)}`;
-  if (type === "show_bubble") return `气泡：${shortText(repairMojibake(payload.text || ""), 72)}`;
+  if (type === "show_bubble") return `气泡：${shortText(payload.text || "", 72)}`;
   if (type === "play_dance") return `舞蹈：${payload.name || "-"}`;
   if (type === "walk_to") return `移动到 x=${Number(payload.x || 0).toFixed(0)}`;
   if (type === "clear_notification") return payload.kind ? `清理通知：${formatPetKind(payload.kind)}` : "清理全部通知";
@@ -1935,11 +1935,6 @@ function shortText(value, limit) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (text.length <= limit) return text;
   return `${text.slice(0, limit)}...`;
-}
-
-function repairMojibake(value) {
-  if (value === "姝ｅ湪瑙傚療灞忓箷...") return "正在观察屏幕...";
-  return value;
 }
 
 // ─── 积分与成就系统渲染 ───

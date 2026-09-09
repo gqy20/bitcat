@@ -469,7 +469,7 @@ pub fn cmd_get_current_game(shared: tauri::State<'_, SharedGame>) -> Result<Game
     let current = shared.current_def.lock().map_err(|e| e.to_string())?;
     current
         .clone()
-        .ok_or_else(|| "褰撳墠娌℃湁娲诲姩娓告垙".to_string())
+        .ok_or_else(|| "当前没有活动游戏".to_string())
 }
 
 /// Return safe game targets for the current invasion round.
