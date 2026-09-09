@@ -34,25 +34,43 @@ make build
 
 ### 在非 Windows 开发机上开发（Linux / macOS）
 
-`core` 是零 UI 依赖的纯逻辑 crate，`app/frontend` 是纯静态 HTML/JS/CSS，两者都能在非 Windows
-机器上完整开发和测试：
+`core` 是零 UI 依赖的纯逻辑 crate，`app` 里的 Win32 调用全部带 `#[cfg(not(windows))]` 回退，
+`app/frontend` 是纯静态 HTML/JS/CSS，所以三层都能在非 Windows 机器上开发和测试：
 
 ```bash
-cargo test -p bitcat-core          # 469 个测试，约 1.5 秒
+cargo test -p bitcat-core          # 469 个测试，约 1 秒
+cargo test -p bitcat-app --lib     # 160 个测试，app 层单测在 Linux 上同样能跑
 cd app/frontend && npx vitest run  # 187 个测试，约 1.7 秒
-python3 -m http.server 4178        # 静态起前端页，在浏览器里调 UI
+python3 -m http.server 4178        # 在 app/frontend 下静态起页，在浏览器里调 UI
 ```
 
-不能做的事：`app` crate 依赖 Win32（截图 BitBlt、WASAPI、SendInput、TTS、托盘），
-无法在非 Windows 上链接和运行；`make dist` / UPX / Tauri bundle 同理。
+仍然不能做的事：`bitcat` **可执行文件**无法在非 Windows 上链接和运行（截图 BitBlt、
+WASAPI、SendInput、TTS、托盘都是 Win32），`make dist` / UPX / Tauri bundle 同理。
+`cargo test -p bitcat-app --lib` 能跑，是因为测试二进制只链接 lib，Win32 部分被 cfg 排除。
 
-两个环境注意点：
+三个环境注意点：
 
 - **Node 版本**：Node ≥ 22 的实验性全局 `localStorage` 会遮蔽 jsdom 实现（实测 Node 22
   容器里 `sprite-loader.test.js` 同样会红，**不是 Node 26 独有**）。`app/frontend/vitest.setup.js`
   已做兼容修补，因此本地任意 Node 版本都能跑通；CI 钉 Node 22 只为可复现。
-- **时区**：`settings.test.js` 的提醒时间断言按 `Asia/Shanghai` 编写，在 UTC 环境下会有
-  2 个测试因 8 小时偏移而失败。跑前端测试前设 `TZ=Asia/Shanghai`。
+- **时区**：前端测试已与运行环境时区解耦——`settings.test.js` 用 `localRfc3339()` 按本地
+  时区构造 fixture，UTC / Asia-Shanghai / America-New_York / Pacific-Kiritimati 四个时区
+  实测都是 187/187。CI 的 frontend job 故意钉 `TZ: UTC`，谁再引入时区相关断言就会立刻红；
+  不要再把期望值写死成某个特定时区的墙上时间。
+- **clippy 必须与 CI 同版本、同 target**：CI 用 `dtolnay/rust-toolchain@stable`，本地工具链
+  落后就会出现“本地绿、CI 红”（实测踩过：本地 1.90 / CI 1.98，差一年，新 lint
+  `chunks_exact_to_as_chunks` 在本地根本不存在）。而且 `audio_reactive.rs` 等处代码在
+  `#[cfg(windows)]` 内，Linux 原生 clippy 看不到。本地要跑两条：
+
+  ```bash
+  rustup update stable                                    # 先对齐工具链版本
+  cargo clippy --workspace --all-targets -- -D warnings   # 本机 target
+  cargo clippy --workspace --all-targets --target x86_64-pc-windows-gnu -- -D warnings
+  ```
+
+  交叉检查需要 `rustup target add x86_64-pc-windows-gnu` 和 mingw（Debian/Ubuntu：
+  `sudo apt install mingw-w64`，SDL2 bundled 与 aws-lc-sys 的 build script 要跨编 C）。
+  `check`/`clippy` 不链接，产物只有 `.rmeta`，整个 windows-gnu target 目录约 1GB。
 
 ### 不装 Windows 工具链也能拿到 exe
 

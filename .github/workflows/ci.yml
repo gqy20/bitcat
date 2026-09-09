@@ -47,7 +47,13 @@ jobs:
           copy config\*.yml app\config\
       - name: Prepare frontend dist
         run: cargo run -p xtask -- prepare-frontend
-      - run: cargo clippy --workspace -- -D warnings
+      # --all-targets 把测试和 examples 也纳入 lint：本项目大量断言写在
+      # `#[cfg(test)]` 里，不加这个 flag 时测试代码的 lint 永远不会被 CI 看到。
+      # 清这一轮之前已经累积了 25 处（field_reassign_with_default ×7、
+      # useless_vec ×5、assertions_on_constants ×5、needless_range_loop ×3 等）。
+      # 本地等价命令（需先 rustup update stable 对齐工具链）：
+      #   cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo clippy --workspace --all-targets -- -D warnings
 
   # ───── 测试任务 ─────
   test:
@@ -142,10 +148,11 @@ jobs:
     name: Frontend (Vitest)
     runs-on: ubuntu-latest
     env:
-      # settings.test.js 的提醒时间断言按 Asia/Shanghai 写死；ubuntu runner 默认 UTC，
-      # 不设 TZ 会有 2 个测试因为 8 小时偏移而失败。实测：宿主 TZ=Asia/Shanghai 全绿，
-      # TZ=UTC 时 `每天 · 06/02 09:30` 变成 `每天 · 06/02 01:30`。
-      TZ: Asia/Shanghai
+      # 故意钉 UTC（而不是维护者本地的 Asia/Shanghai）：前端测试应该与运行环境
+      # 时区无关。settings.test.js 已改成用 localRfc3339() 按本地时区构造 fixture
+      # （已在 UTC / Asia-Shanghai / America-New_York / Pacific-Kiritimati 四个时区
+      # 实测 187/187），钉 UTC 能在有人重新引入时区相关断言时立即报警。
+      TZ: UTC
     steps:
       - uses: actions/checkout@v4
 
