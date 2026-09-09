@@ -308,8 +308,13 @@ const DIRTY_EXPERT_PAGE = {
   agent_watch: "agent-watch",
 };
 
+function updateSaveIndicator() {
+  $("btn-save")?.classList.toggle("dirty", anyDirty());
+}
+
 function markDirty(tab) {
   dirty[tab] = true;
+  updateSaveIndicator();
   const navTab = DIRTY_NAV_TAB[tab] || tab;
   const nav = document.querySelector(`.nav-item[data-tab="${navTab}"]`);
   if (nav) nav.classList.add("dirty");
@@ -322,6 +327,7 @@ function markDirty(tab) {
 
 function clearDirty(tab) {
   dirty[tab] = false;
+  updateSaveIndicator();
   const navTab = DIRTY_NAV_TAB[tab] || tab;
   const nav = document.querySelector(`.nav-item[data-tab="${navTab}"]`);
   if (nav) nav.classList.remove("dirty");
@@ -1859,6 +1865,24 @@ function bindWindowDrag() {
   });
 }
 
+// 刷新按钮 loading 态：点击后短暂禁用并提示，避免重复点击
+function bindRefreshButton(id, fn) {
+  const btn = $(id);
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "刷新中";
+    try {
+      await fn();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  });
+}
+
 function bindGlobal() {
   bindWindowDrag();
   document.querySelectorAll(".nav-item").forEach(btn => {
@@ -1890,18 +1914,18 @@ function bindGlobal() {
   });
   $("btn-save").addEventListener("click", saveAll);
   $("btn-reset").addEventListener("click", resetCurrent);
-  $("usage-refresh").addEventListener("click", loadUsageDiagnostics);
   $("usage-model").addEventListener("change", () => {
     selectedUsageModel = $("usage-model").value || "__all";
     loadTokenStats();
   });
-  $("overview-refresh").addEventListener("click", () => {
-    loadUsageDiagnostics();
-    loadMemoryReview();
-    loadReminders();
+  bindRefreshButton("overview-refresh", async () => {
+    await loadUsageDiagnostics();
+    await loadMemoryReview();
+    await loadReminders();
   });
-  $("memory-refresh").addEventListener("click", loadMemoryReview);
-  $("reminder-refresh").addEventListener("click", loadReminders);
+  bindRefreshButton("memory-refresh", loadMemoryReview);
+  bindRefreshButton("reminder-refresh", loadReminders);
+  bindRefreshButton("usage-refresh", loadUsageDiagnostics);
   $("aw-install").addEventListener("click", async () => {
     try {
       const msg = await invoke("cmd_install_claude_code_hooks");

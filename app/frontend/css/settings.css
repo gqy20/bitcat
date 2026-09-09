@@ -2373,10 +2373,11 @@ input[type="checkbox"]:checked::after {
   transform: translate(-50%, 6px);
 }
 
-.toast.ok { border-color: rgba(var(--accent-green-rgb), 0.36); }
+.toast.ok { border-color: var(--line-normal); }
 .toast.err {
-  color: #ffe1dc;
-  border-color: rgba(var(--accent-coral-rgb), 0.5);
+  color: #a8453c;
+  border-color: rgba(168, 69, 60, 0.35);
+  background: rgba(255, 250, 249, 0.98);
 }
 
 @media (max-width: 980px) {
@@ -3522,6 +3523,22 @@ input[type="checkbox"]:checked::after {
 
 .expert-page {
   animation: tab-in 150ms ease;
+}
+
+/* 保存按钮未保存标记：与导航 dirty 点同源 */
+#btn-save.dirty {
+  position: relative;
+}
+
+#btn-save.dirty::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sun-amber);
 }
 
 /* 全局字体平滑：MiSans 在 Windows 下更纤细 */
