@@ -74,8 +74,11 @@ WASAPI、SendInput、TTS、托盘都是 Win32），`make dist` / UPX / Tauri bun
 
 ### 不装 Windows 工具链也能拿到 exe
 
-改完代码推到 GitHub，用 `dev-build` workflow 出一个 portable zip（约 5-10 分钟，
-用 `[profile.dist]`：关 LTO、放开并行度，比 `release` 快很多），再下载到 Windows 上验收：
+改完代码推到 GitHub，用 `dev-build` workflow 出一份可直接运行的产物（热缓存约
+4-5 分钟，用 `[profile.dist]`：关 LTO、放开并行度，比 `release` 快很多）。
+`gh run download` 之后 `dist-dev/` 里就是 `bitcat.exe + config/ + BUILD_INFO.txt`，
+不用再解压；网页从 Actions 页面下载的话解压一次即用（artifact 本身就是 zip，
+不要往里再套 portable zip）。
 
 ```bash
 # 手动触发一次构建
@@ -87,9 +90,12 @@ gh run download "$(gh run list --workflow=dev-build.yml --limit=1 \
   -n bitcat-dev-windows-x64 -D ./dist-dev
 ```
 
+BUILD_INFO.txt 里写着 commit 和构建参数，拿不准手上是哪版时看它。
+
 分工建议：编译正确性靠 push（`ci.yml` 在 windows-latest 上编译并测试整个 workspace，
 同时有 ubuntu 的 core-only 护栏和前端 vitest job）；只有需要真机跑效果时才用
-`dev-build` 取 exe。正式发布仍然走 tag 触发的 `release.yml`。
+`dev-build` 取 exe。正式发布仍然走 tag 触发的 `release.yml`（便携 zip 在
+Release 页面提供）。
 
 ## 配置 AI
 

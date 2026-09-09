@@ -6,7 +6,8 @@ name: Dev Build
 #   - release.yml：打 tag 触发，跑完整测试，用 tauri-action 出 MSI + NSIS + portable，
 #     并创建 GitHub Release。单轮 15-30 分钟，是"发布"动作。
 #   - dev-build.yml（本文件）：手动触发，不跑测试（ci.yml 已在 push 时覆盖），
-#     只出 portable zip，用 [profile.dist]（无 LTO）加速。单轮约 5-10 分钟，是"验收"动作。
+#     只出可运行产物（bitcat.exe + config/，解压即用），用 [profile.dist]（无 LTO）
+#     加速。热缓存单轮约 4-5 分钟，是“验收”动作。
 #
 # ⚠ 不要用 release.yml 的 workflow_dispatch 做日常构建：它在分支上触发时
 #   RELEASE_TAG 会取 ref_name（如 "master"），最后的 release job 会创建一个
@@ -71,19 +72,27 @@ jobs:
       - name: Build (dist profile)
         run: cargo build --profile dist -p bitcat-app
 
-      # 产物名带短 sha，方便和 commit 对应；zip 内含 bitcat.exe + config/*.yml
-      - name: Package portable zip
+      # ── 产物：上传散文件（exe + config + 构建信息）──
+      # actions/upload-artifact 会把上传内容再打一层 zip（不可关闭），
+      # 之前把 portable.zip 传进去就成了 zip 套 zip，网页下载要解压两次。
+      # 现在解压一次即是可运行目录（bitcat.exe + config/ + BUILD_INFO.txt）。
+      # 单文件便携 zip 的正式分发由 release.yml 的 Release 页面负责，这里不再重复打包。
+      - name: Stage artifact
         shell: pwsh
         run: |
           $sha = "${{ github.sha }}".Substring(0, 7)
-          $version = "dev-$sha"
-          cargo run -p xtask -- package-portable `
-            --version $version `
-            --release-dir target/dist `
-            --out-dir dev-out
-          Write-Host "--- dev-out ---"
-          Get-ChildItem dev-out | ForEach-Object {
-            Write-Host ("  {0}  ({1:N1} MB)" -f $_.Name, ($_.Length / 1MB))
+          New-Item -ItemType Directory -Force -Path dev-out | Out-Null
+          Copy-Item target/dist/bitcat.exe dev-out/
+          Copy-Item config dev-out/config -Recurse
+          @(
+            "commit ${{ github.sha }}"
+            "ref ${{ github.ref_name }}"
+            "profile dist (opt-level=2, no LTO)"
+            "built $(Get-Date -Format o)"
+          ) | Out-File dev-out/BUILD_INFO.txt -Encoding utf8
+          Write-Host "--- dev-out ($sha) ---"
+          Get-ChildItem -Recurse dev-out | ForEach-Object {
+            Write-Host ("  {0}  ({1:N1} KB)" -f $_.FullName.Replace("$PWD\", ""), ($_.Length / 1KB))
           }
 
       # artifact 名固定，`gh run download -n bitcat-dev-windows-x64` 才能稳定命中
@@ -91,6 +100,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bitcat-dev-windows-x64
-          path: dev-out/*.zip
+          path: dev-out/*
           if-no-files-found: error
           retention-days: 7
