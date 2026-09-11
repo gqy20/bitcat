@@ -4,7 +4,9 @@
 //! 再转换为项目内部稳定的 `AgentSessionEvent`。本模块只提取 session、cwd、
 //! hook 名称和短 preview，不保存完整工具输入或完整对话内容。
 
-use crate::agent_session::{AgentSessionEvent, AgentSource, AgentStatus, preview_text};
+use crate::agent_session::{
+    AgentSessionEvent, AgentSource, AgentStatus, WaitingReason, preview_text,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -178,6 +180,15 @@ impl ClaudeHookEvent {
             machine,
             at_ms: now_ms,
             needs_user: status.needs_user(),
+            usage: None,
+            waiting_reason: if status == AgentStatus::Waiting {
+                match normalize_hook_name(hook_name).as_str() {
+                    "permissionrequest" | "permissiondenied" => Some(WaitingReason::Permission),
+                    _ => Some(WaitingReason::Input),
+                }
+            } else {
+                None
+            },
         })
     }
 
@@ -695,6 +706,7 @@ mod tests {
         assert_eq!(event.status, AgentStatus::Waiting);
         assert!(event.needs_user);
         assert_eq!(event.tool_name.as_deref(), Some("Edit"));
+        assert_eq!(event.waiting_reason, Some(WaitingReason::Permission));
     }
 
     #[test]

@@ -205,7 +205,7 @@ body {
 
 .task-topline {
   display: grid;
-  grid-template-columns: 10px minmax(0, 1fr) auto auto auto;
+  grid-template-columns: 10px minmax(0, 1fr) auto auto auto auto;
   align-items: center;
   column-gap: 7px;
   min-width: 0;
@@ -314,6 +314,15 @@ body {
   color: rgba(255, 255, 255, 0.66);
 }
 
+.task-usage {
+  align-self: center;
+  transform: translateY(-1px);
+  font-size: 10.2px;
+  font-weight: 640;
+  color: rgba(255, 255, 255, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+
 .task-kind {
   flex: 0 0 auto;
   max-width: 62px;
@@ -414,4 +423,59 @@ body {
 @keyframes pulse {
   0%, 100% { transform: scale(0.92); opacity: 0.72; }
   50% { transform: scale(1.28); opacity: 1; }
+}
+
+.task-actions {
+  margin-top: 5px;
+  padding-left: 17px;
+  display: flex;
+  gap: 6px;
+}
+
+.task-action {
+  padding: 3px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 11px;
+  font-weight: 660;
+  cursor: pointer;
+}
+
+.task-action:hover,
+.task-action:focus-visible {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  outline: none;
+}
+
+/* 等待用户处理是阻塞性信号：整卡缓慢呼吸，配合宠物 Confused 表情形成完整提示。 */
+.task-card.waiting,
+.task-card.error {
+  animation: card-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes card-breathe {
+  0%, 100% { border-color: rgba(255, 138, 122, 0.42); }
+  50% { border-color: rgba(255, 138, 122, 0.85); }
+}
+
+.task-card.waiting {
+  animation-name: card-breathe-warn;
+}
+
+@keyframes card-breathe-warn {
+  0%, 100% { border-color: rgba(255, 207, 103, 0.4); }
+  50% { border-color: rgba(255, 207, 103, 0.88); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-card.waiting,
+  .task-card.error,
+  .task-card.working .task-dot,
+  .task-card.tool_running .task-dot,
+  .task-card.compacting .task-dot {
+    animation: none;
+  }
 }

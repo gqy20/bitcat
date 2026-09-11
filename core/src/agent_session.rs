@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 const DONE_QUIET_AFTER_SEC: u64 = 60;
+/// 生命周期短于该值且从未运行过工具的会话视为脚本式短命调用，结束后直接安静。
+const EPHEMERAL_LIFETIME_SEC: u64 = 10;
 
 /// 外部编码 Agent 来源。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -22,6 +24,36 @@ pub enum AgentSource {
     Codex,
     Pi,
     OpenCode,
+}
+
+/// `Waiting` 状态的具体原因：等权限批准是阻塞型，比等下一次输入更紧急。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum WaitingReason {
+    Permission,
+    Input,
+}
+
+impl WaitingReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Permission => "permission",
+            Self::Input => "input",
+        }
+    }
+}
+
+/// 单条事件携带的用量快照。
+///
+/// `cumulative = true` 表示来源给的是会话级累计值（如 opencode `session.info`），
+/// 直接覆盖；`false` 表示单条消息增量（如 pi `message_end`），需要累加。
+/// 成本用微美元（1e-6 USD）整数存储，避免 f64 破坏 `Eq` 派生和 JSONL 稳定性。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentUsage {
+    pub tokens_in: u64,
+    pub tokens_out: u64,
+    pub cost_usd_micros: u64,
+    pub cumulative: bool,
 }
 
 impl AgentSource {
@@ -144,6 +176,18 @@ pub struct AgentSession {
     pub pid: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub machine: Option<String>,
+    #[serde(default)]
+    pub first_seen_at_ms: u64,
+    #[serde(default)]
+    pub has_run_tools: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_in: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_out: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_usd_micros: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waiting_reason: Option<WaitingReason>,
     pub updated_at_ms: u64,
     pub status_changed_at_ms: u64,
     pub needs_user: bool,
@@ -210,6 +254,31 @@ impl AgentSession {
         if event.machine.is_some() {
             self.machine = event.machine;
         }
+        if event.status == AgentStatus::ToolRunning {
+            self.has_run_tools = true;
+        }
+        if let Some(usage) = event.usage {
+            let (tokens_in, tokens_out, cost) = if usage.cumulative {
+                (usage.tokens_in, usage.tokens_out, usage.cost_usd_micros)
+            } else {
+                (
+                    self.tokens_in.unwrap_or(0).saturating_add(usage.tokens_in),
+                    self.tokens_out
+                        .unwrap_or(0)
+                        .saturating_add(usage.tokens_out),
+                    self.cost_usd_micros
+                        .unwrap_or(0)
+                        .saturating_add(usage.cost_usd_micros),
+                )
+            };
+            self.tokens_in = Some(tokens_in);
+            self.tokens_out = Some(tokens_out);
+            self.cost_usd_micros = Some(cost);
+        }
+        self.waiting_reason = match event.status {
+            AgentStatus::Waiting => event.waiting_reason.or(Some(WaitingReason::Input)),
+            _ => None,
+        };
     }
 }
 
@@ -234,6 +303,10 @@ pub struct AgentSessionEvent {
     pub machine: Option<String>,
     pub at_ms: u64,
     pub needs_user: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<AgentUsage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waiting_reason: Option<WaitingReason>,
 }
 
 impl AgentSessionEvent {
@@ -255,6 +328,12 @@ impl AgentSessionEvent {
             output_file: self.output_file,
             pid: self.pid,
             machine: self.machine,
+            first_seen_at_ms: self.at_ms,
+            has_run_tools: self.status == AgentStatus::ToolRunning,
+            tokens_in: self.usage.map(|usage| usage.tokens_in),
+            tokens_out: self.usage.map(|usage| usage.tokens_out),
+            cost_usd_micros: self.usage.map(|usage| usage.cost_usd_micros),
+            waiting_reason: self.waiting_reason,
             updated_at_ms: self.at_ms,
             status_changed_at_ms: self.at_ms,
             needs_user: self.status.needs_user() || self.needs_user,
@@ -283,6 +362,14 @@ pub struct AgentSessionView {
     pub task_id: Option<String>,
     pub output_file: Option<String>,
     pub needs_user: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_in: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_out: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_usd_micros: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waiting_reason: Option<WaitingReason>,
     pub updated_at_ms: u64,
     pub age_sec: u64,
     pub display: AgentSessionDisplay,
@@ -310,6 +397,10 @@ impl AgentSessionView {
             task_id: session.task_id.clone(),
             output_file: session.output_file.clone(),
             needs_user: session.needs_user,
+            tokens_in: session.tokens_in,
+            tokens_out: session.tokens_out,
+            cost_usd_micros: session.cost_usd_micros,
+            waiting_reason: session.waiting_reason,
             updated_at_ms: session.updated_at_ms,
             age_sec,
             display: AgentSessionDisplay::from_session(session, age_sec),
@@ -327,6 +418,9 @@ pub struct AgentSessionDisplay {
     pub source_label: String,
     pub action_label: String,
     pub age_label: String,
+    /// 简短用量标签：金额优先（如 `$0.05`），无金额时退回 token 数（如 `12.3k`）。
+    /// 空串表示没有可用数据。完整数值在 View 的 tokens/cost 字段里。
+    pub usage_label: String,
     pub quiet: bool,
 }
 
@@ -337,9 +431,12 @@ impl AgentSessionDisplay {
         let source_label = session.source.display_name().to_string();
         let action_label = action.label.clone();
         let tone = tone_for(session.status).to_string();
-        let quiet = session.status == AgentStatus::Done && age_sec >= DONE_QUIET_AFTER_SEC;
+        let quiet = is_quiet(session, age_sec);
         let headline = match session.status {
-            AgentStatus::Waiting => "需要你处理".to_string(),
+            AgentStatus::Waiting => match session.waiting_reason {
+                Some(WaitingReason::Permission) => "等你批准操作".to_string(),
+                _ => "需要你处理".to_string(),
+            },
             AgentStatus::Error => "任务遇到异常".to_string(),
             AgentStatus::Compacting => "正在压缩上下文".to_string(),
             AgentStatus::ToolRunning => action
@@ -382,8 +479,60 @@ impl AgentSessionDisplay {
             source_label,
             action_label,
             age_label: age_label(age_sec),
+            usage_label: usage_label(session),
             quiet,
         }
+    }
+}
+
+/// 会话是否应从 UI 安静移除：
+/// - 完成后超过 `DONE_QUIET_AFTER_SEC`；
+/// - 或生命周期极短且从未运行过工具（`pi -p` / `opencode run` 这类脚本式
+///   单句调用），避免浮窗反复冒出秒级卡片。
+fn is_quiet(session: &AgentSession, age_sec: u64) -> bool {
+    if session.status == AgentStatus::Done && age_sec >= DONE_QUIET_AFTER_SEC {
+        return true;
+    }
+    if matches!(
+        session.status,
+        AgentStatus::Done | AgentStatus::Interrupted | AgentStatus::Idle
+    ) && !session.has_run_tools
+    {
+        let lifetime_sec = session
+            .updated_at_ms
+            .saturating_sub(session.first_seen_at_ms)
+            / 1000;
+        if lifetime_sec <= EPHEMERAL_LIFETIME_SEC {
+            return true;
+        }
+    }
+    false
+}
+
+/// 生成简短用量标签：金额优先，无金额退回 token 数。
+/// 成本单位沿用上游事件（USD），不引入汇率换算。
+fn usage_label(session: &AgentSession) -> String {
+    if let Some(cost) = session.cost_usd_micros.filter(|cost| *cost > 0) {
+        let usd = cost as f64 / 1_000_000.0;
+        if usd < 0.01 {
+            return "<$0.01".to_string();
+        }
+        if usd < 10.0 {
+            return format!("${usd:.2}");
+        }
+        return format!("${usd:.0}");
+    }
+    let tokens = session
+        .tokens_in
+        .unwrap_or(0)
+        .saturating_add(session.tokens_out.unwrap_or(0));
+    if tokens == 0 {
+        return String::new();
+    }
+    if tokens >= 1000 {
+        format!("{:.1}k", tokens as f64 / 1000.0)
+    } else {
+        format!("{tokens}")
     }
 }
 
@@ -766,6 +915,8 @@ mod tests {
             machine: None,
             at_ms,
             needs_user: false,
+            usage: None,
+            waiting_reason: None,
         }
     }
 
@@ -912,5 +1063,106 @@ mod tests {
         let session = event("abc", AgentStatus::Done, 1000).into_session();
         let view = AgentSessionView::from_session(&session, 62_000);
         assert!(view.display.quiet);
+    }
+
+    #[test]
+    fn display_quiets_ephemeral_sessions_without_tools() {
+        // pi -p / opencode run 式短命调用：无工具、生命周期 < 10s，结束时直接安静。
+        let mut sessions = std::collections::HashMap::new();
+        apply_session_event(&mut sessions, event("s", AgentStatus::Working, 1000));
+        apply_session_event(&mut sessions, event("s", AgentStatus::Done, 6_000));
+        let session = sessions.get("s").unwrap();
+        assert!(!session.has_run_tools);
+        let view = AgentSessionView::from_session(session, 6_500);
+        assert!(view.display.quiet);
+    }
+
+    #[test]
+    fn display_keeps_ephemeral_session_that_ran_tools() {
+        // 同样短的生命周期，但运行过工具 → 是真实任务，不安静。
+        let mut sessions = std::collections::HashMap::new();
+        apply_session_event(&mut sessions, event("s", AgentStatus::ToolRunning, 1000));
+        apply_session_event(&mut sessions, event("s", AgentStatus::Done, 6_000));
+        let session = sessions.get("s").unwrap();
+        assert!(session.has_run_tools);
+        let view = AgentSessionView::from_session(session, 6_500);
+        assert!(!view.display.quiet);
+    }
+
+    #[test]
+    fn usage_accumulates_incremental_and_overrides_cumulative() {
+        let mut sessions = std::collections::HashMap::new();
+        // pi 两条 assistant 消息的增量 usage 累加。
+        let mut first = event("s", AgentStatus::Working, 1000);
+        first.usage = Some(AgentUsage {
+            tokens_in: 1000,
+            tokens_out: 20,
+            cost_usd_micros: 1_500,
+            cumulative: false,
+        });
+        apply_session_event(&mut sessions, first);
+        let mut second = event("s", AgentStatus::Done, 2000);
+        second.usage = Some(AgentUsage {
+            tokens_in: 500,
+            tokens_out: 10,
+            cost_usd_micros: 500,
+            cumulative: false,
+        });
+        apply_session_event(&mut sessions, second);
+        let session = sessions.get("s").unwrap();
+        assert_eq!(session.tokens_in, Some(1500));
+        assert_eq!(session.tokens_out, Some(30));
+        assert_eq!(session.cost_usd_micros, Some(2_000));
+        // opencode 会话级累计值直接覆盖。
+        let mut third = event("s", AgentStatus::Done, 3000);
+        third.usage = Some(AgentUsage {
+            tokens_in: 900,
+            tokens_out: 9,
+            cost_usd_micros: 900,
+            cumulative: true,
+        });
+        apply_session_event(&mut sessions, third);
+        let session = sessions.get("s").unwrap();
+        assert_eq!(session.tokens_in, Some(900));
+        assert_eq!(session.cost_usd_micros, Some(900));
+    }
+
+    #[rstest]
+    #[case(Some(2_000_000), "$2.00")]
+    #[case(Some(5_000), "<$0.01")]
+    #[case(Some(120_000_000), "$120")]
+    #[case(None, "12.3k")]
+    fn usage_label_prefers_cost_over_tokens(
+        #[case] cost_usd_micros: Option<u64>,
+        #[case] expected: &str,
+    ) {
+        let mut session = event("s", AgentStatus::Done, 1000).into_session();
+        session.tokens_in = Some(12_000);
+        session.tokens_out = Some(345);
+        session.cost_usd_micros = cost_usd_micros;
+        let view = AgentSessionView::from_session(&session, 1100);
+        assert_eq!(view.display.usage_label, expected);
+    }
+
+    #[test]
+    fn usage_label_empty_without_data() {
+        let session = event("s", AgentStatus::Working, 1000).into_session();
+        let view = AgentSessionView::from_session(&session, 1100);
+        assert_eq!(view.display.usage_label, "");
+    }
+
+    #[test]
+    fn waiting_reason_distinguishes_permission_from_input() {
+        let mut sessions = std::collections::HashMap::new();
+        let mut waiting = event("s", AgentStatus::Waiting, 1000);
+        waiting.waiting_reason = Some(WaitingReason::Permission);
+        apply_session_event(&mut sessions, waiting);
+        let view = AgentSessionView::from_session(sessions.get("s").unwrap(), 1100);
+        assert_eq!(view.display.headline, "等你批准操作");
+
+        // 恢复工作后 waiting_reason 清空。
+        apply_session_event(&mut sessions, event("s", AgentStatus::Working, 2000));
+        let session = sessions.get("s").unwrap();
+        assert!(session.waiting_reason.is_none());
     }
 }

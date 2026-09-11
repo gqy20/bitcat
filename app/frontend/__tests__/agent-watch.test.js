@@ -146,6 +146,53 @@ describe('agent watch metadata', () => {
     expect(expandedCard.querySelector('.task-meta')).toBeNull();
     expect(expandedCard.querySelector('[data-action="open"]')).toBeNull();
     expect(expandedCard.querySelector('.task-expanded-actions')).toBeNull();
+    expect(expandedCard.querySelector('[data-action="open-workspace"]')).not.toBeNull();
+  });
+
+  it('shows usage label in the topline when the backend provides one', () => {
+    dom.window.__agentWatchTest.render({
+      sessions: [{
+        session_id: 's-usage',
+        source: 'pi',
+        workspace_name: 'bitcat',
+        status: 'working',
+        tokens_in: 12000,
+        tokens_out: 345,
+        display: {
+          action_label: 'Shell',
+          headline: 'Running',
+          detail: 'cargo test',
+          project: 'bitcat',
+          source_label: 'pi',
+          tone: 'active',
+          usage_label: '12.3k',
+        },
+      }],
+    });
+
+    const usage = dom.window.document.querySelector('.task-card .task-usage');
+    expect(usage?.textContent).toBe('12.3k');
+    expect(usage?.getAttribute('title')).toContain('12,345');
+  });
+
+  it('omits the usage chip when there is no usage data', () => {
+    dom.window.__agentWatchTest.render({
+      sessions: [{
+        session_id: 's-none',
+        source: 'codex',
+        workspace_name: 'proj',
+        status: 'working',
+        display: {
+          action_label: 'Shell',
+          headline: 'Running',
+          project: 'proj',
+          source_label: 'Codex',
+          tone: 'active',
+        },
+      }],
+    });
+
+    expect(dom.window.document.querySelector('.task-card .task-usage')).toBeNull();
   });
 
   it('renders running status and command as separate detail layers', () => {

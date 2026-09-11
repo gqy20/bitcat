@@ -6,7 +6,9 @@
 //! 本模块只做"事件类型 → AgentStatus"映射和短 preview 提取，不保存完整
 //! 消息。事件 payload 样例见 docs/research/pi-opencode-agent-watch-protocol.md。
 
-use crate::agent_session::{AgentSessionEvent, AgentSource, AgentStatus, preview_text};
+use crate::agent_session::{
+    AgentSessionEvent, AgentSource, AgentStatus, AgentUsage, WaitingReason, preview_text,
+};
 use crate::claude_code::preview_tool_input;
 use serde_json::Value;
 
@@ -53,6 +55,8 @@ pub fn parse_opencode_payload(
         user_prompt_preview: None,
         last_response_preview: None,
         needs_user: false,
+        usage: None,
+        waiting_reason: None,
         machine,
         at_ms: now_ms,
     };
@@ -64,6 +68,7 @@ pub fn parse_opencode_payload(
             builder.workspace = info
                 .and_then(|info| info.get("directory").and_then(string_value))
                 .unwrap_or_default();
+            builder.usage = info.and_then(session_usage);
         }
         "session.updated" => {
             // title 形如 "Running <prompt>"，是 opencode 里最接近用户任务描述的字段。
@@ -76,6 +81,7 @@ pub fn parse_opencode_payload(
                 .and_then(|info| info.get("title").and_then(string_value))
                 .and_then(|title| strip_running_prefix(&title))
                 .and_then(|title| preview_text(title, PREVIEW_CHARS));
+            builder.usage = info.and_then(session_usage);
         }
         "session.status" => {
             let status = props
@@ -123,6 +129,7 @@ pub fn parse_opencode_payload(
         "permission.asked" => {
             builder.status = Some(AgentStatus::Waiting);
             builder.needs_user = true;
+            builder.waiting_reason = Some(WaitingReason::Permission);
             builder.tool_name = string_field(&props, "tool");
             builder.tool_input = props.get("args").cloned();
         }
@@ -161,6 +168,24 @@ fn strip_running_prefix(title: &str) -> Option<String> {
     )
 }
 
+/// 从 session.info 提取会话级累计用量。
+/// 真实样例：`{"cost":0,"tokens":{"input":0,"output":0,"cache":{"read":0,"write":0}}}`。
+fn session_usage(info: &Value) -> Option<AgentUsage> {
+    let tokens = info.get("tokens")?;
+    let field = |name: &str| tokens.get(name).and_then(Value::as_u64).unwrap_or(0);
+    let cost_usd_micros = info
+        .get("cost")
+        .and_then(Value::as_f64)
+        .map(|cost| (cost * 1_000_000.0).round() as u64)
+        .unwrap_or(0);
+    Some(AgentUsage {
+        tokens_in: field("input"),
+        tokens_out: field("output"),
+        cost_usd_micros,
+        cumulative: true,
+    })
+}
+
 /// Agent Watch 关心的 opencode 事件类型；其余类型（含未来新增）一律跳过。
 fn is_watch_event(event_type: &str) -> bool {
     matches!(
@@ -190,6 +215,8 @@ struct EventBuilder {
     user_prompt_preview: Option<String>,
     last_response_preview: Option<String>,
     needs_user: bool,
+    usage: Option<AgentUsage>,
+    waiting_reason: Option<WaitingReason>,
     machine: Option<String>,
     at_ms: u64,
 }
@@ -228,6 +255,11 @@ impl EventBuilder {
             machine: self.machine,
             at_ms: self.at_ms,
             needs_user: status.needs_user() || self.needs_user,
+            usage: self.usage,
+            waiting_reason: match status {
+                AgentStatus::Waiting => Some(self.waiting_reason.unwrap_or(WaitingReason::Input)),
+                _ => None,
+            },
         }
     }
 }
@@ -326,6 +358,18 @@ mod tests {
         assert_eq!(event.status, AgentStatus::Waiting);
         assert!(event.needs_user);
         assert_eq!(event.tool_name.as_deref(), Some("bash"));
+        assert_eq!(event.waiting_reason, Some(WaitingReason::Permission));
+    }
+
+    #[test]
+    fn session_updated_carries_cumulative_usage() {
+        let raw = r#"{"event":{"type":"session.updated","properties":{"sessionID":"ses_abc","info":{"directory":"/home/u/proj","title":"Running echo x","cost":0.042,"tokens":{"input":12000,"output":340,"reasoning":10,"cache":{"read":0,"write":0}}}}}}"#;
+        let event = parse(raw).unwrap();
+        let usage = event.usage.unwrap();
+        assert_eq!(usage.tokens_in, 12000);
+        assert_eq!(usage.tokens_out, 340);
+        assert_eq!(usage.cost_usd_micros, 42_000);
+        assert!(usage.cumulative);
     }
 
     #[test]

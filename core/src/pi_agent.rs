@@ -5,7 +5,7 @@
 //! 原始事件对象放在 `data` 字段里，本模块负责映射到归一 `AgentSessionEvent`。
 //! 事件 payload 样例见 docs/research/pi-opencode-agent-watch-protocol.md。
 
-use crate::agent_session::{AgentSessionEvent, AgentSource, AgentStatus, preview_text};
+use crate::agent_session::{AgentSessionEvent, AgentSource, AgentStatus, AgentUsage, preview_text};
 use crate::claude_code::preview_tool_input;
 use serde_json::Value;
 
@@ -99,7 +99,32 @@ pub fn parse_pi_payload(
         machine,
         at_ms: now_ms,
         needs_user: status.needs_user(),
+        usage: assistant_usage(&data),
+        waiting_reason: None,
     }))
+}
+
+/// 从 assistant `message_end` 的 usage 字段提取单条消息用量（增量）。
+/// 真实样例：`{"input":9568,"output":19,"cost":{"total":0}}`。
+fn assistant_usage(data: &Value) -> Option<AgentUsage> {
+    let message = data.get("message")?;
+    if message.get("role").and_then(Value::as_str) != Some("assistant") {
+        return None;
+    }
+    let usage = message.get("usage")?;
+    let field = |name: &str| usage.get(name).and_then(Value::as_u64).unwrap_or(0);
+    let cost_usd_micros = usage
+        .get("cost")
+        .and_then(|cost| cost.get("total"))
+        .and_then(Value::as_f64)
+        .map(|total| (total * 1_000_000.0).round() as u64)
+        .unwrap_or(0);
+    Some(AgentUsage {
+        tokens_in: field("input"),
+        tokens_out: field("output"),
+        cost_usd_micros,
+        cumulative: false,
+    })
 }
 
 /// 从 message_end 事件里取 assistant 回复的 text 部分作为 last_response_preview。
@@ -215,6 +240,24 @@ mod tests {
         let event = parse(raw).unwrap();
         assert_eq!(event.status, AgentStatus::Working);
         assert_eq!(event.last_response_preview.as_deref(), Some("ok"));
+    }
+
+    #[test]
+    fn assistant_message_end_carries_incremental_usage() {
+        // usage 来自 2026-09-11 真实运行：input 9568 / output 19 / cost.total 0。
+        let raw = r#"{"event":"message_end","session_id":"s1","cwd":"/home/u/proj","data":{"message":{"role":"assistant","content":[{"type":"text","text":"ok"}],"usage":{"input":9568,"output":19,"cacheRead":2048,"reasoning":15,"totalTokens":11635,"cost":{"input":0,"output":0,"total":0}}}}}"#;
+        let event = parse(raw).unwrap();
+        let usage = event.usage.unwrap();
+        assert_eq!(usage.tokens_in, 9568);
+        assert_eq!(usage.tokens_out, 19);
+        assert_eq!(usage.cost_usd_micros, 0);
+        assert!(!usage.cumulative);
+    }
+
+    #[test]
+    fn user_message_end_has_no_usage() {
+        let raw = r#"{"event":"message_end","session_id":"s1","cwd":"/p","data":{"message":{"role":"user","content":[{"type":"text","text":"hi"}],"usage":{"input":1,"output":2}}}}"#;
+        assert!(parse(raw).unwrap().usage.is_none());
     }
 
     #[test]

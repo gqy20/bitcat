@@ -95,6 +95,10 @@
     const status = String(session.status || "").toLowerCase();
     const project = display.project || session.workspace_name || "";
     const headline = display.headline || session.status_label || statusLabel(status);
+    const tokens = Number(session.tokens_in ?? 0) + Number(session.tokens_out ?? 0);
+    const usageTooltip = tokens
+      ? `本轮用量 ${tokens.toLocaleString()} tokens`
+      : "本轮用量";
     return {
       title: project || headline || "Agent task",
       headline,
@@ -106,6 +110,8 @@
       age: display.age_label || ageLabel(session.age_sec),
       tone: display.tone || session.status || "idle",
       quiet: Boolean(display.quiet),
+      usage: String(display.usage_label || ""),
+      usageTooltip,
       statusText: statusLine(session, display),
     };
   }
@@ -215,11 +221,15 @@
     const source = view.source
       ? `<span class="task-source" title="${escapeAttr(view.source)}">${escapeHtml(compactSourceLabel(view.source))}</span>`
       : "";
+    const usage = view.usage
+      ? `<span class="task-usage" title="${escapeAttr(view.usageTooltip)}">${escapeHtml(view.usage)}</span>`
+      : "";
     return `
       <span class="task-dot" aria-hidden="true"></span>
       <strong class="task-title" title="${escapeAttr(view.title)}">${escapeHtml(view.title)}</strong>
       ${machine}
       ${source}
+      ${usage}
       ${view.age ? `<span class="task-age">${escapeHtml(view.age)}</span>` : ""}`;
   }
 
@@ -296,6 +306,7 @@
             </div>
             ${meta}
             ${isExpanded && detail ? `<p class="task-detail">${escapeHtml(detail)}</p>` : ""}
+            ${isExpanded ? `<div class="task-actions"><button class="task-action" type="button" data-action="open-workspace" title="打开这个任务的文件夹" aria-label="打开这个任务的文件夹">打开目录</button></div>` : ""}
           </div>
           <button class="task-dismiss" type="button" data-action="dismiss" title="隐藏这条任务" aria-label="隐藏这条任务">×</button>
         </article>`;
@@ -323,6 +334,15 @@
     }
   }
 
+  async function openWorkspace(id) {
+    if (!invoke || !id) return;
+    try {
+      await invoke("cmd_open_agent_workspace", { sessionId: id });
+    } catch (e) {
+      log("open workspace failed", e);
+    }
+  }
+
   function toggleFolded() {
     invoke?.("cmd_agent_watch_mark_user_placed").catch(() => {});
     setFolded(!folded);
@@ -347,6 +367,7 @@
     if (button && id) {
       event.stopPropagation();
       if (button.dataset.action === "dismiss") dismiss(id);
+      else if (button.dataset.action === "open-workspace") openWorkspace(id);
       return;
     }
     toggleTaskDetail(id);
