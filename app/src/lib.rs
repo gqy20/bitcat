@@ -27,13 +27,16 @@ pub mod commands;
 pub mod game;
 pub mod game_input;
 pub mod gamepad;
+pub mod hook_install_common;
 pub mod joystick;
 pub mod lifecycle;
 pub mod notification_window;
 pub mod observation_gate;
+pub mod opencode_hooks;
 pub mod panel;
 pub mod pet_event_bus;
 pub mod pet_inbox;
+pub mod pi_hooks;
 pub mod reminder_scheduler;
 pub mod remote_endpoint;
 pub mod screenshot;
@@ -159,6 +162,10 @@ pub fn run() {
             claude_hooks::cmd_open_claude_settings,
             codex_hooks::cmd_install_codex_hooks,
             codex_hooks::cmd_open_codex_config,
+            pi_hooks::cmd_install_pi_extension,
+            pi_hooks::cmd_open_pi_extensions_dir,
+            opencode_hooks::cmd_install_opencode_plugin,
+            opencode_hooks::cmd_open_opencode_plugins_dir,
             pet_event_bus::cmd_get_pet_event_log,
             settings::cmd_settings_load,
             settings::cmd_get_token_stats,

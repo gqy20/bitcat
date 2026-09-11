@@ -20,6 +20,8 @@ const DONE_QUIET_AFTER_SEC: u64 = 60;
 pub enum AgentSource {
     ClaudeCode,
     Codex,
+    Pi,
+    OpenCode,
 }
 
 impl AgentSource {
@@ -27,6 +29,8 @@ impl AgentSource {
         match self {
             Self::ClaudeCode => "claude_code",
             Self::Codex => "codex",
+            Self::Pi => "pi",
+            Self::OpenCode => "opencode",
         }
     }
 
@@ -34,6 +38,19 @@ impl AgentSource {
         match self {
             Self::ClaudeCode => "Claude Code",
             Self::Codex => "Codex",
+            Self::Pi => "pi",
+            Self::OpenCode => "opencode",
+        }
+    }
+
+    /// hook envelope 的 source 字段别名，统一小写后匹配。
+    pub fn from_envelope(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "claude" | "claude-code" | "claude_code" => Some(Self::ClaudeCode),
+            "codex" => Some(Self::Codex),
+            "pi" => Some(Self::Pi),
+            "opencode" | "open-code" | "open_code" => Some(Self::OpenCode),
+            _ => None,
         }
     }
 }

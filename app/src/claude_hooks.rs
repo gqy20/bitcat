@@ -411,32 +411,16 @@ try {{
     )
 }
 
-fn backup_if_exists(path: &PathBuf) -> Result<(), String> {
-    if !path.exists() {
-        return Ok(());
-    }
-    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
-    let backup = path.with_file_name(format!("settings.bitcat-backup-{stamp}.json"));
-    std::fs::copy(path, &backup).map_err(|e| format!("备份 settings.json 失败: {e}"))?;
-    Ok(())
+fn backup_if_exists(path: &Path) -> Result<(), String> {
+    crate::hook_install_common::backup_if_exists(path, "settings.bitcat-backup.json")
 }
 
-fn file_content_matches(path: &PathBuf, expected: &str) -> bool {
-    std::fs::read_to_string(path)
-        .map(|actual| actual == expected)
-        .unwrap_or(false)
+fn file_content_matches(path: &Path, expected: &str) -> bool {
+    crate::hook_install_common::file_content_matches(path, expected)
 }
 
-fn atomic_write(path: &PathBuf, content: &str) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
-    }
-    let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
-    std::fs::write(&tmp, content).map_err(|e| format!("写入临时文件失败: {e}"))?;
-    if path.exists() {
-        std::fs::remove_file(path).map_err(|e| format!("替换文件失败: {e}"))?;
-    }
-    std::fs::rename(&tmp, path).map_err(|e| format!("保存文件失败: {e}"))
+fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
+    crate::hook_install_common::atomic_write(path, content)
 }
 
 #[tauri::command]

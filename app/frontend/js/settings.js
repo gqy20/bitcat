@@ -1339,6 +1339,8 @@ function renderAgentSessions(snapshot) {
 function agentSourceLabel(source) {
   if (source === "codex") return "Codex";
   if (source === "claude_code") return "Claude Code";
+  if (source === "pi") return "pi";
+  if (source === "opencode") return "opencode";
   return source || "Agent";
 }
 
@@ -1940,6 +1942,22 @@ function bindGlobal() {
       toast(msg || "Codex 连接已检查并修复", "ok");
     } catch (e) {
       toast("Codex 修复失败：" + String(e), "err");
+    }
+  });
+  $("aw-install-pi").addEventListener("click", async () => {
+    try {
+      const msg = await invoke("cmd_install_pi_extension");
+      toast(msg || "pi 连接已检查并修复", "ok");
+    } catch (e) {
+      toast("pi 修复失败：" + String(e), "err");
+    }
+  });
+  $("aw-install-opencode").addEventListener("click", async () => {
+    try {
+      const msg = await invoke("cmd_install_opencode_plugin");
+      toast(msg || "opencode 连接已检查并修复", "ok");
+    } catch (e) {
+      toast("opencode 修复失败：" + String(e), "err");
     }
   });
   const eventApi = window.__TAURI__?.event;

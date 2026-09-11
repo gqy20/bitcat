@@ -438,7 +438,8 @@ fn preview_json(value: &Value) -> Option<String> {
     }
 }
 
-fn preview_tool_input(tool_name: Option<&str>, value: &Value) -> Option<String> {
+/// 按工具名挑选 preview 字段并截断，供 hook payload 归一化复用。
+pub(crate) fn preview_tool_input(tool_name: Option<&str>, value: &Value) -> Option<String> {
     let Value::Object(input) = value else {
         return preview_json(value);
     };

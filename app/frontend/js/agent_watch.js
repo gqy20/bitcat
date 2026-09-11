@@ -192,6 +192,8 @@
   function agentSourceLabel(source) {
     if (source === "codex") return "Codex";
     if (source === "claude_code") return "Claude Code";
+    if (source === "pi") return "pi";
+    if (source === "opencode") return "opencode";
     return source || "Agent";
   }
 

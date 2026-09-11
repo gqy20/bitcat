@@ -870,7 +870,9 @@ self.addEventListener('fetch', event => {
 
 pub fn handle_hook_payload(app: &AppHandle, raw: &str) -> Result<(), String> {
     let now_ms = now_ms();
-    let event = parse_agent_hook_payload(raw, now_ms)?;
+    let Some(event) = parse_agent_hook_payload(raw, now_ms)? else {
+        return Ok(());
+    };
     let monitor: tauri::State<SharedAgentMonitor> = app.state();
     let fingerprint = agent_event_fingerprint(&event);
     {
@@ -940,24 +942,36 @@ fn agent_event_fingerprint(event: &AgentSessionEvent) -> String {
     format!("{:016x}", hasher.finish())
 }
 
-fn parse_agent_hook_payload(raw: &str, now_ms: u64) -> Result<AgentSessionEvent, String> {
+/// 解析 hook payload。带 envelope 的按 source 分发到对应 agent 解析器；
+/// 裸 payload 保持 Claude Code 兼容。
+///
+/// 返回 `Ok(None)` 表示事件对会话状态无贡献（如 opencode 的流式增量），跳过。
+fn parse_agent_hook_payload(raw: &str, now_ms: u64) -> Result<Option<AgentSessionEvent>, String> {
     if let Ok(envelope) = serde_json::from_str::<AgentHookEnvelope>(raw) {
         let _schema = envelope.schema.as_deref();
-        let source = match envelope.source.trim().to_ascii_lowercase().as_str() {
-            "codex" => AgentSource::Codex,
-            "claude" | "claude-code" | "claude_code" => AgentSource::ClaudeCode,
-            other => return Err(format!("unknown agent hook source: {other}")),
-        };
+        let source = AgentSource::from_envelope(&envelope.source)
+            .ok_or_else(|| format!("unknown agent hook source: {}", envelope.source))?;
         let payload = serde_json::to_string(&envelope.payload)
             .map_err(|e| format!("agent hook envelope payload serialize failed: {e}"))?;
-        return ClaudeHookEvent::from_json(&payload)?.into_session_event_from(
-            source,
-            now_ms,
-            envelope.machine,
-        );
+        return match source {
+            AgentSource::Pi => {
+                bitcat_core::pi_agent::parse_pi_payload(source, &payload, now_ms, envelope.machine)
+            }
+            AgentSource::OpenCode => bitcat_core::opencode::parse_opencode_payload(
+                source,
+                &payload,
+                now_ms,
+                envelope.machine,
+            ),
+            AgentSource::ClaudeCode | AgentSource::Codex => ClaudeHookEvent::from_json(&payload)?
+                .into_session_event_from(source, now_ms, envelope.machine)
+                .map(Some),
+        };
     }
 
-    ClaudeHookEvent::from_json(raw)?.into_session_event(now_ms)
+    ClaudeHookEvent::from_json(raw)?
+        .into_session_event(now_ms)
+        .map(Some)
 }
 
 fn evaluate_nudge(
@@ -1402,7 +1416,7 @@ pub async fn cmd_open_agent_workspace(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcat_core::agent_session::{AgentSource, AgentStatus};
+    use bitcat_core::agent_session::{apply_session_event, AgentSource, AgentStatus};
 
     #[test]
     fn snapshot_sorts_and_marks_primary() {
@@ -1470,13 +1484,214 @@ mod tests {
                 "tool_input": {"command": "cargo test"}
             }
         }"#;
-        let event = parse_agent_hook_payload(raw, 42).unwrap();
+        let event = parse_agent_hook_payload(raw, 42).unwrap().unwrap();
         assert_eq!(event.session_id, "codex-session");
         assert_eq!(event.source, AgentSource::Codex);
         assert_eq!(event.machine.as_deref(), Some("macbook-pro"));
         assert_eq!(event.status, AgentStatus::ToolRunning);
         assert_eq!(event.tool_name.as_deref(), Some("Bash"));
         assert!(event.tool_input_preview.unwrap().contains("cargo test"));
+    }
+
+    #[test]
+    fn parses_pi_hook_envelope() {
+        let raw = r#"{
+            "source": "pi",
+            "machine": "dev-box",
+            "payload": {
+                "schema": "bitcat-pi-watch/1",
+                "event": "tool_execution_start",
+                "session_id": "01a08fe5-4a2b",
+                "cwd": "/home/u/proj",
+                "data": {
+                    "toolCallId": "c1",
+                    "toolName": "bash",
+                    "args": "{\"command\": \"cargo test\"}"
+                }
+            }
+        }"#;
+        let event = parse_agent_hook_payload(raw, 42).unwrap().unwrap();
+        assert_eq!(event.session_id, "01a08fe5-4a2b");
+        assert_eq!(event.source, AgentSource::Pi);
+        assert_eq!(event.machine.as_deref(), Some("dev-box"));
+        assert_eq!(event.status, AgentStatus::ToolRunning);
+        assert_eq!(event.tool_name.as_deref(), Some("bash"));
+        assert!(event.tool_input_preview.unwrap().contains("cargo test"));
+    }
+
+    #[test]
+    fn parses_opencode_hook_envelope() {
+        let raw = r#"{
+            "source": "opencode",
+            "machine": "dev-box",
+            "payload": {
+                "schema": "bitcat-opencode-watch/1",
+                "event": {
+                    "type": "session.status",
+                    "properties": {"sessionID": "ses_abc", "status": {"type": "busy"}}
+                },
+                "directory": "/home/u/proj"
+            }
+        }"#;
+        let event = parse_agent_hook_payload(raw, 42).unwrap().unwrap();
+        assert_eq!(event.session_id, "ses_abc");
+        assert_eq!(event.source, AgentSource::OpenCode);
+        assert_eq!(event.status, AgentStatus::Working);
+        assert_eq!(event.workspace, "/home/u/proj");
+    }
+
+    #[test]
+    fn opencode_noise_envelope_is_skipped() {
+        let raw = r#"{
+            "source": "opencode",
+            "payload": {
+                "event": {"type": "message.part.delta", "properties": {"sessionID": "ses_abc", "delta": "x"}}
+            }
+        }"#;
+        assert!(parse_agent_hook_payload(raw, 42).unwrap().is_none());
+    }
+
+    #[test]
+    fn unknown_hook_source_is_error() {
+        let raw = r#"{"source": "klingon", "payload": {}}"#;
+        assert!(parse_agent_hook_payload(raw, 42).is_err());
+    }
+
+    // ---- 以下 envelope 序列来自 2026-09-11 真实端到端联调
+    // （pi 0.85.1 / opencode 1.18.30，脚本安装后跑真实会话，monitor 抓包）。
+    // 锁定"原始事件 → 归一状态"的完整生命周期，防止映射回归。----
+
+    #[test]
+    fn replays_real_pi_lifecycle_into_normalized_states() {
+        let sid = "01a08ffc-b505-7088-ac3a-11dd1072a32f";
+        let envelopes = [
+            format!(
+                r#"{{"source":"pi","machine":"dev","payload":{{"schema":"bitcat-pi-watch/1","event":"session_start","session_id":"{sid}","cwd":"/home/u/proj","data":{{"type":"session_start","reason":"startup"}}}}}}"#
+            ),
+            format!(
+                r#"{{"source":"pi","machine":"dev","payload":{{"event":"before_agent_start","session_id":"{sid}","cwd":"/home/u/proj","data":{{"type":"before_agent_start","prompt":"use the bash tool to run exactly: echo pi-e2e-ok"}}}}}}"#
+            ),
+            format!(
+                r#"{{"source":"pi","machine":"dev","payload":{{"event":"agent_start","session_id":"{sid}","cwd":"/home/u/proj","data":{{"type":"agent_start"}}}}}}"#
+            ),
+            format!(
+                r#"{{"source":"pi","machine":"dev","payload":{{"event":"message_end","session_id":"{sid}","cwd":"/home/u/proj","data":{{"type":"message_end","message":{{"role":"user","content":[{{"type":"text","text":"use the bash tool"}}]}}}}}}}}"#
+            ),
+            format!(
+                r#"{{"source":"pi","machine":"dev","payload":{{"event":"tool_execution_start","session_id":"{sid}","cwd":"/home/u/proj","data":{{"toolCallId":"call_45ae","toolName":"bash","args":{{"command":"echo pi-e2e-ok"}}}}}}}}"#
+            ),
+            format!(
+                r#"{{"source":"pi","machine":"dev","payload":{{"event":"tool_execution_end","session_id":"{sid}","cwd":"/home/u/proj","data":{{"toolCallId":"call_45ae","toolName":"bash","result":"pi-e2e-ok","isError":false}}}}}}"#
+            ),
+            format!(
+                r#"{{"source":"pi","machine":"dev","payload":{{"event":"message_end","session_id":"{sid}","cwd":"/home/u/proj","data":{{"message":{{"role":"assistant","content":[{{"type":"text","text":"`pi-e2e-ok`"}}]}}}}}}}}"#
+            ),
+            format!(
+                r#"{{"source":"pi","machine":"dev","payload":{{"event":"agent_settled","session_id":"{sid}","cwd":"/home/u/proj","data":{{"type":"agent_settled"}}}}}}"#
+            ),
+            format!(
+                r#"{{"source":"pi","machine":"dev","payload":{{"event":"session_shutdown","session_id":"{sid}","cwd":"/home/u/proj","data":{{"reason":"quit"}}}}}}"#
+            ),
+        ];
+        let mut sessions = std::collections::HashMap::new();
+        let statuses: Vec<AgentStatus> = envelopes
+            .iter()
+            .filter_map(|raw| parse_agent_hook_payload(raw, 42).unwrap())
+            .map(|event| {
+                apply_session_event(&mut sessions, event);
+                sessions.values().next().unwrap().status
+            })
+            .collect();
+        assert_eq!(
+            statuses,
+            vec![
+                AgentStatus::Idle,
+                AgentStatus::Working,
+                AgentStatus::Working,
+                AgentStatus::Working,
+                AgentStatus::ToolRunning,
+                AgentStatus::Working,
+                AgentStatus::Working,
+                AgentStatus::Done,
+                AgentStatus::Idle,
+            ]
+        );
+        let session = sessions.values().next().unwrap();
+        assert_eq!(session.workspace, "/home/u/proj");
+        assert_eq!(session.machine.as_deref(), Some("dev"));
+        assert!(session
+            .user_prompt_preview
+            .as_deref()
+            .unwrap_or_default()
+            .contains("echo pi-e2e-ok"));
+        assert_eq!(
+            session.last_response_preview.as_deref(),
+            Some("`pi-e2e-ok`")
+        );
+    }
+
+    #[test]
+    fn replays_real_opencode_lifecycle_into_normalized_states() {
+        let sid = "ses_f7002ecbaffedPghK01xrexX8G";
+        let envelopes = [
+            format!(
+                r#"{{"source":"opencode","machine":"dev","payload":{{"event":{{"id":"e1","type":"session.created","properties":{{"sessionID":"{sid}","info":{{"directory":"/home/u/proj","title":"New session"}}}}}},"directory":"/home/u/proj"}}}}"#
+            ),
+            format!(
+                r#"{{"source":"opencode","machine":"dev","payload":{{"event":{{"id":"e2","type":"session.updated","properties":{{"sessionID":"{sid}","info":{{"directory":"/home/u/proj","title":"Running echo oc-e2e-ok"}}}}}},"directory":"/home/u/proj"}}}}"#
+            ),
+            // user 消息 part 无 time 字段，应被跳过。
+            format!(
+                r#"{{"source":"opencode","machine":"dev","payload":{{"event":{{"id":"e3","type":"message.part.updated","properties":{{"sessionID":"{sid}","part":{{"type":"text","text":"use bash to run"}}}}}}}}}}"#
+            ),
+            format!(
+                r#"{{"source":"opencode","machine":"dev","payload":{{"event":{{"id":"e4","type":"session.status","properties":{{"sessionID":"{sid}","status":{{"type":"busy"}}}}}}}}}}"#
+            ),
+            format!(
+                r#"{{"source":"opencode","machine":"dev","payload":{{"event":{{"id":"bitcat-c1-before","type":"tool.execute.before","properties":{{"sessionID":"{sid}","tool":"bash","args":{{"command":"echo oc-e2e-ok"}}}}}},"directory":"/home/u/proj"}}}}"#
+            ),
+            format!(
+                r#"{{"source":"opencode","machine":"dev","payload":{{"event":{{"id":"bitcat-c1-after","type":"tool.execute.after","properties":{{"sessionID":"{sid}","tool":"bash","args":{{"command":"echo oc-e2e-ok"}}}}}},"directory":"/home/u/proj"}}}}"#
+            ),
+            format!(
+                r#"{{"source":"opencode","machine":"dev","payload":{{"event":{{"id":"e5","type":"message.part.updated","properties":{{"sessionID":"{sid}","part":{{"type":"text","text":"`oc-e2e-ok`","time":{{"start":1789122,"end":1789123}}}}}}}}}}}}"#
+            ),
+            format!(
+                r#"{{"source":"opencode","machine":"dev","payload":{{"event":{{"id":"e6","type":"session.idle","properties":{{"sessionID":"{sid}"}}}}}}}}"#
+            ),
+        ];
+        let mut sessions = std::collections::HashMap::new();
+        let statuses: Vec<AgentStatus> = envelopes
+            .iter()
+            .filter_map(|raw| parse_agent_hook_payload(raw, 42).unwrap())
+            .map(|event| {
+                apply_session_event(&mut sessions, event);
+                sessions.values().next().unwrap().status
+            })
+            .collect();
+        assert_eq!(
+            statuses,
+            vec![
+                AgentStatus::Idle,
+                AgentStatus::Working,
+                AgentStatus::Working,
+                AgentStatus::ToolRunning,
+                AgentStatus::Working,
+                AgentStatus::Working,
+                AgentStatus::Done,
+            ]
+        );
+        let session = sessions.values().next().unwrap();
+        assert_eq!(session.workspace, "/home/u/proj");
+        assert!(session
+            .user_prompt_preview
+            .as_deref()
+            .unwrap_or_default()
+            .contains("echo oc-e2e-ok"));
+        assert_eq!(
+            session.last_response_preview.as_deref(),
+            Some("`oc-e2e-ok`")
+        );
     }
 
     #[test]

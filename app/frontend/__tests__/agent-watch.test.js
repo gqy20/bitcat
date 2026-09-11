@@ -72,6 +72,16 @@ describe('agent watch metadata', () => {
     expect(dom.window.__agentWatchTest.deviceHue('qy113')).not.toBe(dom.window.__agentWatchTest.deviceHue('android'));
   });
 
+  it('labels all supported agent sources', () => {
+    const label = dom.window.__agentWatchTest.agentSourceLabel;
+    expect(label('claude_code')).toBe('Claude Code');
+    expect(label('codex')).toBe('Codex');
+    expect(label('pi')).toBe('pi');
+    expect(label('opencode')).toBe('opencode');
+    expect(label('unknown-x')).toBe('unknown-x');
+    expect(label(undefined)).toBe('Agent');
+  });
+
   it('renders notification rows with title, meta, age, and hover dismiss affordance', () => {
     dom.window.__agentWatchTest.render({
       sessions: [{
