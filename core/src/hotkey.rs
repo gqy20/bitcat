@@ -416,21 +416,24 @@ pub fn find_window_by_pid(pid: u32) -> Option<isize> {
     }
 
     unsafe extern "system" fn callback(hwnd: *mut core::ffi::c_void, lparam: isize) -> i32 {
-        let state = &mut *(lparam as *mut SearchState);
-        let mut window_pid: u32 = 0;
-        if GetWindowThreadProcessId(hwnd, &mut window_pid) == 0 || window_pid != state.pid {
-            return 1;
+        // edition 2024：unsafe fn 体内仍需显式 unsafe 块。
+        unsafe {
+            let state = &mut *(lparam as *mut SearchState);
+            let mut window_pid: u32 = 0;
+            if GetWindowThreadProcessId(hwnd, &mut window_pid) == 0 || window_pid != state.pid {
+                return 1;
+            }
+            if IsWindowVisible(hwnd) == 0 {
+                return 1;
+            }
+            // 优先标题更长的窗口：终端主窗口通常有完整标题，辅助窗口多为空标题。
+            let score = GetWindowTextLengthW(hwnd);
+            if score > state.best_score {
+                state.best_score = score;
+                state.best = Some(hwnd as isize);
+            }
+            1
         }
-        if IsWindowVisible(hwnd) == 0 {
-            return 1;
-        }
-        // 优先标题更长的窗口：终端主窗口通常有完整标题，辅助窗口多为空标题。
-        let score = GetWindowTextLengthW(hwnd);
-        if score > state.best_score {
-            state.best_score = score;
-            state.best = Some(hwnd as isize);
-        }
-        1
     }
 
     let mut state = SearchState {
