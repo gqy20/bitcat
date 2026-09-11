@@ -81,6 +81,7 @@ cargo run -p xtask -- copy-config --out-dir target/debug
 cargo run -p xtask -- test-core
 cargo run -p xtask -- test-fast
 cargo run -p xtask -- package-portable --version v0.1.0 --release-dir target/release --out-dir .
+cargo run -p xtask -- audit-usage --days 14   # F2 功能使用审计：读 ~/.bitcat/logs/ 埋点出报告
 ```
 
 `make build` / `make release` 的配置复制、`make test*` 的测试入口、`make clean` 的 dist 清理、`make dist` / `make dist-upx` 和 GitHub Release workflow 都必须调用这条 Rust 工具链路径；不要新增第二套 shell/PowerShell 复制或 zip 逻辑。

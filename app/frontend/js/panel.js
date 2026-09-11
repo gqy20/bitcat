@@ -2,16 +2,29 @@ const invoke = window.__TAURI__?.core?.invoke;
 const listen = window.__TAURI__?.event?.listen;
 
 let actions = [];
+let libraryActions = [];
+let inLibraryView = false;
 let columns = 3;
 let rows = 3;
 let selectedIndex = 0;
+
+function currentActions() {
+  return inLibraryView ? libraryActions : actions;
+}
 
 function render() {
   const grid = document.getElementById('grid');
   grid.innerHTML = '';
   document.documentElement.style.setProperty('--panel-columns', String(columns));
   document.documentElement.style.setProperty('--panel-rows', String(rows));
-  actions.forEach((a, i) => {
+  const items = currentActions();
+  const title = document.getElementById('panel-title');
+  const mainTitle = document.getElementById('panel-title-main');
+  if (title && mainTitle) {
+    title.classList.toggle('hidden', !inLibraryView);
+    mainTitle.classList.toggle('hidden', inLibraryView);
+  }
+  items.forEach((a, i) => {
     const cell = document.createElement('div');
     cell.className = a.enabled ? 'cell' : 'cell disabled';
     cell.dataset.index = i;
@@ -31,6 +44,7 @@ function render() {
     });
     grid.appendChild(cell);
   });
+  selectedIndex = Math.min(selectedIndex, Math.max(0, items.length - 1));
   updateSelection();
 }
 
@@ -40,20 +54,39 @@ function updateSelection() {
   });
 }
 
+// 进入/退出二级游戏库视图
+function showLibrary() {
+  inLibraryView = true;
+  selectedIndex = 0;
+  render();
+}
+
+function backToMain() {
+  inLibraryView = false;
+  selectedIndex = 0;
+  render();
+}
+
 // dx: 列偏移；dy: 手柄约定（1=上，-1=下），需转屏幕坐标
 function moveSelection(dx, dy) {
-  if (actions.length === 0) return;
+  const items = currentActions();
+  if (items.length === 0) return;
   const x = selectedIndex % columns;
   const y = Math.floor(selectedIndex / columns);
   const nx = Math.max(0, Math.min(columns - 1, x + dx));
   const ny = Math.max(0, Math.min(rows - 1, y - dy));
-  selectedIndex = Math.min(actions.length - 1, ny * columns + nx);
+  selectedIndex = Math.min(items.length - 1, ny * columns + nx);
   updateSelection();
 }
 
 async function activateSelected() {
-  const a = actions[selectedIndex];
+  const a = currentActions()[selectedIndex];
   if (!a || !a.enabled) return;
+  // 游戏库入口在前端切换二级视图，不经过后端。
+  if (a.id === 'gamelib') {
+    showLibrary();
+    return;
+  }
   if (!invoke) {
     console.error('Tauri invoke 不可用');
     return;
@@ -66,6 +99,11 @@ async function activateSelected() {
 }
 
 async function closePanel() {
+  // 游戏库视图里 B 键先返回主视图，再按一次才关闭面板。
+  if (inLibraryView) {
+    backToMain();
+    return;
+  }
   if (invoke) {
     await invoke('cmd_hide_panel');
   }
@@ -137,6 +175,7 @@ initEvents();
 async function loadPanelActions() {
   if (!invoke) {
     actions = [];
+    libraryActions = [];
     render();
     return;
   }
@@ -145,11 +184,14 @@ async function loadPanelActions() {
     columns = Math.max(1, Number(vm.columns) || 3);
     rows = Math.max(1, Number(vm.rows) || 3);
     actions = Array.isArray(vm.actions) ? vm.actions : [];
-    selectedIndex = Math.min(selectedIndex, Math.max(0, actions.length - 1));
+    libraryActions = Array.isArray(vm.library) ? vm.library : [];
+    inLibraryView = false;
+    selectedIndex = 0;
     render();
   } catch (e) {
     console.error('加载面板动作失败:', e);
     actions = [];
+    libraryActions = [];
     render();
   }
 }
@@ -164,3 +206,20 @@ window.addEventListener('focus', () => {
 });
 
 loadPanelActions();
+
+// 测试钩子：无 Tauri 环境下（vitest / 浏览器手动验证）驱动二级视图。
+if (typeof window !== 'undefined') {
+  window.__panelTest = {
+    setActions: (main, library) => {
+      actions = main;
+      libraryActions = library;
+      inLibraryView = false;
+      selectedIndex = 0;
+      render();
+    },
+    showLibrary,
+    backToMain,
+    currentActions: () => currentActions().map((a) => a.id),
+    closePanel,
+  };
+}

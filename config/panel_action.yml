@@ -1,5 +1,6 @@
 # 弹出面板快捷入口配置
 # id 需要与 app/frontend/js/panel.js 中的 ACTIONS id 保持一致。
+# group: library 的动作收进二级"游戏库"，不占主网格位置（F2 审计结论）。
 
 defaults:
   terminal: powershell
@@ -16,51 +17,65 @@ actions:
     type: builtin
     command: invasion
 
+  gamelib:
+    label: 游戏库
+    icon: "🎲"
+    order: 20
+    type: builtin
+    command: gamelib
+
   game:
     label: 毛线球大作战
     icon: "🎮"
-    order: 20
+    order: 100
     type: builtin
     command: game
+    group: library
 
   memory:
     label: 翻牌配对
     icon: "M"
-    order: 30
+    order: 110
     type: builtin
     command: memory
+    group: library
 
   catch:
     label: 接食物
     icon: "C"
-    order: 40
+    order: 120
     type: builtin
     command: catch
+    group: library
 
   battle:
     label: 飞机守护战
     icon: "⚔"
-    order: 50
+    order: 130
     type: builtin
     command: battle
+    group: library
 
   gomoku:
     label: AI 五子棋
     icon: "G"
-    order: 60
+    order: 140
     type: builtin
     command: gomoku
+    group: library
 
   arena:
     label: 猫猫擂台
     icon: "A"
-    order: 70
+    order: 150
     type: builtin
     command: arena
+    group: library
 
   beads:
     label: 拼豆
     icon: "B"
-    order: 80
+    order: 160
     type: builtin
     command: beads
+    group: library

@@ -14,6 +14,8 @@ use std::{
 
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
 
+mod audit_usage;
+
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 #[derive(Debug)]
@@ -41,6 +43,26 @@ fn main() -> Result<()> {
             ["-p", "bitcat-core", "-E", "not test(/prop_/)"],
             Some(("PROPTEST_CASES", "32")),
         ),
+        Some("audit-usage") => {
+            let mut days = 0u32;
+            let mut iter = args.peekable();
+            while let Some(arg) = iter.next() {
+                match arg.as_str() {
+                    "--days" => {
+                        days = iter
+                            .next()
+                            .and_then(|value| value.parse().ok())
+                            .ok_or("audit-usage --days 需要一个数字")?;
+                    }
+                    "-h" | "--help" => {
+                        print_help();
+                        return Ok(());
+                    }
+                    _ => return Err(format!("unknown audit-usage option: {arg}").into()),
+                }
+            }
+            audit_usage::run(days)
+        }
         Some("-h") | Some("--help") | None => {
             print_help();
             Ok(())
@@ -479,6 +501,7 @@ xtask commands:
   prepare-exe --out-dir <path>
   clean-dist
   test | test-core | test-app | test-fast
+  audit-usage [--days N]        F2 功能使用审计：读 ~/.bitcat/logs/ 埋点出报告
 
 package-portable options:
   --version <value>          Release version/tag. Defaults to git describe.

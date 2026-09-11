@@ -84,6 +84,9 @@ pub struct PanelActionDef {
     pub terminal: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    /// 分组：`library` 表示收进二级游戏库，不占主网格位置。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
 }
 
 fn is_false(value: &bool) -> bool {
@@ -107,6 +110,10 @@ pub struct PanelViewModel {
     pub columns: u32,
     pub rows: u32,
     pub actions: Vec<PanelActionItem>,
+    /// 二级"游戏库"列表：`group: library` 的动作不占主网格位置，
+    /// 从游戏库入口进入（F2 审计：主视图只保留主推 + 库入口）。
+    #[serde(default)]
+    pub library: Vec<PanelActionItem>,
 }
 
 /// Frontend data for one panel button.
@@ -116,6 +123,8 @@ pub struct PanelActionItem {
     pub label: String,
     pub icon: String,
     pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
 }
 
 impl PanelActionConfig {
@@ -156,25 +165,36 @@ impl PanelActionConfig {
                 .then_with(|| left_id.cmp(right_id))
         });
 
+        let to_item = |(id, action): (&String, &PanelActionDef)| PanelActionItem {
+            id: id.clone(),
+            label: if action.label.is_empty() {
+                id.clone()
+            } else {
+                action.label.clone()
+            },
+            icon: action.icon.clone(),
+            enabled: action.enabled,
+            group: action.group.clone(),
+        };
+
+        let mut main = Vec::new();
+        let mut library = Vec::new();
+        for entry in actions {
+            if entry.1.group.as_deref() == Some("library") {
+                library.push(to_item(entry));
+            } else {
+                main.push(to_item(entry));
+            }
+        }
+        main.truncate(limit);
+
         PanelViewModel {
             width: self.defaults.width.clamp(240, 1200),
             height: self.defaults.height.clamp(180, 900),
             columns,
             rows,
-            actions: actions
-                .into_iter()
-                .take(limit)
-                .map(|(id, action)| PanelActionItem {
-                    id: id.clone(),
-                    label: if action.label.is_empty() {
-                        id.clone()
-                    } else {
-                        action.label.clone()
-                    },
-                    icon: action.icon.clone(),
-                    enabled: action.enabled,
-                })
-                .collect(),
+            actions: main,
+            library,
         }
     }
 }
@@ -195,8 +215,10 @@ mod tests {
 
     #[test]
     fn test_panel_only_contains_minigames() {
-        let config = PanelActionConfig::load("config/panel_action.yml").unwrap();
-        assert_eq!(config.actions.len(), 8);
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../config/panel_action.yml");
+        let config = PanelActionConfig::load(path).unwrap();
+        // F2：8 个游戏 + gamelib 入口。
+        assert_eq!(config.actions.len(), 9);
         for (id, action) in &config.actions {
             assert_eq!(action.action_type, "builtin", "{id} should be builtin");
             assert!(
@@ -211,6 +233,7 @@ mod tests {
                             | "arena"
                             | "beads"
                             | "invasion"
+                            | "gamelib"
                     )
                 ),
                 "{id} should launch a minigame"
@@ -233,13 +256,14 @@ mod tests {
         let config = PanelActionConfig::load(path).unwrap();
         let vm = config.to_view_model();
         assert_eq!((vm.width, vm.height, vm.columns, vm.rows), (480, 420, 3, 3));
-        assert_eq!(vm.actions.len(), 8);
+        // F2 收敛：主视图只留主推 Invasion + 游戏库入口，其余游戏收进 library。
         let ids: Vec<&str> = vm.actions.iter().map(|action| action.id.as_str()).collect();
-        // F3 主推重排：Invasion（桌面保卫战）提到首位。
+        assert_eq!(ids, vec!["invasion", "gamelib"]);
+        let library_ids: Vec<&str> = vm.library.iter().map(|action| action.id.as_str()).collect();
         assert_eq!(
-            ids,
+            library_ids,
             vec![
-                "invasion", "game", "memory", "catch", "battle", "gomoku", "arena", "beads"
+                "game", "memory", "catch", "battle", "gomoku", "arena", "beads"
             ]
         );
     }
