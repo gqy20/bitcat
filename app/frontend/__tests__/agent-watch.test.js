@@ -352,3 +352,83 @@ describe('agent watch metadata', () => {
     expect(view.statusText).toBe('scripts/remote-install.sh');
   });
 });
+
+describe('agent watch subtask grouping', () => {
+  let dom;
+
+  beforeEach(() => {
+    dom = createDom();
+  });
+
+  afterEach(() => {
+    dom?.window?.close();
+  });
+
+  it('groups background subtasks into the parent card with a count chip', () => {
+    const parent = {
+      session_id: 'parent',
+      source: 'claude_code',
+      workspace_name: 'bitcat',
+      status: 'working',
+      display: {
+        action_label: 'Shell',
+        headline: 'Running tests',
+        project: 'bitcat',
+        source_label: 'Claude Code',
+        tone: 'active',
+        subtask_label: '2 个子任务运行中',
+      },
+    };
+    const childA = {
+      ...parent,
+      session_id: 'claude:parent:agent:a',
+      background: true,
+      parent_session_id: 'parent',
+      status: 'tool_running',
+      age_sec: 3,
+      display: { ...parent.display, subtask_label: '', action_label: 'Search' },
+    };
+    const childB = {
+      ...parent,
+      session_id: 'claude:parent:agent:b',
+      background: true,
+      parent_session_id: 'parent',
+      status: 'waiting',
+      age_sec: 2,
+      display: { ...parent.display, subtask_label: '', action_label: 'Read' },
+    };
+    dom.window.__agentWatchTest.render({ sessions: [parent, childA, childB] });
+
+    const doc = dom.window.document;
+    // 只渲染主卡片；子会话聚合进去。
+    expect(doc.querySelectorAll('.task-card')).toHaveLength(1);
+    expect(doc.querySelector('.task-card .task-subtask-count')?.textContent).toBe('2 个子任务运行中');
+
+    // 展开后显示子任务明细行。
+    doc.querySelector('.task-card').click();
+    const rows = doc.querySelectorAll('.task-subtask');
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toContain('Search');
+    expect(rows[1].textContent).toContain('Read');
+  });
+
+  it('shows an orphan subtask independently when its parent is unknown', () => {
+    const orphan = {
+      session_id: 'claude:ghost:agent:x',
+      source: 'claude_code',
+      workspace_name: 'proj',
+      background: true,
+      parent_session_id: 'ghost',
+      status: 'working',
+      display: {
+        action_label: 'Search',
+        headline: 'Searching',
+        project: 'proj',
+        source_label: 'Claude Code',
+        tone: 'active',
+      },
+    };
+    dom.window.__agentWatchTest.render({ sessions: [orphan] });
+    expect(dom.window.document.querySelectorAll('.task-card')).toHaveLength(1);
+  });
+});

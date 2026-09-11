@@ -873,9 +873,15 @@ fn watch_page_html() -> String {
       return 'other';
     }
 
-    function visibleSession(session) {
+    function visibleSession(session, allSessions) {
       if (session.display?.quiet) return false;
-      return String(session.status || '').toLowerCase() !== 'idle';
+      if (String(session.status || '').toLowerCase() === 'idle') return false;
+      // background 子会话聚合进主卡片（parent 已知时不独立展示）。
+      if (session.background && session.parent_session_id && allSessions) {
+        const parentKnown = allSessions.some((c) => c.session_id === session.parent_session_id);
+        if (parentKnown) return false;
+      }
+      return true;
     }
 
     function titleOf(session) {
@@ -904,6 +910,7 @@ fn watch_page_html() -> String {
       meta.push({ value: session.workspace_name || 'unknown' });
       meta.push({ value: display.source_label || session.source || 'Agent' });
       if (display.usage_label) meta.push({ value: display.usage_label });
+      if (display.subtask_label) meta.push({ value: display.subtask_label });
       const detail = detailOf(session);
       const open = openCards.has(session.session_id) ? ' open' : '';
       return `
@@ -921,7 +928,8 @@ fn watch_page_html() -> String {
     }
 
     function render(snapshot) {
-      const sessions = (snapshot.sessions || []).filter(visibleSession);
+      const all = snapshot.sessions || [];
+      const sessions = all.filter((session) => visibleSession(session, all));
       const buckets = {
         needs: sessions.filter(s => bucketOf(s) === 'needs'),
         active: sessions.filter(s => bucketOf(s) === 'active'),
@@ -1554,10 +1562,11 @@ fn snapshot_from_sessions(
     event_count: u64,
     last_event_at_ms: Option<u64>,
 ) -> AgentSessionsSnapshot {
-    let views: Vec<AgentSessionView> = sessions
+    let mut views: Vec<AgentSessionView> = sessions
         .iter()
         .map(|session| AgentSessionView::from_session(session, now_ms))
         .collect();
+    bitcat_core::agent_session::attach_subtask_summaries(&mut views);
     AgentSessionsSnapshot {
         primary: views.first().cloned(),
         sessions: views,

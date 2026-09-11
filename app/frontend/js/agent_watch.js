@@ -112,6 +112,7 @@
       quiet: Boolean(display.quiet),
       usage: String(display.usage_label || ""),
       usageTooltip,
+      subtaskLabel: String(display.subtask_label || ""),
       statusText: statusLine(session, display),
     };
   }
@@ -142,6 +143,9 @@
     const parts = [];
     if (!isNoisyActionLabel(view.kind, session)) {
       parts.push({ value: view.kind, className: "task-kind" });
+    }
+    if (view.subtaskLabel) {
+      parts.push({ value: view.subtaskLabel, className: "task-subtask-count" });
     }
     if (!expandedRow && shouldShowStatusText(view, session)) {
       parts.push({ value: view.statusText, className: "task-status-text" });
@@ -183,9 +187,17 @@
     return value.toLowerCase().includes("mcp");
   }
 
-  function shouldHideSession(session) {
+  function shouldHideSession(session, allSessions) {
     if (session.display?.quiet) return true;
-    return String(session.status || "").toLowerCase() === "idle";
+    if (String(session.status || "").toLowerCase() === "idle") return true;
+    // background 子会话聚合进主卡片，不独立占位；父会话不在列表时兜底独立展示。
+    if (session.background && session.parent_session_id && allSessions) {
+      const parentKnown = allSessions.some(
+        (candidate) => candidate.session_id === session.parent_session_id
+      );
+      if (parentKnown) return true;
+    }
+    return false;
   }
 
   function ageLabel(ageSec) {
@@ -258,7 +270,7 @@
   }
 
   function summaryText(sessions) {
-    const visible = sessions.filter((session) => !shouldHideSession(session));
+    const visible = sessions.filter((session) => !shouldHideSession(session, sessions));
     const waiting = visible.filter((session) => {
       const status = String(session.status || "").toLowerCase();
       return status === "waiting" || status === "error";
@@ -272,10 +284,38 @@
     return `${visible.length} 条记录`;
   }
 
+  function subtaskRows(session, allSessions) {
+    return allSessions
+      .filter(
+        (candidate) =>
+          candidate.background &&
+          candidate.parent_session_id === session.session_id &&
+          !candidate.display?.quiet &&
+          String(candidate.status || "").toLowerCase() !== "idle"
+      )
+      .map((candidate) => {
+        const display = candidate.display || {};
+        const status = String(candidate.status || "").toLowerCase();
+        const cls =
+          status === "waiting" || status === "error"
+            ? " subtask-needs"
+            : status === "done"
+              ? " subtask-done"
+              : "";
+        const label = display.action_label || display.headline || statusLabel(status);
+        return `<li class="task-subtask${cls}" title="${escapeAttr(display.detail || label)}">
+          <span class="subtask-name">${escapeHtml(label)}</span>
+          <span class="subtask-age">${escapeHtml(display.age_label || ageLabel(candidate.age_sec))}</span>
+        </li>`;
+      });
+  }
+
   function render(snapshot) {
     latest = snapshot || latest;
     const sessions = latest?.sessions || [];
-    const renderableSessions = sortedSessions(sessions).filter((session) => !shouldHideSession(session));
+    const renderableSessions = sortedSessions(sessions).filter(
+      (session) => !shouldHideSession(session, sessions)
+    );
     watchCount.textContent = String(sessions.length);
     if (watchTitle) watchTitle.textContent = renderableSessions.length ? `Agent Watch ${renderableSessions.length}` : "Agent Watch";
     const summary = summaryText(sessions);
@@ -296,6 +336,10 @@
       const meta = items.length
         ? `<div class="task-meta">${items.map(renderMetaItem).join("")}</div>`
         : "";
+      const subtasks = isExpanded ? subtaskRows(session, sessions) : [];
+      const subtaskList = subtasks.length
+        ? `<ul class="task-subtasks">${subtasks.join("")}</ul>`
+        : "";
       const compactClass = items.length ? "" : " compact";
       const style = view.machine ? ` style="--device-hue: ${deviceHue(view.machine)}"` : "";
       return `
@@ -306,6 +350,7 @@
             </div>
             ${meta}
             ${isExpanded && detail ? `<p class="task-detail">${escapeHtml(detail)}</p>` : ""}
+            ${subtaskList}
             ${isExpanded ? `<div class="task-actions"><button class="task-action" type="button" data-action="open-workspace" title="打开这个任务的文件夹" aria-label="打开这个任务的文件夹">打开目录</button></div>` : ""}
           </div>
           <button class="task-dismiss" type="button" data-action="dismiss" title="隐藏这条任务" aria-label="隐藏这条任务">×</button>

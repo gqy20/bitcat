@@ -485,3 +485,69 @@ body {
   outline: 2px solid rgba(244, 184, 74, 0.75);
   outline-offset: 1px;
 }
+
+/* ---- 子任务聚合：计数 chip + 展开明细列表 ---- */
+.task-subtask-count {
+  flex: 0 0 auto;
+  max-width: 96px;
+  height: 16px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(244, 184, 74, 0.35);
+  border-radius: 999px;
+  background: rgba(244, 184, 74, 0.12);
+  color: rgba(255, 224, 160, 0.95);
+  font-size: 9.4px;
+  font-weight: 720;
+  line-height: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-subtasks {
+  margin: 4px 0 0;
+  padding: 0 0 0 17px;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+  max-height: 88px;
+  overflow-y: auto;
+}
+
+.task-subtasks::-webkit-scrollbar {
+  display: none;
+}
+
+.task-subtask {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 18px;
+  color: rgba(255, 255, 255, 0.66);
+}
+
+.task-subtask .subtask-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-subtask .subtask-age {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.45);
+  font-variant-numeric: tabular-nums;
+}
+
+.task-subtask.subtask-needs .subtask-name {
+  color: rgba(255, 207, 103, 0.95);
+}
+
+.task-subtask.subtask-done .subtask-name {
+  color: rgba(99, 223, 145, 0.9);
+}

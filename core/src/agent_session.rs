@@ -13,6 +13,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 const DONE_QUIET_AFTER_SEC: u64 = 60;
+/// background 子会话（子代理/后台任务）完成后的停留窗口比主会话短：
+/// 它们是主任务的内部细节，快速退场避免挤占浮窗空间。
+const BACKGROUND_DONE_QUIET_AFTER_SEC: u64 = 15;
 /// 生命周期短于该值且从未运行过工具的会话视为脚本式短命调用，结束后直接安静。
 const EPHEMERAL_LIFETIME_SEC: u64 = 10;
 
@@ -405,6 +408,12 @@ pub struct AgentSessionView {
     pub cost_usd_micros: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub waiting_reason: Option<WaitingReason>,
+    /// 旗下仍在展示的 background 子会话统计（子代理/后台任务），
+    /// 由 `attach_subtask_summaries` 在快照组装时填充。
+    #[serde(default)]
+    pub subtasks_active: u32,
+    #[serde(default)]
+    pub subtasks_recent_done: u32,
     pub updated_at_ms: u64,
     pub age_sec: u64,
     pub display: AgentSessionDisplay,
@@ -436,6 +445,8 @@ impl AgentSessionView {
             tokens_out: session.tokens_out,
             cost_usd_micros: session.cost_usd_micros,
             waiting_reason: session.waiting_reason,
+            subtasks_active: 0,
+            subtasks_recent_done: 0,
             updated_at_ms: session.updated_at_ms,
             age_sec,
             display: AgentSessionDisplay::from_session(session, age_sec),
@@ -456,6 +467,9 @@ pub struct AgentSessionDisplay {
     /// 简短用量标签：金额优先（如 `$0.05`），无金额时退回 token 数（如 `12.3k`）。
     /// 空串表示没有可用数据。完整数值在 View 的 tokens/cost 字段里。
     pub usage_label: String,
+    /// 子任务摘要（如 "3 个子任务运行中"），由 `attach_subtask_summaries`
+    /// 在快照组装时填充；空串表示没有在展示的子会话。
+    pub subtask_label: String,
     pub quiet: bool,
 }
 
@@ -515,16 +529,20 @@ impl AgentSessionDisplay {
             action_label,
             age_label: age_label(age_sec),
             usage_label: usage_label(session),
+            subtask_label: String::new(),
             quiet,
         }
     }
 }
 
 /// 会话是否应从 UI 安静移除：
-/// - 完成后超过 `DONE_QUIET_AFTER_SEC`；
+/// - 完成后超过停留窗口（主会话 60s，background 子会话 15s）；
 /// - 或生命周期极短且从未运行过工具（`pi -p` / `opencode run` 这类脚本式
 ///   单句调用），避免浮窗反复冒出秒级卡片。
 fn is_quiet(session: &AgentSession, age_sec: u64) -> bool {
+    if session.background && session.status == AgentStatus::Done {
+        return age_sec >= BACKGROUND_DONE_QUIET_AFTER_SEC;
+    }
     if session.status == AgentStatus::Done && age_sec >= DONE_QUIET_AFTER_SEC {
         return true;
     }
@@ -900,6 +918,50 @@ pub fn sort_sessions(mut sessions: Vec<AgentSession>) -> Vec<AgentSession> {
     sessions
 }
 
+/// 把 background 子会话（子代理/后台任务）聚合计数到主会话 View 上。
+///
+/// 子会话是主任务的内部细节，不应在浮窗里与主会话平级占位（一个复杂任务
+/// 并发 3-5 个子代理时，主任务反而被挤出视野）。此函数只填充计数与摘要
+/// 文案；明细行的展开由前端按 `parent_session_id` 现场分组渲染。
+/// 父会话不在快照中（或已安静）时子会话计数自然丢弃，前端会兜底独立展示。
+pub fn attach_subtask_summaries(views: &mut [AgentSessionView]) {
+    use std::collections::HashMap as Map;
+
+    let mut totals: Map<String, (u32, u32)> = Map::new();
+    for view in views.iter() {
+        if !view.background {
+            continue;
+        }
+        if view.display.quiet {
+            continue;
+        }
+        let Some(parent_id) = view.parent_session_id.as_deref() else {
+            continue;
+        };
+        let entry = totals.entry(parent_id.to_string()).or_insert((0, 0));
+        match view.status.as_str() {
+            "working" | "tool_running" | "waiting" | "compacting" => entry.0 += 1,
+            "done" => entry.1 += 1,
+            _ => {}
+        }
+    }
+
+    for view in views.iter_mut() {
+        let Some((active, recent_done)) = totals.get(&view.session_id).copied() else {
+            continue;
+        };
+        view.subtasks_active = active;
+        view.subtasks_recent_done = recent_done;
+        view.display.subtask_label = if active > 0 {
+            format!("{active} 个子任务运行中")
+        } else if recent_done > 0 {
+            format!("{recent_done} 个子任务刚完成")
+        } else {
+            String::new()
+        };
+    }
+}
+
 /// 按字符截断 preview，避免中文落在非法字节边界。
 pub fn preview_text(value: impl AsRef<str>, max_chars: usize) -> Option<String> {
     let text = value.as_ref().trim();
@@ -1137,6 +1199,92 @@ mod tests {
         let session = event("abc", AgentStatus::Done, 1000).into_session();
         let view = AgentSessionView::from_session(&session, 62_000);
         assert!(view.display.quiet);
+    }
+
+    #[test]
+    fn background_done_quiets_faster_than_main_session() {
+        // 子代理是主任务的内部细节：Done 后 15s 即退场，不占 60s。
+        let mut session = event("sub", AgentStatus::Done, 1000).into_session();
+        session.background = true;
+        session.has_run_tools = true;
+        assert!(
+            !AgentSessionView::from_session(&session, 10_000)
+                .display
+                .quiet
+        );
+        assert!(
+            AgentSessionView::from_session(&session, 17_000)
+                .display
+                .quiet
+        );
+        // 主会话（跑过工具的长会话）仍按 60s。
+        let mut main = event("main", AgentStatus::Done, 1000).into_session();
+        main.has_run_tools = true;
+        assert!(!AgentSessionView::from_session(&main, 17_000).display.quiet);
+        assert!(AgentSessionView::from_session(&main, 62_000).display.quiet);
+    }
+
+    #[test]
+    fn attach_subtask_summaries_aggregates_children_into_parent() {
+        let parent = event("parent", AgentStatus::Working, 1000).into_session();
+        let mut running_agent =
+            event("claude:parent:agent:a", AgentStatus::ToolRunning, 2000).into_session();
+        running_agent.background = true;
+        running_agent.parent_session_id = Some("parent".into());
+        running_agent.tool_name = Some("grep".into());
+        let mut waiting_agent =
+            event("claude:parent:agent:b", AgentStatus::Waiting, 2000).into_session();
+        waiting_agent.background = true;
+        waiting_agent.parent_session_id = Some("parent".into());
+        let mut done_agent = event("claude:parent:agent:c", AgentStatus::Done, 2000).into_session();
+        done_agent.background = true;
+        done_agent.parent_session_id = Some("parent".into());
+        // 安静的子会话不计数。
+        let mut quiet_agent =
+            event("claude:parent:agent:d", AgentStatus::Done, 100_000).into_session();
+        quiet_agent.background = true;
+        quiet_agent.parent_session_id = Some("parent".into());
+
+        let mut views: Vec<AgentSessionView> = [
+            &parent,
+            &running_agent,
+            &waiting_agent,
+            &done_agent,
+            &quiet_agent,
+        ]
+        .iter()
+        .map(|session| AgentSessionView::from_session(session, 105_000))
+        .collect();
+        attach_subtask_summaries(&mut views);
+
+        let parent_view = views.iter().find(|v| v.session_id == "parent").unwrap();
+        assert_eq!(parent_view.subtasks_active, 2);
+        assert_eq!(parent_view.subtasks_recent_done, 1);
+        assert_eq!(parent_view.display.subtask_label, "2 个子任务运行中");
+        // 子会话自身不带聚合（父不在其 parent 链上）。
+        let child_view = views
+            .iter()
+            .find(|v| v.session_id == "claude:parent:agent:a")
+            .unwrap();
+        assert_eq!(child_view.subtasks_active, 0);
+    }
+
+    #[test]
+    fn attach_subtask_summaries_reports_recent_done_when_none_active() {
+        let parent = event("parent", AgentStatus::Working, 1000).into_session();
+        let mut done = event("claude:parent:task:t1", AgentStatus::Done, 2000).into_session();
+        done.background = true;
+        done.parent_session_id = Some("parent".into());
+
+        let mut views: Vec<AgentSessionView> = [&parent, &done]
+            .iter()
+            .map(|session| AgentSessionView::from_session(session, 3000))
+            .collect();
+        attach_subtask_summaries(&mut views);
+
+        let parent_view = views.iter().find(|v| v.session_id == "parent").unwrap();
+        assert_eq!(parent_view.subtasks_active, 0);
+        assert_eq!(parent_view.display.subtask_label, "1 个子任务刚完成");
     }
 
     #[test]
