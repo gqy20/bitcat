@@ -202,7 +202,12 @@ impl AgentSession {
         workspace_name(&self.workspace)
     }
 
-    pub fn apply_event(&mut self, event: AgentSessionEvent) {
+    /// 应用事件并返回会话是否有可见变化。
+    ///
+    /// `false` 表示事件与当前状态完全同质（opencode `session.updated` 这类
+    /// 高频心跳），调用方应跳过 UI 推送和 nudge 评估，只做审计日志。
+    pub fn apply_event(&mut self, event: AgentSessionEvent) -> bool {
+        let before = self.visible_fingerprint();
         if self.status != event.status {
             self.status_changed_at_ms = event.at_ms;
         }
@@ -279,6 +284,36 @@ impl AgentSession {
             AgentStatus::Waiting => event.waiting_reason.or(Some(WaitingReason::Input)),
             _ => None,
         };
+        before != self.visible_fingerprint()
+    }
+
+    /// 参与变化检测的字段指纹。不含 `updated_at_ms`/`status_changed_at_ms`：
+    /// 时间戳推进本身不算可见变化。
+    fn visible_fingerprint(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(self.status.as_str().as_bytes());
+        out.push(self.needs_user as u8);
+        out.extend_from_slice(self.workspace.as_bytes());
+        out.extend(self.tool_name.iter().flat_map(|v| v.as_bytes()));
+        out.extend(self.tool_input_preview.iter().flat_map(|v| v.as_bytes()));
+        out.extend(self.user_prompt_preview.iter().flat_map(|v| v.as_bytes()));
+        out.extend(self.last_response_preview.iter().flat_map(|v| v.as_bytes()));
+        out.extend(self.parent_session_id.iter().flat_map(|v| v.as_bytes()));
+        out.extend(self.agent_id.iter().flat_map(|v| v.as_bytes()));
+        out.extend(self.task_id.iter().flat_map(|v| v.as_bytes()));
+        out.extend(self.output_file.iter().flat_map(|v| v.as_bytes()));
+        out.extend(self.machine.iter().flat_map(|v| v.as_bytes()));
+        out.extend(self.tokens_in.iter().flat_map(|v| v.to_le_bytes()));
+        out.extend(self.tokens_out.iter().flat_map(|v| v.to_le_bytes()));
+        out.extend(self.cost_usd_micros.iter().flat_map(|v| v.to_le_bytes()));
+        out.extend(
+            self.waiting_reason
+                .iter()
+                .flat_map(|reason| reason.as_str().as_bytes()),
+        );
+        out.extend_from_slice(&[self.background as u8, self.has_run_tools as u8]);
+        out.extend(self.pid.iter().flat_map(|v| v.to_le_bytes()));
+        out
     }
 }
 
@@ -836,13 +871,18 @@ fn age_label(age_sec: u64) -> String {
     }
 }
 
-/// 用归一事件更新会话表。
-pub fn apply_session_event(sessions: &mut HashMap<String, AgentSession>, event: AgentSessionEvent) {
+/// 用归一事件更新会话表，返回该事件是否造成可见变化。
+/// 新会话（首次出现）始终视为有变化。
+pub fn apply_session_event(
+    sessions: &mut HashMap<String, AgentSession>,
+    event: AgentSessionEvent,
+) -> bool {
     let id = event.session_id.clone();
     match sessions.get_mut(&id) {
         Some(session) => session.apply_event(event),
         None => {
             sessions.insert(id, event.into_session());
+            true
         }
     }
 }
@@ -936,6 +976,40 @@ mod tests {
         let sorted = sort_sessions(sessions);
         let ids: Vec<_> = sorted.iter().map(|s| s.session_id.as_str()).collect();
         assert_eq!(ids, vec!["wait", "work", "done", "idle"]);
+    }
+
+    #[test]
+    fn apply_event_detects_noop_and_changed() {
+        let mut sessions = HashMap::new();
+        // 新会话始终算变化。
+        assert!(apply_session_event(
+            &mut sessions,
+            event("a", AgentStatus::Working, 1000)
+        ));
+        // opencode session.updated 式心跳：状态/preview 全部相同 → 无变化。
+        assert!(!apply_session_event(
+            &mut sessions,
+            event("a", AgentStatus::Working, 2000)
+        ));
+        // usage 累计推进是可见变化。
+        let mut usage_event = event("a", AgentStatus::Working, 3000);
+        usage_event.usage = Some(AgentUsage {
+            tokens_in: 10,
+            tokens_out: 1,
+            cost_usd_micros: 0,
+            cumulative: false,
+        });
+        assert!(apply_session_event(&mut sessions, usage_event));
+        // 相同 usage 再来一次（累计后值不同仍算变化）；换回纯心跳则无变化。
+        assert!(!apply_session_event(
+            &mut sessions,
+            event("a", AgentStatus::Working, 4000)
+        ));
+        // 状态迁移必然是变化。
+        assert!(apply_session_event(
+            &mut sessions,
+            event("a", AgentStatus::Done, 5000)
+        ));
     }
 
     #[test]

@@ -69,7 +69,7 @@ pub fn run() {
         .manage(screenshot::SharedScreenshotState::default())
         .manage(game::SharedGame::default())
         .manage(pet_event_bus::SharedPetEventBus::new())
-        .manage(agent_monitor::SharedAgentMonitor::default())
+        .manage(agent_monitor::SharedAgentMonitor::restore_default())
         .manage(SharedPendingChat::new())
         .manage(SharedChatCancel::new())
         .manage(SharedChatCore::new())
@@ -158,6 +158,7 @@ pub fn run() {
             notification_window::cmd_notification_hide,
             notification_window::cmd_notification_resize,
             notification_window::cmd_notification_action,
+            agent_monitor::cmd_focus_agent_terminal,
             claude_hooks::cmd_install_claude_code_hooks,
             claude_hooks::cmd_open_claude_settings,
             codex_hooks::cmd_install_codex_hooks,

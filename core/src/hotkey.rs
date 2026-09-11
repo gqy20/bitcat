@@ -401,6 +401,55 @@ pub fn force_foreground(_hwnd: isize) -> Result<(), String> {
     Err("force_foreground 仅支持 Windows".into())
 }
 
+/// 按进程 ID 查找可见的顶层窗口（优先带标题的主窗口），用于从会话 pid
+/// 聚焦对应的终端。找不到返回 `None`，调用方自行回退。
+#[cfg(target_os = "windows")]
+pub fn find_window_by_pid(pid: u32) -> Option<isize> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindowTextLengthW, GetWindowThreadProcessId, IsWindowVisible,
+    };
+
+    struct SearchState {
+        pid: u32,
+        best: Option<isize>,
+        best_score: i32,
+    }
+
+    unsafe extern "system" fn callback(hwnd: isize, lparam: isize) -> i32 {
+        let state = &mut *(lparam as *mut SearchState);
+        let mut window_pid: u32 = 0;
+        if GetWindowThreadProcessId(hwnd as *mut _, &mut window_pid) == 0 || window_pid != state.pid
+        {
+            return 1;
+        }
+        if IsWindowVisible(hwnd) == 0 {
+            return 1;
+        }
+        // 优先标题更长的窗口：终端主窗口通常有完整标题，辅助窗口多为空标题。
+        let score = GetWindowTextLengthW(hwnd as *mut _);
+        if score > state.best_score {
+            state.best_score = score;
+            state.best = Some(hwnd);
+        }
+        1
+    }
+
+    let mut state = SearchState {
+        pid,
+        best: None,
+        best_score: -1,
+    };
+    unsafe {
+        EnumWindows(Some(callback), &mut state as *mut SearchState as isize);
+    }
+    state.best
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn find_window_by_pid(_pid: u32) -> Option<isize> {
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

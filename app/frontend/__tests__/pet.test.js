@@ -270,6 +270,32 @@ describe('PetStateMachine', () => {
       expect(pet.state).toBe('sleep');
     });
 
+    it('agent_work mode 空闲时显示 focused 背景态', () => {
+      pet.applyEvent({ type: 'set_mode', mode: 'agent_work' });
+      expect(pet.state).toBe('focused');
+    });
+
+    it('agent_work mode 让位于前台通知和情绪', () => {
+      pet.applyEvent({ type: 'set_mode', mode: 'agent_work' });
+      pet.applyEvent({
+        type: 'notify',
+        kind: 'ai_thinking',
+        body: '思考中',
+        ttl_ms: 30000,
+        refresh: true,
+      });
+      expect(pet.state).toBe('talk');
+
+      pet.clearNotification('ai_thinking');
+      expect(pet.state).toBe('focused');
+
+      pet.applyEvent({ type: 'react', mood: 'happy', speech: null, ttl_ms: 5000 });
+      expect(pet.state).toBe('happy');
+
+      pet.expireNotifications(pet.reactionExpiresAt + 1);
+      expect(pet.state).toBe('focused');
+    });
+
     it('clear_notification 后回到 reaction', () => {
       pet.applyEvent({ type: 'react', mood: 'happy', speech: null, ttl_ms: 5000 });
       pet.applyEvent({

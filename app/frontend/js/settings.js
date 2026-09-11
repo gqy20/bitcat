@@ -1119,6 +1119,7 @@ function drawCustomPetAssetPreview(canvas) {
 
 function renderAgentWatch(a) {
   const cfg = a || {};
+  const quiet = cfg.quiet_hours || {};
   $("aw-enabled").checked = !!cfg.enabled;
   $("aw-away").checked = cfg.away_nudge_enabled !== false;
   $("aw-first").value = cfg.first_nudge_after_sec ?? 30;
@@ -1126,10 +1127,13 @@ function renderAgentWatch(a) {
   $("aw-waiting").checked = cfg.waiting_alert !== false;
   $("aw-done").checked = cfg.done_alert !== false;
   $("aw-tts").checked = !!cfg.use_tts;
+  $("aw-quiet").checked = !!quiet.enabled;
+  $("aw-quiet-start").value = quiet.start || "23:00";
+  $("aw-quiet-end").value = quiet.end || "07:00";
   $("aw-remote-view").checked = cfg.remote_view_enabled !== false;
   $("aw-remote-install").checked = cfg.remote_install_enabled !== false;
-  ["aw-enabled","aw-away","aw-waiting","aw-done","aw-tts","aw-remote-view","aw-remote-install"].forEach(id => { $(id).onchange = () => markDirty("agent_watch"); });
-  ["aw-first","aw-repeat"].forEach(id => { $(id).oninput = () => markDirty("agent_watch"); });
+  ["aw-enabled","aw-away","aw-waiting","aw-done","aw-tts","aw-quiet","aw-remote-view","aw-remote-install"].forEach(id => { $(id).onchange = () => markDirty("agent_watch"); });
+  ["aw-first","aw-repeat","aw-quiet-start","aw-quiet-end"].forEach(id => { $(id).oninput = () => markDirty("agent_watch"); });
 }
 
 function collectAgentWatch() {
@@ -1143,6 +1147,11 @@ function collectAgentWatch() {
     waiting_alert: $("aw-waiting").checked,
     done_alert: $("aw-done").checked,
     use_tts: $("aw-tts").checked,
+    quiet_hours: {
+      enabled: $("aw-quiet").checked,
+      start: $("aw-quiet-start").value || "23:00",
+      end: $("aw-quiet-end").value || "07:00",
+    },
     remote_view_enabled: $("aw-remote-view").checked,
     remote_install_enabled: $("aw-remote-install").checked,
   };

@@ -15,7 +15,7 @@ use crate::commands::SharedWindowState;
 use bitcat_core::action::{ActionConfig, ActionDef, Defaults};
 use bitcat_core::app_settings::{
     AgentWatchSettings, AiOverride, AppSettings, AppearanceSettings, PermissionSettings,
-    StorageSettings,
+    QuietHours, StorageSettings,
 };
 use bitcat_core::memory::{LongTermMemory, LongTermReviewEntry};
 use bitcat_core::prompts::PromptsConfig;
@@ -301,6 +301,8 @@ pub struct AgentWatchInput {
     pub remote_view_enabled: bool,
     #[serde(default = "default_true")]
     pub remote_install_enabled: bool,
+    #[serde(default)]
+    pub quiet_hours: QuietHours,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1125,6 +1127,7 @@ pub async fn cmd_settings_save_agent_watch(payload: AgentWatchInput) -> Result<(
         use_tts: payload.use_tts,
         remote_view_enabled: payload.remote_view_enabled,
         remote_install_enabled: payload.remote_install_enabled,
+        quiet_hours: payload.quiet_hours,
     };
     s.save()?;
     info!(agent_watch = ?s.agent_watch, "agent watch settings saved");

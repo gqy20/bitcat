@@ -150,6 +150,7 @@ const MODE_STATE = {
   sleep: 'sleep',
   game_play: 'gameplay',
   gameplay: 'gameplay',
+  agent_work: 'focused',
 };
 
 function timelineDuration(frames) {
@@ -299,7 +300,14 @@ class PetStateMachine {
     if (active && NOTIFICATION_CONFIG[active.kind]) {
       return NOTIFICATION_CONFIG[active.kind].state;
     }
-    return MOOD_STATE[this.reactionMood] || 'idle';
+    if (this.reactionMood && this.reactionMood !== 'idle') {
+      return MOOD_STATE[this.reactionMood] || 'idle';
+    }
+    // AgentWork 是低优先级背景态：仅在没有任何前台通知/情绪时显现。
+    if (this.mode === 'agent_work') {
+      return MODE_STATE.agent_work;
+    }
+    return 'idle';
   }
 
   applySemanticState() {

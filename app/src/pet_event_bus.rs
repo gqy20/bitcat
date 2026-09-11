@@ -5,7 +5,7 @@
 //! 它依赖 core 中的纯逻辑协议与 `MoodPolicy`，再通过 Tauri `emit` 把最终事件推给宠物窗口。
 
 use bitcat_core::mood_policy::MoodPolicy;
-use bitcat_core::pet_event::{PetEvent, PetNotificationKind};
+use bitcat_core::pet_event::{PetEvent, PetMode, PetNotificationKind};
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::sync::Mutex;
@@ -81,6 +81,14 @@ impl SharedPetEventBus {
         let bus = self.inner.lock().map_err(|e| e.to_string())?;
         Ok(bus.snapshot())
     }
+
+    /// 当前宠物长生命周期模式，供 Agent Watch 判断能否安全切换背景状态。
+    pub fn current_mode(&self) -> PetMode {
+        self.inner
+            .lock()
+            .map(|bus| bus.current_mode)
+            .unwrap_or(PetMode::Idle)
+    }
 }
 
 #[derive(Debug)]
@@ -90,6 +98,7 @@ pub(crate) struct PetEventBus {
     last_event_key: Option<EventKey>,
     event_log: VecDeque<PetEventLogEntry>,
     next_seq: u64,
+    current_mode: PetMode,
 }
 
 impl PetEventBus {
@@ -100,6 +109,7 @@ impl PetEventBus {
             last_event_key: None,
             event_log: VecDeque::with_capacity(EVENT_LOG_LIMIT),
             next_seq: 1,
+            current_mode: PetMode::Idle,
         }
     }
 
@@ -158,6 +168,9 @@ impl PetEventBus {
                 event_payload(&event),
             );
         } else {
+            if let PetEvent::SetMode { mode } = event {
+                self.current_mode = mode;
+            }
             self.push_log(
                 now,
                 event_type_name(event_type(&event)),

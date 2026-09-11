@@ -373,6 +373,46 @@
     toggleTaskDetail(id);
   });
 
+  // ---- 手柄导航：方向键移动焦点卡，A 展开，B 收起 ----
+  function focusableCards() {
+    return [...stack.querySelectorAll(".task-card")];
+  }
+
+  function focusCardAt(index) {
+    const cards = focusableCards();
+    if (!cards.length) return;
+    cards.forEach((card) => card.classList.remove("gamepad-focus"));
+    const target = cards[Math.max(0, Math.min(cards.length - 1, index))];
+    target.classList.add("gamepad-focus");
+    target.scrollIntoView({ block: "nearest" });
+  }
+
+  function focusIndex() {
+    const cards = focusableCards();
+    const current = cards.findIndex((card) => card.classList.contains("gamepad-focus"));
+    return current >= 0 ? current : 0;
+  }
+
+  function setupGamepadNavigation() {
+    if (!listen) return;
+    listen("agent-watch-nav", (event) => {
+      const [, dy] = event.payload || [];
+      if (dy === 1) focusCardAt(focusIndex() + 1);
+      else if (dy === -1) focusCardAt(focusIndex() - 1);
+      else focusCardAt(0);
+    });
+    listen("agent-watch-confirm", () => {
+      const cards = focusableCards();
+      const card = cards[focusIndex()] || cards[0];
+      if (card?.dataset.id) toggleTaskDetail(card.dataset.id);
+    });
+    listen("agent-watch-back", () => {
+      const cards = focusableCards();
+      const card = cards[focusIndex()] || cards[0];
+      if (card?.dataset.id) toggleTaskDetail(card.dataset.id);
+    });
+  }
+
   stack.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     const card = event.target.closest(".task-card");
@@ -449,6 +489,7 @@
   setFolded(folded, false);
   resizeWatch();
   setupWindowDrag();
+  setupGamepadNavigation();
   refresh();
   if (listen) {
     listen("agent-watch-update", (event) => render(event.payload));

@@ -479,3 +479,9 @@ body {
     animation: none;
   }
 }
+
+/* 手柄焦点卡：方向键导航时高亮当前卡 */
+.task-card.gamepad-focus {
+  outline: 2px solid rgba(244, 184, 74, 0.75);
+  outline-offset: 1px;
+}

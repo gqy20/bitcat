@@ -3550,3 +3550,26 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
+
+/* 免打扰时段：起止时间并排 */
+.inline-fields {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inline-fields input[type="time"] {
+  height: 36px;
+  padding: 0 8px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  color-scheme: dark;
+}
+
+.field-sep {
+  color: var(--muted, rgba(255, 255, 255, 0.55));
+  font-size: 12px;
+}

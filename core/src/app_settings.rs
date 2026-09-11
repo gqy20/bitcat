@@ -64,6 +64,82 @@ pub struct AgentWatchSettings {
     pub remote_view_enabled: bool,
     #[serde(default = "default_true")]
     pub remote_install_enabled: bool,
+    /// 静默时段：期间抑制全部 agent 提醒（通知/TTS），浮窗照常显示。
+    #[serde(default)]
+    pub quiet_hours: QuietHours,
+}
+
+/// 静默时段配置。`start`/`end` 为 "HH:MM" 本地时间，支持跨午夜区间（如 23:00–07:00）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QuietHours {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_quiet_start")]
+    pub start: String,
+    #[serde(default = "default_quiet_end")]
+    pub end: String,
+}
+
+impl Default for QuietHours {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            start: default_quiet_start(),
+            end: default_quiet_end(),
+        }
+    }
+}
+
+fn default_quiet_start() -> String {
+    "23:00".to_string()
+}
+
+fn default_quiet_end() -> String {
+    "07:00".to_string()
+}
+
+impl QuietHours {
+    /// 解析 "HH:MM" 为当天的分钟数。
+    fn parse_minutes(value: &str) -> Option<u32> {
+        let (h, m) = value.trim().split_once(':')?;
+        let h: u32 = h.parse().ok()?;
+        let m: u32 = m.parse().ok()?;
+        if h > 23 || m > 59 {
+            return None;
+        }
+        Some(h * 60 + m)
+    }
+
+    /// 判断指定本地时刻（一天内分钟数）是否落在静默区间内。
+    /// 支持跨午夜：start > end 表示 23:00–07:00 这类区间。
+    pub fn contains_minutes(&self, minute_of_day: u32) -> bool {
+        if !self.enabled {
+            return false;
+        }
+        let Some(start) = Self::parse_minutes(&self.start) else {
+            return false;
+        };
+        let Some(end) = Self::parse_minutes(&self.end) else {
+            return false;
+        };
+        if start == end {
+            return false;
+        }
+        if start < end {
+            minute_of_day >= start && minute_of_day < end
+        } else {
+            minute_of_day >= start || minute_of_day < end
+        }
+    }
+
+    /// 判断当前本地时间是否静默。chrono Local 只在 app 侧可用时由调用方注入，
+    /// 这里保持纯函数便于测试。
+    pub fn contains_now(&self) -> bool {
+        use chrono::Timelike;
+        let now = chrono::Local::now();
+        let minute = now.hour() * 60 + now.minute();
+        self.contains_minutes(minute)
+    }
 }
 
 /// Local storage folder overrides.
@@ -192,6 +268,7 @@ impl Default for AgentWatchSettings {
             use_tts: false,
             remote_view_enabled: true,
             remote_install_enabled: true,
+            quiet_hours: QuietHours::default(),
         }
     }
 }
@@ -307,6 +384,63 @@ fn thread_id_suffix() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    // 跨午夜区间 23:00–07:00。
+    #[case("23:00", "07:00", 23 * 60, true)]
+    #[case("23:00", "07:00", 6 * 60 + 59, true)]
+    #[case("23:00", "07:00", 7 * 60, false)]
+    #[case("23:00", "07:00", 22 * 60 + 59, false)]
+    // 常规区间 12:00–14:00。
+    #[case("12:00", "14:00", 13 * 60, true)]
+    #[case("12:00", "14:00", 11 * 60, false)]
+    #[case("12:00", "14:00", 14 * 60, false)]
+    // 边界：起点含、终点不含。
+    #[case("09:00", "10:00", 9 * 60, true)]
+    #[case("09:00", "10:00", 10 * 60, false)]
+    fn quiet_hours_contains_minutes(
+        #[case] start: &str,
+        #[case] end: &str,
+        #[case] minute: u32,
+        #[case] expected: bool,
+    ) {
+        let quiet = QuietHours {
+            enabled: true,
+            start: start.into(),
+            end: end.into(),
+        };
+        assert_eq!(
+            quiet.contains_minutes(minute),
+            expected,
+            "{start}-{end} @{minute}"
+        );
+    }
+
+    #[test]
+    fn quiet_hours_disabled_or_invalid_never_contains() {
+        let disabled = QuietHours {
+            enabled: false,
+            start: "00:00".into(),
+            end: "23:59".into(),
+        };
+        assert!(!disabled.contains_minutes(12 * 60));
+
+        let invalid = QuietHours {
+            enabled: true,
+            start: "25:00".into(),
+            end: "07:00".into(),
+        };
+        assert!(!invalid.contains_minutes(12 * 60));
+
+        // 起点等于终点视为未配置。
+        let empty_range = QuietHours {
+            enabled: true,
+            start: "09:00".into(),
+            end: "09:00".into(),
+        };
+        assert!(!empty_range.contains_minutes(9 * 60));
+    }
 
     #[test]
     fn test_default_appearance_values() {
@@ -376,6 +510,7 @@ mod tests {
                 use_tts: true,
                 remote_view_enabled: false,
                 remote_install_enabled: false,
+                quiet_hours: QuietHours::default(),
             },
             permissions: PermissionSettings {
                 onboarding_completed: true,

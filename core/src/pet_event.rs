@@ -73,6 +73,9 @@ pub enum PetMode {
     Idle,
     Sleep,
     GamePlay,
+    /// 有外部编码 Agent 任务在后台运行。优先级低于 Sleep/GamePlay 和
+    /// 前台通知/情绪，仅作为"没别的事时"的背景状态。
+    AgentWork,
 }
 
 impl PetEvent {

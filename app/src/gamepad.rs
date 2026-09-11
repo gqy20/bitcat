@@ -520,6 +520,11 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                 .get_webview_window("panel")
                 .and_then(|w| w.is_visible().ok())
                 .unwrap_or(false);
+            let watch_visible = !panel_visible
+                && app
+                    .get_webview_window("agent-watch")
+                    .and_then(|w| w.is_visible().ok())
+                    .unwrap_or(false);
             let game_active = crate::game::is_game_active(app);
 
             let buttons = gamepad.read_buttons();
@@ -628,6 +633,21 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                                 "B" => {
                                     info!("→ 面板关闭");
                                     let _ = app.emit("panel-close", ());
+                                }
+                                _ => {}
+                            }
+                            continue;
+                        }
+
+                        if watch_visible {
+                            match name {
+                                "A" => {
+                                    info!("→ Agent Watch 展开焦点卡");
+                                    let _ = app.emit("agent-watch-confirm", ());
+                                }
+                                "B" => {
+                                    info!("→ Agent Watch 收起焦点");
+                                    let _ = app.emit("agent-watch-back", ());
                                 }
                                 _ => {}
                             }
@@ -816,6 +836,13 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                     if let Some((dx, dy)) = hat {
                         info!(dx = dx, dy = dy, "→ 面板导航");
                         let _ = app.emit("panel-nav", (dx, dy));
+                    }
+                }
+            } else if watch_visible {
+                if hat != prev_hat {
+                    if let Some((dx, dy)) = hat {
+                        info!(dx = dx, dy = dy, "→ Agent Watch 导航");
+                        let _ = app.emit("agent-watch-nav", (dx, dy));
                     }
                 }
             } else if let Some((dx, dy)) = hat {

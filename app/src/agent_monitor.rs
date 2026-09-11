@@ -29,6 +29,10 @@ use crate::remote_endpoint::RemoteInstallInfo;
 pub const DEFAULT_AGENT_MONITOR_PORT: u16 = 5342;
 pub const DEFAULT_AGENT_VIEW_PORT: u16 = 5344;
 const MAX_HOOK_PAYLOAD_BYTES: u64 = 512 * 1024;
+/// 恢复的会话超过该时长没有事件就丢弃：陈旧会话不如让下一个事件重建。
+const RESTORE_MAX_AGE_MS: u64 = 30 * 60 * 1000;
+/// 状态文件名（位于 ~/.bitcat/logs/）。
+const AGENT_WATCH_STATE_FILE: &str = "agent_watch_state.json";
 
 /// Claude Code 看管共享状态。
 pub struct SharedAgentMonitor {
@@ -37,6 +41,7 @@ pub struct SharedAgentMonitor {
     event_count: Mutex<u64>,
     last_event_at_ms: Mutex<Option<u64>>,
     recent_events: Mutex<RecentAgentEvents>,
+    last_persist_at: Mutex<Option<std::time::Instant>>,
 }
 
 impl Default for SharedAgentMonitor {
@@ -47,6 +52,7 @@ impl Default for SharedAgentMonitor {
             event_count: Mutex::new(0),
             last_event_at_ms: Mutex::new(None),
             recent_events: Mutex::new(RecentAgentEvents::default()),
+            last_persist_at: Mutex::new(None),
         }
     }
 }
@@ -115,6 +121,13 @@ pub struct DeviceSummary {
 }
 
 impl SharedAgentMonitor {
+    /// 创建并从状态文件恢复最近会话（应用启动入口）。
+    pub fn restore_default() -> Self {
+        let monitor = Self::default();
+        monitor.restore_sessions(now_ms());
+        monitor
+    }
+
     pub fn snapshot(&self, now_ms: u64) -> Result<AgentSessionsSnapshot, String> {
         let sessions = self
             .sessions
@@ -156,6 +169,82 @@ impl SharedAgentMonitor {
             .remove(session_id);
         Ok(())
     }
+
+    /// 启动时从状态文件恢复最近的活跃会话，避免 bitcat 重启后运行中的任务"失联"。
+    /// 只恢复仍活跃或 30 分钟内更新过的会话；解析失败时静默跳过（可重建）。
+    pub fn restore_sessions(&self, now_ms: u64) {
+        let Some(dir) = log_dir() else {
+            return;
+        };
+        let path = dir.join(AGENT_WATCH_STATE_FILE);
+        let Ok(raw) = std::fs::read_to_string(&path) else {
+            return;
+        };
+        let Ok(state) = serde_json::from_str::<AgentWatchPersistedState>(&raw) else {
+            warn!(path = %path.display(), "agent watch state 文件解析失败，跳过恢复");
+            return;
+        };
+        let restored: Vec<AgentSession> = state
+            .sessions
+            .into_iter()
+            .filter(|session| {
+                session.is_active()
+                    || now_ms.saturating_sub(session.updated_at_ms) < RESTORE_MAX_AGE_MS
+            })
+            .collect();
+        let count = restored.len();
+        if let Ok(mut sessions) = self.sessions.lock() {
+            for session in restored {
+                sessions.insert(session.session_id.clone(), session);
+            }
+        }
+        if count > 0 {
+            info!(count, "agent watch sessions restored");
+        }
+    }
+
+    /// 把当前会话表原子写入状态文件（2 秒节流；漏掉最后一次写入可接受，
+    /// 活跃 agent 的下一个事件会重建会话）。
+    fn persist_sessions(&self, now_ms: u64) {
+        const PERSIST_INTERVAL: Duration = Duration::from_secs(2);
+        {
+            let Ok(mut last) = self.last_persist_at.lock() else {
+                return;
+            };
+            if last.is_some_and(|at| at.elapsed() < PERSIST_INTERVAL) {
+                return;
+            }
+            *last = Some(std::time::Instant::now());
+        }
+        let sessions: Vec<AgentSession> = match self.sessions.lock() {
+            Ok(sessions) => sessions.values().cloned().collect(),
+            Err(_) => return,
+        };
+        let Some(dir) = log_dir() else {
+            return;
+        };
+        let path = dir.join(AGENT_WATCH_STATE_FILE);
+        let state = AgentWatchPersistedState {
+            saved_at_ms: now_ms,
+            sessions,
+        };
+        let Ok(body) = serde_json::to_string(&state) else {
+            return;
+        };
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, &body).is_ok() {
+            if let Err(e) = std::fs::rename(&tmp, &path) {
+                warn!(error = %e, "persist agent watch state failed");
+            }
+        }
+    }
+}
+
+/// 会话状态文件结构。
+#[derive(Debug, Serialize, Deserialize)]
+struct AgentWatchPersistedState {
+    saved_at_ms: u64,
+    sessions: Vec<AgentSession>,
 }
 
 /// 启动 Claude Code hook TCP 接收线程。
@@ -173,6 +262,18 @@ pub fn spawn_agent_monitor(app: AppHandle) {
             warn!(error = %e, "Claude Code monitor set_nonblocking failed");
         }
         info!(addr, "Claude Code monitor listening");
+
+        // 恢复的会话在启动时立即推给浮窗：后续首条事件可能是 no-op 心跳，
+        // 不会触发常规推送路径。
+        {
+            let monitor: tauri::State<SharedAgentMonitor> = app.state();
+            if let Ok(snapshot) = monitor.snapshot(now_ms()) {
+                if !snapshot.sessions.is_empty() {
+                    crate::agent_watch_window::show_snapshot(&app, &snapshot);
+                }
+                sync_pet_agent_mode(&app, &monitor);
+            }
+        }
 
         while !crate::shutdown::is_requested() {
             match listener.accept() {
@@ -251,7 +352,7 @@ fn handle_hook_stream(app: &AppHandle, stream: TcpStream) {
 
 fn handle_view_stream(app: &AppHandle, mut stream: TcpStream) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-    let mut buffer = [0u8; 2048];
+    let mut buffer = [0u8; 8192];
     let read = match stream.read(&mut buffer) {
         Ok(read) => read,
         Err(e) => {
@@ -260,12 +361,37 @@ fn handle_view_stream(app: &AppHandle, mut stream: TcpStream) {
         }
     };
     let request = String::from_utf8_lossy(&buffer[..read]);
-    let path = request
-        .lines()
-        .next()
-        .and_then(|line| line.split_whitespace().nth(1))
-        .unwrap_or("/");
-    let response = view_response(app, path);
+    let mut lines = request.lines();
+    let request_line = lines.next().unwrap_or_default();
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next().unwrap_or("GET");
+    let path = parts.next().unwrap_or("/");
+    // 读取 POST body（dismiss 请求携带极小的 JSON）。
+    let mut body = String::new();
+    if method == "POST" {
+        let mut content_length = 0usize;
+        for line in lines {
+            let Some((name, value)) = line.split_once(':') else {
+                continue;
+            };
+            if name.trim().eq_ignore_ascii_case("content-length") {
+                content_length = value.trim().parse().unwrap_or(0);
+                break;
+            }
+        }
+        content_length = content_length.min(4096);
+        let header_end = request.find("\r\n\r\n").map(|pos| pos + 4).unwrap_or(read);
+        body.push_str(&request[header_end.min(read)..]);
+        while body.len() < content_length {
+            let mut extra = [0u8; 1024];
+            match stream.read(&mut extra) {
+                Ok(0) => break,
+                Ok(n) => body.push_str(&String::from_utf8_lossy(&extra[..n])),
+                Err(_) => break,
+            }
+        }
+    }
+    let response = view_response(app, method, path, &body);
     let charset = if response.content_type.starts_with("text/")
         || response.content_type == "application/json"
         || response.content_type == "application/manifest+json"
@@ -276,7 +402,7 @@ fn handle_view_stream(app: &AppHandle, mut stream: TcpStream) {
         ""
     };
     let headers = format!(
-        "HTTP/1.1 {}\r\nContent-Type: {}{}\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {}\r\nContent-Type: {}{}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         response.status,
         response.content_type,
         charset,
@@ -314,8 +440,11 @@ impl ViewResponse {
     }
 }
 
-fn view_response(app: &AppHandle, path: &str) -> ViewResponse {
+fn view_response(app: &AppHandle, method: &str, path: &str, body: &str) -> ViewResponse {
     let clean_path = path.split('?').next().unwrap_or(path);
+    if method == "OPTIONS" {
+        return ViewResponse::text("204 No Content", "text/plain", String::new());
+    }
     let app_settings = AppSettings::load();
     if let Some(response) = remote_access_forbidden(
         clean_path,
@@ -323,6 +452,42 @@ fn view_response(app: &AppHandle, path: &str) -> ViewResponse {
         app_settings.permissions.allow_agent_watch_remote,
     ) {
         return response;
+    }
+    // 唯一的写操作：隐藏一条会话，与桌面浮窗的 × 一致。
+    if method == "POST" && clean_path == "/agent-sessions/dismiss" {
+        let monitor: tauri::State<SharedAgentMonitor> = app.state();
+        let payload = serde_json::from_str::<serde_json::Value>(body).unwrap_or_default();
+        let session_id = payload
+            .get("sessionId")
+            .or_else(|| payload.get("session_id"))
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        if session_id.is_empty() {
+            return ViewResponse::text(
+                "400 Bad Request",
+                "application/json",
+                json_error("missing sessionId"),
+            );
+        }
+        let _ = monitor.remove_session(session_id);
+        let snapshot = monitor
+            .snapshot(now_ms())
+            .and_then(|snapshot| serde_json::to_string(&snapshot).map_err(|e| e.to_string()));
+        return match snapshot {
+            Ok(body) => ViewResponse::text("200 OK", "application/json", body),
+            Err(e) => ViewResponse::text(
+                "500 Internal Server Error",
+                "application/json",
+                json_error(&e),
+            ),
+        };
+    }
+    if method != "GET" {
+        return ViewResponse::text(
+            "405 Method Not Allowed",
+            "application/json",
+            json_error("method not allowed"),
+        );
     }
     match clean_path {
         "/" | "/watch" => ViewResponse::text("200 OK", "text/html", watch_page_html()),
@@ -394,6 +559,7 @@ fn remote_access_forbidden(
         clean_path,
         "/" | "/watch"
             | "/agent-sessions"
+            | "/agent-sessions/dismiss"
             | "/devices"
             | "/manifest.webmanifest"
             | "/sw.js"
@@ -541,6 +707,7 @@ fn watch_page_html() -> String {
       gap: 9px;
     }
     .card {
+      position: relative;
       width: 100%;
       text-align: left;
       color: inherit;
@@ -548,9 +715,31 @@ fn watch_page_html() -> String {
       border-left: 4px solid rgba(160, 174, 192, .65);
       border-radius: 8px;
       padding: 12px;
+      padding-right: 34px;
       background: rgba(255, 255, 255, .045);
     }
     .card:active { transform: translateY(1px); }
+    .card .dismiss {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 22px;
+      height: 22px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: rgba(255, 255, 255, .4);
+      font-size: 15px;
+      line-height: 1;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity .12s ease;
+    }
+    .card:hover .dismiss, .card .dismiss:focus-visible { opacity: 1; }
+    .card .dismiss:hover { background: rgba(255, 255, 255, .1); color: rgba(255, 255, 255, .9); }
+    .card .dismiss:disabled { opacity: .35; cursor: default; }
     .card.waiting, .card.error { border-left-color: #ff8a7a; }
     .card.working, .card.tool_running, .card.compacting { border-left-color: #7ea5e8; }
     .card.done { border-left-color: #8ee6a8; }
@@ -714,11 +903,11 @@ fn watch_page_html() -> String {
       if (session.machine) meta.push({ value: session.machine, className: 'device' });
       meta.push({ value: session.workspace_name || 'unknown' });
       meta.push({ value: display.source_label || session.source || 'Agent' });
-      meta.push({ value: display.action_label || 'Task' });
+      if (display.usage_label) meta.push({ value: display.usage_label });
       const detail = detailOf(session);
       const open = openCards.has(session.session_id) ? ' open' : '';
       return `
-        <button class="card ${esc(session.status)}${open}" type="button" data-id="${esc(session.session_id)}">
+        <div class="card ${esc(session.status)}${open}" data-id="${esc(session.session_id)}}">
           <div class="top">
             <div class="title">${esc(titleOf(session))}</div>
             <div class="age">${esc(display.age_label || '')}</div>
@@ -727,7 +916,8 @@ fn watch_page_html() -> String {
             ${meta.map(item => `<span class="${esc(item.className || '')}" title="${esc(item.value)}">${esc(item.value)}</span>`).join('')}
           </div>
           <div class="detail">${esc(subtitleOf(session))}${detail ? '\n' + esc(detail) : ''}</div>
-        </button>`;
+          <button class="dismiss" type="button" data-id="${esc(session.session_id)}" title="Hide this task" aria-label="Hide this task">×</button>
+        </div>`;
     }
 
     function render(snapshot) {
@@ -783,7 +973,27 @@ fn watch_page_html() -> String {
       timer = setInterval(refresh, document.hidden ? 15000 : 2000);
     }
 
-    groups.addEventListener('click', event => {
+    groups.addEventListener('click', async event => {
+      const dismiss = event.target.closest('.dismiss');
+      if (dismiss) {
+        event.stopPropagation();
+        const id = dismiss.dataset.id;
+        dismiss.disabled = true;
+        try {
+          const response = await fetch('/agent-sessions/dismiss', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: id }),
+          });
+          if (response.ok) {
+            lastEventCount = null;
+            await refresh();
+            return;
+          }
+        } catch (e) { /* fall through */ }
+        dismiss.disabled = false;
+        return;
+      }
       const card = event.target.closest('.card');
       if (!card) return;
       const id = card.dataset.id;
@@ -893,26 +1103,36 @@ pub fn handle_hook_payload(app: &AppHandle, raw: &str) -> Result<(), String> {
         warn!(error = %e, "write agent watch event log failed");
     }
 
-    let (snapshot, updated_session) = {
+    let (snapshot, updated_session, changed) = {
         let updated_session_id = event.session_id.clone();
         let mut sessions = monitor
             .sessions
             .lock()
             .map_err(|e| format!("agent sessions lock poisoned: {e}"))?;
-        apply_session_event(&mut sessions, event);
+        let changed = apply_session_event(&mut sessions, event);
         let updated = sessions.get(&updated_session_id).cloned();
         let sorted = sort_sessions(sessions.values().cloned().collect());
         (
             snapshot_from_sessions(sorted, now_ms, seq, Some(now_ms)),
             updated,
+            changed,
         )
     };
+
+    // 高频心跳事件（如 opencode session.updated）不触发 UI 与 nudge，
+    // 只保留事件审计日志，避免浮窗重渲和快照文件膨胀。
+    if !changed {
+        debug!(session_id = %updated_session.as_ref().map(|s| s.session_id.clone()).unwrap_or_default(), "agent event was a no-op, skipping ui push");
+        return Ok(());
+    }
 
     let _ = app.emit("agent-session-update", &snapshot);
     crate::agent_watch_window::show_snapshot(app, &snapshot);
     if let Err(e) = append_jsonl("agent_watch_sessions.jsonl", &snapshot) {
         warn!(error = %e, "write agent watch session snapshot failed");
     }
+    crate::agent_monitor::sync_pet_agent_mode(app, &monitor);
+    monitor.persist_sessions(now_ms);
 
     if let Some(session) = updated_session {
         evaluate_nudge(app, &monitor, &session, now_ms)?;
@@ -928,6 +1148,48 @@ struct AgentHookEnvelope {
     #[serde(default)]
     machine: Option<String>,
     payload: Value,
+}
+
+/// 会话表中有任务真正在跑（不含 Waiting：等待用户时应由 nudge 表达，
+/// 宠物保持可被打断的反应状态）。
+fn any_session_busy(monitor: &SharedAgentMonitor) -> bool {
+    monitor
+        .sessions
+        .lock()
+        .map(|sessions| {
+            sessions.values().any(|session| {
+                matches!(
+                    session.status,
+                    bitcat_core::agent_session::AgentStatus::Working
+                        | bitcat_core::agent_session::AgentStatus::ToolRunning
+                        | bitcat_core::agent_session::AgentStatus::Compacting
+                )
+            })
+        })
+        .unwrap_or(false)
+}
+
+/// 同步宠物"背后有 Agent 在跑"的背景模式。
+///
+/// - 进入：仅当宠物当前空闲（不打断 Sleep/GamePlay）；
+/// - 退出：仅当当前模式就是 AgentWork（睡眠/游戏中不误清）；
+/// - Waiting 不算 busy：等待用户时宠物应保持对 nudge 的反应能力。
+pub fn sync_pet_agent_mode(app: &AppHandle, monitor: &SharedAgentMonitor) {
+    let busy = any_session_busy(monitor);
+    let bus: tauri::State<crate::pet_event_bus::SharedPetEventBus> = app.state();
+    let current = bus.current_mode();
+    let next = match (busy, current) {
+        (true, bitcat_core::pet_event::PetMode::Idle) => {
+            Some(bitcat_core::pet_event::PetMode::AgentWork)
+        }
+        (false, bitcat_core::pet_event::PetMode::AgentWork) => {
+            Some(bitcat_core::pet_event::PetMode::Idle)
+        }
+        _ => None,
+    };
+    if let Some(mode) = next {
+        bus.emit(app, PetEvent::set_mode(mode));
+    }
 }
 
 fn agent_event_fingerprint(event: &AgentSessionEvent) -> String {
@@ -981,6 +1243,21 @@ fn evaluate_nudge(
     now_ms: u64,
 ) -> Result<(), String> {
     let settings = AppSettings::load().agent_watch;
+    // 静默时段：抑制全部 agent 提醒（通知/TTS/气泡），浮窗照常显示。
+    // 决策写入 nudge 日志，保证"刚才为什么没提醒"可复盘。
+    if settings.quiet_hours.contains_now() {
+        write_nudge_log(AgentNudgeLogRecord {
+            seq: now_ms,
+            at_ms: now_ms,
+            session_id: session.session_id.clone(),
+            kind: "none".to_string(),
+            decision: "skipped".to_string(),
+            status: session.status.as_str().to_string(),
+            reason: Some("quiet_hours".to_string()),
+            message: None,
+        });
+        return Ok(());
+    }
     let decision = {
         let mut policy = monitor
             .nudge_policy
@@ -1388,6 +1665,7 @@ pub async fn cmd_dismiss_agent_session(
     let snapshot = monitor.snapshot(now_ms())?;
     let _ = app.emit("agent-session-update", &snapshot);
     crate::agent_watch_window::show_snapshot(&app, &snapshot);
+    sync_pet_agent_mode(&app, &monitor);
     Ok(snapshot)
 }
 
@@ -1411,6 +1689,32 @@ pub async fn cmd_open_agent_workspace(
     app.opener()
         .open_path(session.workspace.clone(), None::<String>)
         .map_err(|e| e.to_string())
+}
+
+/// 按 hook 上报的 pid 把会话对应的终端窗口提到前台。
+/// 只对带 pid 的会话（Claude Code / Codex hook）可用。
+#[tauri::command]
+pub async fn cmd_focus_agent_terminal(
+    monitor: tauri::State<'_, SharedAgentMonitor>,
+    session_id: String,
+) -> Result<(), String> {
+    let pid = {
+        let sessions = monitor
+            .sessions
+            .lock()
+            .map_err(|e| format!("agent sessions lock poisoned: {e}"))?;
+        let Some(session) = sessions.get(&session_id) else {
+            return Err("会话不存在".into());
+        };
+        session.pid
+    };
+    let Some(pid) = pid else {
+        return Err("这个会话没有上报终端进程".into());
+    };
+    let Some(hwnd) = bitcat_core::hotkey::find_window_by_pid(pid) else {
+        return Err("没有找到这个进程的窗口，可能已经退出".into());
+    };
+    bitcat_core::hotkey::force_foreground(hwnd)
 }
 
 #[cfg(test)]
