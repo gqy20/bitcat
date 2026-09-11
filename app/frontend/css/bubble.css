@@ -1,3 +1,5 @@
+@import url("/css/fonts.css");
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -24,12 +26,12 @@
   --bubble-danger: #d84f39;
   --bubble-danger-ink: #8f2f22;
   --bubble-font-body:
-    "Segoe UI", system-ui, -apple-system,
+    "MiSans BitCat", "Segoe UI", system-ui, -apple-system,
     "Noto Sans SC", "Microsoft YaHei", "PingFang SC",
     sans-serif;
   --bubble-font-ui:
-    "Cascadia Mono", "Cascadia Code", Consolas,
-    "Segoe UI", "Microsoft YaHei", monospace;
+    "Sarasa Mono SC BitCat", "Cascadia Mono", "Cascadia Code", Consolas,
+    "MiSans BitCat", "Microsoft YaHei", monospace;
 }
 
 html,

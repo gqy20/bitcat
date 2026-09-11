@@ -1,3 +1,5 @@
+@import url("/css/fonts.css");
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -13,7 +15,7 @@ body {
   background:
     radial-gradient(circle at 50% 45%, rgba(255, 209, 102, 0.12), transparent 28%),
     rgba(8, 12, 16, 0.28);
-  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-family: var(--font-ui);
 }
 
 #gameCanvas {

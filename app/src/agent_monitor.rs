@@ -609,7 +609,7 @@ fn watch_page_html() -> String {
   <style>
     :root {
       color-scheme: dark;
-      font-family: "Segoe UI", system-ui, sans-serif;
+      font-family: "MiSans", "Sarasa Mono SC", "Segoe UI", system-ui, sans-serif;
       background: #101217;
       color: rgba(255, 255, 255, .92);
     }

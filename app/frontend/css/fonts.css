@@ -1,0 +1,79 @@
+/* BitCat 内嵌字体与字体族变量。
+ *
+ * 独立于 ui-tokens.css：暗色玻璃风浮窗（agent-watch/notification 等）
+ * 引用本文件即可获得字体，不会带入浅色配色 token。
+ * 子集化工艺：pyftsubset GB2312 + 常用标点，woff2 压缩。 */
+
+@font-face {
+  font-family: "Geist BitCat";
+  src: url("/assets/fonts/geist-latin-variable.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 100 900;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122;
+}
+
+/* MiSans：中文 UI 主力（GB2312 子集，三字重覆盖 UI 权重） */
+@font-face {
+  font-family: "MiSans BitCat";
+  src: url("/assets/fonts/misans-Regular.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 100 450;
+  unicode-range: U+0020-007E, U+00A0-00FF, U+2013-2026, U+3001-3017, U+4E00-9FFF, U+FF00-FFEF;
+}
+
+@font-face {
+  font-family: "MiSans BitCat";
+  src: url("/assets/fonts/misans-Semibold.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 451 680;
+  unicode-range: U+0020-007E, U+00A0-00FF, U+2013-2026, U+3001-3017, U+4E00-9FFF, U+FF00-FFEF;
+}
+
+@font-face {
+  font-family: "MiSans BitCat";
+  src: url("/assets/fonts/misans-Bold.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 681 900;
+  unicode-range: U+0020-007E, U+00A0-00FF, U+2013-2026, U+3001-3017, U+4E00-9FFF, U+FF00-FFEF;
+}
+
+/* Sarasa Mono SC：等宽中文（Iosevka + 思源黑体，中英 2:1 对齐）。
+ * 代码/命令/路径的首选；覆盖拉丁与 GB2312，中英混排不再断宽。 */
+@font-face {
+  font-family: "Sarasa Mono SC BitCat";
+  src: url("/assets/fonts/sarasa-mono-sc-Regular.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 100 500;
+  unicode-range: U+0020-007E, U+00A0-00FF, U+2013-2026, U+2190-2193, U+3001-3017, U+4E00-9FFF, U+FF00-FFEF;
+}
+
+@font-face {
+  font-family: "Sarasa Mono SC BitCat";
+  src: url("/assets/fonts/sarasa-mono-sc-Semibold.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 501 900;
+  unicode-range: U+0020-007E, U+00A0-00FF, U+2013-2026, U+2190-2193, U+3001-3017, U+4E00-9FFF, U+FF00-FFEF;
+}
+
+/* Source Code Pro：纯拉丁等宽兜底（Sarasa 未覆盖的码位） */
+@font-face {
+  font-family: "Source Code Pro BitCat";
+  src: url("/assets/fonts/source-code-pro.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 200 900;
+  unicode-range: U+0020-007E, U+00A0-00FF, U+2190-2193;
+}
+
+:root {
+  --font-ui: "MiSans BitCat", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  --font-sans: var(--font-ui);
+  --font-brand: "Geist BitCat", "MiSans BitCat", "Segoe UI", sans-serif;
+  --font-mono: "Sarasa Mono SC BitCat", "Source Code Pro BitCat", "Cascadia Mono", "Consolas", monospace;
+}

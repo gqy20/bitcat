@@ -1,6 +1,8 @@
+@import url("/css/fonts.css");
+
 :root {
   color-scheme: dark;
-  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  font-family: var(--font-ui);
   --surface: rgba(34, 35, 39, 0.74);
   --surface-strong: rgba(42, 43, 48, 0.84);
   --card: rgba(28, 30, 34, 0.64);
@@ -356,6 +358,7 @@ body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: rgba(255, 255, 255, 0.8);
+  font-family: var(--font-mono);
   font-size: 11.5px;
   line-height: 1.45;
   font-weight: 580;
