@@ -147,3 +147,94 @@ describe('settings reminder formatting', () => {
     expect(card?.textContent).not.toContain('2026-06-02T19:45:17');
   });
 });
+
+describe('onboarding wizard', () => {
+  const WIZARD_HTML = `
+    <div id="onboarding-wizard">
+      <span data-dot="1"></span><span data-dot="2"></span><span data-dot="3"></span>
+      <section class="wizard-step hidden" data-wizard-step="1"></section>
+      <section class="wizard-step hidden" data-wizard-step="2"></section>
+      <section class="wizard-step hidden" data-wizard-step="3"></section>
+      <input id="wiz-screenshot" type="checkbox" />
+      <input id="wiz-camera" type="checkbox" />
+      <input id="wiz-tools" type="checkbox" />
+    </div>
+    <input id="perm-onboarding-completed" type="checkbox" />
+    <input id="perm-steam-demo" type="checkbox" />
+    <input id="perm-screenshot" type="checkbox" />
+    <input id="perm-camera" type="checkbox" />
+    <input id="perm-shell" type="checkbox" />
+    <input id="perm-read-file" type="checkbox" />
+    <input id="perm-clipboard" type="checkbox" />
+    <input id="perm-foreground" type="checkbox" />
+    <input id="perm-launch" type="checkbox" />
+    <input id="perm-hotkey" type="checkbox" />
+    <input id="perm-agent-remote" type="checkbox" />
+    <input id="perm-diagnostics" type="checkbox" />
+    <div id="perm-onboarding"><button id="perm-complete"></button></div>
+    <strong id="perm-gate-title"></strong>
+    <span id="perm-gate-summary"></span>
+    <span id="perm-status-screenshot"></span>
+    <span id="perm-status-camera"></span>
+    <span id="perm-status-tools"></span>
+    <span id="perm-status-remote"></span>
+    <strong id="perm-tools-summary"></strong>
+    <button id="perm-tools-jump"></button>
+  `;
+
+  it('steps forward and back with progress dots', () => {
+    const { dom, helpers } = loadSettings(WIZARD_HTML);
+    helpers.setWizardStep(2);
+    const doc = dom.window.document;
+    expect(doc.querySelector('[data-wizard-step="2"]').classList.contains('hidden')).toBe(false);
+    expect(doc.querySelector('[data-wizard-step="1"]').classList.contains('hidden')).toBe(true);
+    expect(doc.querySelector('[data-dot="1"]').classList.contains('done')).toBe(true);
+    expect(doc.querySelector('[data-dot="2"]').classList.contains('active')).toBe(true);
+    helpers.setWizardStep(0);
+    expect(doc.querySelector('[data-wizard-step="1"]').classList.contains('hidden')).toBe(false);
+  });
+
+  it('finish merges wizard choices into existing permissions', async () => {
+    const saved = [];
+    const tauri = {
+      core: {
+        invoke: async (command, args) => {
+          if (command === 'cmd_settings_save_permissions') saved.push(args.payload);
+          return null;
+        },
+      },
+    };
+    const dom = new JSDOM(`<!doctype html><body>${WIZARD_HTML}<div id="toast"></div></body>`, {
+      url: 'http://localhost/settings.html',
+      runScripts: 'outside-only',
+    });
+    const addEventListener = dom.window.document.addEventListener.bind(dom.window.document);
+    dom.window.document.addEventListener = (type, listener, options) => {
+      if (type === 'DOMContentLoaded') return;
+      addEventListener(type, listener, options);
+    };
+    dom.window.__TAURI__ = tauri;
+    const script = fs.readFileSync(resolve(process.cwd(), 'js/settings.js'), 'utf8');
+    dom.window.eval(script);
+    const doc = dom.window.document;
+    // 闭包内 SNAPSHOT 只能通过测试钩子写入（顶层 let 不在全局词法环境）。
+    dom.window.__settingsTest.setSnapshot({
+      permissions: { allow_agent_watch_remote: true, diagnostics_enabled: true },
+    });
+    doc.getElementById('wiz-screenshot').checked = true;
+    doc.getElementById('wiz-tools').checked = true;
+    doc.getElementById('wiz-camera').checked = false;
+    await dom.window.__settingsTest.finishWizard();
+    expect(saved).toHaveLength(1);
+    const payload = saved[0];
+    expect(payload.onboarding_completed).toBe(true);
+    expect(payload.allow_screenshot_observation).toBe(true);
+    expect(payload.allow_camera_observation).toBe(false);
+    expect(payload.allow_shell_tool).toBe(true);
+    expect(payload.allow_hotkey_tool).toBe(true);
+    // 未在向导里出现的项保留原值。
+    expect(payload.allow_agent_watch_remote).toBe(true);
+    expect(payload.diagnostics_enabled).toBe(true);
+    expect(doc.getElementById('onboarding-wizard').classList.contains('hidden')).toBe(true);
+  });
+});

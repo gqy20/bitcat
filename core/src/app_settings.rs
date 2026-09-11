@@ -158,7 +158,9 @@ pub struct PermissionSettings {
     pub onboarding_completed: bool,
     #[serde(default)]
     pub steam_demo_mode: bool,
-    #[serde(default = "default_true")]
+    /// 屏幕观察：恐慌测试结论——高权限观察类能力必须由用户第一次亲手开启，
+    /// 默认关闭（F3）。历史用户已保存的 true 不受影响（serde default 只对缺失字段生效）。
+    #[serde(default)]
     pub allow_screenshot_observation: bool,
     #[serde(default)]
     pub allow_camera_observation: bool,
@@ -278,7 +280,7 @@ impl Default for PermissionSettings {
         Self {
             onboarding_completed: false,
             steam_demo_mode: false,
-            allow_screenshot_observation: true,
+            allow_screenshot_observation: false,
             allow_camera_observation: false,
             allow_shell_tool: false,
             allow_read_file_tool: false,
@@ -574,7 +576,8 @@ mod tests {
         let p = PermissionSettings::default();
         assert!(!p.onboarding_completed);
         assert!(!p.steam_demo_mode);
-        assert!(p.allow_screenshot_observation);
+        // F3 恐慌测试：观察类能力默认关闭，由首次向导亲手开启。
+        assert!(!p.allow_screenshot_observation);
         assert!(!p.allow_camera_observation);
         assert!(!p.allow_shell_tool);
         assert!(!p.allow_read_file_tool);

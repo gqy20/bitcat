@@ -62,12 +62,12 @@
             </div>
           </div>
 
-          <div id="perm-onboarding" class="permission-callout hidden">
+          <div id="perm-onboarding" class="permission-callout">
             <div class="callout-head">
-              <strong>第一次见面，先说说边界</strong>
-              <button id="perm-complete" class="btn small" type="button">完成首次说明</button>
+              <strong>它是谁，边界在哪</strong>
+              <button id="perm-complete" class="btn small" type="button">再看一遍介绍</button>
             </div>
-            <span>它会聊天、跳舞、陪你玩游戏；看屏幕、用摄像头、动你的电脑，每一项都由你亲手开启。完成后随时可以改。</span>
+            <span>它会聊天、跳舞、陪你玩游戏；看屏幕、用摄像头、动你的电脑，每一项都由你亲手开启，完成后随时可以改。</span>
           </div>
 
           <div class="section-panel">
@@ -1013,6 +1013,66 @@
         <button id="btn-save" class="btn primary" type="button">保存</button>
       </div>
     </footer>
+
+    <!-- D1 三步信任向导：首次启动时全屏覆盖，完成前每次启动都会回来 -->
+    <div id="onboarding-wizard" class="onboarding-wizard hidden" role="dialog" aria-modal="true" aria-label="第一次见面">
+      <div class="wizard-card">
+        <div class="wizard-progress" aria-hidden="true"><span data-dot="1"></span><span data-dot="2"></span><span data-dot="3"></span></div>
+
+        <section class="wizard-step hidden" data-wizard-step="1">
+          <div class="wizard-cat" aria-hidden="true">🐈</div>
+          <h2>认识一下，我是 BitCat</h2>
+          <p class="wizard-lead">一只住在你电脑里的猫。我会聊天、跳舞、陪你玩小游戏；你写代码的时候，我还能帮你看管那几个编程助手。</p>
+          <p class="wizard-note">我的记忆和日志只存在这台电脑上，不上传任何东西。</p>
+          <div class="wizard-actions">
+            <button class="btn ghost" data-wizard-skip type="button">稍后再说</button>
+            <button class="btn primary" data-wizard-next type="button">开始</button>
+          </div>
+        </section>
+
+        <section class="wizard-step hidden" data-wizard-step="2">
+          <h2>我能做什么，由你决定</h2>
+          <p class="wizard-lead">下面这些能力现在都是关着的。想让我做哪件事，就现在打开；不打开也不影响陪伴。</p>
+          <div class="wizard-choices">
+            <label class="wizard-choice">
+              <div class="choice-copy">
+                <strong>定期看一眼屏幕</strong>
+                <span>帮你留意正在做的事，每 30 秒一次，可随时关</span>
+              </div>
+              <input id="wiz-screenshot" type="checkbox" />
+            </label>
+            <label class="wizard-choice">
+              <div class="choice-copy">
+                <strong>使用摄像头</strong>
+                <span>只做保守描述，不识别身份</span>
+              </div>
+              <input id="wiz-camera" type="checkbox" />
+            </label>
+            <label class="wizard-choice">
+              <div class="choice-copy">
+                <strong>替你动手</strong>
+                <span>运行命令、读写文件这类动作；即使打开，危险操作也会被拦下</span>
+              </div>
+              <input id="wiz-tools" type="checkbox" />
+            </label>
+          </div>
+          <div class="wizard-actions">
+            <button class="btn ghost" data-wizard-back type="button">上一步</button>
+            <button class="btn primary" data-wizard-next type="button">下一步</button>
+          </div>
+        </section>
+
+        <section class="wizard-step hidden" data-wizard-step="3">
+          <div class="wizard-cat" aria-hidden="true">🐾</div>
+          <h2>随时可以收回</h2>
+          <p class="wizard-lead">以后改主意，随时来这里：托盘菜单 → 设置 →「它能做什么」。每个能力都有开关，也可以一键全部收权。</p>
+          <div class="wizard-actions">
+            <button class="btn ghost" data-wizard-back type="button">上一步</button>
+            <button class="btn primary" id="wiz-finish" type="button">完成，去见它</button>
+          </div>
+        </section>
+      </div>
+    </div>
 
     <div id="confirm-layer" class="confirm-layer hidden" aria-hidden="true">
       <div class="confirm-island" role="dialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message">

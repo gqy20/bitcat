@@ -111,7 +111,8 @@ async function mockInvoke(command) {
       permissions: {
         onboarding_completed: false,
         steam_demo_mode: false,
-        allow_screenshot_observation: true,
+        // F3：默认关闭，与 PermissionSettings::default() 保持一致。
+        allow_screenshot_observation: false,
         allow_camera_observation: false,
         allow_shell_tool: false,
         allow_read_file_tool: false,
@@ -773,7 +774,8 @@ function collectAppearance() {
 function renderPermissions(p = {}) {
   $("perm-onboarding-completed").checked = !!p.onboarding_completed;
   $("perm-steam-demo").checked = !!p.steam_demo_mode;
-  $("perm-screenshot").checked = p.allow_screenshot_observation !== false;
+  // 默认值已是 false（F3），缺失字段必须显示为关闭，不能沿用旧 !== false。
+  $("perm-screenshot").checked = !!p.allow_screenshot_observation;
   $("perm-camera").checked = !!p.allow_camera_observation;
   $("perm-shell").checked = !!p.allow_shell_tool;
   $("perm-read-file").checked = !!p.allow_read_file_tool;
@@ -783,7 +785,7 @@ function renderPermissions(p = {}) {
   $("perm-hotkey").checked = !!p.allow_hotkey_tool;
   $("perm-agent-remote").checked = !!p.allow_agent_watch_remote;
   $("perm-diagnostics").checked = p.diagnostics_enabled !== false;
-  $("perm-onboarding").classList.toggle("hidden", !!p.onboarding_completed);
+  $("perm-onboarding").classList.remove("hidden");
   updatePermissionGateSummary();
 
   [
@@ -807,14 +809,8 @@ function renderPermissions(p = {}) {
   });
 
   $("perm-complete").onclick = () => {
-    $("perm-onboarding-completed").checked = true;
-    $("perm-steam-demo").checked = true;
-    markDirty("permissions");
-    updatePermissionGateSummary();
-    toast("首次说明已完成，保存后生效", "ok");
+    showWizard();
   };
-
-  updateHomePermissionCards();
 }
 
 // 首页“它能做什么”分区的状态行：把分散的权限开关压缩成人话结论。
@@ -912,6 +908,77 @@ function collectPermissions() {
     allow_agent_watch_remote: $("perm-agent-remote").checked,
     diagnostics_enabled: $("perm-diagnostics").checked,
   };
+}
+
+// ---- D1 三步信任向导：它是谁 → 会什么/不会什么 → 随时可收回 ----
+
+let wizardStep = 1;
+
+function showWizard(step = 1) {
+  const wizard = $("onboarding-wizard");
+  if (!wizard) return;
+  wizard.classList.remove("hidden");
+  setWizardStep(step);
+}
+
+function hideWizard() {
+  $("onboarding-wizard").classList.add("hidden");
+}
+
+function setWizardStep(step) {
+  wizardStep = Math.max(1, Math.min(3, step));
+  document.querySelectorAll("#onboarding-wizard .wizard-step").forEach((el) => {
+    el.classList.toggle("hidden", Number(el.dataset.wizardStep) !== wizardStep);
+  });
+  document.querySelectorAll("#onboarding-wizard [data-dot]").forEach((el) => {
+    const dot = Number(el.dataset.dot);
+    el.classList.toggle("active", dot === wizardStep);
+    el.classList.toggle("done", dot < wizardStep);
+  });
+}
+
+async function finishWizard() {
+  const base = SNAPSHOT?.permissions || {};
+  const toolsOn = $("wiz-tools").checked;
+  const payload = {
+    ...base,
+    onboarding_completed: true,
+    allow_screenshot_observation: $("wiz-screenshot").checked,
+    allow_camera_observation: $("wiz-camera").checked,
+    // "替你动手"是粗粒度组开关：六项一起开；细粒度调整在设置页。
+    allow_shell_tool: toolsOn,
+    allow_read_file_tool: toolsOn,
+    allow_clipboard_tool: toolsOn,
+    allow_foreground_tool: toolsOn,
+    allow_launch_program_tool: toolsOn,
+    allow_hotkey_tool: toolsOn,
+  };
+  try {
+    await invoke("cmd_settings_save_permissions", { payload });
+    if (SNAPSHOT?.permissions) Object.assign(SNAPSHOT.permissions, payload);
+    renderPermissions(SNAPSHOT.permissions);
+    updateHomePermissionCards();
+    hideWizard();
+    toast("设置好了，去陪它玩吧", "ok");
+  } catch (e) {
+    toast("保存失败：" + String(e), "err");
+  }
+}
+
+function setupWizard() {
+  const wizard = $("onboarding-wizard");
+  if (!wizard) return;
+  wizard.querySelectorAll("[data-wizard-next]").forEach((btn) => {
+    btn.addEventListener("click", () => setWizardStep(wizardStep + 1));
+  });
+  wizard.querySelectorAll("[data-wizard-back]").forEach((btn) => {
+    btn.addEventListener("click", () => setWizardStep(wizardStep - 1));
+  });
+  wizard.querySelector("[data-wizard-skip]")?.addEventListener("click", () => {
+    // 稍后再说：不标记完成，下次启动还会回来。
+    hideWizard();
+  });
+  $("wiz-finish").addEventListener("click", finishWizard);
 }
 
 function renderPetAssetChoice(value) {
@@ -1818,6 +1885,7 @@ async function loadSnapshot() {
     loadReminders();
     if (!SNAPSHOT.permissions?.onboarding_completed) {
       switchTab("home");
+      showWizard();
     }
     ["ai", "user", "actions", "prompts", "appearance", "permissions", "agent_watch"].forEach(clearDirty);
   } catch (e) {
@@ -2477,6 +2545,7 @@ function eventKindLabel(kind) {
 
 document.addEventListener("DOMContentLoaded", () => {
   bindGlobal();
+  setupWizard();
   loadSnapshot();
 });
 
@@ -2486,5 +2555,9 @@ if (typeof window !== "undefined") {
     formatReminderSchedule,
     reminderDescription,
     renderReminders,
+    setWizardStep,
+    finishWizard,
+    // 闭包内写 SNAPSHOT：eval 环境下顶层 let 不进全局词法，外部无法直接赋值。
+    setSnapshot: (value) => { SNAPSHOT = value; },
   };
 }

@@ -9,58 +9,58 @@ defaults:
   rows: 3
 
 actions:
+  invasion:
+    label: 桌面保卫战
+    icon: "🛡"
+    order: 10
+    type: builtin
+    command: invasion
+
   game:
     label: 毛线球大作战
     icon: "🎮"
-    order: 10
+    order: 20
     type: builtin
     command: game
 
   memory:
     label: 翻牌配对
     icon: "M"
-    order: 20
+    order: 30
     type: builtin
     command: memory
 
   catch:
     label: 接食物
     icon: "C"
-    order: 30
+    order: 40
     type: builtin
     command: catch
 
   battle:
     label: 飞机守护战
     icon: "⚔"
-    order: 40
+    order: 50
     type: builtin
     command: battle
 
   gomoku:
     label: AI 五子棋
     icon: "G"
-    order: 50
+    order: 60
     type: builtin
     command: gomoku
 
   arena:
     label: 猫猫擂台
     icon: "A"
-    order: 60
+    order: 70
     type: builtin
     command: arena
 
   beads:
     label: 拼豆
     icon: "B"
-    order: 70
-    type: builtin
-    command: beads
-
-  invasion:
-    label: Desktop Invasion
-    icon: "I"
     order: 80
     type: builtin
-    command: invasion
+    command: beads
