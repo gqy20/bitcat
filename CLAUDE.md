@@ -215,6 +215,7 @@ AI Agent 通过 `create_reminder` / `list_reminders` / `cancel_reminder` Tool �
 - **中文处理**：Rust 中字符串切片必须按字符边界（`.chars().take(n)`），不可用字节索引
 - **前端**：无框架，IIFE 模块，通过 `window.__TAURI__` API 与后端通信
 - **配置**：`config/actions.yml`、`config/buttons.yml`、`config/panel_action.yml`、`config/prompts.yml` 运行时从 exe 同目录/config/ 加载，构建时需 cp 到 target/config/
+- **Windows FFI 代码**：所有 `#[cfg(target_os = "windows")]` 代码在 Linux/macOS 本地**完全不参与编译**，CI（Windows）是它第一次被编译的地方。改动 windows-sys 相关代码后，推送前必须用"最小 crate 交叉验证"：临时目录建 crate（`edition` 与所在 crate 一致，`windows-sys` 版本/features 照抄），把待验证函数原样拷入，`cargo check --target x86_64-pc-windows-msvc`（windows-sys 是纯 bindings 无 build script，可交叉；整个 workspace 因 `ring`/`aws-lc-sys` build script 无法交叉）。两个高频坑：`HWND`/句柄是 `*mut c_void` 而非 `isize`（对外接口需要 isize 时在边界转换）；edition 2024 下 `unsafe extern fn` 体内的解引用和 FFI 调用仍需显式 `unsafe {}` 块（`unsafe_op_in_unsafe_fn` 是硬错误）。
 - **模块文档**：每个 `.rs` 文件顶部应有 `//!` 模块文档（3 句话：做什么、为什么这样设计、与谁交互）。公共函数/结构体应有 `///` 注释说明用途和约束。新增模块时必须补齐；修改模块时同步更新。
 - **意图理解**：大模型擅长的简单任务不要做关键词匹配、正则分类或”小分类器”前置判断；让模型在普通对话里自行选择工具，Rust 只负责 schema、校验、权限和执行。
 - **记忆检索**：默认用可 grep 的结构化文本，不做 Embeddings / Vector RAG。若未来有人想重新评估，必须先更新 `docs/architecture/design-tradeoffs.md` 说明收益大于复杂度。
