@@ -227,15 +227,19 @@ mod tests {
 
     #[test]
     fn test_view_model_uses_layout_and_order() {
-        let config = PanelActionConfig::load("config/panel_action.yml").unwrap();
+        // 用编译期绝对路径锁定仓库源文件：运行时 load() 的 fallback 链
+        // （exe 目录 → CWD）会读到 target 拷贝或本地残留，顺序断言会随环境漂移。
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../config/panel_action.yml");
+        let config = PanelActionConfig::load(path).unwrap();
         let vm = config.to_view_model();
         assert_eq!((vm.width, vm.height, vm.columns, vm.rows), (480, 420, 3, 3));
         assert_eq!(vm.actions.len(), 8);
         let ids: Vec<&str> = vm.actions.iter().map(|action| action.id.as_str()).collect();
+        // F3 主推重排：Invasion（桌面保卫战）提到首位。
         assert_eq!(
             ids,
             vec![
-                "game", "memory", "catch", "battle", "gomoku", "arena", "beads", "invasion"
+                "invasion", "game", "memory", "catch", "battle", "gomoku", "arena", "beads"
             ]
         );
     }
