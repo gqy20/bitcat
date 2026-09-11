@@ -389,8 +389,12 @@ pub fn run() {
                 warn!(error = %e, "precreate notification window failed");
             }
             reminder_scheduler::spawn_reminder_scheduler(app.handle().clone());
-            if let Err(e) = camera::precreate_camera_window(app.handle()) {
-                warn!(error = %e, "precreate camera window failed");
+            // 摄像头观察默认关闭：仅在用户已开启时才预创建窗口（A4），
+            // 开启路径由 camera::refresh_camera_window 懒创建兜底。
+            if camera::camera_observation_on() {
+                if let Err(e) = camera::precreate_camera_window(app.handle()) {
+                    warn!(error = %e, "precreate camera window failed");
+                }
             }
             settings::show_onboarding_if_needed(app.handle());
 

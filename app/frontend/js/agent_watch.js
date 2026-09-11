@@ -361,6 +361,9 @@
 
   async function refresh() {
     if (!invoke) return;
+    // 窗口隐藏时跳过轮询：setInterval 不受 visibility 节流，
+    // 隐藏期间的每次 invoke 都是纯浪费（显示时会由 eval 推送刷新）。
+    if (typeof document !== "undefined" && document.hidden) return;
     try {
       render(await invoke("cmd_get_agent_sessions"));
     } catch (e) {

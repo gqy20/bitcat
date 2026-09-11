@@ -40,8 +40,28 @@ pub fn precreate_camera_window(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// 摄像头观察是否被用户开启（外观开关 + 权限双重门控）。
+pub fn camera_observation_on() -> bool {
+    let settings = AppSettings::load();
+    settings.appearance.camera_observation_enabled && settings.permissions.allow_camera_observation
+}
+
+/// 确保摄像头窗口存在：观察开启时懒创建（常驻资源审计 A4：
+/// 默认关闭的功能不常驻 WebView，~40MB renderer 只在开启后才占用）。
+fn ensure_camera_window(app: &AppHandle) {
+    if app.get_webview_window("camera").is_none() {
+        if let Err(e) = precreate_camera_window(app) {
+            warn!(error = %e, "failed to create camera window on demand");
+        }
+    }
+}
+
 /// 通知摄像头窗口重新读取设置并按需开始/停止采样。
 pub fn refresh_camera_window(app: &AppHandle) {
+    // 开启路径上懒创建：设置刚打开摄像头时窗口可能还不存在。
+    if camera_observation_on() {
+        ensure_camera_window(app);
+    }
     if let Some(window) = app.get_webview_window("camera") {
         let settings = AppSettings::load();
         if let Err(e) = window.set_position(PhysicalPosition::new(OFFSCREEN, OFFSCREEN)) {
@@ -80,6 +100,7 @@ pub fn request_camera_capture(app: &AppHandle) {
     {
         return;
     }
+    ensure_camera_window(app);
     if let Some(window) = app.get_webview_window("camera") {
         let _ = window.set_position(PhysicalPosition::new(OFFSCREEN, OFFSCREEN));
         let _ = window.hide();

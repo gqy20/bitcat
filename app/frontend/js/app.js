@@ -263,6 +263,16 @@ import { PerformerHost } from './performance/performer-host.js';
     setupDrag();
     setupResizeHandle();
     setupPetBadge();
+
+    // 测试钩子：无 Tauri 环境下驱动状态机（脏检查渲染等验证）。
+    if (typeof window !== 'undefined') {
+      window.__petApp = {
+        applyEvent: function(payload) { pet.applyEvent(payload); },
+        state: function() { return pet.state; },
+        visualState: function() { return pet.visualState(); },
+        frame: function() { return pet.frame; },
+      };
+    }
   }
 
   function resolveNormalPetSize() {
@@ -287,6 +297,8 @@ import { PerformerHost } from './performance/performer-host.js';
     document.body.style.height = height + 'px';
     document.body.style.setProperty('--pet-width', width + 'px');
     document.body.style.setProperty('--pet-height', height + 'px');
+    // canvas 尺寸变化后渲染 scale 改变，缓存键失效，下一帧重绘。
+    invalidateSpriteRender();
 
     if (!resizeWindow) return;
     var win = getCurrentWin();
@@ -826,6 +838,19 @@ import { PerformerHost } from './performance/performer-host.js';
 
   // ========== 主循环 ==========
 
+  // 脏检查渲染键：sprite 画面只由这四项决定，未变化时跳过 canvas 重绘。
+  // idle 动画帧时长 1500ms → 重绘从 60fps 降到 ~0.7fps，GPU 空转消失
+  // （常驻资源审计 A1）。尺寸变化通过 invalidateSpriteRender() 显式失效。
+  let lastRenderKey = null;
+
+  function currentRenderKey() {
+    return pet.visualState() + '|' + pet.frame + '|' + pet.facingRight + '|' + viewportRenderScale();
+  }
+
+  function invalidateSpriteRender() {
+    lastRenderKey = null;
+  }
+
   function loop(now) {
     const dt = now - lastTime;
     lastTime = now;
@@ -833,6 +858,8 @@ import { PerformerHost } from './performance/performer-host.js';
     if (!collapsed) {
       if (performerHost && performerHost.hasActive()) {
         performerHost.update(dt);
+        // 表演期间由 performerHost 内部渲染；结束后首帧强制重绘归位。
+        lastRenderKey = null;
       } else {
         // 正常模式：状态机驱动
         pet.update(dt);
@@ -845,11 +872,20 @@ import { PerformerHost } from './performance/performer-host.js';
           prevState = pet.state;
         }
 
-        SpriteRenderer.renderSprite(ctx, visualState, pet.frame, pet.facingRight, viewportRenderScale());
         Particles.tick(pet.state, dt);
+
+        var renderKey = currentRenderKey();
+        if (renderKey !== lastRenderKey) {
+          SpriteRenderer.renderSprite(ctx, visualState, pet.frame, pet.facingRight, viewportRenderScale());
+          lastRenderKey = renderKey;
+        }
       }
     } else {
-      SpriteRenderer.renderMini(ctx, pet.state);
+      var miniKey = pet.state + '|' + pet.frame + '|' + viewportRenderScale();
+      if (miniKey !== lastRenderKey) {
+        SpriteRenderer.renderMini(ctx, pet.state);
+        lastRenderKey = miniKey;
+      }
     }
 
     requestAnimationFrame(loop);

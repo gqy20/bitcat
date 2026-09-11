@@ -1,11 +1,11 @@
 // voice.rs — 可见的语音输入条窗口,接收任意语音输入法注入的文字
 //
 // 流程:
-// 1. App 启动时预创建 voice 窗口 (visible:true 但放在屏幕外, 用户看不到)
-// 2. 用户按住手柄 voice 键 → 移到屏幕中下 + 强制前台化 + emit 'voice-clear'
+// 1. App 启动时预创建 voice 窗口 (visible:false 隐藏, WebView 被节流)
+// 2. 用户按住手柄 voice 键 → 移到屏幕中下 + show + 强制前台化 + emit 'voice-clear'
 //    → 模拟用户配置的输入法语音热键 → 输入法识别文字注入到 textarea
 // 3. 用户松开手柄 voice 键 → 等识别引擎完成注入 → 取走 textarea 内容 → 送 AI
-// 4. 取走文本后窗口移回屏幕外,等待下次使用
+// 4. 取走文本后窗口移回屏幕外并 hide,等待下次使用
 //
 // 防残留机制: generation 计数器
 //   open_voice_capture 时递增 generation 并清空文本
@@ -18,9 +18,10 @@
 //! `take_voice_text` 只接受与当前 generation 匹配的文本，旧会话残留会被丢弃。
 //! 这解决了输入法异步注入跨越松键时序窗口的问题。
 //!
-//! 窗口采用"预创建 + 屏幕外隐藏"策略：启动时即创建 280×40 透明窗口
-//! （visible: true 以便成为合法焦点目标），按下时移入屏幕，松开后归位。
-//! 所有操作均在手柄主循环线程上同步执行。
+//! 窗口采用"预创建 + 隐藏"策略：启动时创建 280×40 透明窗口（`visible(false)`，
+//! 隐藏的 WebView 会被系统节流，避免常驻渲染开销），按下时移入屏幕并前台化，
+//! 松开后归位并再次隐藏。焦点由 `force_foreground` 三件套保证，不依赖
+//! 窗口保持可见。
 
 use std::sync::Mutex;
 
@@ -68,9 +69,11 @@ impl Default for SharedVoice {
     }
 }
 
-/// 启动时预创建 voice 窗口，放在屏幕外（visible: true 才能成为合法焦点目标）。
+/// 启动时预创建 voice 窗口（隐藏态）。
 ///
 /// 避免首次按下 voice 键时创建窗口导致输入法抢不到焦点的时序竞态。
+/// `visible(false)`：隐藏的 WebView 会被 WebView2 节流，屏幕外但可见的
+/// 窗口则会全速渲染，常驻开销差一个量级（常驻资源审计 A2）。
 pub fn precreate_voice_window(app: &AppHandle) -> Result<(), tauri::Error> {
     if app.get_webview_window("voice").is_some() {
         return Ok(());
@@ -87,7 +90,7 @@ pub fn precreate_voice_window(app: &AppHandle) -> Result<(), tauri::Error> {
         .skip_taskbar(true)
         .resizable(false)
         .focused(false)
-        .visible(true)
+        .visible(false)
         .build()?;
     let _ = window.set_size(PhysicalSize::new(VOICE_W, VOICE_H));
     let _ = window.set_position(PhysicalPosition::new(OFFSCREEN, OFFSCREEN));
@@ -216,7 +219,7 @@ pub fn take_voice_text(app: &AppHandle) -> Result<String, String> {
         }
     }
 
-    // Step 4: 日志 + 归位
+    // Step 4: 日志 + 归位并隐藏（隐藏态 WebView 被节流，见 precreate 注释）。
     info!(
         chars = text.chars().count(),
         eval_ok,
@@ -229,6 +232,7 @@ pub fn take_voice_text(app: &AppHandle) -> Result<String, String> {
 
     if let Some(window) = app.get_webview_window("voice") {
         let _ = window.set_position(PhysicalPosition::new(OFFSCREEN, OFFSCREEN));
+        let _ = window.hide();
     }
 
     // Step 5: 再次确保清空（防止残留）
