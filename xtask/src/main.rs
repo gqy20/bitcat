@@ -15,6 +15,7 @@ use std::{
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
 
 mod audit_usage;
+mod logs_analyze;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -63,6 +64,10 @@ fn main() -> Result<()> {
             }
             audit_usage::run(days)
         }
+        Some("logs") => match args.next().as_deref() {
+            Some("analyze") => logs_analyze::run(&logs_analyze::parse_args(args.collect())?),
+            _ => Err("用法: xtask logs analyze <bitcat-diagnostics-xxx.zip>".into()),
+        },
         Some("-h") | Some("--help") | None => {
             print_help();
             Ok(())
@@ -502,6 +507,7 @@ xtask commands:
   clean-dist
   test | test-core | test-app | test-fast
   audit-usage [--days N]        F2 功能使用审计：读 ~/.bitcat/logs/ 埋点出报告
+  logs analyze <zip>            分析其他设备导出的诊断包（多源合并 + chat 链路）
 
 package-portable options:
   --version <value>          Release version/tag. Defaults to git describe.

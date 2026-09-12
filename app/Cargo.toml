@@ -20,6 +20,7 @@ base64 = "0.22"
 chrono = "0.4"
 dotenvy = "0.15"
 tracing-appender = "0.2.5"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 ctrlc = "3"
 toml_edit = "0.22"
 libloading = "0.8"

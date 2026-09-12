@@ -339,6 +339,7 @@ dependencies = [
  "tracing-subscriber",
  "windows 0.54.0",
  "windows-sys 0.61.2",
+ "zip",
 ]
 
 [[package]]

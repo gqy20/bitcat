@@ -13,6 +13,7 @@ const MENU_TOP: &str = "top";
 const MENU_STOP_DANCE: &str = "stop-dance";
 const MENU_RELOAD: &str = "reload";
 const MENU_SETTINGS: &str = "settings";
+const MENU_EXPORT_DIAGNOSTICS: &str = "export-diagnostics";
 const MENU_EXIT: &str = "exit";
 
 const PET_MENU_CHAT: &str = "pet-context-chat";
@@ -36,6 +37,13 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let stop_dance_item = MenuItem::with_id(app, MENU_STOP_DANCE, "停止舞动", true, None::<&str>)?;
     let separator_state = PredefinedMenuItem::separator(app)?;
     let reload_item = MenuItem::with_id(app, MENU_RELOAD, "重新载入配置", true, None::<&str>)?;
+    let diagnostics_item = MenuItem::with_id(
+        app,
+        MENU_EXPORT_DIAGNOSTICS,
+        "导出诊断包",
+        true,
+        None::<&str>,
+    )?;
     let exit_item = MenuItem::with_id(app, MENU_EXIT, "退出 BitCat", true, None::<&str>)?;
 
     let menu = Menu::with_items(
@@ -49,6 +57,7 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             &stop_dance_item,
             &separator_state,
             &reload_item,
+            &diagnostics_item,
             &exit_item,
         ],
     )?;
@@ -77,6 +86,26 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             }
             MENU_SETTINGS => {
                 crate::settings::toggle_settings(app);
+            }
+            MENU_EXPORT_DIAGNOSTICS => {
+                // 最近 24h + 默认脱敏，产物在日志目录 diagnostics/ 下。
+                let handle = app.clone();
+                std::thread::spawn(move || {
+                    match tauri::async_runtime::block_on(
+                        crate::diagnostics::cmd_export_diagnostics(
+                            handle.clone(),
+                            Some(24),
+                            Some(true),
+                        ),
+                    ) {
+                        Ok(path) => {
+                            tracing::info!(path = %path, "diagnostics exported from tray");
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, "diagnostics export failed");
+                        }
+                    }
+                });
             }
             MENU_EXIT => {
                 crate::shutdown::request_exit(app, "tray-exit");

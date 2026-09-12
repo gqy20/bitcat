@@ -24,6 +24,7 @@ pub mod camera;
 pub mod claude_hooks;
 pub mod codex_hooks;
 pub mod commands;
+pub mod diagnostics;
 pub mod game;
 pub mod game_input;
 pub mod gamepad;
@@ -160,6 +161,7 @@ pub fn run() {
             notification_window::cmd_notification_resize,
             notification_window::cmd_notification_action,
             agent_monitor::cmd_focus_agent_terminal,
+            diagnostics::cmd_export_diagnostics,
             claude_hooks::cmd_install_claude_code_hooks,
             claude_hooks::cmd_open_claude_settings,
             codex_hooks::cmd_install_codex_hooks,

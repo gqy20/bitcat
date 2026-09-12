@@ -592,6 +592,37 @@ impl PetAgent {
         F: FnMut(AgentStreamEvent),
     {
         let session_id = new_session_id();
+        // 对话链路锚点：session_id 同时写入 tool_events.jsonl 和
+        // token_usage.jsonl（session_id 字段），debug 时用它在三处日志间
+        // 串起完整因果链（L1 trace 关联）。
+        info!(
+            chat_id = %session_id,
+            message_chars = message.chars().count(),
+            "chat stream started"
+        );
+        let result = self
+            .chat_stream_inner(message, session_id.clone(), &mut on_event)
+            .await;
+        match &result {
+            Ok(text) => info!(
+                chat_id = %session_id,
+                response_chars = text.chars().count(),
+                "chat stream finished"
+            ),
+            Err(error) => warn!(chat_id = %session_id, error = ?error, "chat stream failed"),
+        }
+        result
+    }
+
+    async fn chat_stream_inner<F>(
+        &self,
+        message: &str,
+        session_id: String,
+        mut on_event: F,
+    ) -> Result<String, ChatError>
+    where
+        F: FnMut(AgentStreamEvent),
+    {
         let mut stream = self
             .agent
             .stream_prompt(message.to_string())
