@@ -203,6 +203,36 @@ impl SharedAgentMonitor {
         }
     }
 
+    /// 淘汰过期会话：安静超过 30 分钟且非活跃的历史会话从表中移除。
+    ///
+    /// 会话表只进不出是慢性泄漏：跑一周积累数百条历史会话，每次快照
+    /// 全量序列化、每次 persist 全量写盘（P3）。窗口与重启恢复的
+    /// `RESTORE_MAX_AGE_MS` 对齐——反正恢复时也会被同样规则过滤。
+    /// 活跃会话（Working/ToolRunning/Waiting/Compacting）永不淘汰。
+    fn evict_stale_sessions(&self, now_ms: u64) -> usize {
+        let mut evicted = Vec::new();
+        if let Ok(mut sessions) = self.sessions.lock() {
+            sessions.retain(|id, session| {
+                let stale = !session.is_active()
+                    && now_ms.saturating_sub(session.updated_at_ms) > RESTORE_MAX_AGE_MS;
+                if stale {
+                    evicted.push(id.clone());
+                }
+                !stale
+            });
+        }
+        if !evicted.is_empty() {
+            // nudge 策略状态同步清理，避免策略表同样只进不出。
+            if let Ok(mut policy) = self.nudge_policy.lock() {
+                for id in &evicted {
+                    policy.remove_session(id);
+                }
+            }
+            info!(count = evicted.len(), "agent watch stale sessions evicted");
+        }
+        evicted.len()
+    }
+
     /// 把当前会话表原子写入状态文件（2 秒节流；漏掉最后一次写入可接受，
     /// 活跃 agent 的下一个事件会重建会话）。
     fn persist_sessions(&self, now_ms: u64) {
@@ -216,6 +246,8 @@ impl SharedAgentMonitor {
             }
             *last = Some(std::time::Instant::now());
         }
+        // 与持久化同节流：先淘汰过期会话，再落盘（写盘量也随之收敛）。
+        self.evict_stale_sessions(now_ms);
         let sessions: Vec<AgentSession> = match self.sessions.lock() {
             Ok(sessions) => sessions.values().cloned().collect(),
             Err(_) => return,
@@ -2025,6 +2057,63 @@ mod tests {
         assert!(recent.should_accept("same".into(), 1_000));
         assert!(!recent.should_accept("same".into(), 1_500));
         assert!(recent.should_accept("same".into(), 3_000));
+    }
+
+    #[test]
+    fn evict_stale_sessions_removes_only_old_inactive() {
+        let monitor = SharedAgentMonitor::default();
+        let now = 10 * 60 * 60 * 1000; // 10h 基准，便于构造"31 分钟前"
+        let make = |id: &str, status: AgentStatus, updated: u64| AgentSession {
+            session_id: id.into(),
+            source: AgentSource::ClaudeCode,
+            workspace: format!("D:\\repo\\{id}"),
+            parent_session_id: None,
+            status,
+            tool_name: None,
+            tool_input_preview: None,
+            user_prompt_preview: None,
+            last_response_preview: None,
+            background: false,
+            agent_id: None,
+            agent_type: None,
+            task_id: None,
+            output_file: None,
+            pid: None,
+            machine: None,
+            first_seen_at_ms: updated,
+            has_run_tools: true,
+            tokens_in: None,
+            tokens_out: None,
+            cost_usd_micros: None,
+            waiting_reason: None,
+            updated_at_ms: updated,
+            status_changed_at_ms: updated,
+            needs_user: false,
+        };
+        {
+            let mut sessions = monitor.sessions.lock().unwrap();
+            // 活跃会话：再老也不淘汰。
+            sessions.insert(
+                "active".into(),
+                make("active", AgentStatus::Working, now - 60 * 60 * 1000),
+            );
+            // 安静 31 分钟的 Done 会话：淘汰。
+            sessions.insert(
+                "stale-done".into(),
+                make("stale-done", AgentStatus::Done, now - 31 * 60 * 1000),
+            );
+            // 安静 29 分钟的 Done 会话：保留（30 分钟窗口内）。
+            sessions.insert(
+                "fresh-done".into(),
+                make("fresh-done", AgentStatus::Done, now - 29 * 60 * 1000),
+            );
+        }
+        let evicted = monitor.evict_stale_sessions(now);
+        assert_eq!(evicted, 1);
+        let sessions = monitor.sessions.lock().unwrap();
+        assert!(sessions.contains_key("active"));
+        assert!(sessions.contains_key("fresh-done"));
+        assert!(!sessions.contains_key("stale-done"));
     }
 
     #[test]

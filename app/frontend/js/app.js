@@ -86,7 +86,7 @@ import { PerformerHost } from './performance/performer-host.js';
   let normalPetWidth = 128;
   let normalPetHeight = 128;
   const PET_SIZE_STORAGE_KEY = 'bitcat.petSize';
-  const PET_BADGE_REFRESH_MS = 2500;
+  // （原 2.5s badge 轮询间隔常量已随事件驱动改造移除。）
   const PET_MIN_SIZE = 72;
   const PET_MAX_SIZE = 256;
   const petBadgeCounts = { agent: 0, screenshot: 0 };
@@ -1117,10 +1117,11 @@ import { PerformerHost } from './performance/performer-host.js';
   function setupPetBadge() {
     setupPetBadgeButton();
     renderPetBadgeCount();
+    // 初始各拉一次（事件只覆盖后续变化）；
+    // 常驻轮询已移除：badge 由 agent-session-update 事件驱动，
+    // 隐藏计数由 screenshot-hidden-count-changed 事件驱动（P2）。
     refreshPetBadge();
     refreshHiddenScreenshotCount();
-    setInterval(refreshPetBadge, PET_BADGE_REFRESH_MS);
-    setInterval(refreshHiddenScreenshotCount, PET_BADGE_REFRESH_MS);
   }
 
   // ========== 右键菜单 ==========
@@ -1254,6 +1255,11 @@ import { PerformerHost } from './performance/performer-host.js';
 
     window.__TAURI__.event.listen('screenshot-hidden-count-changed', (event) => {
       setHiddenScreenshotCount(event.payload);
+    });
+
+    // pet badge：agent 会话快照推送驱动（替代 2.5s 全量轮询）。
+    window.__TAURI__.event.listen('agent-session-update', (event) => {
+      setPetBadgeCount(attentionCountFromAgentSnapshot(event.payload));
     });
 
     window.__TAURI__.event.listen('performance-start', async (event) => {

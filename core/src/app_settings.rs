@@ -320,11 +320,34 @@ impl Default for AppearanceSettings {
 
 /// `app_settings.json` 的实际路径。None 表示无法解析 config_dir（罕见）。
 pub fn settings_path() -> Option<PathBuf> {
+    // 测试注入点 / 便携版覆盖：显式指定配置文件路径。
+    if let Some(path) = std::env::var_os("BITCAT_APP_SETTINGS").filter(|p| !p.is_empty()) {
+        return Some(PathBuf::from(path));
+    }
     dirs::config_dir().map(|d| d.join("bitcat").join("app_settings.json"))
+}
+
+/// 设置文件的 mtime 缓存：`load()` 命中时跳过读盘和反序列化。
+///
+/// `AppSettings::load()` 被热路径高频调用（截图循环 30s 周期内 3 次、
+/// gamepad 循环、agent 事件处理…），每次全量读盘是纯浪费。mtime+size
+/// 双指纹未变即返回内存克隆；`save()` 后主动失效；进程外手改文件
+/// 在 mtime 变化后的下次 load 也能感知。
+static SETTINGS_CACHE: OnceLock<Mutex<Option<SettingsCacheEntry>>> = OnceLock::new();
+
+struct SettingsCacheEntry {
+    mtime: SystemTime,
+    size: u64,
+    value: AppSettings,
+}
+
+fn settings_cache() -> &'static Mutex<Option<SettingsCacheEntry>> {
+    SETTINGS_CACHE.get_or_init(|| Mutex::new(None))
 }
 
 impl AppSettings {
     /// 从磁盘读取；文件不存在或解析失败均回退到默认。
+    /// 命中 mtime+size 缓存时直接返回克隆，不产生磁盘 I/O。
     pub fn load() -> Self {
         let Some(path) = settings_path() else {
             return Self::default();
@@ -333,11 +356,34 @@ impl AppSettings {
         if !path.exists() {
             return Self::default();
         }
+        if let (Ok(metadata), Ok(cache)) = (fs::metadata(&path), settings_cache().lock()) {
+            let mtime = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+            let size = metadata.len();
+            if let Some(entry) = cache
+                .as_ref()
+                .filter(|entry| entry.mtime == mtime && entry.size == size)
+            {
+                return entry.value.clone();
+            }
+        }
         match fs::read_to_string(&path) {
-            Ok(raw) => serde_json::from_str(&raw).unwrap_or_else(|e| {
-                tracing::warn!(error = %e, path = ?path, "app_settings.json 解析失败，使用默认");
-                Self::default()
-            }),
+            Ok(raw) => {
+                let parsed = serde_json::from_str(&raw).unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, path = ?path, "app_settings.json 解析失败，使用默认");
+                    Self::default()
+                });
+                // 只缓存成功解析的结果；解析失败下次仍重读（可能被用户修复）。
+                if let (Ok(metadata), Ok(mut cache)) =
+                    (fs::metadata(&path), settings_cache().lock())
+                {
+                    *cache = Some(SettingsCacheEntry {
+                        mtime: metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
+                        size: metadata.len(),
+                        value: parsed.clone(),
+                    });
+                }
+                parsed
+            }
             Err(e) => {
                 tracing::warn!(error = %e, path = ?path, "读取 app_settings.json 失败");
                 Self::default()
@@ -366,7 +412,16 @@ impl AppSettings {
         if path.exists() {
             fs::remove_file(&path).map_err(|e| format!("替换 app_settings.json 失败: {e}"))?;
         }
-        fs::rename(&tmp, &path).map_err(|e| format!("保存 app_settings.json 失败: {e}"))
+        fs::rename(&tmp, &path).map_err(|e| format!("保存 app_settings.json 失败: {e}"))?;
+        // 写入后主动失效缓存，并把刚保存的值直接预热进缓存。
+        if let (Ok(metadata), Ok(mut cache)) = (fs::metadata(&path), settings_cache().lock()) {
+            *cache = Some(SettingsCacheEntry {
+                mtime: metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
+                size: metadata.len(),
+                value: self.clone(),
+            });
+        }
+        Ok(())
     }
 }
 
@@ -569,6 +624,54 @@ mod tests {
         assert_eq!(s.agent_watch, AgentWatchSettings::default());
         assert_eq!(s.permissions, PermissionSettings::default());
         assert_eq!(s.storage, StorageSettings::default());
+    }
+
+    /// mtime 缓存行为：save 预热 → load 命中；进程外手改（size 变化）→ 感知。
+    /// 通过 BITCAT_APP_SETTINGS 注入临时路径，避免读写真实用户配置。
+    #[test]
+    fn settings_cache_roundtrip_from_env() {
+        let dir = std::env::temp_dir().join(format!(
+            "bitcat-settings-cache-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("app_settings.json");
+        let old = std::env::var_os("BITCAT_APP_SETTINGS");
+        // SAFETY: 测试进程独占该环境变量；nextest 的 serial-env 组保证串行执行。
+        unsafe { std::env::set_var("BITCAT_APP_SETTINGS", &path) };
+
+        // save → load 应返回保存值（缓存预热后命中）。
+        let mut first = AppSettings::default();
+        first.appearance.screenshot_interval_sec = 111;
+        first.save().unwrap();
+        assert_eq!(AppSettings::load().appearance.screenshot_interval_sec, 111);
+
+        // 再次 load：值不变（无论命中与否结果一致，此断言防回归语义）。
+        assert_eq!(AppSettings::load().appearance.screenshot_interval_sec, 111);
+
+        // 进程外修改（不同 size 触发指纹变化）→ 下次 load 感知。
+        let mut second = AppSettings::default();
+        second.appearance.screenshot_interval_sec = 99999;
+        let json = serde_json::to_string_pretty(&second).unwrap();
+        fs::write(&path, json).unwrap();
+        assert_eq!(
+            AppSettings::load().appearance.screenshot_interval_sec,
+            99999
+        );
+
+        // 恢复环境。
+        // SAFETY: 同上，串行测试组内独占。
+        unsafe {
+            match old {
+                Some(v) => std::env::set_var("BITCAT_APP_SETTINGS", v),
+                None => std::env::remove_var("BITCAT_APP_SETTINGS"),
+            }
+        }
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

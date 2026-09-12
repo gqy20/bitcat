@@ -763,6 +763,8 @@ F3(恐慌测试) ──→ D1(权限向导) 向导即首次信任建立，截图
 │   ├── agent_watch_events.jsonl # Agent Watch 原始归一事件 (E1/E2)
 │   ├── agent_watch_sessions.jsonl # Claude Code / Codex 等会话状态 (E1/E2)
 │   ├── agent_watch_nudges.jsonl # Agent Watch 提醒决策 (E1/E2)
+│   ├── agent_watch_state.json  # 会话表持久化（重启恢复）
+│   ├── resource_usage.jsonl    # 常驻资源自监控：60s 采样进程内存/CPU/窗口数（常驻审计）
 │   └── agent_actions.jsonl  # 桌宠触发的 Agent 控制动作 (E3)
 ├── reminders/
 │   └── reminders.json       # 程序化提醒 store (B6)

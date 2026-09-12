@@ -39,6 +39,7 @@ pub mod pet_inbox;
 pub mod pi_hooks;
 pub mod reminder_scheduler;
 pub mod remote_endpoint;
+pub mod resource_monitor;
 pub mod screenshot;
 pub mod settings;
 pub mod shutdown;
@@ -389,6 +390,7 @@ pub fn run() {
                 warn!(error = %e, "precreate notification window failed");
             }
             reminder_scheduler::spawn_reminder_scheduler(app.handle().clone());
+            resource_monitor::spawn_resource_monitor(app.handle().clone());
             // 摄像头观察默认关闭：仅在用户已开启时才预创建窗口（A4），
             // 开启路径由 camera::refresh_camera_window 懒创建兜底。
             if camera::camera_observation_on() {

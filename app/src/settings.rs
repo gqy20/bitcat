@@ -837,7 +837,7 @@ fn current_process_times_100ns() -> Result<(u64, u64), String> {
 }
 
 #[cfg(windows)]
-fn current_process_memory_mb() -> Result<f64, String> {
+pub(crate) fn current_process_memory_mb() -> Result<f64, String> {
     use windows_sys::Win32::System::ProcessStatus::{
         GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
     };
@@ -870,7 +870,7 @@ fn current_process_memory_mb() -> Result<f64, String> {
 }
 
 #[cfg(windows)]
-fn system_memory_stats() -> Result<(f64, f64, f64), String> {
+pub(crate) fn system_memory_stats() -> Result<(f64, f64, f64), String> {
     use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
 
     let mut status = MEMORYSTATUSEX {
@@ -896,7 +896,7 @@ fn system_memory_stats() -> Result<(f64, f64, f64), String> {
 }
 
 #[cfg(windows)]
-fn process_cpu_percent() -> Result<f64, String> {
+pub(crate) fn process_cpu_percent() -> Result<f64, String> {
     let (kernel, user) = current_process_times_100ns()?;
     let now = Instant::now();
     let mut guard = resource_sample_slot()
