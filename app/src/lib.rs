@@ -52,6 +52,22 @@ pub mod voice;
 
 use gamepad::{SharedAgent, SharedChatCancel, SharedChatCore, SharedPendingChat};
 use tauri::{Emitter, Manager};
+
+/// 定向多窗口 emit：只发给指定的（可能不存在的）窗口，忽略不存在的标签。
+///
+/// 广播 `app.emit` 会把 payload 序列化后发给全部 WebView（当前 7+ 个），
+/// 无关窗口白白反序列化（常驻审计 P4）。消费窗口明确的低频/中频事件
+/// 一律走这里；一次性事件（如 app-shutdown）保留广播即可。
+pub(crate) fn emit_to_windows<S: serde::Serialize + Clone>(
+    app: &tauri::AppHandle,
+    labels: &[&str],
+    event: &str,
+    payload: &S,
+) {
+    for label in labels {
+        let _ = app.emit_to(*label, event, payload.clone());
+    }
+}
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tracing::{debug, info, warn};
 
@@ -162,6 +178,7 @@ pub fn run() {
             notification_window::cmd_notification_action,
             agent_monitor::cmd_focus_agent_terminal,
             diagnostics::cmd_export_diagnostics,
+            commands::cmd_frontend_error,
             claude_hooks::cmd_install_claude_code_hooks,
             claude_hooks::cmd_open_claude_settings,
             codex_hooks::cmd_install_codex_hooks,
@@ -319,7 +336,7 @@ pub fn run() {
                     if let Err(e) = bubble::hide_bubble_window(&dance_app) {
                         warn!(error = %e, dance = %name, "表现开始时隐藏 bubble 失败");
                     }
-                    if let Err(e) = dance_app.emit("performance-start", &payload) {
+                    if let Err(e) = dance_app.emit_to("pet", "performance-start", payload) {
                         warn!(error = %e, dance = %name, "emit performance-start 失败");
                         bitcat_core::performance::stop_performance(session.id, "emit_failed");
                         continue;
@@ -545,13 +562,13 @@ pub fn run() {
                     panel::toggle_panel(&dbg_app);
                     std::thread::sleep(std::time::Duration::from_secs(2));
                     info!("[debug] 模拟 panel-nav (1, 0)");
-                    let _ = dbg_app.emit("panel-nav", (1i32, 0i32));
+                    let _ = dbg_app.emit_to("panel", "panel-nav", (1i32, 0i32));
                     std::thread::sleep(std::time::Duration::from_millis(500));
                     info!("[debug] 模拟 panel-nav (1, 0)");
-                    let _ = dbg_app.emit("panel-nav", (1i32, 0i32));
+                    let _ = dbg_app.emit_to("panel", "panel-nav", (1i32, 0i32));
                     std::thread::sleep(std::time::Duration::from_millis(500));
                     info!("[debug] 模拟 panel-nav (0, -1)");
-                    let _ = dbg_app.emit("panel-nav", (0i32, -1i32));
+                    let _ = dbg_app.emit_to("panel", "panel-nav", (0i32, -1i32));
                 });
             }
             Ok(())

@@ -39,7 +39,7 @@ pub enum GameInput {
 
 /// Emit one typed game input event to the active game window.
 pub fn emit_game_input(app: &AppHandle, input: GameInput) {
-    if let Err(e) = app.emit("game-input", input) {
+    if let Err(e) = app.emit_to("game", "game-input", input) {
         tracing::warn!(error = %e, "emit game-input failed");
     }
 }

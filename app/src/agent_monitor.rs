@@ -21,7 +21,7 @@ use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 use tracing::{debug, info, warn};
 
 use crate::remote_endpoint::RemoteInstallInfo;
@@ -1166,7 +1166,12 @@ pub fn handle_hook_payload(app: &AppHandle, raw: &str) -> Result<(), String> {
         return Ok(());
     }
 
-    let _ = app.emit("agent-session-update", &snapshot);
+    crate::emit_to_windows(
+        app,
+        &["agent-watch", "pet", "pet-inbox", "settings"],
+        "agent-session-update",
+        &snapshot,
+    );
     crate::agent_watch_window::show_snapshot(app, &snapshot);
     if let Err(e) = append_jsonl("agent_watch_sessions.jsonl", &snapshot) {
         warn!(error = %e, "write agent watch session snapshot failed");
@@ -1704,7 +1709,12 @@ pub async fn cmd_dismiss_agent_session(
 ) -> Result<AgentSessionsSnapshot, String> {
     monitor.remove_session(&session_id)?;
     let snapshot = monitor.snapshot(now_ms())?;
-    let _ = app.emit("agent-session-update", &snapshot);
+    crate::emit_to_windows(
+        &app,
+        &["agent-watch", "pet", "pet-inbox", "settings"],
+        "agent-session-update",
+        &snapshot,
+    );
     crate::agent_watch_window::show_snapshot(&app, &snapshot);
     sync_pet_agent_mode(&app, &monitor);
     Ok(snapshot)

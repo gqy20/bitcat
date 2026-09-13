@@ -17,7 +17,7 @@
 use bitcat_core::screenshot::{CapturedFrame, ScreenInfo, ScreenshotTarget};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 use tracing::{debug, info, warn};
 
 static SCREENSHOT_PIPELINE_LOCK: Mutex<()> = Mutex::new(());
@@ -411,7 +411,12 @@ fn hidden_screenshot_count(state: &SharedScreenshotState) -> u32 {
 }
 
 fn emit_hidden_screenshot_count(app: &tauri::AppHandle, count: u32) {
-    let _ = app.emit("screenshot-hidden-count-changed", count);
+    crate::emit_to_windows(
+        app,
+        &["pet", "pet-inbox"],
+        "screenshot-hidden-count-changed",
+        &count,
+    );
 }
 
 fn increment_hidden_screenshot_count(app: &tauri::AppHandle) {

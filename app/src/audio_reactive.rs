@@ -83,7 +83,7 @@ fn start_music_source(
         "kind": "music-reactive",
         "source": source,
     });
-    app.emit("performance-start", &payload)
+    app.emit_to("pet", "performance-start", payload)
         .map_err(|e| format!("emit performance-start failed: {e}"))?;
     bitcat_core::performance::update_phase(
         session.id,
@@ -125,7 +125,8 @@ fn finish_source(app: &AppHandle, session_id: u64, reason: &str) {
 }
 
 fn emit_stop(app: &AppHandle, session_id: u64, reason: &str) {
-    let _ = app.emit(
+    let _ = app.emit_to(
+        "pet",
         "performance-stop",
         serde_json::json!({
             "session_id": session_id,
@@ -135,7 +136,7 @@ fn emit_stop(app: &AppHandle, session_id: u64, reason: &str) {
 }
 
 fn emit_frame(app: &AppHandle, frame: MusicDanceFrame) {
-    if let Err(e) = app.emit("performance-frame", frame) {
+    if let Err(e) = app.emit_to("pet", "performance-frame", frame) {
         debug!(error = %e, session_id = frame.session_id, "[audio-reactive] emit frame failed");
     }
 }
@@ -189,7 +190,8 @@ fn spawn_wasapi_music_loop(app: AppHandle, session_id: u64, stop: Arc<AtomicBool
             Ok(()) => finish_source(&app, session_id, "stopped"),
             Err(e) => {
                 warn!(error = %e, session_id, "[audio-reactive] WASAPI failed");
-                let _ = app.emit(
+                let _ = app.emit_to(
+                    "pet",
                     "performance-error",
                     serde_json::json!({
                         "session_id": session_id,

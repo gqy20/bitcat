@@ -628,11 +628,11 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                             match name {
                                 "A" => {
                                     info!("→ 面板确认");
-                                    let _ = app.emit("panel-confirm", ());
+                                    let _ = app.emit_to("panel", "panel-confirm", ());
                                 }
                                 "B" => {
                                     info!("→ 面板关闭");
-                                    let _ = app.emit("panel-close", ());
+                                    let _ = app.emit_to("panel", "panel-close", ());
                                 }
                                 _ => {}
                             }
@@ -643,11 +643,11 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                             match name {
                                 "A" => {
                                     info!("→ Agent Watch 展开焦点卡");
-                                    let _ = app.emit("agent-watch-confirm", ());
+                                    let _ = app.emit_to("agent-watch", "agent-watch-confirm", ());
                                 }
                                 "B" => {
                                     info!("→ Agent Watch 收起焦点");
-                                    let _ = app.emit("agent-watch-back", ());
+                                    let _ = app.emit_to("agent-watch", "agent-watch-back", ());
                                 }
                                 _ => {}
                             }
@@ -835,14 +835,14 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                 if hat != prev_hat {
                     if let Some((dx, dy)) = hat {
                         info!(dx = dx, dy = dy, "→ 面板导航");
-                        let _ = app.emit("panel-nav", (dx, dy));
+                        let _ = app.emit_to("panel", "panel-nav", (dx, dy));
                     }
                 }
             } else if watch_visible {
                 if hat != prev_hat {
                     if let Some((dx, dy)) = hat {
                         info!(dx = dx, dy = dy, "→ Agent Watch 导航");
-                        let _ = app.emit("agent-watch-nav", (dx, dy));
+                        let _ = app.emit_to("agent-watch", "agent-watch-nav", (dx, dy));
                     }
                 }
             } else if let Some((dx, dy)) = hat {
@@ -1285,7 +1285,7 @@ pub fn run_ai_chat(
                 && event.phase == ToolPhase::Finished
                 && event.success == Some(true)
             {
-                let _ = app_for_chunks.emit("reminders-updated", ());
+                let _ = app_for_chunks.emit_to("settings", "reminders-updated", ());
             }
             let _ = bubble::emit_tool_event(
                 &app_for_chunks,

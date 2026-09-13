@@ -275,7 +275,7 @@ pub async fn cmd_notification_action(
         }
     }
     if reminder_changed {
-        let _ = app.emit("reminders-updated", ());
+        let _ = app.emit_to("settings", "reminders-updated", ());
     }
     cmd_notification_hide(app).await
 }

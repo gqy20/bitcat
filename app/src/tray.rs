@@ -249,7 +249,8 @@ fn stop_dance(app: &AppHandle) {
     let shared = app.state::<crate::audio_reactive::SharedAudioReactive>();
     crate::audio_reactive::stop_music_dance(app, shared.inner(), "menu_stop");
     if let Some(session) = bitcat_core::performance::current_performance() {
-        let _ = app.emit(
+        let _ = app.emit_to(
+            "pet",
             "performance-stop",
             serde_json::json!({
                 "session_id": session.id,
@@ -277,7 +278,12 @@ fn toggle_pet_collapse(app: &AppHandle) -> bool {
 
     let label = if now_collapsed { "展开" } else { "折叠" };
     info!(collapsed = now_collapsed, "宠物菜单: {}", label);
-    let _ = app.emit("pet-toggle-collapse", now_collapsed);
+    crate::emit_to_windows(
+        app,
+        &["pet", "pet-mini"],
+        "pet-toggle-collapse",
+        &now_collapsed,
+    );
     now_collapsed
 }
 
@@ -293,7 +299,7 @@ fn toggle_pet_always_on_top(app: &AppHandle) -> bool {
             let _ = win.set_always_on_top(now_top);
         }
     }
-    let _ = app.emit("pet-toggle-top", now_top);
+    crate::emit_to_windows(app, &["pet", "pet-mini"], "pet-toggle-top", &now_top);
     now_top
 }
 

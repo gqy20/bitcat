@@ -973,3 +973,28 @@ mod ipc_tests {
         );
     }
 }
+
+/// 前端全局错误上报（frontend_guard.js）：节流后落 app.log（L4）。
+/// 守卫在前端已做长度截断，这里再做频率节流防止错误风暴刷爆日志。
+#[tauri::command]
+pub async fn cmd_frontend_error(
+    window_label: String,
+    kind: String,
+    message: String,
+    source: String,
+) -> Result<(), String> {
+    if !bitcat_core::logging::frontend_log_allowed(
+        "frontend-error",
+        std::time::Duration::from_millis(500),
+    ) {
+        return Ok(());
+    }
+    tracing::warn!(
+        window = %window_label,
+        kind = %kind,
+        source = %source,
+        message = %message,
+        "frontend uncaught error"
+    );
+    Ok(())
+}

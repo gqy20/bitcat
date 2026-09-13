@@ -158,7 +158,7 @@ impl PetEventBus {
         };
 
         debug!(event_type = event_type(&event), "emit pet-event");
-        if let Err(e) = app.emit("pet-event", event.clone()) {
+        if let Err(e) = app.emit_to("pet", "pet-event", event.clone()) {
             warn!(error = %e, "emit pet-event failed");
             self.push_log(
                 now,
@@ -168,6 +168,8 @@ impl PetEventBus {
                 event_payload(&event),
             );
         } else {
+            // pet-mini 是 pet 的折叠形态（同一 app.js），窗口可能不存在，忽略。
+            let _ = app.emit_to("pet-mini", "pet-event", event.clone());
             if let PetEvent::SetMode { mode } = event {
                 self.current_mode = mode;
             }
