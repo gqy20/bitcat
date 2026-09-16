@@ -317,7 +317,7 @@ checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
 
 [[package]]
 name = "bitcat-app"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "bitcat-core",
@@ -344,7 +344,7 @@ dependencies = [
 
 [[package]]
 name = "bitcat-core"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "cargo-husky",
@@ -6623,7 +6623,7 @@ checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
 
 [[package]]
 name = "xtask"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",

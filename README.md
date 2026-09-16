@@ -16,9 +16,9 @@ make release
 # 打包为版本化 ZIP
 make dist
 
-# 发布 0.1.6 时使用 tag 驱动产物命名
-git tag v0.1.6
-git push origin v0.1.6
+# 发布 0.2.0 时使用 tag 驱动产物命名
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 启动后看到屏幕角落的小宠物即为成功。

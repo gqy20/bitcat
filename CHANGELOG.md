@@ -6,6 +6,82 @@
 
 ---
 
+## [0.2.0] - 2026-09-16
+
+> 本版本汇总 0.1.6 以来约 120 个提交，主题是**产品可理解性与信任**（Track F）+ 常驻资源治理。
+>
+> **升级注意**：截图/摄像头观察与高风险 AI 工具默认改为关闭，首次启动（含从 0.1.6 升级）会出现一次 3 步信任向导，由你亲手开启想要的观察能力；**此前已显式保存过的开关不受影响**（默认值只对缺失配置生效）。8BitDo Micro 请继续使用 D-Input 模式。
+
+### 新增
+
+**产品可理解性与信任（Track F）**
+- **设置页 4+1 重组（F1）**：11 个按代码模块命名的 tab 收敛为四个"用户疑问"分区（它能做什么 / 它记住了我什么 / 它花了多少钱 / 它怎么陪着我）+ 折叠专家模式；专家模式按任务分组，随后多轮打磨（视觉系统、对比度、toast/保存指示、MiSans 字体）。
+- **首次启动权限向导 + 默认收权（F3/D1）**：截图观察不再默认开启，首次由用户在 3 步信任向导（它是谁 → 会什么 / 不会什么 → 随时可收回什么）中亲手开启；新增发布版权限 gate。
+- **功能使用审计（F2）**：新增 `xtask audit-usage`，读取本地 points/tool/token/reminder JSONL 出真实使用报告；panel 8 个游戏入口收敛为「桌面保卫战主推 + 游戏库二级入口」。
+- **产品设计规范**：新增 `docs/product/design-spec.md` 作为用户可见改动的验收标准（三时刻模型、文案术语对照表、恐慌测试、功能准入清单）。
+
+**小游戏（A2/D4）**
+- **桌面保卫战（Invasion）**：新增 BitCat 语义化核心玩法——小怪偷取记忆/提醒/Agent 任务的**安全投影目标**（不含隐私正文与真实控制权）；接入真实数据投影，后续升级局内反馈与结束详情。
+- **Pixel Beads**：像素拼贴小游戏（调色 / 放置 / 撤销）。
+- **猫猫擂台（Arena）**：3D 对战训练原型与资产管线，多轮可读性打磨。
+- **五子棋 AI 讲解**：AI 思路与结构化 commentary，输出带稳定校验。
+- **Snake 词汇学习模式**：词汇答题玩法与 live harness。
+- **AI `start_game` 工具**：AI 可在对话中启动内置小游戏，走 `game_request` 安全桥。
+
+**Agent Watch（E1/E2）**
+- 接入 **pi 与 opencode** 会话看管。
+- 子任务聚合进主卡片，消除子代理横条刷屏；短命会话降噪。
+- 用量可见、宠物感知与免打扰、等待体验打磨。
+- 远程 viewer 移动端 LAN 视图与 PWA shell。
+
+**AI Agent 可靠性**
+- **流错误分类与兜底**：可恢复错误进入用户友好 fallback 文案，不再空白失败。
+- **Bubble 阅读态与工具状态 UI**：阅读模式、工具状态条、表演型工具退场体验。
+- GLM max tokens 上限与 provider 错误透出；StepFun fallback；快捷提示直接发送。
+
+**积分与记忆**
+- **积分 / 等级 / 成就系统（B7）**：互动积分、等级、连续活跃和 12 个内置成就；明细写 `points_events.jsonl`，聚合状态原子落盘，设置页展示。
+- 画像聚合改为结构化 patch。
+
+**诊断与观测**
+- **诊断包导出 / 分析闭环**：托盘「导出诊断包」+ `xtask logs analyze <zip>` 分析其他设备的诊断包；chat 链路锚点日志。
+- **常驻资源自监控**：`resource_usage.jsonl` 按 60s 采样进程内存 / CPU / 窗口数。
+
+### 性能
+
+- **常驻资源瘦身**：隐藏 WebView 节流 + 宠物脏检查渲染。
+- **热路径 I/O 缓存 + 轮询事件化 + 会话淘汰**：降低常驻开销与无效轮询。
+- **IPC 事件广播改定向**：跨窗口事件按窗口定向发送；前端全局错误捕获落盘。
+
+### 修复
+
+- Windows FFI：`find_window_by_pid` 回调签名对齐 windows-sys `HWND` 类型，并补显式 `unsafe` 块。
+- shell 超时支持环境变量覆盖，修复 CI 高负载下的测试偶发超时。
+- 修复 GB18030 编码乱码残留；修复 pre-push 脚本。
+- 内置舞蹈目录改为三级回退，便携包补上 `dances/`；修复其回退顺序测试在本地 `make test-fast` 下必挂的问题（xtask 会把整个 config/ 复制到 core/config，断言改为锁定"返回第一个真实存在候选"的契约）。
+
+### 变更
+
+- 宠物资源收敛为 15 个精修 `cat-*` 品种，旧非猫形象从前端资源移除。
+- 应用视觉系统整体刷新；Sarasa Mono SC 等宽中文接入全部窗口。
+- 本地数据目录可配置；grep-first 记忆检索调优。
+- 品牌残余清理：hooks、包输出、core/app 命名统一 BitCat。
+
+### 工具链
+
+- **跨平台开发落地**：core / app 可在 Linux 编译测试。
+- **CI 5 job 护栏**：Windows 全量 + Linux core + 前端 vitest + dev-build workflow（手动触发 4-7 分钟出可运行产物，含 BUILD_INFO）；GitHub Actions 升级 Node 24；clippy 门禁升级 `--all-targets` 并清理既存 lint。
+- crates.io 镜像移出仓库，改由 `CARGO_HOME` 提供；前端 bundle 瘦身并恢复宠物运行时资产。
+
+### 文档
+
+- 新增产品设计规范（design-spec）并接入 AGENTS / CLAUDE 验收流程。
+- roadmap 引入产品视角与 Track F；后续新增 A4「上班金币掉落」构想。
+- 沉淀 Windows FFI 最小 crate 交叉验证规范；远程移动端 viewer 使用指南。
+
+---
+
+
 ## [0.1.6] - 2026-05-18
 
 > 2026-05-24 release prep addendum: public project naming, GitHub repository
