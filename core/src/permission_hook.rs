@@ -1,10 +1,9 @@
 //! AI 工具调用安全策略钩子
 //!
 //! 拦截 Agent 的 shell 工具调用，通过黑名单模式阻止危险命令（rm -rf、format、shutdown 等）。
-//! 非 shell 工具直接放行。作为 rig PromptHook 注册到 Agent 流水线中。
+//! 非 shell 工具直接放行。作为 rig AgentHook 注册到 Agent 流水线中。
 
-use rig::agent::PromptHook;
-use rig::agent::ToolCallHookAction;
+use rig::agent::hook::{AgentHook, HookContext, ToolCall, ToolCallAction};
 use tracing::{info, warn};
 
 use crate::logging::log_preview;
@@ -15,50 +14,43 @@ pub const POLICY_BLOCK_REASON: &str = "此命令被安全策略阻止，可能�
 pub const PERMISSION_DISABLED_REASON: &str =
     "此能力已在 BitCat 权限设置中关闭，需要用户在设置页手动开启后才能使用";
 
-/// 空结构体，实现 rig 的 PromptHook trait，在工具调用前进行安全检查
+/// 空结构体，实现 rig 的 AgentHook trait，在工具调用前进行安全检查
 #[derive(Clone)]
 pub struct PermissionHook;
 
-impl<M: rig::completion::CompletionModel> PromptHook<M> for PermissionHook {
-    fn on_tool_call(
-        &self,
-        tool_name: &str,
-        _call_id: Option<String>,
-        _internal_call_id: &str,
-        args: &str,
-    ) -> impl std::future::Future<Output = ToolCallHookAction> + Send {
+impl AgentHook for PermissionHook {
+    async fn on_tool_call(&self, _ctx: &HookContext, event: ToolCall<'_>) -> ToolCallAction {
+        let tool_name = event.tool_name;
+        let args = event.args;
         let cmd_lower = args.to_lowercase();
-        async move {
-            if let Some(reason) = disabled_by_settings(tool_name) {
-                warn!(tool = %tool_name, reason = %reason, "tool call blocked by permission settings");
-                return ToolCallHookAction::Skip { reason };
-            }
 
-            match tool_name {
-                "shell" => {
-                    let command_preview = log_preview(args, 120);
-                    if is_dangerous_command(&cmd_lower) {
-                        warn!(
-                            command_chars = args.chars().count(),
-                            command_preview = %command_preview,
-                            "tool call blocked by policy"
-                        );
-                        ToolCallHookAction::Skip {
-                            reason: POLICY_BLOCK_REASON.into(),
-                        }
-                    } else {
-                        info!(
-                            command_chars = args.chars().count(),
-                            command_preview = %command_preview,
-                            "shell tool call allowed"
-                        );
-                        ToolCallHookAction::Continue
-                    }
+        if let Some(reason) = disabled_by_settings(tool_name) {
+            warn!(tool = %tool_name, reason = %reason, "tool call blocked by permission settings");
+            return ToolCallAction::Skip(reason);
+        }
+
+        match tool_name {
+            "shell" => {
+                let command_preview = log_preview(args, 120);
+                if is_dangerous_command(&cmd_lower) {
+                    warn!(
+                        command_chars = args.chars().count(),
+                        command_preview = %command_preview,
+                        "tool call blocked by policy"
+                    );
+                    ToolCallAction::Skip(POLICY_BLOCK_REASON.into())
+                } else {
+                    info!(
+                        command_chars = args.chars().count(),
+                        command_preview = %command_preview,
+                        "shell tool call allowed"
+                    );
+                    ToolCallAction::Run
                 }
-                _ => {
-                    info!(tool = %tool_name, "非 shell 工具调用放行");
-                    ToolCallHookAction::Continue
-                }
+            }
+            _ => {
+                info!(tool = %tool_name, "非 shell 工具调用放行");
+                ToolCallAction::Run
             }
         }
     }

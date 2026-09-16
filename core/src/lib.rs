@@ -10,7 +10,7 @@
 //! 手柄输入循环、IPC 通信等平台相关职责；core 自身不感知窗口或渲染。
 //!
 //! 核心子模块概览：
-//! - `agent` — 基于 rig-core 的 AI 流式对话与工具注册
+//! - `agent` — 基于 rig facade 的 AI 流式对话与工具注册
 //! - `agent_session` / `claude_code` / `agent_nudge` — 外部 Claude Code 看管与提醒策略
 //! - `bridge` — 手柄按键 → Agent 命令 → 宠物动画的桥接映射
 //! - `pet` — 宠物状态机（6 状态、帧动画）
@@ -26,7 +26,7 @@
 //! - `dance` — 舞蹈编排与播放
 //! - `device` — 手柄设备枚举与连接管理
 //! - `logging` — 日志工具函数（log_preview 等）
-//! - `permission_hook` — rig-core 工具调用的权限拦截钩子
+//! - `permission_hook` — rig 工具调用的权限拦截钩子
 //! - `panel_action` — 弹出面板快捷入口配置
 //! - `performance` — 表现会话状态，统一舞蹈、音乐响应与游戏接管
 //! - `screen_summary` — 截图摘要注入 prompt 构建

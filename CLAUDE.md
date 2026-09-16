@@ -95,7 +95,7 @@ Rust workspace（`core` + `app` + `xtask`），Tauri 2.0 多窗口桌面应用�
 
 | Crate | 职责 | 关键依赖 |
 |-------|------|----------|
-| **core**（`bitcat-core`） | 纯逻辑，零 UI 依赖，可独立单测 | rig-core(AI), serde_yaml, windows-sys |
+| **core**（`bitcat-core`） | 纯逻辑，零 UI 依赖，可独立单测 | rig 0.42 facade(AI), serde_yaml, windows-sys |
 | **app**（`bitcat-app`） | Tauri 2.0 壳：窗口管理、手柄循环、IPC、托盘 | tauri 2, sdl2(bundled + static-link), tokio |
 | **xtask** | 仓库维护工具：portable zip 打包等项目级命令 | zip |
 
@@ -158,7 +158,7 @@ app 层通过 `SharedPetEventBus` 统一发送 `pet-event`，集中处理去重�
 
 配置优先级：环境变量 > `~/.bitcat/app_settings.json` 覆盖层 > `~/.claude/settings.json` > `.env` > 默认值。当前通过 rig `AgentBuilder` 注册 16 个内置 Tool：`launch_program` / `shell` / `read_file` / `get_time` / `recent_screenshots` / `search_memory` / `remember` / `create_reminder` / `list_reminders` / `cancel_reminder` / `send_hotkey` / `read_clipboard` / `force_foreground` / `perform_dance` / `play_dance` / `start_game`。`max_tokens` 默认 256K。
 
-主对话使用 `stream_prompt().multi_turn(MAX_AGENT_TURNS)`。`PetAgent::chat_stream()` 将 rig 的 `MultiTurnStreamItem` 拆成三类 app 可消费事件：`Text` 流式写入 bubble；`Tool` 携带 `ToolRuntimeEvent` 表达 planned / blocked / finished / failed；`Status` 从文本 delta 和 tool-call item 派生 `AiWriting` / `ToolPreparing`。`PermissionHook` 仍是 shell 安全边界，危险命令通过 `ToolCallHookAction::Skip` 返回可解释结果。
+主对话使用 `stream_prompt().max_turns(MAX_AGENT_TURNS)`。`PetAgent::chat_stream()` 将 rig 的 `MultiTurnStreamItem` 拆成三类 app 可消费事件：`Text` 流式写入 bubble；`Tool` 携带 `ToolRuntimeEvent` 表达 planned / blocked / finished / failed；`Status` 从文本 delta 和 tool-call item 派生 `AiWriting` / `ToolPreparing`。`PermissionHook` 仍是 shell 安全边界，危险命令通过 0.42 事件化 `AgentHook` 的 `ToolCallAction::Skip` 返回可解释结果。
 
 对话结束后用 rig `Extractor<AgentReaction>` 做结构化收尾：输出最终 `PetMood`、可选 speech 和 `memory_candidates`。失败或超时时 fallback 到 `Idle`，不阻塞主回复。
 

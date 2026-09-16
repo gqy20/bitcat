@@ -12,7 +12,7 @@
 //!
 //! 与 `agent.rs`（对话后写入）、`bridge.rs`（构建上下文）交互。
 
-use rig::client::CompletionClient;
+use rig::client::AgentClientExt;
 use rig::providers::anthropic;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
