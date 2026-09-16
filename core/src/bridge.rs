@@ -165,7 +165,7 @@ pub fn handle_button_press(
 }
 
 fn rand_range(lo: f32, hi: f32) -> f32 {
-    use rand::Rng;
+    use rand::RngExt;
     rand::rng().random_range(lo..hi)
 }
 
