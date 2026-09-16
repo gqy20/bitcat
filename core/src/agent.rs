@@ -1,10 +1,10 @@
-//! AI Agent 模块：基于 rig-core 的多轮流式对话与工具调用。
+//! AI Agent 模块：基于 rig 0.42 facade 的多轮流式对话与工具调用。
 //!
 //! 本模块是桌宠的"大脑"，负责与 Anthropic Claude 模型进行流式对话，并注册
 //! 一组内置工具（启动程序、执行命令、读取文件等），让模型可以自主调用以完成
 //! 用户指令。
 //!
-//! 设计上采用 rig-core 的 Agent + StreamingPrompt 模式：文本 chunk 通过
+//! 设计上采用 rig 的 Agent + StreamingPrompt 模式：文本 chunk 通过
 //! [`AgentStreamEvent::Text`] 实时传递给 app 层的 bubble 窗口渲染，工具调用通过
 //! [`AgentStreamEvent::Tool`] 形成独立状态事件，避免混进正文流。
 //!
@@ -32,11 +32,11 @@ use futures::StreamExt;
 use rig::agent::Agent;
 use rig::agent::MultiTurnStreamItem;
 use rig::client::CompletionClient;
-use rig::completion::{Prompt, ToolDefinition};
+use rig::completion::Prompt;
 use rig::message::{ToolResult as RigToolResult, ToolResultContent};
 use rig::providers::anthropic;
 use rig::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingPrompt};
-use rig::tool::Tool;
+use rig::tool::PortableTool;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -44,11 +44,12 @@ use tracing::{debug, info, instrument, trace, warn};
 
 /// AI Agent 多轮工具调用的最大回合数。
 ///
-/// 每次"模型输出 → 工具执行 → 模型再读结果"算一个 turn。设 0 时 rig 会立刻
-/// 抛 `MaxTurnError`（这也是 rig 默认值触发过的坑）。给个宽裕的上限覆盖：
-/// perform_dance → 再总结 ≈ 4 turn，带搜索记忆/读文件的链路可达 10+。
-/// 16 留足余量又不会让异常循环无限跑（每轮至少数秒，满轮约等于几分钟超时兜底）。
-const MAX_AGENT_TURNS: usize = 16;
+/// rig 0.40 起 `max_turns` 计的是**总模型调用数**（含首轮、工具续轮和重试），
+/// 旧版语义下 16 的实际效果 ≈ 18 次调用，故迁移时取 18 保持行为不变。
+/// 给个宽裕的上限覆盖：perform_dance → 再总结 ≈ 4 turn，带搜索记忆/读文件
+/// 的链路可达 10+。留足余量又不会让异常循环无限跑（每轮至少数秒，
+/// 满轮约等于几分钟超时兜底）。
+const MAX_AGENT_TURNS: usize = 18;
 const MAX_CONSECUTIVE_TOOL_FAILURES: usize = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -425,6 +426,8 @@ fn tool_result_preview(result: &RigToolResult) -> Option<String> {
         .map(|content| match content {
             ToolResultContent::Text(text) => truncate_event_preview(&text.text),
             ToolResultContent::Image(_) => "[image]".to_string(),
+            // rig 0.42 起 Serialize 工具输出（如 tools::ToolResult）以显式 JSON 块呈现
+            ToolResultContent::Json { value } => truncate_event_preview(&value.to_string()),
         })
         .next()
 }
@@ -463,11 +466,8 @@ fn result_tool_event(
     } else {
         ToolPhase::Finished
     };
-    planned.call_id = result
-        .call_id
-        .clone()
-        .or(planned.call_id)
-        .or(Some(result.id.clone()));
+    // rig 0.42 的 ToolResult 恒有 rig 关联 id（call），provider 下发过 id 时优先用 wire id
+    planned.call_id = Some(result.wire_call_id().to_string());
     planned.internal_call_id = internal_call_id;
     planned.result_preview = preview;
     planned.success = if blocked || failed {
@@ -516,12 +516,12 @@ fn should_stop_after_tool_failure(
     })
 }
 
-/// 桌宠 AI Agent，封装 rig-core Agent 和运行时配置。
+/// 桌宠 AI Agent，封装 rig Agent 和运行时配置。
 ///
 /// 通过 `new()` 从 `AiConfig` + `PromptsConfig` 构建，内部注册了全部内置工具，
 /// 对外暴露 `chat`（一次性）和 `chat_stream`（流式）两个对话入口。
 pub struct PetAgent {
-    pub agent: Agent<anthropic::completion::CompletionModel, PermissionHook>,
+    pub agent: Agent,
     pub config: AiConfig,
 }
 
@@ -545,7 +545,7 @@ impl PetAgent {
         let agent = rig::agent::AgentBuilder::new(model)
             .preamble(&preamble)
             .max_tokens(max_tokens)
-            .hook(PermissionHook)
+            .add_hook(PermissionHook)
             .tool(LaunchTool)
             .tool(ShellTool)
             .tool(ReadFileTool)
@@ -626,7 +626,7 @@ impl PetAgent {
         let mut stream = self
             .agent
             .stream_prompt(message.to_string())
-            .multi_turn(MAX_AGENT_TURNS)
+            .max_turns(MAX_AGENT_TURNS)
             .await;
 
         let mut accumulated = String::new();
@@ -670,7 +670,7 @@ impl PetAgent {
                     tool_call_count += 1;
                     let event = planned_tool_event(
                         tool_call.function.name.clone(),
-                        tool_call.call_id.or(Some(tool_call.id)),
+                        Some(tool_call.id.as_str().to_string()),
                         internal_call_id,
                     );
                     info!(tool = %event.tool_name, phase = ?event.phase, "tool call planned");
@@ -695,7 +695,7 @@ impl PetAgent {
 
                     // 兜底：某些 provider 可能在 FinalResponse 中才暴露完整文本，
                     // 或 multi-turn 末轮的文本仅出现在此处。安全追加（去重）。
-                    let final_text = res.response();
+                    let final_text = res.output();
                     if !final_text.is_empty() && !accumulated.ends_with(final_text) {
                         info!(
                             final_text_chars = final_text.len(),
@@ -705,7 +705,7 @@ impl PetAgent {
                     }
 
                     info!(
-                        chars = res.response().len(),
+                        chars = res.output().len(),
                         input_tokens = usage.input_tokens,
                         output_tokens = usage.output_tokens,
                         total_tokens = usage.total_tokens,
@@ -1003,22 +1003,24 @@ fn build_agent_preamble(base: &str) -> String {
     format!("{}\n\n{}", base.trim_end(), build_tool_guide_prompt())
 }
 
-/// 定义一个同步执行的 Tool（execute 函数返回 `ToolResult`）
+/// 定义一个同步执行的 Tool（execute 函数返回 `ToolResult`）。
+/// rig 0.42 起实现无上下文的 `PortableTool`，facade 会通过 blanket impl
+/// 自动适配带 `ToolContext` 的运行时 `Tool` trait。
 macro_rules! define_tool_sync {
     ($name:ident, $spec:expr, $args_ty:ty, $exec_fn:expr) => {
         struct $name;
-        impl Tool for $name {
+        impl PortableTool for $name {
             const NAME: &'static str = $spec.name;
             type Error = ToolError;
             type Args = $args_ty;
             type Output = tools::ToolResult;
 
-            async fn definition(&self, _prompt: String) -> ToolDefinition {
-                ToolDefinition {
-                    name: Self::NAME.into(),
-                    description: $spec.description.into(),
-                    parameters: tool_schema::<$args_ty>(),
-                }
+            fn description(&self) -> String {
+                $spec.description.into()
+            }
+
+            fn parameters(&self) -> serde_json::Value {
+                tool_schema::<$args_ty>()
             }
 
             async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
@@ -1032,18 +1034,18 @@ macro_rules! define_tool_sync {
 macro_rules! define_tool_async {
     ($name:ident, $spec:expr, $args_ty:ty, $exec_fn:expr) => {
         struct $name;
-        impl Tool for $name {
+        impl PortableTool for $name {
             const NAME: &'static str = $spec.name;
             type Error = ToolError;
             type Args = $args_ty;
             type Output = tools::ToolResult;
 
-            async fn definition(&self, _prompt: String) -> ToolDefinition {
-                ToolDefinition {
-                    name: Self::NAME.into(),
-                    description: $spec.description.into(),
-                    parameters: tool_schema::<$args_ty>(),
-                }
+            fn description(&self) -> String {
+                $spec.description.into()
+            }
+
+            fn parameters(&self) -> serde_json::Value {
+                tool_schema::<$args_ty>()
             }
 
             async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
@@ -1158,6 +1160,22 @@ define_tool_sync!(
 mod tests {
     use super::*;
     use rstest::*;
+
+    /// rig 0.42 起 Tool 定义拆为 `NAME` / `description()` / `parameters()`，
+    /// 测试视图聚合成旧 ToolDefinition 形状，保持断言不变。
+    struct ToolDefView {
+        name: &'static str,
+        description: String,
+        parameters: serde_json::Value,
+    }
+
+    fn tool_def<T: rig::tool::PortableTool>(tool: &T) -> ToolDefView {
+        ToolDefView {
+            name: T::NAME,
+            description: tool.description(),
+            parameters: tool.parameters(),
+        }
+    }
 
     #[test]
     fn test_preamble_is_non_empty() {
@@ -1284,7 +1302,7 @@ data: [DONE]"#;
 
     #[tokio::test]
     async fn test_launch_tool_definition() {
-        let def = LaunchTool.definition(String::new()).await;
+        let def = tool_def(&LaunchTool);
         assert_eq!(def.name, "launch_program");
         assert!(!def.description.is_empty());
         let params = def.parameters.as_object().unwrap();
@@ -1294,20 +1312,20 @@ data: [DONE]"#;
 
     #[tokio::test]
     async fn test_shell_tool_definition() {
-        let def = ShellTool.definition(String::new()).await;
+        let def = tool_def(&ShellTool);
         assert_eq!(def.name, "shell");
         assert!(def.description.contains("PowerShell"));
     }
 
     #[tokio::test]
     async fn test_read_file_tool_definition() {
-        let def = ReadFileTool.definition(String::new()).await;
+        let def = tool_def(&ReadFileTool);
         assert_eq!(def.name, "read_file");
     }
 
     #[tokio::test]
     async fn test_get_time_tool_definition() {
-        let def = GetTimeTool.definition(String::new()).await;
+        let def = tool_def(&GetTimeTool);
         assert_eq!(def.name, "get_time");
         let schema = serde_json::to_string(&def.parameters).unwrap();
         assert!(schema.contains("\"full\""));
@@ -1317,12 +1335,12 @@ data: [DONE]"#;
 
     #[tokio::test]
     async fn test_memory_tool_definitions() {
-        let search = SearchMemoryTool.definition(String::new()).await;
+        let search = tool_def(&SearchMemoryTool);
         assert_eq!(search.name, "search_memory");
         let search_schema = serde_json::to_string(&search.parameters).unwrap();
         assert!(search_schema.contains("min_importance"));
 
-        let remember = RememberTool.definition(String::new()).await;
+        let remember = tool_def(&RememberTool);
         assert_eq!(remember.name, "remember");
         let remember_schema = serde_json::to_string(&remember.parameters).unwrap();
         assert!(remember_schema.contains("importance"));
@@ -1330,7 +1348,7 @@ data: [DONE]"#;
 
     #[tokio::test]
     async fn test_reminder_tool_definitions() {
-        let create = CreateReminderTool.definition(String::new()).await;
+        let create = tool_def(&CreateReminderTool);
         assert_eq!(create.name, "create_reminder");
         let create_schema = serde_json::to_string(&create.parameters).unwrap();
         assert!(create.description.contains("YYYY-MM-DD HH:MM"));
@@ -1343,35 +1361,35 @@ data: [DONE]"#;
         assert!(create_schema.contains("delay_minutes"));
         assert!(create_schema.contains("interval_minutes"));
 
-        let list = ListRemindersTool.definition(String::new()).await;
+        let list = tool_def(&ListRemindersTool);
         assert_eq!(list.name, "list_reminders");
 
-        let cancel = CancelReminderTool.definition(String::new()).await;
+        let cancel = tool_def(&CancelReminderTool);
         assert_eq!(cancel.name, "cancel_reminder");
     }
 
     #[tokio::test]
     async fn test_hotkey_tool_definition() {
-        let def = HotkeyTool.definition(String::new()).await;
+        let def = tool_def(&HotkeyTool);
         assert_eq!(def.name, "send_hotkey");
         assert!(def.description.contains("快捷键"));
     }
 
     #[tokio::test]
     async fn test_clipboard_tool_definition() {
-        let def = ClipboardTool.definition(String::new()).await;
+        let def = tool_def(&ClipboardTool);
         assert_eq!(def.name, "read_clipboard");
     }
 
     #[tokio::test]
     async fn test_foreground_tool_definition() {
-        let def = ForegroundTool.definition(String::new()).await;
+        let def = tool_def(&ForegroundTool);
         assert_eq!(def.name, "force_foreground");
     }
 
     #[tokio::test]
     async fn test_perform_dance_tool_definition() {
-        let def = PerformDanceTool.definition(String::new()).await;
+        let def = tool_def(&PerformDanceTool);
         assert_eq!(def.name, "perform_dance");
         assert!(def.description.contains("完整"));
         let params = def.parameters.as_object().unwrap();
@@ -1385,7 +1403,7 @@ data: [DONE]"#;
 
     #[tokio::test]
     async fn test_play_dance_tool_definition() {
-        let def = PlayDanceTool.definition(String::new()).await;
+        let def = tool_def(&PlayDanceTool);
         assert_eq!(def.name, "play_dance");
         assert!(def.description.contains("播放"));
         let params = def.parameters.as_object().unwrap();
@@ -1397,7 +1415,7 @@ data: [DONE]"#;
 
     #[tokio::test]
     async fn test_start_game_tool_definition() {
-        let def = StartGameTool.definition(String::new()).await;
+        let def = tool_def(&StartGameTool);
         assert_eq!(def.name, "start_game");
         assert!(def.description.contains("小游戏"));
         let params = def.parameters.as_object().unwrap();

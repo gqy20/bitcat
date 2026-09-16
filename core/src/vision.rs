@@ -8,8 +8,7 @@
 //! 并调用本模块的 [`analyze_screenshot`] 完成 API 交互，结果经
 //! [`screen_summary`](crate::screen_summary) 聚合后注入 AI prompt 上下文。
 
-use rig::OneOrMany;
-use rig::client::CompletionClient;
+use rig::client::AgentClientExt;
 use rig::completion::Message;
 use rig::message::{ImageDetail, ImageMediaType, UserContent};
 use rig::providers::anthropic;
@@ -293,15 +292,14 @@ pub async fn analyze_screenshot(
         .build();
 
     let message = Message::User {
-        content: OneOrMany::many([
+        content: vec![
             UserContent::text("请分析这张截图。"),
             UserContent::image_base64(
                 base64_jpeg,
                 Some(ImageMediaType::JPEG),
                 Some(ImageDetail::Auto),
             ),
-        ])
-        .map_err(|e| format!("创建视觉消息失败: {e}"))?,
+        ],
     };
 
     let start = std::time::Instant::now();

@@ -12,7 +12,7 @@
 |------|------|
 | v2 宠物资源包系统（manifest + spritesheet + 设置页选择） | 已落地（2026-05-17）；最终内置只保留 15 个 `cat-*` 品种，默认 `cat-tabby` |
 | 语义宠物动画（非均匀帧时长 + 瞬态 repeat+fallback + idle variants） | 已有（2026-05-13 增强，2026-05-17 收敛到 v2 pack） |
-| AI 对话（Anthropic Claude via rig-core，流式输出） | 已有 |
+| AI 对话（Anthropic Claude via rig 0.42，流式输出） | 已有 |
 | 16 个内置工具（launch/shell/read_file/get_time/recent_screenshots/search_memory/remember/reminder/hotkey/clipboard/foreground/dance/start_game 等） | 已有；工具说明以 rig schema 为主，prompt 只保留高风险政策 |
 | SDL2 手柄输入（8BitDo Micro） | 已有 |
 | 多窗口模型（pet / bubble / panel / voice / settings / game / agent-watch / notification / camera 等） | 已有 |
@@ -110,7 +110,7 @@ BitCat 当前不是 Web 应用套壳，而是 **Windows-first 的 Rust 桌面自
 | Frontend | Vanilla HTML/CSS/JS + Canvas | `app/frontend/*.html`, `app/frontend/js/*.js` | 无 React/Vue/构建步骤；Node 只用于测试 |
 | Pet Assets | v2 manifest + 15 个内置猫咪品种 | `app/frontend/__fixtures__/pets/*/manifest.json`, `app/frontend/js/sprite-loader.js` | 宠物视觉不再依赖硬编码默认 sprite fallback；最终 bundle 只保留 `cat-*` 品种，默认加载 `cat-tabby` |
 | Frontend Tests | Vitest 3 + jsdom | `app/frontend/package.json`, `vitest.config.ts` | 测试 `bubble/pet/game/sprite` 等纯 JS 逻辑 |
-| AI Agent | `rig-core` 0.36 + Anthropic provider | `core/src/agent.rs`, `core/src/vision.rs` | 流式对话、Tool、Extractor、Vision 结构化输出 |
+| AI Agent | `rig` 0.42 facade + Anthropic provider | `core/src/agent.rs`, `core/src/vision.rs` | 流式对话、Tool、Extractor、Vision 结构化输出 |
 | Reminder Personalizer | rig Extractor（no-tool） | `core/src/reminder_personalizer.rs`, `config/prompts.yml` | 到期提醒短文案可选 AI 润色，失败回退原始提醒 |
 | AI 配置 | 环境变量 / `app_settings.json` / `~/.claude/settings.json` | `core/src/ai_config.rs` | 默认兼容 Claude Code 风格配置，只读读取 `.claude` |
 | Tool Schema | `schemars` + `serde` | `core/src/tools.rs`, `core/src/agent.rs` | 参数类型 derive JSON Schema，减少手写 schema 漂移 |

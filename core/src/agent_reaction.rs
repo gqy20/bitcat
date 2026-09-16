@@ -9,7 +9,7 @@ use crate::pet_event::PetMood;
 use crate::token_tracker::{
     TokenCategory, TokenRecord, TokenUsage, new_session_id, record_token_usage,
 };
-use rig::client::CompletionClient;
+use rig::client::AgentClientExt;
 use rig::providers::anthropic;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
