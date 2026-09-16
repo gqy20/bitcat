@@ -8,17 +8,17 @@ serde = { version = "1", features = ["derive"] }
 schemars = "1"
 serde_json = "1"
 serde_yaml = "0.9"
-dirs = "5"
+dirs = "6"
 chrono = { version = "0.4", features = ["default"] }
-rig-core = "0.36"
+rig-core = "0.42"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "time"] }
 futures = "0.3"
 windows-sys = { version = "0.61.2", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_Foundation", "Win32_Storage_FileSystem"] }
 tracing = "0.1"
 thiserror = "2"
-rand = "0.9"
+rand = "0.10"
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
-base64 = "0.22"
+base64 = "0.23"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 tempfile = "3"
 dotenvy = "0.15"
@@ -26,9 +26,9 @@ dotenvy = "0.15"
 [dev-dependencies]
 proptest = "1"
 insta = { version = "1", features = ["yaml", "redactions"] }
-rstest = "0.25"
+rstest = "0.27"
 wiremock = "0.6"
-mockall = "0.13"
+mockall = "0.15"
 
 # Git hooks: cargo test 时自动写入 .git/hooks/pre-commit 和 pre-push
 # 脚本源在 workspace 根的 .cargo-husky/hooks/。跳过安装可设 CARGO_HUSKY_DONT_INSTALL_HOOKS=true
