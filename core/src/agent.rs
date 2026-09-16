@@ -538,7 +538,13 @@ impl PetAgent {
             .build()
             .map_err(|e| format!("创建 Anthropic Client 失败: {e}"))?;
 
-        let model = client.completion_model(config.model.as_str());
+        // rig 0.42 顺路收益：开启 Anthropic prompt caching。preamble + 16 个工具
+        // schema 是字节稳定的静态前缀，缓存命中直接降 input 计费；效果可在 B2
+        // token 统计的 cache_read_tokens 观测。1h TTL（with_static_prefix_cache_ttl）
+        // 字段较新、第三方 Anthropic 方言网关支持参差，等真实 cache 数据再评估。
+        let model = client
+            .completion_model(config.model.as_str())
+            .with_prompt_caching();
 
         let max_tokens = config.max_tokens();
 
