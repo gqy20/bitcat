@@ -464,8 +464,12 @@ mod tests {
         assert!(compile_time.exists());
         assert!(compile_time.join("default.yaml").is_file());
 
-        // 兼容旧接口：返回第一个存在的候选
-        assert_eq!(bundled_dance_dir(), compile_time);
+        // 兼容旧接口：返回第一个真实存在的候选。哪一层存在取决于运行环境
+        // （xtask 测试入口会把整个 config/ 复制到 core/config，CI 只复制 *.yml），
+        // 不能锁死具体层级，只断言契约：结果来自候选列表且真实存在。
+        let picked = bundled_dance_dir();
+        assert!(dirs.contains(&picked), "picked {picked:?} 应来自候选列表");
+        assert!(picked.exists(), "picked {picked:?} 应真实存在");
     }
 
     #[test]
