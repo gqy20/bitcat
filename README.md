@@ -1,5 +1,9 @@
 # BitCat
 
+[![CI](https://github.com/gqy20/bitcat/actions/workflows/ci.yml/badge.svg)](https://github.com/gqy20/bitcat/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/gqy20/bitcat)](https://github.com/gqy20/bitcat/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 > 一只会陪你上班、帮你记事、偶尔把桌面变成小游戏战场的 Windows 桌面 AI 伙伴猫。
 
 BitCat 常驻屏幕边缘：可以流式对话、创建确定性的本地提醒、在你亲手开启后观察屏幕并描述看到的内容、看管 Claude Code 等编码 Agent 的长任务，也会跳舞、陪你玩小游戏、攒积分长大。**所有数据只存在你自己的电脑上**，不内置任何遥测或分析服务。

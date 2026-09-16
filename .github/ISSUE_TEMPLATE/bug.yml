@@ -1,0 +1,44 @@
+name: 问题报告
+description: 报告一个 Bug 或异常行为
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么？
+      description: 描述你期望发生的行为和实际发生的行为；错误消息请完整粘贴（三段式：发生了什么 / 为什么 / 怎么办）
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 从启动应用开始的操作序列；不确定时描述你当时在做什么
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: BitCat 版本
+      description: 托盘右键或 Release 页可查，例如 v0.2.0
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Windows 版本
+      description: 例如 Windows 11 24H2
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 诊断包（强烈建议）
+      description: >
+        托盘右键 →「导出诊断包」，把 zip 拖进这个 issue 或附上下载链接。
+        诊断包含脱敏后的日志和配置摘要，能大幅加快定位。
+  - type: textarea
+    id: context
+    attributes:
+      label: 补充信息
+      description: 手柄型号（如有）、API 配置方式（环境变量/设置页/claude settings）、截图等
