@@ -9,7 +9,7 @@
 //! 通过 `cmd_earnings_summary` 展示今日已赚。
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tracing::{debug, info, warn};
 
 use bitcat_core::app_settings::AppSettings;
@@ -36,6 +36,8 @@ pub fn spawn_earnings_scheduler(app: AppHandle) {
         .name("bitcat-earnings-scheduler".to_string())
         .spawn(move || {
             let mut last_due: Option<u64> = None;
+            // 下班结算按天一次；None 表示今天还没结算
+            let mut settled_for: Option<chrono::NaiveDate> = None;
             loop {
                 if crate::shutdown::is_requested() {
                     debug!("earnings scheduler shutdown requested");
@@ -45,17 +47,24 @@ pub fn spawn_earnings_scheduler(app: AppHandle) {
                 if config.monthly_salary_cents > 0 && config.validate().is_ok() {
                     let now = chrono::Local::now();
                     let due = coins_due(&config, now);
+                    // A4.2 联动：掉币条件 = 工作时段 ∩ 屏幕亮着。息屏时基线
+                    // 跟随（息屏时段的金币直接跳过，不补发）
+                    let screen_on = bitcat_core::screen_time::screen_currently_on();
                     match last_due {
                         Some(prev) if due > prev => {
-                            let burst = (due - prev).min(MAX_BURST);
-                            if let Err(e) = app.emit_to(
-                                "pet",
-                                "coin-drop",
-                                serde_json::json!({ "count": burst }),
-                            ) {
-                                warn!(error = %e, "coin drop emit failed");
+                            if screen_on {
+                                let burst = (due - prev).min(MAX_BURST);
+                                if let Err(e) = app.emit_to(
+                                    "pet",
+                                    "coin-drop",
+                                    serde_json::json!({ "count": burst }),
+                                ) {
+                                    warn!(error = %e, "coin drop emit failed");
+                                }
+                                last_due = Some(prev + burst);
+                            } else {
+                                last_due = Some(due);
                             }
-                            last_due = Some(prev + burst);
                         }
                         Some(prev) if due < prev => {
                             // 跨零点或配置调小：基线回落，只跟不发
@@ -68,6 +77,26 @@ pub fn spawn_earnings_scheduler(app: AppHandle) {
                             }
                             last_due = Some(due);
                         }
+                    }
+
+                    // A4.2 下班结算：过下班时刻当天一次——金币喷泉 + Happy 情绪
+                    let today = now.date_naive();
+                    let (_, work_end) = config.work_window(today);
+                    if now >= work_end && settled_for != Some(today) {
+                        settled_for = Some(today);
+                        let today_cents = earned_today_cents(&config, now);
+                        let yuan = format!("{:.2}", today_cents as f64 / 100.0);
+                        let _ = app.emit_to("pet", "coin-drop", serde_json::json!({ "count": 15 }));
+                        let bus = app.state::<crate::pet_event_bus::SharedPetEventBus>();
+                        bus.emit(
+                            &app,
+                            bitcat_core::pet_event::PetEvent::React {
+                                mood: bitcat_core::pet_event::PetMood::Happy,
+                                speech: Some(format!("今天赚了 ¥{yuan}，辛苦啦")),
+                                ttl_ms: Some(10_000),
+                            },
+                        );
+                        info!(yuan = %yuan, "earnings day settled");
                     }
                 } else {
                     // 未启用/配置无效：保持基线为 None，重新启用时重建

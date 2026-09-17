@@ -62,7 +62,7 @@ impl EarningsConfig {
     }
 
     /// 当天工作窗口 [start, end) 的本地时间。
-    fn work_window(&self, date: NaiveDate) -> (DateTime<Local>, DateTime<Local>) {
+    pub fn work_window(&self, date: NaiveDate) -> (DateTime<Local>, DateTime<Local>) {
         // DST 空洞的兜底：以本地墙上时钟为准，分钟偏移从零点起算
         let to_local = |minutes: u32| -> DateTime<Local> {
             let naive = date.and_hms_opt(0, 0, 0).unwrap() + Duration::minutes(i64::from(minutes));

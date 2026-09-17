@@ -103,6 +103,21 @@ pub fn load_events() -> Result<(Vec<ScreenTimeEventRecord>, usize), String> {
     load_events_at_path(&path)
 }
 
+/// 从事件流判断屏幕当前是否亮着：最后一个事件为 On 即亮。
+pub fn screen_on_from_events(events: &[ScreenTimeEventRecord]) -> bool {
+    events
+        .last()
+        .map(|record| record.event.is_on())
+        .unwrap_or(true)
+}
+
+/// 屏幕当前是否亮着；无事件或读取失败时乐观视为亮（不影响掉币主链路）。
+pub fn screen_currently_on() -> bool {
+    load_events()
+        .map(|(events, _)| screen_on_from_events(&events))
+        .unwrap_or(true)
+}
+
 pub fn load_events_at_path(path: &Path) -> Result<(Vec<ScreenTimeEventRecord>, usize), String> {
     if !path.exists() {
         return Ok((Vec::new(), 0));
@@ -426,5 +441,21 @@ mod tests {
         assert_eq!(days[0].on_seconds, 3600);
         assert_eq!(days[1].on_seconds, 0);
         assert_eq!(days[2].on_seconds, 0);
+    }
+
+    #[test]
+    fn screen_on_from_events_reads_last_state() {
+        let on = vec![
+            event("2026-09-17", "09:00", false),
+            event("2026-09-17", "09:01", true),
+        ];
+        let off = vec![
+            event("2026-09-17", "09:00", true),
+            event("2026-09-17", "12:00", false),
+        ];
+        assert!(screen_on_from_events(&on));
+        assert!(!screen_on_from_events(&off));
+        // 无事件：乐观视为亮
+        assert!(screen_on_from_events(&[]));
     }
 }
