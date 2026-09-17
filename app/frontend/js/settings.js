@@ -721,12 +721,13 @@ function renderAppearance(a) {
   $("a-ss-bubble").checked = a.screenshot_show_bubble !== false;
   $("a-camera-enabled").checked = !!a.camera_observation_enabled;
   $("a-camera-save").checked = !!a.camera_save_frames;
+  $("screen-time-master").checked = a.screen_time_enabled !== false;
   renderStorage(SNAPSHOT?.storage);
   renderPetAssetPicker();
   renderPetAssetChoice(a.pet_asset_url || "");
   updateOverviewAppearance(a);
 
-  ["a-top","a-collapsed","a-tts","a-notify-sound","a-notify-sound-reminder","a-notify-sound-agent","a-notify-sound-skip-tts","a-reminder-ai","a-ss-bubble","a-camera-enabled","a-camera-save"].forEach(id => { $(id).onchange = () => markDirty("appearance"); });
+  ["a-top","a-collapsed","a-tts","a-notify-sound","a-notify-sound-reminder","a-notify-sound-agent","a-notify-sound-skip-tts","a-reminder-ai","a-ss-bubble","a-camera-enabled","a-camera-save","screen-time-master"].forEach(id => { $(id).onchange = () => markDirty("appearance"); });
   ["a-shortcut","a-ss-interval","a-reminder-ai-timeout","a-pet-asset","a-storage-data","a-storage-app-data"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
 }
 
@@ -767,8 +768,38 @@ function collectAppearance() {
     camera_observation_enabled: $("a-camera-enabled").checked,
     camera_observation_interval_sec: interval,
     camera_save_frames: $("a-camera-save").checked,
+    screen_time_enabled: $("screen-time-master").checked,
     pet_asset_url: collectPetAssetUrl(),
   };
+}
+
+// 陪伴时长只读卡片：今天 + 最近 7 天（A4.0）
+async function loadScreenTimeSummary() {
+  const today = $("screen-time-today");
+  const week = $("screen-time-week");
+  if (!today || !week) return;
+  try {
+    const s = await invoke("cmd_screen_time_summary");
+    if (!s.enabled) {
+      today.textContent = "已关闭";
+      week.textContent = "可在「它能做什么」里开启";
+      return;
+    }
+    today.textContent = formatDurationMin(s.today_minutes);
+    week.textContent = formatDurationMin(s.week_minutes);
+  } catch (e) {
+    log("陪伴时长加载失败: " + e);
+    today.textContent = "—";
+    week.textContent = "—";
+  }
+}
+
+function formatDurationMin(minutes) {
+  const m = Number(minutes) || 0;
+  if (m < 60) return m + " 分钟";
+  const h = Math.floor(m / 60);
+  const rest = m % 60;
+  return rest ? h + " 小时 " + rest + " 分钟" : h + " 小时";
 }
 
 function renderPermissions(p = {}) {
@@ -1793,6 +1824,7 @@ async function saveAll() {
       await invoke("cmd_settings_save_appearance", { payload: collectAppearance() });
       await invoke("cmd_settings_save_storage", { payload: collectStorage() });
       clearDirty("appearance");
+      loadScreenTimeSummary();
     }
     if (dirty.permissions) {
       await invoke("cmd_settings_save_permissions", { payload: collectPermissions() });
@@ -1877,6 +1909,7 @@ async function loadSnapshot() {
     renderActions(SNAPSHOT.actions);
     renderPrompts(SNAPSHOT.prompts);
     renderAppearance(SNAPSHOT.appearance);
+    loadScreenTimeSummary();
     renderPermissions(SNAPSHOT.permissions);
     renderAgentWatch(SNAPSHOT.agent_watch);
     renderAbout(SNAPSHOT.about);
