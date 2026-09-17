@@ -520,3 +520,51 @@ package-portable options:
 "
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Read;
+
+    /// zip crate 行为冒烟：portable 打包与诊断包导出共用的写/读调用面。
+    /// CI 不跑 `make dist`，跨大版本升级（如 2→8）只靠编译无法发现打包
+    /// 行为变化，这里把 ZipWriter → add_dir_to_zip → ZipArchive 往返锁死。
+    #[test]
+    fn zip_write_read_roundtrip_preserves_content() {
+        let dir = std::env::temp_dir().join(format!("bitcat_zip_smoke_{}", std::process::id()));
+        let sub = dir.join("config");
+        fs::create_dir_all(&sub).unwrap();
+        fs::write(sub.join("a.yml"), "hello: 中文内容").unwrap();
+        fs::write(sub.join("b.yml"), "second file").unwrap();
+
+        let zip_path = dir.join("out.zip");
+        {
+            let file = File::create(&zip_path).unwrap();
+            let mut zip = ZipWriter::new(file);
+            let options = SimpleFileOptions::default()
+                .compression_method(CompressionMethod::Deflated)
+                .unix_permissions(0o644);
+            add_dir_to_zip(&dir, &dir, &mut zip, options).unwrap();
+            zip.finish().unwrap();
+        }
+
+        let file = File::open(&zip_path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let mut a = String::new();
+        archive
+            .by_name("config/a.yml")
+            .expect("config/a.yml 应在压缩包内")
+            .read_to_string(&mut a)
+            .unwrap();
+        assert_eq!(a, "hello: 中文内容");
+
+        let mut b = String::new();
+        archive
+            .by_name("config/b.yml")
+            .read_to_string(&mut b)
+            .unwrap();
+        assert_eq!(b, "second file");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+}
