@@ -561,6 +561,7 @@ mod tests {
         let mut b = String::new();
         archive
             .by_name("config/b.yml")
+            .expect("config/b.yml 应在压缩包内")
             .read_to_string(&mut b)
             .unwrap();
         assert_eq!(b, "second file");
