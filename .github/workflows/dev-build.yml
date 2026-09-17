@@ -5,9 +5,10 @@ name: Dev Build
 # 与 release.yml 的区别：
 #   - release.yml：打 tag 触发，跑完整测试，用 tauri-action 出 MSI + NSIS + portable，
 #     并创建 GitHub Release。单轮 15-30 分钟，是"发布"动作。
-#   - dev-build.yml（本文件）：手动触发，不跑测试（ci.yml 已在 push 时覆盖），
-#     只出可运行产物（bitcat.exe + config/，解压即用），用 [profile.dist]（无 LTO）
-#     加速。热缓存单轮约 4-5 分钟，是“验收”动作。
+#   - dev-build.yml（本文件）：master push 自动触发（也可手动触发；纯文档变更
+#     跳过），不跑测试（ci.yml 已在 push 时覆盖），只出可运行产物
+#     （bitcat.exe + config/，解压即用），用 [profile.dist]（无 LTO）加速。
+#     热缓存单轮约 4-5 分钟，是“验收”动作。
 #
 # ⚠ 不要用 release.yml 的 workflow_dispatch 做日常构建：它在分支上触发时
 #   RELEASE_TAG 会取 ref_name（如 "master"），最后的 release job 会创建一个
@@ -24,7 +25,13 @@ on:
   workflow_dispatch:
   push:
     branches:
+      # master 每次 push 自动出可验收产物；纯文档/模板变更不触发
+      - master
       - "dev-build/**"
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
 
 # 开发迭代只关心最新一次构建，旧的同分支构建直接取消
 concurrency:
