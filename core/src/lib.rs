@@ -47,6 +47,7 @@ pub mod claude_code;
 pub mod config;
 pub mod dance;
 pub mod device;
+pub mod earnings;
 pub mod game_projection;
 pub mod game_request;
 pub mod gomoku_ai;
@@ -67,6 +68,7 @@ pub mod prompts;
 pub mod reminder;
 pub mod reminder_personalizer;
 pub mod screen_summary;
+pub mod screen_time;
 pub mod screenshot;
 #[cfg(test)]
 mod screenshot_tests;

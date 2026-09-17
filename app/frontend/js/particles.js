@@ -30,6 +30,16 @@
     }, 2500);
   }
 
+  // A4 上班金币：掉 count 枚金币（调度器增量推送，错开生成）
+  function dropCoins(count) {
+    const n = Math.max(1, Math.min(count, 8));
+    for (let i = 0; i < n; i++) {
+      const x = 24 + Math.random() * 72;
+      const delay = i * 90;
+      setTimeout(() => spawn('¥', 'p-coin', x, 34), delay);
+    }
+  }
+
   // 进入新状态时一次性触发（happy 喷心）
   function onStateEnter(state) {
     if (state === 'happy') {
@@ -107,6 +117,6 @@
   }
 
   if (typeof window !== 'undefined') {
-    window.Particles = { onStateEnter, tick, runParticleTests };
+    window.Particles = { onStateEnter, tick, dropCoins, runParticleTests };
   }
 })();

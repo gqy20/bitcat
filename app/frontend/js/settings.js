@@ -721,12 +721,21 @@ function renderAppearance(a) {
   $("a-ss-bubble").checked = a.screenshot_show_bubble !== false;
   $("a-camera-enabled").checked = !!a.camera_observation_enabled;
   $("a-camera-save").checked = !!a.camera_save_frames;
+  $("screen-time-master").checked = a.screen_time_enabled !== false;
+  const earnings = a.earnings || {};
+  $("a-earnings-salary").value = earnings.monthly_salary_cents
+    ? String(earnings.monthly_salary_cents / 100)
+    : "";
+  $("a-earnings-start").value = minutesToTime(earnings.work_start_minutes ?? 540);
+  $("a-earnings-end").value = minutesToTime(earnings.work_end_minutes ?? 1080);
+  $("a-earnings-workdays").value = String(earnings.workdays_per_month ?? 21.75);
   renderStorage(SNAPSHOT?.storage);
   renderPetAssetPicker();
   renderPetAssetChoice(a.pet_asset_url || "");
   updateOverviewAppearance(a);
 
-  ["a-top","a-collapsed","a-tts","a-notify-sound","a-notify-sound-reminder","a-notify-sound-agent","a-notify-sound-skip-tts","a-reminder-ai","a-ss-bubble","a-camera-enabled","a-camera-save"].forEach(id => { $(id).onchange = () => markDirty("appearance"); });
+  ["a-top","a-collapsed","a-tts","a-notify-sound","a-notify-sound-reminder","a-notify-sound-agent","a-notify-sound-skip-tts","a-reminder-ai","a-ss-bubble","a-camera-enabled","a-camera-save","screen-time-master"].forEach(id => { $(id).onchange = () => markDirty("appearance"); });
+  ["a-earnings-salary","a-earnings-start","a-earnings-end","a-earnings-workdays"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
   ["a-shortcut","a-ss-interval","a-reminder-ai-timeout","a-pet-asset","a-storage-data","a-storage-app-data"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
 }
 
@@ -767,8 +776,85 @@ function collectAppearance() {
     camera_observation_enabled: $("a-camera-enabled").checked,
     camera_observation_interval_sec: interval,
     camera_save_frames: $("a-camera-save").checked,
+    screen_time_enabled: $("screen-time-master").checked,
+    earnings: collectEarnings(),
     pet_asset_url: collectPetAssetUrl(),
   };
+}
+
+// A4 上班金币：月薪单位分，时间 HH:MM ↔ 分钟
+function collectEarnings() {
+  const salaryYuan = parseFloat($("a-earnings-salary").value);
+  return {
+    monthly_salary_cents:
+      Number.isFinite(salaryYuan) && salaryYuan > 0 ? Math.round(salaryYuan * 100) : 0,
+    work_start_minutes: timeToMinutes($("a-earnings-start").value, 540),
+    work_end_minutes: timeToMinutes($("a-earnings-end").value, 1080),
+    workdays_per_month: Math.min(31, Math.max(1, parseFloat($("a-earnings-workdays").value) || 21.75)),
+  };
+}
+
+function minutesToTime(minutes) {
+  const m = Number(minutes) || 0;
+  const h = Math.min(23, Math.floor(m / 60));
+  const rest = m % 60;
+  return String(h).padStart(2, "0") + ":" + String(rest).padStart(2, "0");
+}
+
+function timeToMinutes(value, fallback) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(value || "").trim());
+  if (!match) return fallback;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  if (h > 23 || m > 59) return fallback;
+  return h * 60 + m;
+}
+
+// 上班金币只读卡片（A4）
+async function loadEarningsSummary() {
+  const el = $("earnings-today");
+  if (!el) return;
+  try {
+    const s = await invoke("cmd_earnings_summary");
+    if (!s.enabled) {
+      el.textContent = "未开启";
+      return;
+    }
+    const yuan = (s.today_cents / 100).toFixed(2);
+    el.textContent = "¥" + yuan + " · 已落 " + s.coins + " 枚金币";
+  } catch (e) {
+    log("上班金币加载失败: " + e);
+    el.textContent = "—";
+  }
+}
+
+// 陪伴时长只读卡片：今天 + 最近 7 天（A4.0）
+async function loadScreenTimeSummary() {
+  const today = $("screen-time-today");
+  const week = $("screen-time-week");
+  if (!today || !week) return;
+  try {
+    const s = await invoke("cmd_screen_time_summary");
+    if (!s.enabled) {
+      today.textContent = "已关闭";
+      week.textContent = "可在「它能做什么」里开启";
+      return;
+    }
+    today.textContent = formatDurationMin(s.today_minutes);
+    week.textContent = formatDurationMin(s.week_minutes);
+  } catch (e) {
+    log("陪伴时长加载失败: " + e);
+    today.textContent = "—";
+    week.textContent = "—";
+  }
+}
+
+function formatDurationMin(minutes) {
+  const m = Number(minutes) || 0;
+  if (m < 60) return m + " 分钟";
+  const h = Math.floor(m / 60);
+  const rest = m % 60;
+  return rest ? h + " 小时 " + rest + " 分钟" : h + " 小时";
 }
 
 function renderPermissions(p = {}) {
@@ -1793,6 +1879,8 @@ async function saveAll() {
       await invoke("cmd_settings_save_appearance", { payload: collectAppearance() });
       await invoke("cmd_settings_save_storage", { payload: collectStorage() });
       clearDirty("appearance");
+      loadScreenTimeSummary();
+      loadEarningsSummary();
     }
     if (dirty.permissions) {
       await invoke("cmd_settings_save_permissions", { payload: collectPermissions() });
@@ -1877,6 +1965,8 @@ async function loadSnapshot() {
     renderActions(SNAPSHOT.actions);
     renderPrompts(SNAPSHOT.prompts);
     renderAppearance(SNAPSHOT.appearance);
+    loadScreenTimeSummary();
+    loadEarningsSummary();
     renderPermissions(SNAPSHOT.permissions);
     renderAgentWatch(SNAPSHOT.agent_watch);
     renderAbout(SNAPSHOT.about);

@@ -221,6 +221,14 @@ pub struct AppearanceSettings {
     /// 是否保存摄像头原始 JPEG。默认 false，只保存结构化分析记录。
     #[serde(default)]
     pub camera_save_frames: bool,
+    /// 陪伴时长统计（只记录屏幕亮灭状态，不采集内容），纯本地能力默认开启。
+    /// 关闭后停止记录，已积累的事件保留；设置页 ① 区可见、可收回。
+    #[serde(default = "default_true")]
+    pub screen_time_enabled: bool,
+    /// 上班金币掉落账本（A4）。月薪为 0 表示未启用，默认关闭；
+    /// 只存本机，用于墙钟推导式掉金币，不上传。
+    #[serde(default)]
+    pub earnings: crate::earnings::EarningsConfig,
     /// 外部宠物资产根 URL。为空时使用内置 sprite。
     /// 开发期可填 `/__fixtures__/pets/cat-tabby` 或 file/server URL。
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -312,6 +320,8 @@ impl Default for AppearanceSettings {
             camera_observation_enabled: false,
             camera_observation_interval_sec: default_camera_observation_interval_sec(),
             camera_save_frames: false,
+            screen_time_enabled: true,
+            earnings: crate::earnings::EarningsConfig::default(),
             pet_asset_url: None,
             pet_position: None,
         }
@@ -554,6 +564,8 @@ mod tests {
                 camera_observation_enabled: true,
                 camera_observation_interval_sec: 600,
                 camera_save_frames: true,
+                screen_time_enabled: false,
+                earnings: crate::earnings::EarningsConfig::default(),
                 pet_asset_url: Some("/__fixtures__/pets/cat-tabby".into()),
                 pet_position: Some(WindowPosition { x: 123, y: 456 }),
             },

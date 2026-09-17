@@ -275,6 +275,21 @@ body.pet-resizing .resize-handle,
   100% { transform: translateY(-32px) scale(0.6); opacity: 0; }
 }
 
+/* A4 上班金币：从窗口顶落到宠物旁弹跳 */
+.p-coin {
+  color: #f5b800;
+  font-size: 15px;
+  animation: coin-drop 1.1s cubic-bezier(0.3, 0.7, 0.4, 1) forwards;
+}
+
+@keyframes coin-drop {
+  0%   { transform: translateY(-44px) scale(0.5) rotate(0deg); opacity: 0; }
+  15%  { transform: translateY(-26px) scale(1) rotate(120deg); opacity: 1; }
+  70%  { transform: translateY(4px) scale(1) rotate(360deg); opacity: 1; }
+  84%  { transform: translateY(-2px) rotate(410deg); opacity: 1; }
+  100% { transform: translateY(3px) scale(0.9) rotate(460deg); opacity: 0; }
+}
+
 /* sleep: Z 字向右上方漂浮 */
 .p-zzz {
   color: #88aadd;
