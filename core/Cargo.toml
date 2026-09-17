@@ -26,7 +26,7 @@ dotenvy = "0.15"
 [dev-dependencies]
 proptest = "1"
 insta = { version = "1", features = ["yaml", "redactions"] }
-rstest = "0.25"
+rstest = "0.27"
 wiremock = "0.6"
 mockall = "0.13"
 
