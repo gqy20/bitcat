@@ -172,12 +172,10 @@ mod power {
                 if guid_eq(&setting.PowerSetting, &GUID_CONSOLE_DISPLAY_STATE)
                     && setting.DataLength >= 4
                 {
-                    let state = u32::from_le_bytes([
-                        setting.Data[0],
-                        setting.Data[1],
-                        setting.Data[2],
-                        setting.Data[3],
-                    ]);
+                    // Data 是 [u8;1] 柔性数组声明，实际载荷跟在结构体后——
+                    // 直接按 Data 起址读 u32，避免字节级索引被 clippy 判越界
+                    let state =
+                        std::ptr::read_unaligned(std::ptr::addr_of!(setting.Data).cast::<u32>());
                     let event = if state == MONITOR_ON {
                         Some(ScreenPowerEvent::ScreenOn)
                     } else if state == MONITOR_OFF {

@@ -281,9 +281,11 @@ mod tests {
     use chrono::TimeZone;
 
     fn at(date: &str, time: &str) -> DateTime<Local> {
-        let dt = chrono::DateTime::parse_from_rfc3339(&format!("{date}T{time}:00+08:00"))
-            .expect("valid rfc3339");
-        Local.from_utc_datetime(&dt.naive_utc())
+        // 字面时间即本地墙上时钟：CI runner 在 UTC 也能得到与开发机相同的语义
+        let naive =
+            chrono::NaiveDateTime::parse_from_str(&format!("{date} {time}"), "%Y-%m-%d %H:%M")
+                .expect("valid naive datetime");
+        naive.and_local_timezone(Local).single().unwrap()
     }
 
     fn event(date: &str, time: &str, on: bool) -> ScreenTimeEventRecord {
