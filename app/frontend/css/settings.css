@@ -399,10 +399,12 @@ h1 {
   line-height: 1.15;
 }
 
+/* 分区去框后 h3 成为分区锚点：加字距提升扫描性 */
 h3 {
   color: var(--text-main);
   font-size: var(--font-size-section-title);
   font-weight: 700;
+  letter-spacing: 0.02em;
   line-height: 1.2;
 }
 
@@ -427,11 +429,9 @@ code {
   font-size: var(--text-sm);
 }
 
-.settings-card,
-.section-panel,
-.editor-panel,
-.quiet-details,
-.usage-breakdown {
+/* 卡片保留边框（向导权限项、独立小卡）；分区容器不再套框——
+   层次改由 h3 标题锚点 + 分区间距 + hairline 分隔承担（方案 B） */
+.settings-card {
   border: 1px solid rgba(34, 48, 64, 0.045);
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.54);
@@ -1042,21 +1042,24 @@ input[type="checkbox"]:checked::after {
   font-size: 17px;
 }
 
+/* 分区去框（方案 B）：内容与 pane-head 对齐（去掉原框的 24px 内缩），
+   分区之间用 hairline + 大留白分隔，最后一个分区不留底线 */
 .section-panel {
-  padding: 20px 24px;
-  margin-bottom: 28px;
+  padding: 6px 0 0;
+}
+
+.section-panel + .section-panel {
+  margin-top: 28px;
+  padding-top: 30px;
+  border-top: 1px solid rgba(34, 48, 64, 0.14);
 }
 
 .overview-growth {
   margin-top: 2px;
-  border-color: transparent;
-  background: rgba(255, 255, 255, 0.38);
 }
 
 .overview-note {
   max-width: none;
-  border-color: transparent;
-  background: rgba(255, 255, 255, 0.38);
 }
 
 .notice-list {
