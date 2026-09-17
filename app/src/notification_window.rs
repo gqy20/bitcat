@@ -15,6 +15,7 @@ use tauri::{
     WebviewWindowBuilder,
 };
 use tracing::{debug, warn};
+#[cfg(target_os = "windows")]
 use windows::{
     core::PCWSTR,
     Win32::Media::Audio::{PlaySoundW, SND_ALIAS, SND_ASYNC, SND_NODEFAULT},
@@ -155,20 +156,25 @@ fn play_notification_sound(payload: &NotificationPayload) {
         return;
     }
 
-    let sound: Vec<u16> = system_sound_alias(&payload.tone)
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect();
-    let ok = unsafe {
-        PlaySoundW(
-            PCWSTR(sound.as_ptr()),
-            None,
-            SND_ALIAS | SND_ASYNC | SND_NODEFAULT,
-        )
-    };
-    if !ok.as_bool() {
-        warn!(tone = %payload.tone, source = %payload.source, "notification sound failed");
+    #[cfg(target_os = "windows")]
+    {
+        let sound: Vec<u16> = system_sound_alias(&payload.tone)
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let ok = unsafe {
+            PlaySoundW(
+                PCWSTR(sound.as_ptr()),
+                None,
+                SND_ALIAS | SND_ASYNC | SND_NODEFAULT,
+            )
+        };
+        if !ok.as_bool() {
+            warn!(tone = %payload.tone, source = %payload.source, "notification sound failed");
+        }
     }
+    #[cfg(not(target_os = "windows"))]
+    debug!(tone = %payload.tone, "notification sound unsupported on this platform");
 }
 
 fn should_play_notification_sound(payload: &NotificationPayload, settings: &AppSettings) -> bool {
@@ -186,6 +192,7 @@ fn should_play_notification_sound(payload: &NotificationPayload, settings: &AppS
     }
 }
 
+#[cfg(target_os = "windows")]
 fn system_sound_alias(tone: &str) -> &'static str {
     match tone {
         "success" => "SystemAsterisk",
@@ -336,6 +343,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "windows")]
     fn maps_notification_tone_to_system_sound() {
         assert_eq!(system_sound_alias("success"), "SystemAsterisk");
         assert_eq!(system_sound_alias("warning"), "SystemExclamation");
