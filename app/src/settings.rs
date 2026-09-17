@@ -284,6 +284,8 @@ pub struct AppearanceInput {
     pub camera_observation_interval_sec: u64,
     #[serde(default)]
     pub camera_save_frames: bool,
+    #[serde(default = "default_true")]
+    pub screen_time_enabled: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1046,6 +1048,7 @@ pub async fn cmd_settings_save_appearance(
         camera_observation_enabled: payload.camera_observation_enabled,
         camera_observation_interval_sec: interval,
         camera_save_frames: payload.camera_save_frames,
+        screen_time_enabled: payload.screen_time_enabled,
         pet_asset_url: payload.pet_asset_url.and_then(|value| {
             let trimmed = value.trim().trim_end_matches('/').to_string();
             if trimmed.is_empty() {

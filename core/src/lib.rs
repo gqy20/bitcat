@@ -67,6 +67,7 @@ pub mod prompts;
 pub mod reminder;
 pub mod reminder_personalizer;
 pub mod screen_summary;
+pub mod screen_time;
 pub mod screenshot;
 #[cfg(test)]
 mod screenshot_tests;
