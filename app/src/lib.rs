@@ -25,6 +25,7 @@ pub mod claude_hooks;
 pub mod codex_hooks;
 pub mod commands;
 pub mod diagnostics;
+pub mod earnings_scheduler;
 pub mod game;
 pub mod game_input;
 pub mod gamepad;
@@ -190,6 +191,7 @@ pub fn run() {
             opencode_hooks::cmd_open_opencode_plugins_dir,
             pet_event_bus::cmd_get_pet_event_log,
             screen_time::cmd_screen_time_summary,
+            earnings_scheduler::cmd_earnings_summary,
             settings::cmd_settings_load,
             settings::cmd_get_token_stats,
             settings::cmd_get_memory_review,
@@ -412,6 +414,7 @@ pub fn run() {
             }
             reminder_scheduler::spawn_reminder_scheduler(app.handle().clone());
             screen_time::init();
+            earnings_scheduler::spawn_earnings_scheduler(app.handle().clone());
             resource_monitor::spawn_resource_monitor(app.handle().clone());
             // 摄像头观察默认关闭：仅在用户已开启时才预创建窗口（A4），
             // 开启路径由 camera::refresh_camera_window 懒创建兜底。

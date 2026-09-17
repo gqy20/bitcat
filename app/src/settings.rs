@@ -286,6 +286,17 @@ pub struct AppearanceInput {
     pub camera_save_frames: bool,
     #[serde(default = "default_true")]
     pub screen_time_enabled: bool,
+    #[serde(default)]
+    pub earnings: Option<EarningsInput>,
+}
+
+/// 金币账本表单（A4）。月薪单位为分，由前端从"元"换算。
+#[derive(Debug, Deserialize)]
+pub struct EarningsInput {
+    pub monthly_salary_cents: u64,
+    pub work_start_minutes: u32,
+    pub work_end_minutes: u32,
+    pub workdays_per_month: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1032,6 +1043,15 @@ pub async fn cmd_settings_save_appearance(
 ) -> Result<(), String> {
     let mut s = AppSettings::load();
     let interval = payload.screenshot_interval_sec.clamp(5, 3600);
+    let earnings = payload
+        .earnings
+        .map(|input| bitcat_core::earnings::EarningsConfig {
+            monthly_salary_cents: input.monthly_salary_cents,
+            work_start_minutes: input.work_start_minutes.min(24 * 60),
+            work_end_minutes: input.work_end_minutes.min(24 * 60),
+            workdays_per_month: input.workdays_per_month,
+        })
+        .unwrap_or_else(|| s.appearance.earnings.clone());
     s.appearance = AppearanceSettings {
         always_on_top: payload.always_on_top,
         default_collapsed: payload.default_collapsed,
@@ -1049,6 +1069,7 @@ pub async fn cmd_settings_save_appearance(
         camera_observation_interval_sec: interval,
         camera_save_frames: payload.camera_save_frames,
         screen_time_enabled: payload.screen_time_enabled,
+        earnings,
         pet_asset_url: payload.pet_asset_url.and_then(|value| {
             let trimmed = value.trim().trim_end_matches('/').to_string();
             if trimmed.is_empty() {

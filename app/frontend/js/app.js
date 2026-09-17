@@ -1257,6 +1257,12 @@ import { PerformerHost } from './performance/performer-host.js';
       setHiddenScreenshotCount(event.payload);
     });
 
+    // A4 上班金币：调度器定向推送增量，粒子系统掉落
+    window.__TAURI__.event.listen('coin-drop', (event) => {
+      const count = Number(event.payload?.count) || 0;
+      if (count > 0) Particles.dropCoins(Math.min(count, 8));
+    });
+
     // pet badge：agent 会话快照推送驱动（替代 2.5s 全量轮询）。
     window.__TAURI__.event.listen('agent-session-update', (event) => {
       setPetBadgeCount(attentionCountFromAgentSnapshot(event.payload));
