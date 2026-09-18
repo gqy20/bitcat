@@ -1,0 +1,6 @@
+---
+source: core/src/ai_connection.rs
+expression: "ConnectionCheck::local(ConnectionStatus::MissingKey)"
+---
+status: missing_key
+elapsed_ms: 0

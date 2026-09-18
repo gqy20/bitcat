@@ -1,4 +1,5 @@
 (function () {
+  const CANVAS_UI_FONT = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement).getPropertyValue("--font-ui").trim() || "monospace" : "monospace";
   window.BitCatGames = window.BitCatGames || {};
 
   const EMPTY = -1;
@@ -480,7 +481,7 @@
     const cell = rect.cell;
     drawPanel(ctx, rect.x - 10, rect.y - 10, rect.w + 20, cell * target.length + 42);
     ctx.fillStyle = '#f7fbff';
-    ctx.font = '700 13px "Segoe UI", "Microsoft YaHei", sans-serif';
+    ctx.font = `700 13px ${CANVAS_UI_FONT}`;
     ctx.fillText('Target', rect.x, rect.y - 20);
     for (let y = 0; y < target.length; y++) {
       for (let x = 0; x < target[y].length; x++) {
@@ -495,7 +496,7 @@
   function drawPalette(ctx, rect, selected) {
     drawPanel(ctx, rect.x, rect.y, rect.w, rect.h);
     ctx.fillStyle = '#f7fbff';
-    ctx.font = '700 13px "Segoe UI", "Microsoft YaHei", sans-serif';
+    ctx.font = `700 13px ${CANVAS_UI_FONT}`;
     ctx.fillText('Colors', rect.x + 14, rect.y + 22);
     for (let i = 0; i < PALETTE.length; i++) {
       const x = rect.x + 14 + (i % 2) * (rect.cell + 12);
@@ -513,9 +514,9 @@
   function drawPatternTabs(ctx, rect, selected) {
     drawPanel(ctx, rect.x, rect.y, rect.w, rect.h);
     ctx.fillStyle = '#f7fbff';
-    ctx.font = '700 13px "Segoe UI", "Microsoft YaHei", sans-serif';
+    ctx.font = `700 13px ${CANVAS_UI_FONT}`;
     ctx.fillText('Patterns', rect.x + 14, rect.y + 22);
-    ctx.font = '700 12px "Segoe UI", "Microsoft YaHei", sans-serif';
+    ctx.font = `700 12px ${CANVAS_UI_FONT}`;
     for (let i = 0; i < PATTERNS.length; i++) {
       const y = rect.y + 38 + i * 40;
       ctx.fillStyle = i === selected ? 'rgba(255, 209, 102, 0.30)' : 'rgba(255,255,255,0.08)';
@@ -530,7 +531,7 @@
 
   function drawBeadEffects(ctx, board, effects, grid) {
     ctx.save();
-    ctx.font = '800 12px "Segoe UI", "Microsoft YaHei", sans-serif';
+    ctx.font = `800 12px ${CANVAS_UI_FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const effect of effects) {

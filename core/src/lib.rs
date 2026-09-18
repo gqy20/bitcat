@@ -21,6 +21,7 @@
 //! - `user_profile` — 用户画像
 //! - `action` / `hotkey` — 快捷键与动作定义、Win32 SendInput 模拟
 //! - `ai_config` — AI 模型密钥、base URL、模型名等运行时配置
+//! - `ai_connection` — 设置草稿密钥合并、无持久化的连接检测与分类结果
 //! - `app_settings` — 应用全局设置（窗口位置、截图间隔等）
 //! - `config` — 通用配置文件加载基础设施
 //! - `dance` — 舞蹈编排与播放
@@ -40,6 +41,7 @@ pub mod agent_nudge;
 pub mod agent_reaction;
 pub mod agent_session;
 pub mod ai_config;
+pub mod ai_connection;
 pub mod app_settings;
 pub mod bridge;
 pub mod camera_observation;

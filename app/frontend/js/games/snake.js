@@ -1,4 +1,5 @@
 (function () {
+  const CANVAS_UI_FONT = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement).getPropertyValue("--font-ui").trim() || "monospace" : "monospace";
   window.BitCatGames = window.BitCatGames || {};
 
   function clamp(n, min, max) {
@@ -581,7 +582,7 @@
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = '#ffd166';
-    ctx.font = `800 ${Math.max(13, cell * 0.72)}px "Segoe UI", sans-serif`;
+    ctx.font = `800 ${Math.max(13, cell * 0.72)}px ${CANVAS_UI_FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('BOOST', x + w / 2, y + h / 2 + 1);
@@ -784,7 +785,7 @@
     const padX = Math.max(6, cell * 0.22);
     const maxW = Math.max(58, Math.min(150, cell * 7.5));
     ctx.save();
-    ctx.font = `800 ${fontSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.font = `800 ${fontSize}px ${CANVAS_UI_FONT}`;
     const lines = wrapLines(ctx, food.label, maxW - padX * 2, 2);
     const textW = Math.max(...lines.map((line) => ctx.measureText(line).width), 0);
     ctx.restore();
@@ -813,7 +814,7 @@
       ctx.stroke();
     }
     ctx.fillStyle = '#f7fbff';
-    ctx.font = `800 ${fontSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.font = `800 ${fontSize}px ${CANVAS_UI_FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const firstLineY = y + h / 2 - ((lines.length - 1) * lineHeight) / 2 + 1;
@@ -852,19 +853,19 @@
     drawInfoPanel(ctx, panel, pulseMs > 0 ? 'rgba(184, 242, 230, 0.72)' : 'rgba(255, 209, 102, 0.46)');
 
     ctx.fillStyle = 'rgba(247, 251, 255, 0.64)';
-    ctx.font = `800 ${labelSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.font = `800 ${labelSize}px ${CANVAS_UI_FONT}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillText('WORD', panel.x + pad, labelY);
 
     ctx.fillStyle = '#ffd166';
-    ctx.font = `900 ${termSize}px "Segoe UI", sans-serif`;
+    ctx.font = `900 ${termSize}px ${CANVAS_UI_FONT}`;
     ctx.textBaseline = 'alphabetic';
     ctx.fillText(fitTextToWidth(ctx, question.term, textW), panel.x + pad, termY);
 
     if (question.example && !compact) {
       ctx.fillStyle = 'rgba(247, 251, 255, 0.78)';
-      ctx.font = `650 ${exampleSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.font = `650 ${exampleSize}px ${CANVAS_UI_FONT}`;
       ctx.textBaseline = 'bottom';
       ctx.fillText(fitTextToWidth(ctx, question.example, textW), panel.x + pad, exampleY);
     }
@@ -881,13 +882,13 @@
     ctx.stroke();
 
     ctx.fillStyle = '#b8f2e6';
-    ctx.font = `900 ${compact ? 17 : 20}px "Segoe UI", sans-serif`;
+    ctx.font = `900 ${compact ? 17 : 20}px ${CANVAS_UI_FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(`${progress.correct}/${progress.target}`, badgeX + badgeW / 2, badgeY + badgeH * 0.36);
 
     ctx.fillStyle = 'rgba(247, 251, 255, 0.68)';
-    ctx.font = `750 ${compact ? 10 : 12}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.font = `750 ${compact ? 10 : 12}px ${CANVAS_UI_FONT}`;
     const meta = progress.combo > 1
       ? `score ${progress.score}  x${progress.combo}`
       : `score ${progress.score}${progress.wrong ? `  miss ${progress.wrong}` : ''}`;
@@ -918,10 +919,10 @@
       const alpha = progress < 0.12 ? progress / 0.12 : clamp((1 - progress) / 0.34, 0, 1);
       ctx.globalAlpha = Math.max(0.18, alpha);
       ctx.fillStyle = accent;
-      ctx.font = `900 ${compact ? 17 : 21}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.font = `900 ${compact ? 17 : 21}px ${CANVAS_UI_FONT}`;
       ctx.fillText(feedback.label, panel.x + pad, panel.y + panel.h * 0.38);
       ctx.fillStyle = 'rgba(247, 251, 255, 0.88)';
-      ctx.font = `750 ${compact ? 12 : 14}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.font = `750 ${compact ? 12 : 14}px ${CANVAS_UI_FONT}`;
       const text = feedback.correct
         ? `${feedback.term} = ${feedback.meaning}${feedback.delta ? `  ${feedback.delta}` : ''}`
         : (feedback.explanation || `${feedback.term} = ${feedback.meaning}；刚才选了：${feedback.picked}`);
@@ -933,10 +934,10 @@
     if (review) {
       const title = review.correct ? '上一题 · 正确' : '上一题 · 再记一次';
       ctx.fillStyle = accent;
-      ctx.font = `850 ${compact ? 13 : 15}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.font = `850 ${compact ? 13 : 15}px ${CANVAS_UI_FONT}`;
       ctx.fillText(title, panel.x + pad, panel.y + panel.h * 0.32);
       ctx.fillStyle = '#f7fbff';
-      ctx.font = `760 ${compact ? 12 : 14}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.font = `760 ${compact ? 12 : 14}px ${CANVAS_UI_FONT}`;
       const picked = !review.correct && review.picked ? `  刚才选了：${review.picked}` : '';
       const text = !review.correct && review.explanation
         ? review.explanation
@@ -947,7 +948,7 @@
     }
 
     ctx.fillStyle = 'rgba(247, 251, 255, 0.62)';
-    ctx.font = `750 ${compact ? 12 : 14}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.font = `750 ${compact ? 12 : 14}px ${CANVAS_UI_FONT}`;
     ctx.fillText('吃掉正确释义，错误选项不会增长。', panel.x + pad, panel.y + panel.h / 2);
     ctx.restore();
   }
@@ -968,24 +969,24 @@
     drawInfoPanel(ctx, panel, pulseMs > 0 ? 'rgba(184, 242, 230, 0.58)' : 'rgba(255, 209, 102, 0.32)');
 
     ctx.fillStyle = 'rgba(247, 251, 255, 0.62)';
-    ctx.font = `800 ${labelSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.font = `800 ${labelSize}px ${CANVAS_UI_FONT}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillText('WORD', panel.x + pad, panel.y + pad);
 
     ctx.fillStyle = '#ffd166';
-    ctx.font = `900 ${termSize}px "Segoe UI", sans-serif`;
+    ctx.font = `900 ${termSize}px ${CANVAS_UI_FONT}`;
     ctx.textBaseline = 'alphabetic';
     drawPanelLines(ctx, question.term, panel.x + pad, panel.y + pad + labelSize + termSize * 0.95, textW, termSize * 1.08, 2);
 
     const ruleY = panel.y + panel.h * 0.38;
     ctx.fillStyle = 'rgba(247, 251, 255, 0.82)';
-    ctx.font = `760 ${bodySize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.font = `760 ${bodySize}px ${CANVAS_UI_FONT}`;
     drawPanelLines(ctx, '吃掉正确中文释义，避开干扰项。', panel.x + pad, ruleY, textW, bodySize * 1.42, 3);
 
     if (question.example) {
       ctx.fillStyle = 'rgba(247, 251, 255, 0.62)';
-      ctx.font = `650 ${Math.max(11, bodySize - 1)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.font = `650 ${Math.max(11, bodySize - 1)}px ${CANVAS_UI_FONT}`;
       drawPanelLines(ctx, question.example, panel.x + pad, panel.y + panel.h * 0.68, textW, bodySize * 1.35, 5);
     }
     ctx.restore();
@@ -1010,16 +1011,16 @@
     ctx.textBaseline = 'top';
 
     ctx.fillStyle = 'rgba(247, 251, 255, 0.58)';
-    ctx.font = `800 ${labelSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.font = `800 ${labelSize}px ${CANVAS_UI_FONT}`;
     ctx.fillText('PROGRESS', panel.x + pad, panel.y + pad);
 
     const scoreY = panel.y + pad + labelSize + 6;
     ctx.fillStyle = '#b8f2e6';
-    ctx.font = `900 ${numberSize}px "Segoe UI", sans-serif`;
+    ctx.font = `900 ${numberSize}px ${CANVAS_UI_FONT}`;
     ctx.fillText(`${progress.correct}/${progress.target}`, panel.x + pad, scoreY);
 
     ctx.fillStyle = 'rgba(247, 251, 255, 0.70)';
-    ctx.font = `750 ${bodySize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.font = `750 ${bodySize}px ${CANVAS_UI_FONT}`;
     const meta = progress.combo > 1
       ? `score ${progress.score}  x${progress.combo}`
       : `score ${progress.score}${progress.wrong ? `  miss ${progress.wrong}` : ''}`;
@@ -1032,10 +1033,10 @@
       const alpha = progressRatio < 0.12 ? progressRatio / 0.12 : clamp((1 - progressRatio) / 0.34, 0, 1);
       ctx.globalAlpha = Math.max(0.24, alpha);
       ctx.fillStyle = accent;
-      ctx.font = `900 ${clamp(panel.w * 0.084, 16, 21)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.font = `900 ${clamp(panel.w * 0.084, 16, 21)}px ${CANVAS_UI_FONT}`;
       ctx.fillText(feedback.label, panel.x + pad, panel.y + panel.h * 0.39);
       ctx.fillStyle = 'rgba(247, 251, 255, 0.84)';
-      ctx.font = `720 ${bodySize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.font = `720 ${bodySize}px ${CANVAS_UI_FONT}`;
       const text = feedback.correct
         ? `${feedback.term} = ${feedback.meaning}${feedback.delta ? `  ${feedback.delta}` : ''}`
         : (feedback.explanation || `${feedback.term} = ${feedback.meaning}；刚才选了：${feedback.picked}`);
@@ -1046,10 +1047,10 @@
 
     if (review) {
       ctx.fillStyle = accent;
-      ctx.font = `850 ${clamp(panel.w * 0.066, 13, 16)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.font = `850 ${clamp(panel.w * 0.066, 13, 16)}px ${CANVAS_UI_FONT}`;
       ctx.fillText(review.correct ? '上一题 · 正确' : '上一题 · 再记一次', panel.x + pad, panel.y + panel.h * 0.39);
       ctx.fillStyle = '#f7fbff';
-      ctx.font = `780 ${bodySize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.font = `780 ${bodySize}px ${CANVAS_UI_FONT}`;
       const picked = !review.correct && review.picked ? `  刚才选了：${review.picked}` : '';
       const text = !review.correct && review.explanation
         ? review.explanation
@@ -1060,7 +1061,7 @@
     }
 
     ctx.fillStyle = 'rgba(247, 251, 255, 0.62)';
-    ctx.font = `720 ${bodySize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.font = `720 ${bodySize}px ${CANVAS_UI_FONT}`;
     drawPanelLines(ctx, '上一题反馈会显示在这里。', panel.x + pad, panel.y + panel.h * 0.42, textW, bodySize * 1.42, 3);
     ctx.restore();
   }
@@ -1125,13 +1126,13 @@
       ctx.fill();
     }
     ctx.fillStyle = '#ffd166';
-    ctx.font = `900 ${Math.max(20, cell * 1.15)}px "Segoe UI", sans-serif`;
+    ctx.font = `900 ${Math.max(20, cell * 1.15)}px ${CANVAS_UI_FONT}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(question.term, x + cell * 0.75, y + h * 0.42);
     if (question.example) {
       ctx.fillStyle = 'rgba(247, 251, 255, 0.82)';
-      ctx.font = `600 ${Math.max(11, cell * 0.54)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.font = `600 ${Math.max(11, cell * 0.54)}px ${CANVAS_UI_FONT}`;
       ctx.fillText(fitText(question.example, 44), x + cell * 0.75, y + h * 0.78);
     }
     ctx.restore();
@@ -1165,28 +1166,28 @@
     ctx.fill();
 
     ctx.fillStyle = accent;
-    ctx.font = `800 ${Math.max(10, cell * 0.48)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.font = `800 ${Math.max(10, cell * 0.48)}px ${CANVAS_UI_FONT}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillText(review.correct ? '上一题 · 正确' : '上一题 · 再记', x + cell * 0.55, y + cell * 0.42);
 
     ctx.fillStyle = '#ffd166';
-    ctx.font = `900 ${Math.max(17, cell * 0.86)}px "Segoe UI", sans-serif`;
+    ctx.font = `900 ${Math.max(17, cell * 0.86)}px ${CANVAS_UI_FONT}`;
     ctx.fillText(fitText(review.term, 15), x + cell * 0.55, y + cell * 1.30);
 
     ctx.fillStyle = '#f7fbff';
-    ctx.font = `800 ${Math.max(13, cell * 0.60)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.font = `800 ${Math.max(13, cell * 0.60)}px ${CANVAS_UI_FONT}`;
     ctx.fillText(fitText(review.meaning, 14), x + cell * 0.55, y + cell * 2.24);
 
     if (!review.correct && review.picked) {
       ctx.fillStyle = 'rgba(255, 175, 204, 0.86)';
-      ctx.font = `700 ${Math.max(10, cell * 0.45)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.font = `700 ${Math.max(10, cell * 0.45)}px ${CANVAS_UI_FONT}`;
       ctx.fillText(`刚才选了：${fitText(review.picked, 10)}`, x + cell * 0.55, y + cell * 2.86);
     }
 
     if (review.example) {
       ctx.fillStyle = 'rgba(247, 251, 255, 0.72)';
-      ctx.font = `650 ${Math.max(10, cell * 0.46)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.font = `650 ${Math.max(10, cell * 0.46)}px ${CANVAS_UI_FONT}`;
       const example = fitTextToWidth(ctx, review.example, w - cell * 1.1);
       ctx.fillText(example, x + cell * 0.55, y + cell * 3.48);
     }
@@ -1222,18 +1223,18 @@
     ctx.stroke();
 
     ctx.fillStyle = accent;
-    ctx.font = `900 ${Math.max(17, cell * 0.78)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.font = `900 ${Math.max(17, cell * 0.78)}px ${CANVAS_UI_FONT}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(feedback.label, x + cell * 0.6, y + h * 0.36);
 
     ctx.fillStyle = feedback.correct ? '#ffd166' : '#ffafcc';
-    ctx.font = `900 ${Math.max(15, cell * 0.68)}px "Segoe UI", sans-serif`;
+    ctx.font = `900 ${Math.max(15, cell * 0.68)}px ${CANVAS_UI_FONT}`;
     ctx.textAlign = 'right';
     ctx.fillText(feedback.delta || '', x + boxW - cell * 0.62, y + h * 0.36);
 
     ctx.fillStyle = 'rgba(247, 251, 255, 0.88)';
-    ctx.font = `750 ${Math.max(11, cell * 0.50)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    ctx.font = `750 ${Math.max(11, cell * 0.50)}px ${CANVAS_UI_FONT}`;
     ctx.textAlign = 'left';
     ctx.fillText(`${fitText(feedback.term, 13)} = ${fitText(feedback.meaning, 12)}`, x + cell * 0.6, y + h * 0.73);
     ctx.restore();
@@ -1254,7 +1255,7 @@
       ctx.save();
       ctx.translate(x, y);
       ctx.scale(scale, scale);
-      ctx.font = `900 ${Math.max(14, cell * 0.62)}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.font = `900 ${Math.max(14, cell * 0.62)}px ${CANVAS_UI_FONT}`;
       ctx.shadowColor = 'rgba(0, 0, 0, 0.38)';
       ctx.shadowBlur = Math.max(2, cell * 0.18);
       if (effect.stroke) {

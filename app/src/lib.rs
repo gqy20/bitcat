@@ -204,6 +204,7 @@ pub fn run() {
             settings::cmd_complete_reminder,
             settings::cmd_snooze_reminder,
             settings::cmd_settings_save_ai,
+            settings::cmd_settings_test_ai,
             settings::cmd_settings_save_actions,
             settings::cmd_settings_save_prompts,
             settings::cmd_settings_save_user,

@@ -21,7 +21,7 @@ function localRfc3339(date) {
   );
 }
 
-function loadSettings(body = '') {
+function loadSettings(body = '', invoke = null) {
   const dom = new JSDOM(`<!doctype html><body>${body}</body>`, {
     url: 'http://localhost/settings.html',
     runScripts: 'outside-only',
@@ -31,6 +31,7 @@ function loadSettings(body = '') {
     if (type === 'DOMContentLoaded') return;
     addEventListener(type, listener, options);
   };
+  if (invoke) dom.window.__TAURI__ = { core: { invoke } };
   const script = fs.readFileSync(resolve(process.cwd(), 'js/settings.js'), 'utf8');
   dom.window.eval(script);
   return { dom, helpers: dom.window.__settingsTest };
@@ -236,5 +237,215 @@ describe('onboarding wizard', () => {
     expect(payload.allow_agent_watch_remote).toBe(true);
     expect(payload.diagnostics_enabled).toBe(true);
     expect(doc.getElementById('onboarding-wizard').classList.contains('hidden')).toBe(true);
+  });
+});
+
+describe('settings pet preview', () => {
+  it('keeps the latest cat when an earlier image finishes loading later', async () => {
+    const { dom, helpers } = loadSettings('<canvas id="preview" width="192" height="192"></canvas>');
+    const pending = new Map();
+    dom.window.fetch = (url) => new Promise(resolve => pending.set(url, resolve));
+    dom.window.Image = class {
+      decode() { return Promise.resolve(); }
+    };
+    const drawn = [];
+    const canvas = dom.window.document.getElementById('preview');
+    canvas.getContext = () => ({
+      clearRect() {},
+      drawImage(image) { drawn.push(image.src); },
+    });
+    const oldRequest = helpers.renderPetAssetPreview(canvas, '/old-cat');
+    const newRequest = helpers.renderPetAssetPreview(canvas, '/new-cat');
+    const response = () => ({ ok: true, json: async () => ({ sprite: { frameWidth: 32, frameHeight: 32, columns: 1 } }) });
+    pending.get('/new-cat/manifest.json')(response());
+    await newRequest;
+    pending.get('/old-cat/manifest.json')(response());
+    await oldRequest;
+    expect(drawn).toEqual(['/new-cat/spritesheet.webp']);
+    dom.window.close();
+  });
+
+  it('fits the sprite to a large preview without changing the thumbnail size', () => {
+    const { dom, helpers } = loadSettings();
+    const sizes = [];
+    const asset = { manifest: { sprite: { frameWidth: 64, frameHeight: 64, columns: 1 } }, image: {} };
+    for (const size of [38, 192]) {
+      const canvas = { width: size, height: size, getContext: () => ({
+        clearRect() {},
+        drawImage(...args) { sizes.push(args.slice(-2)); },
+      }) };
+      helpers.drawPetAssetPreview(canvas, asset);
+    }
+    expect(sizes).toEqual([[32, 32], [186, 186]]);
+    dom.window.close();
+  });
+});
+
+describe('memory importance accessibility', () => {
+  it.each([1, 3, 5])('exposes level %s while keeping the score visually compact', (level) => {
+    const { dom, helpers } = loadSettings();
+    dom.window.document.body.innerHTML = helpers.renderMemoryImportance(level);
+    const meter = dom.window.document.querySelector('[role="meter"]');
+    expect(meter.getAttribute('aria-valuenow')).toBe(String(level));
+    expect(meter.getAttribute('aria-valuemin')).toBe('1');
+    expect(meter.getAttribute('aria-valuemax')).toBe('5');
+    expect(meter.textContent).toBe('');
+    expect(meter.querySelectorAll('.filled')).toHaveLength(level);
+    dom.window.close();
+  });
+
+  it.each([null, undefined, 0, 6, '3'])('does not misrepresent an unscored value (%s) as a rating', (value) => {
+    const { dom, helpers } = loadSettings();
+    dom.window.document.body.innerHTML = helpers.renderMemoryImportance(value);
+    expect(dom.window.document.querySelector('[role="meter"]')).toBeNull();
+    expect(dom.window.document.querySelector('[role="img"]').getAttribute('aria-label')).toContain('尚未评估');
+    expect(dom.window.document.querySelectorAll('.filled')).toHaveLength(0);
+    dom.window.close();
+  });
+});
+
+describe('usage distribution chart', () => {
+  it('shows a neutral empty ring before any usage is recorded', () => {
+    const { dom, helpers } = loadSettings('<div id="usage-breakdown"></div>');
+    helpers.renderUsageBreakdown({});
+    expect(dom.window.document.querySelector('.usage-donut').getAttribute('aria-label')).toBe('今日暂无用量');
+    expect(dom.window.document.querySelectorAll('circle')).toHaveLength(1);
+    expect([...dom.window.document.querySelectorAll('.usage-percent')].map(x => x.textContent)).toEqual(['0%', '0%', '0%', '0%']);
+    dom.window.close();
+  });
+
+  it('accounts for usage outside the known categories', () => {
+    const { dom, helpers } = loadSettings('<div id="usage-breakdown"></div>');
+    helpers.renderUsageBreakdown({ total_tokens: 100, chat_total_tokens: 60, vision_total_tokens: 20 });
+    const rows = [...dom.window.document.querySelectorAll('.usage-legend li')];
+    expect(rows.at(-1).querySelector('.usage-category').textContent).toBe('其他');
+    expect(rows.at(-1).querySelector('strong').textContent).toBe('20');
+    const segments = [...dom.window.document.querySelectorAll('circle[pathLength]')];
+    expect(segments.reduce((sum, el) => sum + Number(el.getAttribute('stroke-dasharray').split(' ')[0]), 0)).toBe(100);
+    dom.window.close();
+  });
+});
+
+describe('AI connection draft lifecycle', () => {
+  const ai = () => ({
+    overlay: { base_url: 'https://api.anthropic.com', model: 'saved-model' },
+    effective: { base_url: 'https://api.anthropic.com', model: 'saved-model', max_tokens: 256000 },
+    has_effective_key: true, has_saved_key: true,
+  });
+  function connectionPage(invoke) {
+    const html = fs.readFileSync(resolve(process.cwd(), 'settings.html'), 'utf8');
+    const loaded = loadSettings(html, invoke);
+    loaded.helpers.setSnapshot({ ai: ai() });
+    loaded.helpers.renderAi(ai());
+    loaded.helpers.bindConnection();
+    return loaded;
+  }
+
+  it('keeps a saved secret out of the input and preserves it in the edit payload', () => {
+    const { dom, helpers } = connectionPage();
+    expect(dom.window.document.getElementById('ai-key').value).toBe('');
+    expect(helpers.collectConnectionDraft().api_key).toBeNull();
+    expect(helpers.collectConnectionDraft().clear_saved_key).toBe(false);
+    dom.window.document.getElementById('ai-clear-key').click();
+    expect(helpers.collectConnectionDraft().clear_saved_key).toBe(true);
+    dom.window.document.getElementById('ai-cancel').click();
+    expect(helpers.collectConnectionDraft().clear_saved_key).toBe(false);
+    dom.window.close();
+  });
+
+  it('saves only the connection and retains another section’s unsaved edits', async () => {
+    const calls = [];
+    const { dom, helpers } = connectionPage(async (command, args) => {
+      calls.push([command, args]);
+      return command === 'cmd_settings_load' ? { ai: ai() } : null;
+    });
+    helpers.markDirty('user');
+    const model = dom.window.document.getElementById('ai-model');
+    model.value = 'new-model';
+    model.dispatchEvent(new dom.window.Event('input'));
+    expect(await helpers.saveAiConnection()).toBe(true);
+    expect(calls.map(x => x[0])).toEqual(['cmd_settings_save_ai', 'cmd_settings_apply', 'cmd_settings_load']);
+    expect(calls[0][1].payload.model).toBe('new-model');
+    expect(calls[0][1].payload.api_key).toBeNull();
+    expect(helpers.getDirty().user).toBe(true);
+    expect(helpers.getDirty().ai).toBe(false);
+    dom.window.close();
+  });
+
+  it('invalidates a successful check after the draft changes, without saving during a check', async () => {
+    const calls = [];
+    const { dom, helpers } = connectionPage(async command => {
+      calls.push(command);
+      return { status: 'verified', elapsed_ms: 25 };
+    });
+    await helpers.testAiConnection();
+    expect(calls).toEqual(['cmd_settings_test_ai']);
+    expect(dom.window.document.getElementById('connection-status').dataset.state).toBe('verified');
+    const model = dom.window.document.getElementById('ai-model');
+    model.value = 'different-model';
+    model.dispatchEvent(new dom.window.Event('input'));
+    expect(dom.window.document.getElementById('connection-status').dataset.state).toBe('unverified');
+    dom.window.close();
+  });
+
+  it('keeps a failed check from overwriting a later render', async () => {
+    let resolveCheck;
+    const { dom, helpers } = connectionPage(() => new Promise(resolve => { resolveCheck = resolve; }));
+    const pending = helpers.testAiConnection();
+    helpers.renderAi(ai());
+    resolveCheck({ status: 'unauthorized' });
+    await pending;
+    expect(dom.window.document.getElementById('connection-status').dataset.state).toBe('unverified');
+    expect(dom.window.document.getElementById('connection-fields').disabled).toBe(false);
+    dom.window.close();
+  });
+
+  it('requires a valid custom endpoint and a whole-number reply limit', () => {
+    const { dom, helpers } = connectionPage();
+    dom.window.document.getElementById('ai-provider').value = 'custom';
+    dom.window.document.getElementById('ai-baseurl').value = 'https://example.com?key=secret';
+    expect(() => helpers.collectConnectionDraft()).toThrow('服务地址无效');
+    dom.window.document.getElementById('ai-baseurl').value = 'https://example.com';
+    dom.window.document.getElementById('ai-maxtokens').value = '1.5';
+    expect(() => helpers.collectConnectionDraft()).toThrow('正整数');
+    dom.window.close();
+  });
+});
+
+describe('interactive cat preview', () => {
+  const asset = () => ({
+    image: {}, manifest: { sprite: { frameWidth: 32, frameHeight: 32, columns: 4, rows: 2, frameCount: 8 },
+      states: { idle: { frames: [{ sprite: 0, duration: 100 }] },
+        happy: { frames: [{ sprite: 2, duration: 100 }, { sprite: 3, duration: 200 }] },
+        sleep: { frames: [{ sprite: 6, duration: 400 }] } } },
+  });
+
+  it('uses real manifest frame indices and durations, including loop boundaries', () => {
+    const { dom, helpers } = loadSettings();
+    const frames = helpers.petPreviewFrames(asset(), 'happy');
+    expect([0, 99, 100, 299, 300].map(time => helpers.petPreviewFrameAt(frames, time))).toEqual([2, 2, 3, 3, 2]);
+    expect(helpers.availablePetPreviewStates(asset()).map(x => x[0])).toEqual(['idle', 'happy', 'sleep']);
+    expect(helpers.petPreviewFrames({ manifest: { states: { idle: { frames: {} } } } }, 'idle')).toEqual([]);
+    dom.window.close();
+  });
+
+  it('cycles only available states without saving or marking settings dirty', () => {
+    const calls = [];
+    const { dom, helpers } = loadSettings('<button id="pet-preview-play"><canvas id="pet-large-preview" width="192" height="192"></canvas></button><span id="pet-preview-state"></span>', command => calls.push(command));
+    const drawn = [];
+    dom.window.document.querySelector('canvas').getContext = () => ({ clearRect() {}, drawImage(...args) { drawn.push(args.slice(1, 3)); } });
+    helpers.bindPetPreview();
+    helpers.setPetPreviewAsset(asset());
+    const button = dom.window.document.getElementById('pet-preview-play');
+    button.click();
+    expect(dom.window.document.getElementById('pet-preview-state').textContent).toBe('开心');
+    button.click();
+    expect(dom.window.document.getElementById('pet-preview-state').textContent).toBe('打个盹');
+    expect(drawn).toEqual([[64, 0], [64, 32]]);
+    expect(calls).toEqual([]);
+    expect(Object.values(helpers.getDirty()).some(Boolean)).toBe(false);
+    helpers.stopPetPreview();
+    expect(dom.window.document.getElementById('pet-preview-state').textContent).toBe('安静待着');
+    dom.window.close();
   });
 });

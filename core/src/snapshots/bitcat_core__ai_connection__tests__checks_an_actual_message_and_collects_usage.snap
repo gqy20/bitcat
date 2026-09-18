@@ -1,0 +1,10 @@
+---
+source: core/src/ai_connection.rs
+expression: "serde_json::from_slice::<serde_json::Value>(&requests[0].body).unwrap()"
+---
+max_tokens: 8
+messages:
+  - content: Reply OK.
+    role: user
+model: model
+stream: false

@@ -124,6 +124,12 @@
 
 ---
 
+### 4.5 文字层级
+
+字号、字重、行高统一由 `app/frontend/css/typography.css` 管理，完整角色表及紧凑窗口规则见 [统一文字规范](../design/typography.md)。生产窗口不得新增局部数值字号；页面标题、分区标题、正文、辅助说明按语义选择角色。`npm run check:typography` 检查此约束。图标、游戏展示数字与 Canvas 绘制的例外见规范。
+
+---
+
 ## 5. 默认值与权限规范
 
 ### 5.1 恐慌测试（Panic Test）

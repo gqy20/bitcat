@@ -3,32 +3,41 @@
 // - 左侧 tab 切换 + dirty 检测
 // - 底部保存/取消/重置，Esc 关闭
 
+const CANVAS_UI_FONT = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement).getPropertyValue("--font-ui").trim() || "monospace" : "monospace";
+
 const invoke = window.__TAURI__?.core?.invoke || mockInvoke;
 
 const ACTION_TYPES = ["unbound", "launch", "hotkey", "script", "voice", "screenshot"];
 const PET_ASSET_PRESETS = [
   { value: "", label: "默认", group: "推荐" },
-  { value: "/__fixtures__/pets/cat-tabby", label: "Tabby Cat", group: "推荐" },
-  { value: "/__fixtures__/pets/cat-calico", label: "Calico Cat", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-siamese", label: "Siamese Cat", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-tuxedo", label: "Tuxedo Cat", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-black", label: "Black Cat", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-white", label: "White Cat", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-ginger", label: "Ginger Cat", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-gray", label: "Gray Cat", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-cream", label: "Cream Cat", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-blue-gray", label: "Blue Gray Cat", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-cow", label: "Cow Cat", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-tortie", label: "Tortie Cat", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-ragdoll", label: "Ragdoll Cat", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-snowshoe", label: "Snowshoe Cat", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-lilac", label: "Lilac Cat", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-tabby", label: "狸花猫", group: "推荐" },
+  { value: "/__fixtures__/pets/cat-calico", label: "三花猫", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-siamese", label: "暹罗猫", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-tuxedo", label: "燕尾服猫", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-black", label: "黑猫", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-white", label: "白猫", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-ginger", label: "橘猫", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-gray", label: "灰猫", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-cream", label: "奶油猫", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-blue-gray", label: "蓝灰猫", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-cow", label: "奶牛猫", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-tortie", label: "玳瑁猫", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-ragdoll", label: "布偶猫", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-snowshoe", label: "雪鞋猫", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-lilac", label: "丁香猫", group: "猫咪" },
 ];
 const PET_ASSET_DEFAULT = "/__fixtures__/pets/cat-tabby";
 const PET_ASSET_DEFAULT_PREVIEW = PET_ASSET_DEFAULT;
 const PET_ASSET_PRESET_VALUES = new Set(PET_ASSET_PRESETS.map(item => item.value).filter(Boolean));
 const petAssetPreviewCache = new Map();
 let selectedPetAssetPreset = "";
+const PET_PREVIEW_STATES = [
+  ["idle", "安静待着"], ["happy", "开心"], ["walk", "走两步"],
+  ["sleep", "打个盹"], ["talk", "说话中"], ["focused", "认真思考"],
+  ["confused", "有点困惑"], ["gamewin", "赢啦"],
+];
+const petPreview = { asset: null, raf: 0, animation: null, index: 0, lastFrame: -1, gesture: null, suppressClick: false };
+let previewReducedMotion = null;
 const ACTION_TYPE_LABELS = {
   unbound: "未绑定",
   launch: "启动程序",
@@ -39,6 +48,10 @@ const ACTION_TYPE_LABELS = {
 };
 
 let SNAPSHOT = null;
+let connectionRevision = 0;
+let connectionBusy = false;
+let clearSavedKey = false;
+let mockConnectionAi = null;
 const dirty = { ai: false, user: false, actions: false, prompts: false, appearance: false, permissions: false, agent_watch: false };
 let currentTab = "home";
 let currentExpertPage = "prompts";
@@ -51,10 +64,24 @@ let pointsSnakePath = [];
 let pointsSnakeOffset = 0;
 let pointsSnakeLength = 0;
 
-async function mockInvoke(command) {
+async function mockInvoke(command, args = {}) {
+  if (command === "cmd_settings_test_ai") {
+    return { status: "preview_only", elapsed_ms: 0 };
+  }
+  if (command === "cmd_settings_save_ai") {
+    const draft = args.payload;
+    const previous = mockConnectionAi || { has_effective_key: true, has_saved_key: false };
+    mockConnectionAi = {
+      overlay: { base_url: draft.base_url, model: draft.model, max_tokens: draft.max_tokens },
+      effective: { base_url: draft.base_url, model: draft.model, max_tokens: draft.max_tokens || 256000 },
+      has_effective_key: draft.api_key ? true : draft.clear_saved_key ? !previous.has_saved_key : previous.has_effective_key,
+      has_saved_key: draft.clear_saved_key ? false : !!draft.api_key || previous.has_saved_key,
+    };
+    return null;
+  }
   if (command === "cmd_settings_load") {
     return {
-      ai: {
+      ai: mockConnectionAi || {
         overlay: {},
         effective: {
           base_url: "https://api.anthropic.com",
@@ -342,9 +369,12 @@ function clearDirty(tab) {
 function anyDirty() { return Object.values(dirty).some(Boolean); }
 
 function switchTab(name) {
+  if (name !== "companion") stopPetPreview();
   currentTab = name;
   document.querySelectorAll(".nav > .nav-item").forEach(b => {
     b.classList.toggle("active", b.dataset.tab === name);
+    if (b.dataset.tab === name) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
   });
   document.querySelectorAll(".pane > .tab").forEach(s => {
     s.classList.toggle("hidden", s.dataset.pane !== name);
@@ -392,28 +422,190 @@ function switchExpertPage(name) {
   }
 }
 
-function renderAi(ai) {
-  $("ai-key").value = ai.overlay.api_key || "";
-  $("ai-baseurl").value = ai.overlay.base_url || "";
-  $("ai-model").value = ai.overlay.model || "";
-  $("ai-maxtokens").value = ai.overlay.max_tokens == null ? "" : ai.overlay.max_tokens;
+function setConnectionEditor(open) {
+  $("connection-editor").classList.toggle("hidden", !open);
+  $("ai-edit").setAttribute("aria-expanded", String(open));
+  $("ai-edit").textContent = open ? "正在编辑" : "修改连接";
+}
 
+function setConnectionBusy(busy) {
+  connectionBusy = busy;
+  $("connection-fields").disabled = busy;
+  ["ai-test", "ai-save", "ai-edit", "ai-cancel", "btn-save", "btn-cancel", "btn-reset"].forEach(id => {
+    if ($(id)) $(id).disabled = busy;
+  });
+}
+
+function setConnectionStatus(state, text, detail = "") {
+  $("connection-status").dataset.state = state;
+  $("connection-status").textContent = text;
+  $("ai-test-result").textContent = detail;
+  $("ai-test-result").classList.toggle("hidden", !detail);
+  $("ai-test-result").dataset.state = state;
+}
+
+function updateConnectionKeyState() {
+  const saved = !!SNAPSHOT?.ai?.has_saved_key;
+  $("ai-clear-key").hidden = !saved;
+  $("ai-clear-key").textContent = clearSavedKey ? "保留本机密钥" : "移除本机密钥";
+  $("ai-clear-note").classList.toggle("hidden", !clearSavedKey);
+  $("ai-key-current").textContent = clearSavedKey ? "待移除" : saved ? "已保存在本机" : SNAPSHOT?.ai?.has_effective_key ? "使用外部配置" : "尚未配置";
+}
+
+function invalidateConnection() {
+  connectionRevision += 1;
+  setConnectionStatus("unverified", "有修改 · 尚未检测");
+  $("ov-ai-key").dataset.state = "missing";
+  $("ov-ai-key").title = "连接配置有修改，尚未检测";
+  $("ov-ai-key").setAttribute("aria-label", "连接配置有修改，尚未检测");
+  markDirty("ai");
+}
+
+function renderAi(ai) {
+  connectionRevision += 1;
+  clearSavedKey = false;
   const eff = ai.effective;
-  $("ai-key-current").textContent = ai.has_effective_key ? "已配置" : "未配置";
-  $("ai-baseurl-current").textContent = eff.base_url || "";
-  $("ai-baseurl-current").title = eff.base_url || "";
-  $("ai-model-current").textContent = eff.model || "";
-  $("ai-model-current").title = eff.model || "";
-  $("ai-maxtokens-current").textContent = eff.max_tokens == null ? "" : formatNumber(eff.max_tokens);
+  $("ai-key").value = "";
+  $("ai-key").type = "password";
+  $("ai-key-toggle").setAttribute("aria-label", "显示新输入的密钥");
+  $("ai-baseurl").value = ai.overlay.base_url || eff.base_url || "https://api.anthropic.com";
+  $("ai-model").value = ai.overlay.model || eff.model || "";
+  $("ai-maxtokens").value = ai.overlay.max_tokens ?? "";
+  $("ai-maxtokens-current").textContent = `当前上限 ${formatNumber(eff.max_tokens)}`;
+  const official = /^https:\/\/api\.anthropic\.com(?:\/v1(?:\/messages)?)?\/?$/.test($("ai-baseurl").value);
+  $("ai-provider").value = official ? "official" : "custom";
+  $("ai-custom-endpoint").classList.toggle("hidden", official);
+  $("ai-service-name").textContent = official ? "Anthropic" : "自定义兼容服务";
+  $("ai-current-model").textContent = eff.model || "尚未选择模型";
+  $("ai-current-model").title = eff.model || "";
+  updateConnectionKeyState();
+  setConnectionStatus("unverified", ai.has_effective_key ? "已配置 · 尚未检测" : "尚未配置");
+  setConnectionEditor(!ai.has_effective_key);
   renderOverviewNotices(ai);
-  // 状态条显示短模型名：去掉 -20250514 之类的日期版本后缀
   $("ov-ai-model").textContent = eff.model ? eff.model.replace(/-\d{8}$/, "") : "-";
   $("ov-ai-model").title = eff.model || "";
-  $("ov-ai-key").textContent = ai.has_effective_key ? "已配置" : "未配置";
+  const connection = $("ov-ai-key");
+  const connectionLabel = ai.has_effective_key ? "已配置，尚未检测" : "尚未配置 API Key";
+  connection.dataset.state = "missing";
+  connection.setAttribute("aria-label", connectionLabel);
+  connection.title = connectionLabel;
 
   ["ai-key", "ai-baseurl", "ai-model", "ai-maxtokens"].forEach(id => {
-    $(id).oninput = () => markDirty("ai");
+    $(id).oninput = () => {
+      if (id === "ai-key" && $(id).value) { clearSavedKey = false; updateConnectionKeyState(); }
+      invalidateConnection();
+    };
   });
+}
+
+function collectConnectionDraft() {
+  const base = $("ai-provider").value === "official" ? "https://api.anthropic.com" : $("ai-baseurl").value.trim();
+  let url;
+  try { url = new URL(base); } catch { throw new Error("服务地址不完整，请填写完整的 http 或 https 地址。"); }
+  if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+    throw new Error("服务地址无效，请去掉密钥、查询参数或其他多余内容。");
+  }
+  const model = $("ai-model").value.trim();
+  if (!model) throw new Error("还没有选择模型，请填写服务商提供的模型 ID。");
+  const key = $("ai-key").value;
+  if (key && !key.trim()) throw new Error("密钥不能只含空格，请重新粘贴。");
+  const rawLimit = $("ai-maxtokens").value;
+  const limit = rawLimit === "" ? null : Number(rawLimit);
+  if (limit !== null && (!Number.isSafeInteger(limit) || limit < 1)) throw new Error("回复长度上限必须是正整数，或留空使用默认值。");
+  return { api_key: key.trim() || null, clear_saved_key: clearSavedKey,
+    base_url: base, model, max_tokens: limit };
+}
+
+const CONNECTION_RESULTS = {
+  verified: ["verified", "检测通过", "已收到模型回复，当前文字对话连接可用。"],
+  missing_key: ["error", "缺少密钥", "没有可用密钥，请填写 API Key 后重试。"],
+  invalid_config: ["error", "配置不完整", "请检查服务地址和模型名称后重试。"],
+  unauthorized: ["error", "密钥无效", "服务没有接受这个密钥，请检查是否复制完整或已被撤销。"],
+  forbidden: ["error", "没有访问权限", "当前账号没有访问权限，请检查服务商的账号与模型授权。"],
+  model_unavailable: ["error", "请求未被接受", "请检查模型名称、服务地址，以及是否兼容 Anthropic Messages 接口。"],
+  rate_limited: ["error", "请求过于频繁", "服务暂时限制了请求，请稍后重试。"],
+  network_error: ["error", "连接失败", "暂时连不上服务，请检查地址和网络后重试。"],
+  timed_out: ["error", "连接超时", "服务没有及时回应，请检查网络或稍后重试。"],
+  invalid_response: ["error", "回复格式不兼容", "服务未返回有效的文字回复，请检查是否兼容 Anthropic Messages 接口。"],
+  service_error: ["error", "服务暂不可用", "服务未能完成请求，请检查服务状态或稍后重试。"],
+  preview_only: ["unverified", "浏览器预览", "这里只预览界面，请在 BitCat 桌面应用中检测真实连接。"],
+};
+
+async function testAiConnection() {
+  if (connectionBusy) return;
+  let payload;
+  try { payload = collectConnectionDraft(); } catch (error) { setConnectionStatus("error", "请检查配置", error.message); setConnectionEditor(true); return; }
+  const revision = connectionRevision;
+  setConnectionBusy(true);
+  setConnectionStatus("checking", "正在检测…");
+  $("ai-test").textContent = "检测中…";
+  try {
+    const result = await invoke("cmd_settings_test_ai", { payload });
+    if (revision !== connectionRevision) return;
+    const [state, label, message] = CONNECTION_RESULTS[result.status] || CONNECTION_RESULTS.service_error;
+    setConnectionStatus(state, label, message + (dirty.ai && state === "verified" ? " 当前修改尚未保存。" : ""));
+    if (state === "verified" && !dirty.ai) {
+      $("ov-ai-key").dataset.state = "ready";
+      $("ov-ai-key").title = "连接检测通过";
+      $("ov-ai-key").setAttribute("aria-label", "连接检测通过");
+    }
+  } catch {
+    if (revision === connectionRevision) setConnectionStatus("error", "检测失败", "无法完成连接检测，请稍后重试。");
+  } finally {
+    setConnectionBusy(false);
+    $("ai-test").textContent = "检测连接";
+  }
+}
+
+async function saveAiConnection(apply = true) {
+  if (connectionBusy) return false;
+  let payload;
+  try { payload = collectConnectionDraft(); } catch (error) { setConnectionStatus("error", "请检查配置", error.message); setConnectionEditor(true); return false; }
+  const verified = $("connection-status").dataset.state === "verified";
+  setConnectionBusy(true);
+  $("ai-save").textContent = "保存中…";
+  try {
+    await invoke("cmd_settings_save_ai", { payload });
+    if (apply) await invoke("cmd_settings_apply");
+    const fresh = await invoke("cmd_settings_load");
+    SNAPSHOT.ai = fresh.ai;
+    renderAi(fresh.ai);
+    clearDirty("ai");
+    setConnectionEditor(false);
+    if (verified) {
+      setConnectionStatus("verified", "检测通过", "连接已保存并通过文字对话检测。");
+      $("ov-ai-key").dataset.state = "ready";
+      $("ov-ai-key").title = "连接检测通过";
+      $("ov-ai-key").setAttribute("aria-label", "连接检测通过");
+    }
+    if (apply) toast("连接已保存", "ok");
+    return true;
+  } catch {
+    setConnectionStatus("error", "保存未完成", "连接未能完成保存或应用，请稍后重试。其他分区的修改仍然保留。");
+    return false;
+  } finally {
+    setConnectionBusy(false);
+    $("ai-save").textContent = "保存连接";
+  }
+}
+
+function bindConnection() {
+  $("ai-edit").onclick = () => { setConnectionEditor(true); $("ai-provider").focus(); };
+  $("ai-provider").onchange = () => {
+    const official = $("ai-provider").value === "official";
+    $("ai-custom-endpoint").classList.toggle("hidden", official);
+    if (!official && $("ai-baseurl").value === "https://api.anthropic.com") $("ai-baseurl").value = "";
+    invalidateConnection();
+  };
+  $("ai-clear-key").onclick = () => {
+    clearSavedKey = !clearSavedKey;
+    $("ai-key").value = "";
+    updateConnectionKeyState();
+    invalidateConnection();
+  };
+  $("ai-cancel").onclick = () => { renderAi(SNAPSHOT.ai); clearDirty("ai"); setConnectionEditor(false); };
+  $("ai-test").onclick = testAiConnection;
+  $("ai-save").onclick = () => saveAiConnection();
 }
 
 function renderOverviewNotices(ai) {
@@ -427,7 +619,7 @@ function renderOverviewNotices(ai) {
     notices.push(["模型未配置", ""]);
   }
   if (!notices.length) {
-    box.innerHTML = `<div class="empty compact">一切正常</div>`;
+    box.innerHTML = `<div class="empty compact">连接配置已填写，可在 AI 服务中检测是否可用。</div>`;
     return;
   }
   box.innerHTML = notices.map(([title, body]) => `
@@ -737,6 +929,7 @@ function renderAppearance(a) {
   ["a-top","a-collapsed","a-tts","a-notify-sound","a-notify-sound-reminder","a-notify-sound-agent","a-notify-sound-skip-tts","a-reminder-ai","a-ss-bubble","a-camera-enabled","a-camera-save","screen-time-master"].forEach(id => { $(id).onchange = () => markDirty("appearance"); });
   ["a-earnings-salary","a-earnings-start","a-earnings-end","a-earnings-workdays"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
   ["a-shortcut","a-ss-interval","a-reminder-ai-timeout","a-pet-asset","a-storage-data","a-storage-app-data"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
+  $("a-pet-asset").onchange = updatePetAssetPickerSelection;
 }
 
 function renderStorage(storage) {
@@ -903,10 +1096,14 @@ function renderPermissions(p = {}) {
 function updateHomePermissionCards() {
   const screenshotOn = $("perm-screenshot")?.checked;
   const qs = $("qs-screenshot");
-  if (qs) qs.textContent = screenshotOn ? "开启" : "关闭";
+  if (qs) {
+    qs.textContent = screenshotOn ? "开启" : "关闭";
+    qs.dataset.state = screenshotOn ? "ready" : "off";
+  }
   const interval = Number(SNAPSHOT?.appearance?.screenshot_interval_sec ?? 30);
   const hint = $("ss-interval-hint");
   if (hint) hint.textContent = screenshotOn ? `每 ${formatNumber(interval)} 秒一次` : "看不到你的屏幕";
+  if (qs) qs.title = hint?.textContent || "";
 
   const toolIds = ["perm-shell", "perm-read-file", "perm-clipboard", "perm-foreground", "perm-launch", "perm-hotkey"];
   const enabledCount = toolIds.filter(id => $(id)?.checked).length;
@@ -1113,27 +1310,12 @@ function renderPetAssetPicker() {
   const picker = $("a-pet-asset-picker");
   if (!picker) return;
   picker.innerHTML = "";
-  let currentGroup = null;
-  let groupEl = null;
-  let gridEl = null;
-
-  function ensureGroup(group) {
-    if (group === currentGroup && gridEl) return gridEl;
-    currentGroup = group;
-    groupEl = document.createElement("div");
-    groupEl.className = "pet-asset-group";
-    const title = document.createElement("div");
-    title.className = "pet-asset-group-title";
-    title.textContent = group || "其他";
-    gridEl = document.createElement("div");
-    gridEl.className = "pet-asset-grid";
-    groupEl.append(title, gridEl);
-    picker.appendChild(groupEl);
-    return gridEl;
-  }
+  const gridEl = document.createElement("div");
+  gridEl.className = "pet-asset-grid";
+  picker.appendChild(gridEl);
 
   for (const preset of PET_ASSET_PRESETS) {
-    const grid = ensureGroup(preset.group);
+    const grid = gridEl;
     const card = document.createElement("button");
     card.type = "button";
     card.className = "pet-asset-card";
@@ -1159,7 +1341,7 @@ function renderPetAssetPicker() {
     renderPetAssetPreview(canvas, preset.value);
   }
 
-  const customGrid = ensureGroup("其他");
+  const customGrid = gridEl;
   const custom = document.createElement("button");
   custom.type = "button";
   custom.className = "pet-asset-card";
@@ -1185,14 +1367,28 @@ function handlePetAssetCardKeydown(event) {
   const index = cards.indexOf(event.currentTarget);
   if (index < 0) return;
   event.preventDefault();
-  const delta = event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1;
-  cards[(index + delta + cards.length) % cards.length].focus();
+  const columns = Math.max(1, getComputedStyle(event.currentTarget.parentElement).gridTemplateColumns.split(/\s+/).filter(Boolean).length);
+  const next = event.key === "ArrowDown" ? Math.min(cards.length - 1, index + columns)
+    : event.key === "ArrowUp" ? Math.max(0, index - columns)
+    : (index + (event.key === "ArrowLeft" ? -1 : 1) + cards.length) % cards.length;
+  cards[next].focus();
 }
 
 function updatePetAssetPickerSelection() {
   const picker = $("a-pet-asset-picker");
   if (!picker) return;
   const value = selectedPetAssetPreset;
+  const preview = $("pet-large-preview");
+  const caption = $("pet-preview-name");
+  if (preview && caption) {
+    stopPetPreview();
+    petPreview.asset = null;
+    petPreview.index = 0;
+    if ($("pet-preview-play")) $("pet-preview-play").disabled = true;
+    if ($("pet-preview-state")) $("pet-preview-state").textContent = "正在加载";
+    caption.textContent = PET_ASSET_PRESETS.find(preset => preset.value === value)?.label || "自定义猫咪";
+    renderPetAssetPreview(preview, value === "__custom" ? $("a-pet-asset").value : value);
+  }
   picker.querySelectorAll(".pet-asset-card").forEach(card => {
     const selected = card.dataset.value === value;
     card.classList.toggle("selected", selected);
@@ -1205,11 +1401,27 @@ async function renderPetAssetPreview(canvas, value) {
   if (!canvas) return;
   const baseUrl = normalizePetAssetUrl(value || PET_ASSET_DEFAULT_PREVIEW);
   if (!baseUrl) return;
+  // Each canvas keeps the latest request so a slow previous selection cannot overwrite it.
+  canvas.dataset.previewUrl = baseUrl;
   try {
     const asset = await loadPetAssetPreview(baseUrl);
-    drawPetAssetPreview(canvas, asset);
+    if (canvas.dataset.previewUrl === baseUrl) {
+      drawPetAssetPreview(canvas, asset);
+      if (canvas.id === "pet-large-preview") {
+        petPreview.asset = asset;
+        if ($("pet-preview-play")) $("pet-preview-play").disabled = !availablePetPreviewStates(asset).length;
+        if ($("pet-preview-state")) $("pet-preview-state").textContent = "安静待着";
+      }
+    }
   } catch (error) {
-    drawCustomPetAssetPreview(canvas);
+    if (canvas.dataset.previewUrl === baseUrl) {
+      drawCustomPetAssetPreview(canvas);
+      if (canvas.id === "pet-large-preview") {
+        petPreview.asset = null;
+        if ($("pet-preview-play")) $("pet-preview-play").disabled = true;
+        if ($("pet-preview-state")) $("pet-preview-state").textContent = "暂时无法预览";
+      }
+    }
   }
 }
 
@@ -1230,19 +1442,19 @@ async function loadPetAssetPreview(baseUrl) {
   return promise;
 }
 
-function drawPetAssetPreview(canvas, asset) {
+function drawPetAssetPreview(canvas, asset, selectedFrame) {
   const ctx = canvas.getContext("2d");
   const manifest = asset.manifest || {};
   const sprite = manifest.sprite || {};
   const fw = sprite.frameWidth || 1;
   const fh = sprite.frameHeight || 1;
   const columns = sprite.columns || 1;
-  const frame = Number.isInteger(manifest.mini?.frame)
+  const frame = Number.isInteger(selectedFrame) ? selectedFrame : Number.isInteger(manifest.mini?.frame)
     ? manifest.mini.frame
     : (manifest.states?.idle?.frames?.[0]?.sprite || 0);
   const sx = (frame % columns) * fw;
   const sy = Math.floor(frame / columns) * fh;
-  const scale = Math.min(32 / fw, 32 / fh);
+  const scale = Math.min((canvas.width - 6) / fw, (canvas.height - 6) / fh);
   const dw = Math.max(1, Math.round(fw * scale));
   const dh = Math.max(1, Math.round(fh * scale));
   const dx = Math.floor((canvas.width - dw) / 2);
@@ -1252,22 +1464,139 @@ function drawPetAssetPreview(canvas, asset) {
   ctx.drawImage(asset.image, sx, sy, fw, fh, dx, dy, dw, dh);
 }
 
+// Preview timelines use the selected pack's actual frame indices and durations.
+function petPreviewFrames(asset, name) {
+  const manifest = asset?.manifest;
+  const config = manifest?.actions?.[name] || manifest?.states?.[name];
+  const limit = manifest?.sprite?.frameCount || (manifest?.sprite?.columns || 1) * (manifest?.sprite?.rows || 1);
+  return (Array.isArray(config?.frames) ? config.frames : []).filter(frame => frame && Number.isInteger(frame.sprite) && frame.sprite >= 0 && frame.sprite < limit && Number.isFinite(frame.duration) && frame.duration > 0);
+}
+
+function availablePetPreviewStates(asset) {
+  return PET_PREVIEW_STATES.filter(([name]) => petPreviewFrames(asset, name).length);
+}
+
+function petPreviewFrameAt(frames, elapsed) {
+  const duration = frames.reduce((sum, frame) => sum + frame.duration, 0);
+  if (!duration) return 0;
+  let remaining = Math.max(0, elapsed) % duration;
+  for (const frame of frames) {
+    if (remaining < frame.duration) return frame.sprite;
+    remaining -= frame.duration;
+  }
+  return frames[0].sprite;
+}
+
+function stopPetPreview(reset = true) {
+  if (petPreview.raf) window.cancelAnimationFrame(petPreview.raf);
+  petPreview.raf = 0;
+  petPreview.animation = null;
+  petPreview.lastFrame = -1;
+  petPreview.gesture = null;
+  const button = $("pet-preview-play");
+  button?.classList.remove("is-dragging");
+  button?.style.removeProperty("--preview-x");
+  button?.style.removeProperty("--preview-y");
+  if (reset && petPreview.asset && $("pet-large-preview")) {
+    drawPetAssetPreview($("pet-large-preview"), petPreview.asset);
+    if ($("pet-preview-state")) $("pet-preview-state").textContent = "安静待着";
+  }
+}
+
+function playPetPreview(name, label) {
+  const frames = petPreviewFrames(petPreview.asset, name);
+  const canvas = $("pet-large-preview");
+  if (!canvas || !frames.length) return false;
+  if (petPreview.raf) window.cancelAnimationFrame(petPreview.raf);
+  petPreview.raf = 0;
+  petPreview.animation = null;
+  $("pet-preview-state").textContent = label;
+  drawPetAssetPreview(canvas, petPreview.asset, frames[0].sprite);
+  if (previewReducedMotion?.matches || document.hidden || currentTab !== "companion") return true;
+  petPreview.lastFrame = frames[0].sprite;
+  const animation = { start: performance.now(), frames };
+  petPreview.animation = animation;
+  const tick = now => {
+    petPreview.raf = 0;
+    if (petPreview.animation !== animation) return;
+    if (document.hidden || currentTab !== "companion" || now - animation.start >= 5000) { stopPetPreview(); return; }
+    const frame = petPreviewFrameAt(frames, now - animation.start);
+    if (frame !== petPreview.lastFrame) { drawPetAssetPreview(canvas, petPreview.asset, frame); petPreview.lastFrame = frame; }
+    petPreview.raf = window.requestAnimationFrame(tick);
+  };
+  petPreview.raf = window.requestAnimationFrame(tick);
+  return true;
+}
+
+function cyclePetPreview() {
+  const states = availablePetPreviewStates(petPreview.asset);
+  if (!states.length) return;
+  petPreview.index = (petPreview.index + 1) % states.length;
+  playPetPreview(...states[petPreview.index]);
+}
+
+function bindPetPreview() {
+  const button = $("pet-preview-play");
+  if (!button) return;
+  previewReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+  previewReducedMotion?.addEventListener("change", () => stopPetPreview());
+  button.onclick = event => {
+    if (petPreview.suppressClick && event.detail !== 0) { petPreview.suppressClick = false; return; }
+    cyclePetPreview();
+  };
+  button.onpointerdown = event => {
+    if (event.button !== 0 || button.disabled) return;
+    petPreview.suppressClick = false;
+    petPreview.gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
+    button.setPointerCapture?.(event.pointerId);
+  };
+  button.onpointermove = event => {
+    const gesture = petPreview.gesture;
+    if (!gesture || gesture.id !== event.pointerId) return;
+    const dx = event.clientX - gesture.x, dy = event.clientY - gesture.y;
+    if (!gesture.moved && Math.hypot(dx, dy) < 6) return;
+    if (!gesture.moved) {
+      gesture.moved = true;
+      button.classList.add("is-dragging");
+      if (!playPetPreview("dragging", "轻轻拎起来")) playPetPreview("walk", "走两步");
+    }
+    button.style.setProperty("--preview-x", `${Math.max(-18, Math.min(18, dx))}px`);
+    button.style.setProperty("--preview-y", `${Math.max(-12, Math.min(12, dy))}px`);
+  };
+  button.onpointerup = event => {
+    const gesture = petPreview.gesture;
+    if (!gesture || gesture.id !== event.pointerId) return;
+    petPreview.gesture = null;
+    button.classList.remove("is-dragging");
+    button.style.removeProperty("--preview-x");
+    button.style.removeProperty("--preview-y");
+    if (gesture.moved) { petPreview.suppressClick = true; if (!playPetPreview("happy", "开心")) stopPetPreview(); }
+    if (button.hasPointerCapture?.(event.pointerId)) button.releasePointerCapture(event.pointerId);
+  };
+  button.onpointercancel = () => stopPetPreview();
+  button.onlostpointercapture = () => { if (petPreview.gesture) stopPetPreview(); };
+  document.addEventListener("visibilitychange", () => { if (document.hidden) stopPetPreview(); });
+  window.addEventListener("pagehide", () => stopPetPreview());
+}
+
 function drawCustomPetAssetPreview(canvas) {
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "rgba(124,255,178,0.18)";
-  ctx.strokeStyle = "rgba(124,255,178,0.7)";
+  const size = Math.min(canvas.width, canvas.height);
+  const inset = Math.round(size * .2);
+  ctx.fillStyle = "#e0eee5";
+  ctx.strokeStyle = "#789b85";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.roundRect(8, 8, 22, 22, 6);
+  ctx.roundRect(inset, inset, size - inset * 2, size - inset * 2, 4);
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = "#dce3ee";
-  ctx.font = "700 18px system-ui";
+  ctx.fillStyle = "#28764f";
+  ctx.font = `600 ${Math.round(size * .45)}px ${CANVAS_UI_FONT}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText("+", 19, 19);
+  ctx.fillText("?", canvas.width / 2, canvas.height / 2);
 }
 
 function renderAgentWatch(a) {
@@ -1565,26 +1894,31 @@ function renderResourceUsage(usage) {
 }
 
 function renderUsageBreakdown(today) {
+  const amount = value => Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0;
   const rows = [
-    ["聊天", today.chat_total_tokens],
-    ["截图理解", today.vision_total_tokens],
-    ["屏幕摘要", today.screen_summary_total_tokens],
-    ["记忆聚合", today.memory_aggregation_total_tokens],
+    { label: "聊天", value: amount(today.chat_total_tokens), color: "#32835c" },
+    { label: "截图理解", value: amount(today.vision_total_tokens), color: "#6389a5" },
+    { label: "屏幕摘要", value: amount(today.screen_summary_total_tokens), color: "#b08c43" },
+    { label: "记忆整理", value: amount(today.memory_aggregation_total_tokens), color: "#927aa6" },
   ];
-  const total = Math.max(1, today.total_tokens || rows.reduce((sum, [, value]) => sum + value, 0));
-  const box = $("usage-breakdown");
-  box.innerHTML = rows.map(([label, value]) => {
-    const pct = Math.round((value / total) * 100);
-    return `
-      <div class="usage-bar-row">
-        <div class="usage-bar-meta">
-          <span>${escapeHtml(label)}</span>
-          <span>${formatNumber(value)} · ${pct}%</span>
-        </div>
-        <div class="usage-bar"><span style="width:${pct}%"></span></div>
-      </div>
-    `;
+  const classified = rows.reduce((sum, row) => sum + row.value, 0);
+  const total = Math.max(amount(today.total_tokens), classified);
+  if (total > classified) rows.push({ label: "其他", value: total - classified, color: "#8c9891" });
+  let offset = 0;
+  const segments = rows.map(row => {
+    const percent = total ? row.value / total * 100 : 0;
+    const segment = percent ? `<circle cx="80" cy="80" r="62" pathLength="100" fill="none" stroke="${row.color}" stroke-width="18" stroke-dasharray="${percent} ${100 - percent}" stroke-dashoffset="${-offset}" transform="rotate(-90 80 80)" />` : "";
+    offset += percent;
+    return segment;
   }).join("");
+  $("usage-breakdown").innerHTML = `
+    <div class="usage-donut" role="img" aria-label="${total ? "今日用量分布，分类数值见右侧明细" : "今日暂无用量"}">
+      <svg viewBox="0 0 160 160" aria-hidden="true"><circle cx="80" cy="80" r="62" fill="none" stroke="#e5ebe7" stroke-width="18" />${segments}</svg>
+      <div class="usage-donut-center"><strong>${compactNumber(total)}</strong><span>${total ? "今日用量" : "暂无用量"}</span></div>
+    </div>
+    <ul class="usage-legend" aria-label="用量分类明细">${rows.map(row => `
+      <li><span class="usage-swatch" style="background:${row.color}" aria-hidden="true"></span><span class="usage-category">${row.label}</span><strong>${formatNumber(row.value)}</strong><span class="usage-percent">${total ? formatFixed(row.value / total * 100, 1) : "0"}%</span></li>
+    `).join("")}</ul>`;
 }
 
 function renderUsageSessions(sessions) {
@@ -1670,25 +2004,44 @@ function bindAgentWatchCopyActions() {
   });
 }
 
+// Five equal segments express importance without making a score the visual headline.
+// Missing or invalid values remain unscored rather than implying the lowest importance.
+function renderMemoryImportance(value) {
+  const rated = Number.isInteger(value) && value >= 1 && value <= 5;
+  const label = rated ? `重要程度：${value} / 5` : "重要程度：尚未评估";
+  const semantics = rated
+    ? `role="meter" aria-label="重要程度" aria-valuemin="1" aria-valuemax="5" aria-valuenow="${value}" aria-valuetext="${value} / 5"`
+    : 'role="img" aria-label="重要程度：尚未评估"';
+  return `<span class="memory-importance${rated ? "" : " unrated"}" ${semantics} title="${label}">${Array.from({ length: 5 }, (_, index) => `<i class="importance-segment${rated && index < value ? " filled" : ""}" aria-hidden="true"></i>`).join("")}</span>`;
+}
+
+function memoryRelativeTime(value, now = Date.now()) {
+  if (!value) return "时间未记录";
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return "时间未记录";
+  const minutes = Math.max(0, Math.floor((now - time) / 60000));
+  if (minutes < 1) return "刚刚";
+  if (minutes < 60) return `${minutes} 分钟前`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)} 小时前`;
+  return `${Math.floor(minutes / 1440)} 天前`;
+}
+
 function renderMemoryReview(review) {
   const box = $("memory-review");
   if (!box) return;
   const entries = review?.entries || [];
   updateOverviewMemory(review);
+  const heading = $("memory-review-summary");
+  if (heading) heading.innerHTML = `<span>${formatNumber(review?.total_entries || 0)} 条记忆</span>${review?.generated_at ? `<span title="${escapeAttr(review.generated_at)}">更新于 ${escapeHtml(memoryRelativeTime(review.generated_at))}</span>` : ""}`;
   if (!entries.length) {
     box.innerHTML = `<div class="empty">暂无长期记忆。</div>`;
     return;
   }
 
   box.innerHTML = `
-    <div class="memory-meta">
-      <span>${formatNumber(review.total_entries)} 条记忆</span>
-      <span>最近更新 ${escapeHtml(formatDateTime(review.generated_at))}</span>
-    </div>
     ${entries.map(entry => {
-      const tags = (entry.tags || []).map(tag => `<span>#${escapeHtml(tag)}</span>`).join("");
-      const source = entry.source || "unknown";
-      const importance = entry.importance == null ? "?" : entry.importance;
+      const tags = (entry.tags || []).map(tag => `<span class="memory-tag">${escapeHtml(tag)}</span>`).join("");
+      const source = { conversation: "聊天中记住的", agent_reaction: "聊天中记住的", user: "你告诉它的", manual: "你告诉它的" }[entry.source] || "其他来源";
       const summary = entry.ai_reply || entry.user_msg || "";
       return `
         <div class="memory-entry">
@@ -1697,15 +2050,15 @@ function renderMemoryReview(review) {
               <strong>${escapeHtml(entry.title)}</strong>
               <p>${escapeHtml(summary)}</p>
             </div>
-            <button class="icon-btn danger memory-delete" type="button" data-id="${escapeAttr(entry.id)}" aria-label="删除记忆" title="删除记忆">×</button>
+            <button class="icon-btn danger memory-delete" type="button" data-id="${escapeAttr(entry.id)}" aria-label="删除记忆" title="删除记忆">删除</button>
           </div>
-          <div class="memory-entry-meta">
-            <span>${escapeHtml(entry.timestamp)}</span>
-            <span>${escapeHtml(source)}</span>
-            <span>重要度 ${escapeHtml(importance)}</span>
-            ${entry.aggregated ? "<span>已聚合</span>" : ""}
+          <div class="memory-entry-meta memory-meta-inline">
+            <time title="${escapeAttr(entry.timestamp)}">${escapeHtml(memoryRelativeTime(entry.timestamp))}</time>
+            <span class="memory-source">${escapeHtml(source)}</span>
+            ${renderMemoryImportance(entry.importance)}
+            ${tags}
+            ${entry.aggregated ? '<span class="memory-source">已整理</span>' : ""}
           </div>
-          <div class="memory-tags">${tags || "<span>未标记</span>"}</div>
           <details class="memory-detail">
             <summary>查看原文</summary>
             <div class="memory-body">
@@ -1847,22 +2200,9 @@ function formatReminderSchedule(entry) {
 }
 
 async function saveAll() {
+  if (connectionBusy) return;
   try {
-    if (dirty.ai) {
-      const keyRaw = $("ai-key").value;
-      const payload = {
-        api_key: keyRaw === "" ? null : keyRaw,
-        base_url: $("ai-baseurl").value === "" ? null : $("ai-baseurl").value,
-        model: $("ai-model").value === "" ? null : $("ai-model").value,
-        max_tokens: $("ai-maxtokens").value === "" ? null : parseInt($("ai-maxtokens").value),
-      };
-      if (payload.api_key !== null && payload.api_key.trim() === "") {
-        toast("API Key 不能只含空白字符", "err");
-        return;
-      }
-      await invoke("cmd_settings_save_ai", { payload });
-      clearDirty("ai");
-    }
+    if (dirty.ai && !await saveAiConnection(false)) return;
     if (dirty.user) {
       await invoke("cmd_settings_save_user", { payload: collectUser() });
       clearDirty("user");
@@ -2141,7 +2481,7 @@ function bindGlobal() {
     const el = $("ai-key");
     const show = el.type === "password";
     el.type = show ? "text" : "password";
-    $("ai-key-toggle").setAttribute("aria-label", show ? "隐藏 API Key" : "显示 API Key");
+    $("ai-key-toggle").setAttribute("aria-label", show ? "隐藏新输入的密钥" : "显示新输入的密钥");
   });
   window.addEventListener("keydown", (e) => {
     if (confirmDialogOpen()) return;
@@ -2251,8 +2591,9 @@ function updateOverviewAppearance(appearance) {
 }
 
 function updateOverviewMemory(review) {
-  $("ov-memory-total").textContent = formatNumber(review?.total_entries || 0);
-  $("ov-memory-time").textContent = review?.generated_at ? "件事" : "等待";
+  const count = $("ov-memory-total");
+  count.textContent = review ? `${formatNumber(review.total_entries || 0)} 件事` : "等待";
+  count.title = review?.generated_at ? `最近更新 ${formatDateTime(review.generated_at)}` : "";
 }
 
 function formatPetDecision(value) {
@@ -2635,6 +2976,8 @@ function eventKindLabel(kind) {
 
 document.addEventListener("DOMContentLoaded", () => {
   bindGlobal();
+  bindConnection();
+  bindPetPreview();
   setupWizard();
   loadSnapshot();
 });
@@ -2642,6 +2985,25 @@ document.addEventListener("DOMContentLoaded", () => {
 if (typeof window !== "undefined") {
   window.__settingsTest = {
     confirmDialog,
+    collectConnectionDraft,
+    renderAi,
+    bindConnection,
+    testAiConnection,
+    saveAiConnection,
+    getDirty: () => ({ ...dirty }),
+    markDirty,
+    renderUsageBreakdown,
+    renderMemoryImportance,
+    memoryRelativeTime,
+    renderPetAssetPreview,
+    drawPetAssetPreview,
+    petPreviewFrames,
+    petPreviewFrameAt,
+    availablePetPreviewStates,
+    bindPetPreview,
+    cyclePetPreview,
+    stopPetPreview,
+    setPetPreviewAsset: asset => { petPreview.asset = asset; petPreview.index = 0; },
     formatReminderSchedule,
     reminderDescription,
     renderReminders,

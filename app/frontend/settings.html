@@ -7,27 +7,27 @@
   <title>BitCat 设置</title>
   <link rel="icon" href="data:," />
   <link rel="stylesheet" href="/css/settings.css" />
+  <link rel="stylesheet" href="/css/settings-pixel.css" />
 </head>
 <body>
   <div class="shell">
     <button id="btn-close" class="tb-btn shell-close" type="button" title="关闭 (Esc)" aria-label="关闭设置"></button>
 
     <div class="body">
-      <aside class="nav">
+      <aside class="nav" aria-label="设置分区">
         <div class="nav-brand">
-          <div class="cat-mark" aria-hidden="true">
-            <span></span><span></span>
-          </div>
+          <img class="brand-cat" src="/assets/settings/bitcat.svg" width="40" height="40" alt="" />
           <div>
             <strong>BitCat</strong>
           </div>
         </div>
-        <button class="nav-item active" data-tab="home" type="button"><span class="icon icon-overview"></span><span>它能做什么</span></button>
-        <button class="nav-item" data-tab="memory" type="button"><span class="icon icon-memory"></span><span>它记住了我什么</span></button>
-        <button class="nav-item" data-tab="cost" type="button"><span class="icon icon-usage"></span><span>它花了多少钱</span></button>
-        <button class="nav-item" data-tab="companion" type="button"><span class="icon icon-appearance"></span><span>它怎么陪着我</span></button>
+        <button class="nav-item active" data-tab="home" aria-current="page" type="button" aria-label="它能做什么"><svg class="pixel-icon" aria-hidden="true"><use href="/assets/settings/icons.svg#monitor"></use></svg><span>它能做什么</span></button>
+        <button class="nav-item" data-tab="memory" type="button" aria-label="它记住了我什么"><svg class="pixel-icon" aria-hidden="true"><use href="/assets/settings/icons.svg#notebook"></use></svg><span>它记住了我什么</span></button>
+        <button class="nav-item" data-tab="cost" type="button" aria-label="它花了多少钱"><svg class="pixel-icon" aria-hidden="true"><use href="/assets/settings/icons.svg#coins"></use></svg><span>它花了多少钱</span></button>
+        <button class="nav-item" data-tab="companion" type="button" aria-label="它怎么陪着我"><svg class="pixel-icon" aria-hidden="true"><use href="/assets/settings/icons.svg#heart"></use></svg><span>它怎么陪着我</span></button>
         <div class="nav-sep" role="separator"></div>
-        <button class="nav-item" data-tab="expert" type="button"><span class="icon icon-prompts"></span><span>专家模式</span></button>
+        <button class="nav-item" data-tab="expert" type="button" aria-label="专家模式"><svg class="pixel-icon" aria-hidden="true"><use href="/assets/settings/icons.svg#gear"></use></svg><span>专家模式</span></button>
+        <div class="nav-companion" aria-hidden="true"><img src="/assets/settings/resting-cat.svg" width="72" height="42" alt="" /><span>安静陪伴中</span></div>
       </aside>
 
       <main class="pane">
@@ -43,32 +43,22 @@
 
           <div class="status-strip" role="list" aria-label="四个疑问速答">
             <div class="strip-item" data-goto="cost" role="button" tabindex="0">
-              <span>连接</span>
+              <svg class="pixel-icon" aria-hidden="true"><use href="/assets/settings/icons.svg#connection"></use></svg><span class="strip-label">连接 <span id="ov-ai-key" class="status-dot" role="img" aria-label="等待配置状态" title="等待配置状态"></span></span>
               <strong id="ov-ai-model">-</strong>
-              <small id="ov-ai-key">-</small>
             </div>
             <div class="strip-item">
-              <span>屏幕观察</span>
-              <strong id="qs-screenshot">-</strong>
-              <small id="ss-interval-hint">每 30 秒一次</small>
+              <svg class="pixel-icon" aria-hidden="true"><use href="/assets/settings/icons.svg#monitor"></use></svg><span>屏幕观察</span>
+              <strong id="qs-screenshot" aria-describedby="ss-interval-hint">-</strong>
+              <small id="ss-interval-hint" class="sr-only">等待观察状态</small>
             </div>
             <div class="strip-item" data-goto="memory" role="button" tabindex="0">
-              <span>记住了</span>
+              <svg class="pixel-icon" aria-hidden="true"><use href="/assets/settings/icons.svg#notebook"></use></svg><span>记住了</span>
               <strong id="ov-memory-total">-</strong>
-              <small id="ov-memory-time">件事</small>
             </div>
             <div class="strip-item" data-goto="cost" role="button" tabindex="0">
-              <span>今日用量</span>
+              <svg class="pixel-icon" aria-hidden="true"><use href="/assets/settings/icons.svg#coins"></use></svg><span>今日用量</span>
               <strong id="ov-usage-total">-</strong>
             </div>
-          </div>
-
-          <div id="perm-onboarding" class="permission-callout">
-            <div class="callout-head">
-              <strong>它是谁，边界在哪</strong>
-              <button id="perm-complete" class="btn small" type="button">再看一遍介绍</button>
-            </div>
-            <span>它会聊天、跳舞、陪你玩游戏；看屏幕、用摄像头、动你的电脑，每一项都由你亲手开启，完成后随时可以改。</span>
           </div>
 
           <div class="section-panel">
@@ -80,21 +70,21 @@
             <div class="settings-card compact embedded">
               <div class="setting-row switch-row">
                 <div class="setting-copy">
-                <label for="perm-screenshot">屏幕观察</label><span class="row-hint">定期看一眼屏幕</span>
+                <svg class="pixel-icon" aria-hidden="true"><use href="/assets/settings/icons.svg#monitor"></use></svg><label for="perm-screenshot">屏幕观察</label><span class="row-hint">定期看一眼屏幕</span>
               </div>
 
                 <input id="perm-screenshot" type="checkbox" />
               </div>
               <div class="setting-row switch-row">
                 <div class="setting-copy">
-                <label for="camera-master">摄像头观察</label><span class="row-hint">保守描述，不识别身份</span>
+                <svg class="pixel-icon" aria-hidden="true"><use href="/assets/settings/icons.svg#camera"></use></svg><label for="camera-master">摄像头观察</label><span class="row-hint">保守描述，不识别身份</span>
               </div>
 
                 <input id="camera-master" type="checkbox" />
               </div>
               <div class="setting-row switch-row">
                 <div class="setting-copy">
-                  <label for="screen-time-master">陪伴时长统计</label><span class="row-hint">只看亮没亮，不看内容</span>
+                  <svg class="pixel-icon" aria-hidden="true"><use href="/assets/settings/icons.svg#bars"></use></svg><label for="screen-time-master">陪伴时长统计</label><span class="row-hint">只看亮没亮，不看内容</span>
                 </div>
                 <input id="screen-time-master" type="checkbox" />
               </div>
@@ -119,13 +109,21 @@
           <div class="section-panel revoke-panel">
             <div class="section-head">
               <div>
-                <h3>随时收回</h3>
+                <h3><svg class="pixel-icon" aria-hidden="true"><use href="/assets/settings/icons.svg#shield"></use></svg>你始终拥有决定权</h3>
               </div>
             </div>
             <div class="revoke-bar">
-              <span>关掉它看屏幕、动电脑的全部能力，只保留聊天与陪伴。收权后不会再反复弹窗请求重开。</span>
+              <span>关闭观察与操作能力，保留聊天和陪伴。收权后不会反复请求重开。</span>
               <button id="revoke-all" class="btn danger" type="button">全部收权</button>
             </div>
+          </div>
+
+          <div id="perm-onboarding" class="permission-callout">
+            <div class="callout-head">
+              <strong>它是谁，边界在哪</strong>
+              <button id="perm-complete" class="btn small" type="button">再看一遍介绍</button>
+            </div>
+            <span>它会聊天、跳舞、陪你玩游戏；看屏幕、用摄像头、动你的电脑，每一项都由你亲手开启，完成后随时可以改。</span>
           </div>
 
           <div class="section-panel">
@@ -189,6 +187,7 @@
             <div class="section-head memory-title">
               <div>
                 <h3>它自己记住的</h3>
+                <div id="memory-review-summary" class="memory-heading-meta" aria-live="polite"></div>
               </div>
             </div>
             <div id="memory-review" class="memory-review"></div>
@@ -228,6 +227,33 @@
             </div>
           </div>
 
+          <section class="connection-panel" aria-labelledby="connection-title">
+            <div class="connection-heading"><h3 id="connection-title">AI 服务</h3><span id="connection-status" class="connection-status" data-state="unverified" role="status">尚未检测</span></div>
+            <div class="connection-summary">
+              <span class="provider-mark" aria-hidden="true"><svg class="pixel-icon"><use href="/assets/settings/icons.svg#connection"></use></svg></span>
+              <div class="connection-identity"><strong id="ai-service-name">Anthropic</strong><span id="ai-current-model">等待配置</span></div>
+              <button id="ai-edit" class="btn small ghost" type="button" aria-expanded="false" aria-controls="connection-editor">修改连接</button>
+              <button id="ai-test" class="btn small" type="button">检测连接</button>
+            </div>
+            <p class="connection-test-note">检测会发送一句测试文字，可能产生少量用量。</p>
+            <div id="connection-editor" class="connection-editor hidden">
+              <fieldset id="connection-fields">
+                <div class="connection-field"><label for="ai-provider">连接方式</label><select id="ai-provider"><option value="official">Anthropic 官方服务</option><option value="custom">自定义兼容服务</option></select></div>
+                <div id="ai-custom-endpoint" class="connection-field hidden"><label for="ai-baseurl">服务地址</label><input id="ai-baseurl" type="url" placeholder="https://你的服务地址" spellcheck="false" /><span class="connection-help">需要兼容 Anthropic Messages 接口。</span></div>
+                <div class="connection-field">
+                  <div class="connection-label"><label for="ai-key">API Key</label><span id="ai-key-current" class="connection-help"></span></div>
+                  <div class="connection-secret"><input id="ai-key" type="password" placeholder="输入新密钥以替换，留空保持不变" autocomplete="off" spellcheck="false" /><button class="icon-btn" id="ai-key-toggle" type="button" title="显示新输入的密钥" aria-label="显示新输入的密钥"><span class="icon-eye"></span></button></div>
+                  <div class="connection-key-actions"><span class="connection-help">密钥只保存在本机，已保存的密钥不回显。</span><button id="ai-clear-key" type="button" class="btn small ghost">移除本机密钥</button></div>
+                  <p id="ai-clear-note" class="connection-help hidden">保存后移除本机密钥；如有外部配置，将回到外部配置。</p>
+                </div>
+                <div class="connection-field"><label for="ai-model">模型</label><input id="ai-model" type="text" placeholder="填写服务商提供的模型 ID" spellcheck="false" /><span class="connection-help">使用服务商提供的完整名称，可直接修改。</span></div>
+                <details class="connection-advanced"><summary>高级设置</summary><div class="connection-field"><label for="ai-maxtokens">回复长度上限</label><input id="ai-maxtokens" type="number" min="1" placeholder="留空使用默认值" /><span id="ai-maxtokens-current" class="connection-help"></span></div></details>
+              </fieldset>
+              <div class="connection-editor-actions"><button id="ai-cancel" class="btn small ghost" type="button">取消修改</button><button id="ai-save" class="btn small primary" type="button">保存连接</button></div>
+            </div>
+            <p id="ai-test-result" class="connection-result hidden" role="status" aria-live="polite"></p>
+          </section>
+
           <div class="usage-summary">
             <div class="usage-metric primary">
               <span>今日总量</span>
@@ -257,45 +283,6 @@
             <div id="usage-sessions" class="usage-sessions"></div>
           </div>
 
-          <div class="section-panel">
-            <div class="section-head">
-              <div>
-                <h3>连接</h3>
-              </div>
-            </div>
-            <div class="settings-card compact embedded">
-              <div class="setting-row">
-                <div class="setting-copy">
-                <label for="ai-key">API Key</label><small id="ai-key-current" class="field-current"></small><span class="row-hint">官网申请，只存在本机</span>
-              </div>
-
-                <div class="input-with-action">
-                  <input id="ai-key" type="password" placeholder="已保存则留空" autocomplete="off" spellcheck="false" />
-                  <button class="icon-btn" id="ai-key-toggle" type="button" title="显示或隐藏 API Key" aria-label="显示或隐藏 API Key"><span class="icon-eye"></span></button>
-                </div>
-                </div>
-              <div class="setting-row">
-                <div class="setting-copy">
-                <label for="ai-model">模型</label><small id="ai-model-current" class="field-current"></small>
-              </div>
-                <input id="ai-model" type="text" placeholder="留空用当前模型" spellcheck="false" />
-              </div>
-              <div class="setting-row">
-                <div class="setting-copy">
-                <label for="ai-baseurl">服务地址</label><small id="ai-baseurl-current" class="field-current"></small>
-              </div>
-
-                <input id="ai-baseurl" type="text" placeholder="留空用默认地址" spellcheck="false" />
-              </div>
-              <div class="setting-row">
-                <div class="setting-copy">
-                <label for="ai-maxtokens">回复长度上限</label><small id="ai-maxtokens-current" class="field-current"></small>
-              </div>
-
-                <input id="ai-maxtokens" type="number" min="1" placeholder="留空自动" />
-              </div>
-            </div>
-          </div>
           <div id="usage-status" class="status-line"></div>
         </section>
 
@@ -304,7 +291,42 @@
           <div class="pane-head">
             <div>
               <h1>它怎么陪着我</h1>
-              <p class="hint">品种、声音、提醒和你们一起攒下的回忆</p>
+              <p class="hint">选一只喜欢的猫，按你的节奏相处</p>
+            </div>
+          </div>
+
+          <div class="section-panel pet-assets-panel">
+            <div class="section-head">
+              <div>
+                <h3>它长什么样</h3>
+              </div>
+            </div>
+            <div class="pet-selection-layout">
+              <figure class="pet-stage">
+                <button id="pet-preview-play" class="pet-preview-play" type="button" aria-label="拨弄小猫，切换预览动作" aria-describedby="pet-preview-hint" disabled><canvas id="pet-large-preview" width="192" height="192" aria-hidden="true"></canvas></button>
+                <figcaption id="pet-preview-name">默认</figcaption>
+                <span id="pet-preview-state" class="pet-preview-state" role="status" aria-live="polite">正在加载</span>
+                <span id="pet-preview-hint">点按换动作，轻拖逗逗它</span>
+              </figure>
+            <div class="pet-asset-field">
+              <div id="a-pet-asset-picker" class="pet-asset-picker" role="listbox" aria-label="选择猫咪"></div>
+              <input id="a-pet-asset" class="hidden" type="text" placeholder="/__fixtures__/pets/cat-tabby" spellcheck="false" />
+              <small>选择后预览，保存后出现在桌面</small>
+            </div>
+            </div>
+            <div class="settings-card compact embedded">
+              <div class="setting-row switch-row">
+                <div class="setting-copy">
+                  <label for="a-top">默认置顶</label>
+                </div>
+                <input id="a-top" type="checkbox" />
+              </div>
+              <div class="setting-row switch-row">
+                <div class="setting-copy">
+                  <label for="a-collapsed">启动时折叠</label>
+                </div>
+                <input id="a-collapsed" type="checkbox" />
+              </div>
             </div>
           </div>
 
@@ -372,32 +394,6 @@
             </div>
           </div>
 
-          <div class="section-panel pet-assets-panel">
-            <div class="section-head">
-              <div>
-                <h3>它长什么样</h3>
-              </div>
-            </div>
-            <div class="pet-asset-field">
-              <div id="a-pet-asset-picker" class="pet-asset-picker" role="listbox" aria-label="宠物资源"></div>
-              <input id="a-pet-asset" class="hidden" type="text" placeholder="/__fixtures__/pets/cat-tabby" spellcheck="false" />
-              <small>保存后重载</small>
-            </div>
-            <div class="settings-card compact embedded">
-              <div class="setting-row switch-row">
-                <div class="setting-copy">
-                  <label for="a-top">默认置顶</label>
-                </div>
-                <input id="a-top" type="checkbox" />
-              </div>
-              <div class="setting-row switch-row">
-                <div class="setting-copy">
-                  <label for="a-collapsed">启动时折叠</label>
-                </div>
-                <input id="a-collapsed" type="checkbox" />
-              </div>
-            </div>
-          </div>
 
           <div class="section-panel">
             <div class="section-head">
@@ -1081,7 +1077,7 @@
       </div>
       <div class="actions-right">
         <button id="btn-cancel" class="btn" type="button">取消</button>
-        <button id="btn-save" class="btn primary" type="button">保存</button>
+        <button id="btn-save" class="btn primary" type="button">保存设置</button>
       </div>
     </footer>
 
@@ -1091,7 +1087,7 @@
         <div class="wizard-progress" aria-hidden="true"><span data-dot="1"></span><span data-dot="2"></span><span data-dot="3"></span></div>
 
         <section class="wizard-step hidden" data-wizard-step="1">
-          <div class="wizard-cat" aria-hidden="true">🐈</div>
+          <div class="wizard-cat" aria-hidden="true"><img src="/assets/settings/bitcat.svg" width="48" height="48" alt="" /></div>
           <h2>认识一下，我是 BitCat</h2>
           <p class="wizard-lead">一只住在你电脑里的猫。我会聊天、跳舞、陪你玩小游戏；你写代码的时候，我还能帮你看管那几个编程助手。</p>
           <p class="wizard-note">我的记忆和日志只存在这台电脑上，不上传任何东西。</p>
@@ -1134,7 +1130,7 @@
         </section>
 
         <section class="wizard-step hidden" data-wizard-step="3">
-          <div class="wizard-cat" aria-hidden="true">🐾</div>
+          <div class="wizard-cat" aria-hidden="true"><svg class="pixel-icon"><use href="/assets/settings/icons.svg#shield"></use></svg></div>
           <h2>随时可以收回</h2>
           <p class="wizard-lead">以后改主意，随时来这里：托盘菜单 → 设置 →「它能做什么」。每个能力都有开关，也可以一键全部收权。</p>
           <div class="wizard-actions">

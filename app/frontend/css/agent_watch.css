@@ -1,5 +1,7 @@
 @import url("/css/fonts.css");
 
+:root { font-size: var(--type-dense-body); line-height: var(--leading-compact); }
+
 :root {
   color-scheme: dark;
   font-family: var(--font-ui);
@@ -72,8 +74,8 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13.5px;
-  font-weight: 740;
+  font-size: var(--type-dense-title);
+  font-weight: var(--weight-bold);
   letter-spacing: 0;
 }
 
@@ -95,8 +97,8 @@ body {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 680;
+  font-size: var(--type-dense-meta);
+  font-weight: var(--weight-bold);
   white-space: nowrap;
 }
 
@@ -228,8 +230,8 @@ body {
 .task-meta {
   gap: 7px;
   color: var(--muted);
-  font-size: 10.6px;
-  line-height: 16px;
+  font-size: var(--type-dense-meta);
+  line-height: var(--line-dense-meta);
 }
 
 .task-meta:empty {
@@ -265,9 +267,9 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text);
-  font-size: 12.8px;
-  line-height: 22px;
-  font-weight: 700;
+  font-size: var(--type-dense-body);
+  line-height: var(--line-dense-row);
+  font-weight: var(--weight-bold);
   letter-spacing: 0;
 }
 
@@ -275,9 +277,9 @@ body {
   align-self: center;
   transform: translateY(-1px);
   color: var(--faint);
-  font-size: 10.5px;
-  line-height: 22px;
-  font-weight: 640;
+  font-size: var(--type-dense-meta);
+  line-height: var(--line-dense-row);
+  font-weight: var(--weight-semibold);
 }
 
 .task-meta-item {
@@ -296,9 +298,9 @@ body {
   border-radius: 6px;
   background: hsl(var(--device-hue) 70% 54% / 0.18);
   color: hsl(var(--device-hue) 86% 84% / 0.98);
-  font-size: 10.2px;
-  font-weight: 650;
-  line-height: 1.2;
+  font-size: var(--type-dense-badge);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-label);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -311,16 +313,16 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
-  font-weight: 620;
+  font-size: var(--type-dense-meta);
+  font-weight: var(--weight-semibold);
   color: rgba(255, 255, 255, 0.66);
 }
 
 .task-usage {
   align-self: center;
   transform: translateY(-1px);
-  font-size: 10.2px;
-  font-weight: 640;
+  font-size: var(--type-dense-badge);
+  font-weight: var(--weight-semibold);
   color: rgba(255, 255, 255, 0.5);
   font-variant-numeric: tabular-nums;
 }
@@ -337,9 +339,9 @@ body {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.055);
   color: rgba(255, 255, 255, 0.58);
-  font-size: 9.4px;
-  font-weight: 720;
-  line-height: 14px;
+  font-size: var(--type-dense-badge);
+  font-weight: var(--weight-bold);
+  line-height: var(--line-dense-badge);
   text-transform: uppercase;
 }
 
@@ -347,7 +349,7 @@ body {
   flex: 1 1 auto;
   min-width: 0;
   color: rgba(255, 255, 255, 0.68);
-  line-height: 16px;
+  line-height: var(--line-dense-meta);
 }
 
 .task-detail {
@@ -359,9 +361,9 @@ body {
   overflow-wrap: anywhere;
   color: rgba(255, 255, 255, 0.8);
   font-family: var(--font-mono);
-  font-size: 11.5px;
-  line-height: 1.45;
-  font-weight: 580;
+  font-size: var(--type-dense-caption);
+  line-height: var(--leading-compact);
+  font-weight: var(--weight-semibold);
   user-select: text;
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -389,8 +391,8 @@ body {
   height: 28px;
   padding: 0;
   opacity: 0;
-  font-size: 17px;
-  line-height: 1;
+  font-size: var(--type-section);
+  line-height: var(--leading-flat);
 }
 
 .task-card:hover .task-dismiss,
@@ -419,8 +421,8 @@ body {
   border-radius: 14px;
   background: var(--card);
   color: var(--muted);
-  font-size: 13px;
-  font-weight: 680;
+  font-size: var(--type-dense-body);
+  font-weight: var(--weight-bold);
 }
 
 @keyframes pulse {
@@ -441,8 +443,8 @@ body {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.82);
-  font-size: 11px;
-  font-weight: 660;
+  font-size: var(--type-dense-meta);
+  font-weight: var(--weight-semibold);
   cursor: pointer;
 }
 
@@ -501,9 +503,9 @@ body {
   border-radius: 999px;
   background: rgba(244, 184, 74, 0.12);
   color: rgba(255, 224, 160, 0.95);
-  font-size: 9.4px;
-  font-weight: 720;
-  line-height: 14px;
+  font-size: var(--type-dense-badge);
+  font-weight: var(--weight-bold);
+  line-height: var(--line-dense-badge);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -528,8 +530,8 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 11px;
-  line-height: 18px;
+  font-size: var(--type-dense-meta);
+  line-height: var(--line-dense-body);
   color: rgba(255, 255, 255, 0.66);
 }
 
@@ -542,7 +544,7 @@ body {
 
 .task-subtask .subtask-age {
   flex: 0 0 auto;
-  font-size: 10px;
+  font-size: var(--type-dense-badge);
   color: rgba(255, 255, 255, 0.45);
   font-variant-numeric: tabular-nums;
 }

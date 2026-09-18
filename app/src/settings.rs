@@ -5,14 +5,15 @@
 //! - config/actions.yml / config/prompts.yml / config/user.yml 就地写回（注释会被覆盖，保存前自动备份 `.bak`）
 //! - 保存后仅 set 原子 flag，由 gamepad_loop 下 tick 自动 reload（复用现有机制）
 //!
-//! 安全设计：API Key 在前后端之间不以明文传递；`AiView.has_effective_key` 仅返回布尔值，
-//! 加载快照时用占位符代替真实 Key，防止 WebView2 DevTools 泄露凭证。
+//! 安全设计：已保存的 API Key 不回传前端；新密钥仅在用户提交时传入。
+//! 草稿检测不写入配置，只返回分类结果，密钥保持、替换与移除具有明确语义。
 //!
 //! 与以下模块交互：`ai_config`（AI 配置加载）、`action`（按键绑定）、
 //! `prompts`（提示词）、`user_profile`（用户画像）、`app_settings`（持久化）、`token_tracker`（用量统计）。
 
 use crate::commands::SharedWindowState;
 use bitcat_core::action::{ActionConfig, ActionDef, Defaults};
+use bitcat_core::ai_connection::{ConnectionCheck, ConnectionDraft, ConnectionStatus};
 use bitcat_core::app_settings::{
     AgentWatchSettings, AiOverride, AppSettings, AppearanceSettings, PermissionSettings,
     QuietHours, StorageSettings,
@@ -140,14 +141,30 @@ pub struct ButtonCatalogItem {
 /// AI settings view: persisted overlay plus effective merged values.
 #[derive(Debug, Serialize)]
 pub struct AiView {
-    /// Current persisted overlay from app_settings.json.
+    /// Persisted non-secret settings; the API key is always redacted.
     pub overlay: AiOverride,
     /// Effective values after env, overlay, external settings, and defaults are merged.
     pub effective: AiEffective,
     /// Whether an effective API key is configured without exposing its value.
     pub has_effective_key: bool,
+    /// Whether a removable local key override exists; the key itself is never returned.
+    pub has_saved_key: bool,
 }
 
+impl AiView {
+    fn new(mut overlay: AiOverride, effective: AiEffective, has_effective_key: bool) -> Self {
+        let has_saved_key = overlay.api_key.as_ref().is_some_and(|key| !key.is_empty());
+        overlay.api_key = None;
+        Self {
+            overlay,
+            effective,
+            has_effective_key,
+            has_saved_key,
+        }
+    }
+}
+
+/// Resolved non-secret connection values displayed by the settings window.
 #[derive(Debug, Serialize)]
 pub struct AiEffective {
     pub base_url: String,
@@ -509,11 +526,7 @@ pub async fn cmd_settings_load() -> Result<SettingsSnapshot, String> {
     };
 
     Ok(SettingsSnapshot {
-        ai: AiView {
-            overlay: overlay.ai,
-            effective,
-            has_effective_key: has_key,
-        },
+        ai: AiView::new(overlay.ai, effective, has_key),
         user: UserProfile::load(),
         actions: ActionsView {
             defaults: action_cfg.defaults,
@@ -980,26 +993,35 @@ fn pick_cn_label(aliases: &[String]) -> String {
     aliases.first().cloned().unwrap_or_default()
 }
 
-/// Save AI override settings.
+/// Save a connection draft; an absent key preserves the existing local credential.
 #[tauri::command]
-pub async fn cmd_settings_save_ai(payload: AiOverride) -> Result<(), String> {
-    // 非空校验：如果用户填了 api_key，不能是纯空白；否则视为"清除覆盖"
-    if let Some(ref k) = payload.api_key {
-        if k.trim().is_empty() {
-            // 当成清空：写 None 到 overlay
-        }
-    }
-    let mut s = AppSettings::load();
-    s.ai = AiOverride {
-        // 空字符串视为“未设置”，统一用 Option::filter（clippy::manual_filter）
-        api_key: payload.api_key.filter(|k| !k.trim().is_empty()),
-        base_url: payload.base_url.filter(|v| !v.trim().is_empty()),
-        model: payload.model.filter(|v| !v.trim().is_empty()),
-        max_tokens: payload.max_tokens,
-    };
-    s.save()?;
-    info!("[settings] AI 覆盖层已保存");
+pub async fn cmd_settings_save_ai(payload: ConnectionDraft) -> Result<(), String> {
+    let mut settings = AppSettings::load();
+    settings.ai = payload.apply_to(&settings.ai)?;
+    settings.save()?;
+    info!("[settings] AI connection saved");
     Ok(())
+}
+
+/// Check the current draft without saving it or sending any user conversation context.
+#[tauri::command]
+pub async fn cmd_settings_test_ai(payload: ConnectionDraft) -> Result<ConnectionCheck, String> {
+    let draft = payload.apply_to(&AppSettings::load().ai)?;
+    let config = match bitcat_core::ai_config::AiConfig::load_with_override(&draft) {
+        Ok(config) => config,
+        Err(_) => return Ok(ConnectionCheck::local(ConnectionStatus::MissingKey)),
+    };
+    let result = bitcat_core::ai_connection::check_connection(&config).await;
+    info!(status = ?result.status, elapsed_ms = result.elapsed_ms, "[settings] AI connection check");
+    if let Some(usage) = result.usage.clone() {
+        use bitcat_core::token_tracker::{new_session_id, record_token_usage, TokenCategory};
+        record_token_usage(
+            &TokenRecord::new(new_session_id(), TokenCategory::Chat, &config.model, usage)
+                .with_elapsed_ms(result.elapsed_ms)
+                .with_extra("connection_check"),
+        );
+    }
+    Ok(result)
 }
 
 /// Save action bindings and trigger a config reload.
@@ -1218,6 +1240,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn ai_view_redacts_saved_credentials() {
+        let view = AiView::new(
+            AiOverride {
+                api_key: Some("never-return-this".into()),
+                ..Default::default()
+            },
+            AiEffective {
+                base_url: "https://example.com".into(),
+                model: "model".into(),
+                max_tokens: 8,
+            },
+            true,
+        );
+        assert!(view.has_saved_key);
+        assert!(view.has_effective_key);
+        assert!(view.overlay.api_key.is_none());
+    }
+
+    #[test]
     fn test_snapshot_serializable() {
         let snap = SettingsSnapshot {
             ai: AiView {
@@ -1228,6 +1269,7 @@ mod tests {
                     max_tokens: 1,
                 },
                 has_effective_key: false,
+                has_saved_key: false,
             },
             user: UserProfile::default(),
             actions: ActionsView {

@@ -1,0 +1,10 @@
+---
+source: core/src/ai_connection.rs
+expression: "request_body(\"test-model\")"
+---
+max_tokens: 8
+messages:
+  - content: Reply OK.
+    role: user
+model: test-model
+stream: false

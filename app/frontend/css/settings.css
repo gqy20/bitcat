@@ -78,7 +78,7 @@ summary {
   border-radius: 999px;
   background: transparent;
   color: var(--text-secondary);
-  line-height: 1;
+  line-height: var(--leading-flat);
   cursor: pointer;
   transition: 140ms ease;
 }
@@ -177,8 +177,8 @@ summary {
   display: block;
   color: var(--text-main);
   font-family: var(--font-brand);
-  font-size: 15px;
-  font-weight: 720;
+  font-size: var(--type-item);
+  font-weight: var(--weight-bold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -395,25 +395,25 @@ h1 {
   margin-bottom: 0;
   color: var(--text-main);
   font-size: var(--font-size-page-title);
-  font-weight: 720;
-  line-height: 1.15;
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
 }
 
 /* 分区去框后 h3 成为分区锚点：加字距提升扫描性 */
 h3 {
   color: var(--text-main);
   font-size: var(--font-size-section-title);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   letter-spacing: 0.02em;
-  line-height: 1.2;
+  line-height: var(--leading-label);
 }
 
 .hint {
   max-width: 780px;
   margin: 0;
   color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: var(--type-control);
+  line-height: var(--leading-body);
 }
 
 code,
@@ -466,7 +466,7 @@ code {
 .permission-callout span {
   color: var(--text-muted);
   font-size: var(--text-sm);
-  line-height: 1.45;
+  line-height: var(--leading-compact);
 }
 
 .permission-gate-card {
@@ -489,7 +489,7 @@ code {
   margin: 0;
   color: var(--text-main);
   font-size: var(--text-xl);
-  line-height: 1.18;
+  line-height: var(--leading-tight);
 }
 
 .permission-gate-copy p {
@@ -497,7 +497,7 @@ code {
   max-width: 48ch;
   color: var(--text-muted);
   font-size: var(--text-sm);
-  line-height: 1.5;
+  line-height: var(--leading-body);
 }
 
 .permission-gate-grid {
@@ -525,7 +525,7 @@ code {
 .permission-gate-item strong {
   color: var(--text-main);
   font-size: var(--text-md);
-  line-height: 1.2;
+  line-height: var(--leading-label);
 }
 
 .permission-card .setting-row {
@@ -593,8 +593,8 @@ input[type="number"] {
   min-width: 0;
   color: var(--text-muted);
   font-size: var(--text-sm);
-  font-weight: 400;
-  line-height: 1.4;
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-compact);
   /* 窄窗口（860 最小宽）下允许提示折行而非截断——默认 1040 宽仍单行 */
   white-space: normal;
 }
@@ -619,15 +619,15 @@ label,
 .setting-copy label {
   color: var(--text-main);
   font-size: var(--text-md);
-  font-weight: 650;
-  line-height: 1.25;
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-label);
 }
 
 .setting-copy span,
 .section-head span {
   color: var(--text-muted);
   font-size: var(--text-sm);
-  line-height: 1.45;
+  line-height: var(--leading-compact);
 }
 
 /* 当前生效值内联跟在 label 后：永不换行，空间不足时省略 */
@@ -640,8 +640,8 @@ label,
   border-left: 1px solid var(--line-normal);
   color: var(--text-faint);
   font-size: var(--text-xs);
-  line-height: 1.35;
-  font-weight: 400;
+  line-height: var(--leading-heading);
+  font-weight: var(--weight-regular);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -679,7 +679,7 @@ textarea {
   color: var(--text-main);
   font-family: var(--font-mono);
   font-size: var(--font-size-code);
-  line-height: 1.65;
+  line-height: var(--leading-reading);
 }
 
 input::placeholder,
@@ -779,7 +779,7 @@ input[type="checkbox"]:checked::after {
 .pet-asset-field small {
   color: var(--text-muted);
   font-size: var(--text-xs);
-  line-height: 1.4;
+  line-height: var(--leading-compact);
 }
 
 .pet-asset-picker {
@@ -795,7 +795,7 @@ input[type="checkbox"]:checked::after {
 .pet-asset-group-title {
   color: var(--text-faint);
   font-size: var(--text-xs);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   letter-spacing: 0;
 }
 
@@ -849,7 +849,7 @@ input[type="checkbox"]:checked::after {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .icon-btn,
@@ -940,8 +940,8 @@ input[type="checkbox"]:checked::after {
   color: var(--text-main);
   font-family: var(--font-brand);
   font-size: var(--font-size-metric-lg);
-  font-weight: 720;
-  line-height: 1.12;
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -979,19 +979,19 @@ input[type="checkbox"]:checked::after {
   margin: 0;
   color: var(--text-main);
   font-family: var(--font-brand);
-  font-size: 22px;
-  font-weight: 780;
-  line-height: 1.05;
+  font-size: var(--type-metric-compact);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .usage-metric .metric-main.metric-value-compact {
-  font-size: 20px;
+  font-size: var(--type-metric-compact);
 }
 
 .usage-metric .metric-main.metric-value-tight {
-  font-size: 18px;
+  font-size: var(--type-metric-small);
 }
 
 .usage-metric .metric-main small {
@@ -999,7 +999,7 @@ input[type="checkbox"]:checked::after {
   color: var(--text-muted);
   font-family: var(--font-sans);
   font-size: var(--font-size-control-sm);
-  font-weight: 680;
+  font-weight: var(--weight-bold);
 }
 
 .usage-metric .metric-pair {
@@ -1038,9 +1038,9 @@ input[type="checkbox"]:checked::after {
   min-width: 0;
   color: var(--text-main);
   font-family: var(--font-brand);
-  font-size: 21px;
-  font-weight: 780;
-  line-height: 1;
+  font-size: var(--type-metric-compact);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-flat);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
@@ -1048,11 +1048,11 @@ input[type="checkbox"]:checked::after {
 }
 
 .usage-metric .metric-pair b.metric-value-compact {
-  font-size: 19px;
+  font-size: var(--type-metric-compact);
 }
 
 .usage-metric .metric-pair b.metric-value-tight {
-  font-size: 17px;
+  font-size: var(--type-section);
 }
 
 /* 分区去框（方案 B）：内容与 pane-head 对齐（去掉原框的 24px 内缩）。
@@ -1103,7 +1103,7 @@ input[type="checkbox"]:checked::after {
   display: block;
   color: var(--text-main);
   font-size: var(--text-md);
-  font-weight: 720;
+  font-weight: var(--weight-bold);
 }
 
 .notice-item span {
@@ -1167,9 +1167,9 @@ input[type="checkbox"]:checked::after {
   gap: 5px;
   color: var(--text-main);
   font-family: var(--font-brand);
-  font-size: 20px;
-  font-weight: 780;
-  line-height: 1.08;
+  font-size: var(--type-metric-compact);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
@@ -1181,9 +1181,9 @@ input[type="checkbox"]:checked::after {
   margin: 0;
   color: var(--text-main);
   font-family: var(--font-brand);
-  font-size: 20px;
-  font-weight: 780;
-  line-height: 1.08;
+  font-size: var(--type-metric-compact);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1192,7 +1192,7 @@ input[type="checkbox"]:checked::after {
   color: var(--text-muted);
   font-family: var(--font-sans);
   font-size: var(--font-size-control-sm);
-  font-weight: 680;
+  font-weight: var(--weight-bold);
 }
 
 .resource-card small {
@@ -1213,9 +1213,9 @@ input[type="checkbox"]:checked::after {
 .usage-block-title {
   margin-bottom: 10px;
   color: var(--text-main);
-  font-size: 12px;
-  font-weight: 650;
-  line-height: 1.25;
+  font-size: var(--type-caption);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-label);
   letter-spacing: 0;
 }
 
@@ -1305,7 +1305,7 @@ input[type="checkbox"]:checked::after {
   color: var(--text-main);
   font-family: var(--font-brand);
   font-size: var(--text-xl);
-  font-weight: 780;
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1354,7 +1354,7 @@ input[type="checkbox"]:checked::after {
 .pet-event-main strong {
   color: var(--text-main);
   font-size: var(--text-md);
-  font-weight: 720;
+  font-weight: var(--weight-bold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1369,7 +1369,7 @@ input[type="checkbox"]:checked::after {
   min-width: 0;
   color: #52606f;
   font-size: var(--text-xs);
-  line-height: 1.45;
+  line-height: var(--leading-compact);
   overflow-wrap: anywhere;
   white-space: normal;
 }
@@ -1483,8 +1483,8 @@ input[type="checkbox"]:checked::after {
   border: 1px solid rgba(var(--accent-amber-rgb), 0.24);
   background: rgba(var(--accent-amber-rgb), 0.1);
   font-size: var(--text-xs);
-  font-weight: 700;
-  line-height: 1.25;
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-label);
   text-align: center;
   white-space: nowrap;
 }
@@ -1513,7 +1513,7 @@ input[type="checkbox"]:checked::after {
   padding: 0 10px;
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
-  line-height: 1;
+  line-height: var(--leading-flat);
 }
 
 .reminder-actions .reminder-snooze {
@@ -1549,7 +1549,7 @@ input[type="checkbox"]:checked::after {
   color: var(--text-secondary);
   background: rgba(255, 255, 255, 0.6);
   font-size: var(--text-xs);
-  font-weight: 680;
+  font-weight: var(--weight-bold);
 }
 
 .head-actions {
@@ -1714,7 +1714,7 @@ input[type="checkbox"]:checked::after {
 .agent-session-main strong {
   color: var(--text-main);
   font-size: var(--text-md);
-  font-weight: 720;
+  font-weight: var(--weight-bold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1799,7 +1799,7 @@ input[type="checkbox"]:checked::after {
   display: block;
   color: var(--text-main);
   font-size: var(--text-md);
-  font-weight: 720;
+  font-weight: var(--weight-bold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1809,7 +1809,7 @@ input[type="checkbox"]:checked::after {
   margin: 6px 0 0;
   color: var(--text-muted);
   font-size: var(--text-sm);
-  line-height: 1.5;
+  line-height: var(--leading-body);
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -1821,7 +1821,7 @@ input[type="checkbox"]:checked::after {
   height: 32px;
   color: #ffb4aa;
   font-size: var(--font-size-icon-sm);
-  line-height: 1;
+  line-height: var(--leading-flat);
 }
 
 .memory-detail {
@@ -1854,7 +1854,7 @@ input[type="checkbox"]:checked::after {
   color: var(--text-muted);
   background: rgba(255, 255, 255, 0.54);
   font-size: var(--text-sm);
-  line-height: 1.5;
+  line-height: var(--leading-body);
   overflow-wrap: anywhere;
 }
 
@@ -1928,7 +1928,7 @@ input[type="checkbox"]:checked::after {
   color: #287953;
   font-family: var(--font-mono);
   font-size: var(--font-size-code);
-  font-weight: 760;
+  font-weight: var(--weight-bold);
   box-shadow: none;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1940,7 +1940,7 @@ input[type="checkbox"]:checked::after {
   overflow: hidden;
   color: #405365;
   font-size: var(--text-md);
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1949,7 +1949,7 @@ input[type="checkbox"]:checked::after {
   min-width: 0;
   overflow: hidden;
   color: var(--text-faint);
-  font-size: 13px;
+  font-size: var(--type-control);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1986,7 +1986,7 @@ input[type="checkbox"]:checked::after {
 .row > label {
   color: var(--text-muted);
   font-size: var(--text-xs);
-  line-height: 1.2;
+  line-height: var(--leading-label);
 }
 
 .row.toggle {
@@ -2082,9 +2082,9 @@ input[type="checkbox"]:checked::after {
   list-style: none;
   cursor: pointer;
   color: var(--text-main);
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.2;
+  font-size: var(--type-control);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-label);
   transition: color 140ms ease, background 140ms ease;
 }
 
@@ -2145,8 +2145,8 @@ input[type="checkbox"]:checked::after {
   margin-bottom: 12px;
   color: var(--text-main);
   font-size: var(--text-md);
-  font-weight: 700;
-  line-height: 1.2;
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-label);
 }
 
 .about-file-list {
@@ -2173,8 +2173,8 @@ input[type="checkbox"]:checked::after {
   min-width: 0;
   color: var(--text-muted);
   font-size: var(--text-sm);
-  font-weight: 650;
-  line-height: 1.2;
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-label);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2187,7 +2187,7 @@ input[type="checkbox"]:checked::after {
   color: var(--text-secondary);
   background: transparent;
   font-size: var(--font-size-control-sm);
-  line-height: 1.35;
+  line-height: var(--leading-heading);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2281,18 +2281,18 @@ input[type="checkbox"]:checked::after {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
-  font-weight: 760;
-  line-height: 1.15;
+  font-size: var(--type-body);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
   letter-spacing: 0;
 }
 
 .confirm-copy span {
   min-width: 0;
   color: rgba(255, 255, 255, 0.7);
-  font-size: 12px;
-  font-weight: 560;
-  line-height: 1.35;
+  font-size: var(--type-caption);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-heading);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2313,8 +2313,8 @@ input[type="checkbox"]:checked::after {
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.86);
   font: inherit;
-  font-size: 13px;
-  font-weight: 720;
+  font-size: var(--type-control);
+  font-weight: var(--weight-bold);
   cursor: pointer;
   transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
 }
@@ -2346,7 +2346,7 @@ input[type="checkbox"]:checked::after {
   min-width: 92px;
   min-height: var(--control-h);
   padding: 0 var(--control-px);
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .btn.small {
@@ -2532,18 +2532,18 @@ input[type="checkbox"]:checked::after {
 }
 
 .points-level-number {
-  font-size: 18px;
-  font-weight: 740;
+  font-size: var(--type-metric-small);
+  font-weight: var(--weight-bold);
   color: var(--cat-green);
-  line-height: 0.95;
+  line-height: var(--leading-flat);
 }
 
 .points-level-title {
-  font-size: 10px;
-  font-weight: 600;
+  font-size: var(--type-dense-badge);
+  font-weight: var(--weight-semibold);
   color: var(--text-secondary);
   letter-spacing: 0;
-  line-height: 1.1;
+  line-height: var(--leading-tight);
 }
 
 .points-total {
@@ -2556,19 +2556,19 @@ input[type="checkbox"]:checked::after {
 }
 
 .points-total strong {
-  font-size: 20px;
-  font-weight: 740;
+  font-size: var(--type-metric-compact);
+  font-weight: var(--weight-bold);
   color: var(--text-main);
   font-family: var(--font-brand);
-  line-height: 0.98;
+  line-height: var(--leading-flat);
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
 }
 
 .points-total span {
-  font-size: 10px;
+  font-size: var(--type-dense-badge);
   color: var(--text-muted);
-  line-height: 1.15;
+  line-height: var(--leading-tight);
 }
 
 .points-exp-bar {
@@ -2610,7 +2610,7 @@ input[type="checkbox"]:checked::after {
   right: 8px;
   top: 50%;
   transform: translateY(-50%);
-  font-size: 10px;
+  font-size: var(--type-dense-badge);
   color: var(--text-faint);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -2624,14 +2624,14 @@ input[type="checkbox"]:checked::after {
   display: flex;
   gap: 18px;
   margin-top: 2px;
-  font-size: 11px;
+  font-size: var(--type-tag);
   color: var(--text-secondary);
-  line-height: 1.25;
+  line-height: var(--leading-label);
 }
 
 .points-streak strong {
   color: var(--sun-amber);
-  font-weight: 760;
+  font-weight: var(--weight-bold);
 }
 
 /* 分类网格 */
@@ -2660,17 +2660,17 @@ input[type="checkbox"]:checked::after {
 }
 
 .points-cat-label {
-  font-size: 10px;
+  font-size: var(--type-dense-badge);
   color: var(--text-muted);
-  line-height: 1.15;
+  line-height: var(--leading-tight);
 }
 
 .points-cat-value {
-  font-size: 14px;
-  font-weight: 740;
+  font-size: var(--type-body);
+  font-weight: var(--weight-bold);
   color: var(--text-main);
   font-family: var(--font-mono);
-  line-height: 1;
+  line-height: var(--leading-flat);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2708,22 +2708,22 @@ input[type="checkbox"]:checked::after {
 }
 
 .achievement-icon {
-  font-size: 22px;
-  line-height: 1;
+  font-size: var(--type-metric-compact);
+  line-height: var(--leading-flat);
 }
 
 .achievement-name {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--type-tag);
+  font-weight: var(--weight-semibold);
   color: var(--text-secondary);
-  line-height: 1.2;
+  line-height: var(--leading-label);
 }
 
 .achievement-bonus {
-  font-size: 10px;
+  font-size: var(--type-dense-badge);
   color: var(--sun-amber);
-  font-weight: 600;
-  line-height: 1;
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-flat);
 }
 
 .achievement-badge.locked .achievement-name {
@@ -2746,7 +2746,7 @@ input[type="checkbox"]:checked::after {
   border: 1px solid var(--line-subtle);
   border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.62);
-  font-size: 12px;
+  font-size: var(--type-caption);
 }
 
 .points-event-kind {
@@ -2757,14 +2757,14 @@ input[type="checkbox"]:checked::after {
 .points-event strong {
   color: var(--cat-green);
   font-family: var(--font-mono);
-  font-weight: 760;
-  font-size: 13px;
-  line-height: 1;
+  font-weight: var(--weight-bold);
+  font-size: var(--type-control);
+  line-height: var(--leading-flat);
 }
 
 .points-event-time {
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--type-tag);
   text-align: right;
   font-family: var(--font-mono);
 }
@@ -2788,9 +2788,9 @@ input[type="checkbox"]:checked::after {
   margin-bottom: 0;
   width: max-content;
   color: var(--text-main);
-  font-size: 13px;
-  font-weight: 760;
-  line-height: 1.3;
+  font-size: var(--type-control);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-heading);
 }
 
 .points-overview .points-level-card {
@@ -2840,10 +2840,10 @@ input[type="checkbox"]:checked::after {
 }
 
 .points-overview .points-level-number {
-  font-size: 23px;
+  font-size: var(--type-metric);
   font-family: var(--font-mono);
-  font-weight: 720;
-  line-height: 1;
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-flat);
   color: #30a14e;
   text-shadow: none;
 }
@@ -2851,8 +2851,8 @@ input[type="checkbox"]:checked::after {
 .points-overview .points-level-title {
   max-width: 100%;
   overflow: hidden;
-  font-size: 10px;
-  line-height: 1.1;
+  font-size: var(--type-dense-badge);
+  line-height: var(--leading-tight);
   color: var(--text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2867,14 +2867,14 @@ input[type="checkbox"]:checked::after {
 .points-overview .points-total strong {
   color: var(--text-main);
   font-family: var(--font-mono);
-  font-size: 23px;
-  font-weight: 720;
-  line-height: 1;
+  font-size: var(--type-metric);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-flat);
   font-variant-numeric: tabular-nums;
 }
 
 .points-overview .points-total span {
-  font-size: 11px;
+  font-size: var(--type-tag);
   color: var(--text-muted);
 }
 
@@ -2910,10 +2910,10 @@ input[type="checkbox"]:checked::after {
   position: static;
   justify-self: end;
   transform: none;
-  font-size: 10px;
+  font-size: var(--type-dense-badge);
   color: var(--text-muted);
   font-family: var(--font-mono);
-  line-height: 1;
+  line-height: var(--leading-flat);
   white-space: nowrap;
   text-shadow: none;
 }
@@ -2938,16 +2938,16 @@ input[type="checkbox"]:checked::after {
 .points-overview .points-streak strong {
   color: var(--text-main);
   font-family: var(--font-mono);
-  font-size: 23px;
-  font-weight: 720;
-  line-height: 1;
+  font-size: var(--type-metric);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-flat);
   font-variant-numeric: tabular-nums;
 }
 
 .points-overview .points-streak small {
   color: var(--text-muted);
-  font-size: 10px;
-  line-height: 1.1;
+  font-size: var(--type-dense-badge);
+  line-height: var(--leading-tight);
   white-space: nowrap;
 }
 
@@ -3050,22 +3050,22 @@ input[type="checkbox"]:checked::after {
 }
 
 .points-overview .points-cat-value {
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1;
+  font-size: var(--type-item);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-flat);
 }
 
 .points-overview .points-cat-label {
   margin-top: 2px;
-  font-size: 10px;
-  line-height: 1.1;
+  font-size: var(--type-dense-badge);
+  line-height: var(--leading-tight);
 }
 
 .points-empty {
   grid-column: 1 / -1;
   padding: 3px 0;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--type-tag);
   text-align: left;
 }
 
@@ -3099,11 +3099,11 @@ input[type="checkbox"]:checked::after {
 }
 
 .overview-growth .achievement-icon {
-  font-size: 18px;
+  font-size: var(--type-metric-small);
 }
 
 .overview-growth .achievement-name {
-  font-size: 10px;
+  font-size: var(--type-dense-badge);
 }
 
 .overview-growth .points-events {
@@ -3257,7 +3257,7 @@ input[type="checkbox"]:checked::after {
 .perm-summary-row span {
   font-size: var(--text-sm);
   color: var(--text-muted);
-  line-height: 1.45;
+  line-height: var(--leading-compact);
 }
 
 /* 一键收权：安心动作，放在分组底部 */
@@ -3272,7 +3272,7 @@ input[type="checkbox"]:checked::after {
 .revoke-bar > span {
   font-size: var(--text-sm);
   color: var(--text-muted);
-  line-height: 1.45;
+  line-height: var(--leading-compact);
   flex: 1;
 }
 
@@ -3342,7 +3342,7 @@ input[type="checkbox"]:checked::after {
 }
 
 .expert-page .pane-head h1 {
-  font-size: var(--text-lg, 18px);
+  font-size: var(--type-section);
 }
 
 /* ② 你告诉它的：折叠画像 */
@@ -3381,8 +3381,8 @@ input[type="checkbox"]:checked::after {
   margin-top: 0;
   color: var(--text-muted);
   font-size: var(--text-sm);
-  font-weight: 400;
-  line-height: 1.4;
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-compact);
 }
 
 /* 提示词“默认 / 已自定义”徽标：留空即内置默认的 overlay 语义显性化 */
@@ -3401,7 +3401,7 @@ input[type="checkbox"]:checked::after {
   border-color: rgba(34, 48, 64, 0.3);
   background: transparent;
   color: var(--text-main);
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 /* 组内编辑器：不再是独立大块，跟随 section-panel 分组容器 */
@@ -3426,7 +3426,7 @@ input[type="checkbox"]:checked::after {
 
 .resource-card .resource-time {
   font-size: var(--text-sm);
-  font-weight: 400;
+  font-weight: var(--weight-regular);
   color: var(--text-muted);
 }
 
@@ -3529,9 +3529,9 @@ input[type="checkbox"]:checked::after {
 
 .strip-item strong {
   color: var(--text-main);
-  font-size: 15px;
-  font-weight: 650;
-  line-height: 1.2;
+  font-size: var(--type-item);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-label);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3598,7 +3598,7 @@ body {
 
 .field-sep {
   color: var(--muted, rgba(255, 255, 255, 0.55));
-  font-size: 12px;
+  font-size: var(--type-caption);
 }
 
 /* ---- D1 三步信任向导 ---- */
@@ -3649,29 +3649,29 @@ body {
 }
 
 .wizard-cat {
-  font-size: 44px;
-  line-height: 1;
+  font-size: var(--type-icon-large);
+  line-height: var(--leading-flat);
   text-align: center;
   margin-bottom: 10px;
 }
 
 .wizard-card h2 {
-  font-size: 19px;
-  font-weight: 780;
+  font-size: var(--type-metric-compact);
+  font-weight: var(--weight-bold);
   text-align: center;
   margin-bottom: 10px;
 }
 
 .wizard-lead {
   color: var(--text-main);
-  line-height: 1.65;
+  line-height: var(--leading-reading);
   margin-bottom: 10px;
 }
 
 .wizard-note {
   color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: var(--type-caption);
+  line-height: var(--leading-reading);
 }
 
 .wizard-choices {
@@ -3703,14 +3703,14 @@ body {
 }
 
 .choice-copy strong {
-  font-size: 13.5px;
-  font-weight: 720;
+  font-size: var(--type-control);
+  font-weight: var(--weight-bold);
 }
 
 .choice-copy span {
   color: var(--text-muted);
-  font-size: 11.5px;
-  line-height: 1.5;
+  font-size: var(--type-tag);
+  line-height: var(--leading-body);
 }
 
 .wizard-actions {
