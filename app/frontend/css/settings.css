@@ -1042,16 +1042,27 @@ input[type="checkbox"]:checked::after {
   font-size: 17px;
 }
 
-/* 分区去框（方案 B）：内容与 pane-head 对齐（去掉原框的 24px 内缩），
-   分区之间用 hairline + 大留白分隔，最后一个分区不留底线 */
+/* 分区去框（方案 B）：内容与 pane-head 对齐（去掉原框的 24px 内缩）。
+   分区之间靠大留白分隔，辅以标题下方一小段锚点短线（56px）——
+   通栏 hairline 在浅渐变背景上要么看不清要么显重，短线兼顾两者 */
 .section-panel {
   padding: 6px 0 0;
 }
 
 .section-panel + .section-panel {
+  position: relative;
   margin-top: 28px;
   padding-top: 30px;
-  border-top: 1px solid rgba(34, 48, 64, 0.14);
+}
+
+.section-panel + .section-panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 56px;
+  height: 1px;
+  background: rgba(34, 48, 64, 0.22);
 }
 
 .overview-growth {
