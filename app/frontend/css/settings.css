@@ -542,6 +542,20 @@ code {
   padding: 10px 24px;
 }
 
+/* 开关行右侧只有一个 checkbox：右列按内容收缩（auto），label/hint 列
+   拿回被 424px 固定列浪费的空间——860 窄窗下提示不再截断，1040 下单行 */
+.setting-row.switch-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+/* 宽控件行（输入框/下拉）的 label 列还挤着 field-current 占位，hint
+   折行会挤出多行难看——这类行维持单行省略，文案本身都很短 */
+.setting-row:not(.switch-row) .row-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* 控件列固定 424px：所有控件右对齐，右边界统一（mac 风格） */
 .setting-row > input,
 .setting-row > select,
@@ -581,9 +595,8 @@ input[type="number"] {
   font-size: var(--text-sm);
   font-weight: 400;
   line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* 窄窗口（860 最小宽）下允许提示折行而非截断——默认 1040 宽仍单行 */
+  white-space: normal;
 }
 
 .setting-row.tall {
