@@ -1121,6 +1121,25 @@ input[type="checkbox"]:checked::after {
   margin-bottom: 14px;
 }
 
+/* 标题行右侧的动作区：状态文字 + 按钮（如「检查全部连接」）。
+   align-self: center 让按钮组与左侧单行标题共享同一视觉中线。 */
+.section-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.section-head-actions .status-line {
+  margin-top: 0;
+  min-height: 0;
+}
+
+.section-head-actions .status-line[data-state="ready"] { color: #32835c; }
+.section-head-actions .status-line[data-state="missing"] { color: #a77624; }
+.section-head-actions .status-line[data-state="error"] { color: #9f3e34; }
+
 
 .usage-summary {
   display: grid;
@@ -1219,6 +1238,20 @@ input[type="checkbox"]:checked::after {
   letter-spacing: 0;
 }
 
+/* 标题行右侧放状态（如"更新于 …"）。 */
+.usage-block-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.usage-block-head .status-line {
+  margin-top: 0;
+  min-height: 0;
+  text-align: right;
+}
+
 .usage-breakdown {
   display: flex;
   flex-direction: column;
@@ -1270,15 +1303,45 @@ input[type="checkbox"]:checked::after {
   gap: 8px;
 }
 
+/* 近期活动：单行聚合——总量 · 模型 · 条数与耗时 · 分类明细 · 时间。 */
 .usage-session {
-  display: grid;
-  grid-template-columns: 124px minmax(0, 1fr) minmax(170px, 0.72fr);
+  display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 18px;
+  gap: 12px;
+  padding: 10px 18px;
   border: 1px solid var(--line-subtle);
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.68);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.usage-session strong {
+  color: var(--text-main);
+  font-family: var(--font-brand);
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  min-width: 68px;
+}
+
+.usage-session-model {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.usage-session-meta,
+.usage-session-time {
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-session-time {
+  margin-left: auto;
 }
 
 .pet-event {
@@ -1292,7 +1355,6 @@ input[type="checkbox"]:checked::after {
   background: rgba(255, 255, 255, 0.68);
 }
 
-.usage-session-main,
 .pet-event-main,
 .pet-event-sub {
   min-width: 0;
@@ -1301,36 +1363,15 @@ input[type="checkbox"]:checked::after {
   gap: 4px;
 }
 
-.usage-session-main strong {
-  color: var(--text-main);
-  font-family: var(--font-brand);
-  font-size: var(--text-xl);
-  font-weight: var(--weight-bold);
-  font-variant-numeric: tabular-nums;
-}
-
-.usage-session-main span,
-.usage-session-sub,
-.usage-session-parts,
 .pet-event-main span,
 .pet-event-sub span {
   color: var(--text-faint);
   font-size: var(--text-sm);
 }
 
-.usage-session-sub span:first-child {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-secondary);
-}
-
 .usage-session-parts {
   display: flex;
   gap: 6px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
   min-width: 0;
 }
 
@@ -1378,27 +1419,6 @@ input[type="checkbox"]:checked::after {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.agent-watch-hero {
-  align-items: flex-start;
-  padding: 18px 20px;
-  border: 1px solid rgba(var(--accent-green-rgb), 0.18);
-  border-radius: var(--radius);
-  background:
-    linear-gradient(135deg, rgba(var(--accent-green-rgb), 0.08), rgba(var(--accent-blue-rgb), 0.04)),
-    rgba(255, 255, 255, 0.68);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.66);
-}
-
-.agent-watch-hero-copy {
-  min-width: 0;
-  display: block;
-}
-
-.agent-watch-hero h1 {
-  margin-bottom: 7px;
-  font-size: var(--font-size-page-title);
 }
 
 .reminder-log-path {
@@ -1527,40 +1547,54 @@ input[type="checkbox"]:checked::after {
   border-radius: var(--radius-sm);
 }
 
-.agent-watch-hero .hint {
-  max-width: 760px;
-}
-
-.agent-watch-chips,
-.head-actions {
+/* 连接器列表：每个编程助手一行 = 状态点 + 名字 + 按需出现的「修复」。 */
+.connector-list {
+  margin-bottom: 24px;
+  padding: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
 }
 
-.agent-watch-chips {
-  margin-top: 12px;
+.connector-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  min-height: 0;
 }
 
-.agent-watch-chips span {
-  border: 1px solid var(--line-normal);
-  border-radius: 999px;
-  padding: 5px 10px;
-  color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.6);
+.connector-row + .connector-row {
+  border-top: 1px solid var(--line-subtle);
+}
+
+.connector-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: #79877e;
+}
+
+.connector-dot[data-state="ready"] { background: #32835c; }
+.connector-dot[data-state="idle"] { background: #79877e; }
+.connector-dot[data-state="missing"] { background: #a77624; }
+
+.connector-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.connector-copy strong {
+  font-size: var(--text-sm);
+  color: var(--text-main);
+}
+
+.connector-copy .row-hint {
   font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-}
-
-.head-actions {
-  align-content: flex-start;
-  justify-content: flex-end;
-  min-width: 210px;
-}
-
-.head-actions .btn {
-  min-width: 164px;
-  justify-content: center;
+  color: var(--text-secondary);
 }
 
 .agent-watch-card {
@@ -1900,8 +1934,7 @@ input[type="checkbox"]:checked::after {
 }
 
 .action-item .ai-head {
-  display: grid;
-  grid-template-columns: minmax(260px, 1.05fr) minmax(160px, 0.7fr) minmax(132px, 168px);
+  display: flex;
   align-items: center;
   gap: 12px;
 }
@@ -1911,6 +1944,7 @@ input[type="checkbox"]:checked::after {
   align-items: center;
   gap: 12px;
   min-width: 0;
+  flex: 0 1 auto;
 }
 
 .key {
@@ -1945,22 +1979,44 @@ input[type="checkbox"]:checked::after {
   white-space: nowrap;
 }
 
+/* 摘要即按钮：一句话点开表单；未绑定行整个隐藏，下拉框就是状态。 */
 .action-summary {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  color: var(--text-faint);
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: #526d88;
+  font-family: inherit;
   font-size: var(--type-control);
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
 }
 
-.action-item:not(.unbound) .action-summary {
-  color: #526d88;
+.action-summary:hover {
+  background: rgba(34, 48, 64, 0.06);
+  color: #3d5a75;
 }
 
-.action-item.unbound .key-meta,
 .action-item.unbound .action-summary {
+  display: none;
+}
+
+.action-item.unbound .key-meta {
   color: #7e8d9c;
+}
+
+.action-item .a-type {
+  flex: 0 0 150px;
+}
+
+/* 表单默认收起，点摘要展开。 */
+.action-item:not(.expanded) .ai-body {
+  display: none;
 }
 
 .ai-body {
@@ -1991,6 +2047,19 @@ input[type="checkbox"]:checked::after {
 
 .row.toggle {
   grid-template-columns: 92px auto;
+}
+
+/* 带说明的输入行：提示语挂在输入框正下方。 */
+.row.with-hint {
+  grid-template-rows: auto auto;
+  align-items: center;
+}
+
+.row.with-hint .row-hint {
+  grid-column: 2;
+  margin-top: -4px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-label);
 }
 
 .row input:not([type="checkbox"]),
@@ -2358,7 +2427,7 @@ input[type="checkbox"]:checked::after {
 
 .pane-head .btn.small,
 .usage-toolbar .btn.small,
-.head-actions .btn.small {
+.section-head-actions .btn.small {
   min-height: var(--control-h-icon);
 }
 
@@ -2444,11 +2513,19 @@ input[type="checkbox"]:checked::after {
   .agent-watch-card,
   .permission-gate-card,
   .switch-row,
-  .action-item .ai-head,
   .usage-session,
   .agent-session,
   .pet-event {
     grid-template-columns: 1fr;
+  }
+
+  /* 按键行已改 flex：窄窗口时允许换行。 */
+  .action-item .ai-head {
+    flex-wrap: wrap;
+  }
+
+  .action-item .a-type {
+    flex: 1 1 150px;
   }
 
   .agent-session-sub {
@@ -2458,20 +2535,6 @@ input[type="checkbox"]:checked::after {
 
   .permission-gate-grid {
     grid-template-columns: 1fr;
-  }
-
-  .agent-watch-hero,
-  .head-actions {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .head-actions {
-    justify-content: flex-start;
-  }
-
-  .head-actions .btn {
-    width: 100%;
   }
 
   .agent-watch-card .setting-row {
@@ -3583,6 +3646,11 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.inline-fields select {
+  width: 152px;
+  height: 36px;
 }
 
 .inline-fields input[type="time"] {

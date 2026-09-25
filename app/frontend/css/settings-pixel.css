@@ -31,7 +31,16 @@
 body, .shell { background: var(--bg-shell); }
 .shell { border-color: var(--line-normal); border-radius: 8px; box-shadow: none; }
 .shell::before, .nav-item::before, .section-panel + .section-panel::before { display: none; }
-.shell-close { top: 12px; right: 12px; background: transparent; backdrop-filter: none; border-radius: 4px; }
+.shell-close {
+  top: 14px;
+  right: 18px;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  backdrop-filter: none;
+  border-radius: 8px;
+  color: var(--text-muted);
+}
 .nav { width: 226px; flex: 0 0 226px; padding: 24px 14px 16px; gap: 8px; background: #f0f3f0; border-right: 1px solid var(--line-subtle); }
 .nav-brand { display: flex; gap: 12px; min-height: 56px; margin: 0 8px 24px; padding: 0; background: none; }
 .nav-brand strong { font-family: var(--font-ui); font-size: var(--type-brand); font-weight: var(--weight-bold); letter-spacing: -.5px; }
@@ -43,7 +52,23 @@ body, .shell { background: var(--bg-shell); }
 .nav-companion { margin-top: auto; padding: 40px 12px 8px; display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--text-muted); font-size: var(--type-caption); }
 .nav-companion img { image-rendering: pixelated; }
 .pixel-icon { width: 24px; height: 24px; display: inline-block; flex: 0 0 24px; color: currentColor; vertical-align: middle; }
-.pane { padding: 32px 32px 28px; background: var(--bg-shell); scrollbar-color: #c3cec6 transparent; }
+/* 滚动条：细圆角、无箭头，跟设计线走。
+   注意不要再给滚动容器写标准属性 scrollbar-color / scrollbar-width：
+   Chromium 里它们一旦出现，::-webkit-scrollbar 全套自定义样式就会被忽略，
+   Windows 上会回落成带箭头的系统灰条。 */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(36, 51, 45, 0.22);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: rgba(36, 51, 45, 0.34); }
+::-webkit-scrollbar-button { display: none; }
+
+.pane { padding: 32px 32px 28px; background: var(--bg-shell); }
 .pane > .tab { max-width: 1100px; margin-inline: auto; }
 .pane-head, .hero-head { margin-bottom: 26px; padding-right: 16px; }
 .pane-head > div:first-child { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 16px; }
@@ -128,7 +153,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled { opacity: .
 .pet-stage canvas { width: 144px; height: 144px; max-width: 100%; pointer-events: none; }
 .pet-stage figcaption { font-size: var(--type-item); font-weight: var(--weight-semibold); }
 .pet-stage > span { font-size: var(--type-caption); color: var(--text-muted); }
-.pet-asset-picker { max-height: 300px; overflow-y: auto; padding: 3px; scrollbar-color: #c3cec6 transparent; }
+.pet-asset-picker { max-height: 300px; overflow-y: auto; padding: 3px; }
 .pet-asset-group-title { color: var(--text-muted); font-weight: var(--weight-medium); }
 .pet-asset-grid { grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
 .pet-asset-card { display: flex; flex-direction: column; gap: 4px; min-height: 78px; padding: 7px 4px; background: #fff; text-align: center; }

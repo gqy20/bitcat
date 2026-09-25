@@ -41,7 +41,7 @@ let previewReducedMotion = null;
 const ACTION_TYPE_LABELS = {
   unbound: "未绑定",
   launch: "启动程序",
-  hotkey: "按键序列",
+  hotkey: "发送按键序列",
   script: "脚本命令",
   voice: "语音触发",
   screenshot: "立即截图",
@@ -52,6 +52,11 @@ let connectionRevision = 0;
 let connectionBusy = false;
 let clearSavedKey = false;
 let mockConnectionAi = null;
+// 浏览器预览用的连接器安装状态；pi 初始未接入，便于预览「修复」按钮。
+const mockConnectorInstalled = { claude_code: true, codex: true, pi: false, opencode: true };
+let connectorStatuses = null;
+let connectorBusy = false;
+let latestAgentSnapshot = null;
 const dirty = { ai: false, user: false, actions: false, prompts: false, appearance: false, permissions: false, agent_watch: false };
 let currentTab = "home";
 let currentExpertPage = "prompts";
@@ -99,7 +104,17 @@ async function mockInvoke(command, args = {}) {
       },
       actions: {
         defaults: { terminal: "powershell", window: "maximized" },
-        actions: {},
+        // 预览样例：A 键预置一个绑定，便于核对「摘要一行 + 点击展开」样式。
+        actions: {
+          A: {
+            type: "launch",
+            program: "D:\\tools\\obs.exe",
+            args: "",
+            workdir: "",
+            terminal: true,
+            keyboard_shortcut: "",
+          },
+        },
       },
       prompts: {
         agent: { preamble: "" },
@@ -136,10 +151,10 @@ async function mockInvoke(command, args = {}) {
         },
       },
       permissions: {
-        onboarding_completed: false,
+        onboarding_completed: true,
         steam_demo_mode: false,
-        // F3：默认关闭，与 PermissionSettings::default() 保持一致。
-        allow_screenshot_observation: false,
+        // 预览默认已开启屏幕观察，便于核对首页摘要与开关同步。
+        allow_screenshot_observation: true,
         allow_camera_observation: false,
         allow_shell_tool: false,
         allow_read_file_tool: false,
@@ -194,7 +209,13 @@ async function mockInvoke(command, args = {}) {
         { model: "claude-sonnet-4-20250514", record_count: 8, total_tokens: 18200 },
         { model: "claude-opus-4-20250514", record_count: 4, total_tokens: 4550 },
       ],
-      recent_sessions: [],
+      // 预览样例：贴近真实形状的近期活动，便于核对单行聚合样式。
+      recent_sessions: [
+        { ended_at: new Date(Date.now() - 60_000).toISOString(), models: ["MiniMax-M3"], record_count: 2, elapsed_ms_total: 8400, total_tokens: 5667, vision_total_tokens: 5667 },
+        { ended_at: new Date(Date.now() - 120_000).toISOString(), models: ["MiniMax-M3"], record_count: 1, elapsed_ms_total: 6600, total_tokens: 2781, vision_total_tokens: 2781 },
+        { ended_at: new Date(Date.now() - 180_000).toISOString(), models: ["MiniMax-M3"], record_count: 1, elapsed_ms_total: 6400, total_tokens: 2673, vision_total_tokens: 2673 },
+        { ended_at: new Date(Date.now() - 240_000).toISOString(), models: ["MiniMax-M3"], record_count: 1, elapsed_ms_total: 3800, total_tokens: 2966, vision_total_tokens: 2966 },
+      ],
       paths: {
         usage_jsonl: "~/.bitcat/logs/token_usage.jsonl",
         sessions_json: "~/.bitcat/logs/token_sessions.json",
@@ -245,6 +266,63 @@ async function mockInvoke(command, args = {}) {
         { event_kind: "MemoryCreated", points_awarded: 4, timestamp: new Date().toISOString() },
       ],
     };
+  }
+  if (command === "cmd_get_agent_sessions") {
+    const now = Date.now();
+    return {
+      sessions: [
+        {
+          session_id: "ses_preview_claude",
+          source: "claude_code",
+          status: "working",
+          status_label: "正在处理",
+          workspace_name: "bitcat",
+          workspace: "~/workspace/project/2609/bitcat",
+          machine: "preview",
+          tool_name: "",
+          user_prompt_preview: "预览：整理编程助手看管的连接列表",
+          updated_at_ms: now - 90_000,
+          age_sec: 90,
+          tokens_in: 1200,
+          tokens_out: 340,
+        },
+        {
+          session_id: "ses_preview_pi",
+          source: "pi",
+          status: "done",
+          status_label: "已完成",
+          workspace_name: "docs",
+          workspace: "~/workspace/project/2609/docs",
+          machine: "preview",
+          tool_name: "",
+          user_prompt_preview: "预览：审阅 road map 产品视角一节",
+          updated_at_ms: now - 3 * 60 * 60 * 1000,
+          age_sec: 3 * 60 * 60,
+          tokens_in: 800,
+          tokens_out: 150,
+        },
+      ],
+      primary: null,
+      generated_at_ms: now,
+      monitor_port: 8787,
+      view_port: 8788,
+      event_count: 128,
+      last_event_at_ms: now - 90_000,
+      log_dir: "~/.bitcat/logs/agent_watch",
+    };
+  }
+  if (command === "cmd_agent_connectors_status") {
+    return [
+      { source: "claude_code", installed: mockConnectorInstalled.claude_code },
+      { source: "codex", installed: mockConnectorInstalled.codex },
+      { source: "pi", installed: mockConnectorInstalled.pi },
+      { source: "opencode", installed: mockConnectorInstalled.opencode },
+    ];
+  }
+  if (command === "cmd_repair_connector") {
+    const source = String(args?.source || "");
+    if (source in mockConnectorInstalled) mockConnectorInstalled[source] = true;
+    return `预览：${window.AgentSources.label(source)} 连接脚本已写入`;
   }
   return null;
 }
@@ -439,8 +517,11 @@ function setConnectionBusy(busy) {
 function setConnectionStatus(state, text, detail = "") {
   $("connection-status").dataset.state = state;
   $("connection-status").textContent = text;
-  $("ai-test-result").textContent = detail;
-  $("ai-test-result").classList.toggle("hidden", !detail);
+  // 检测通过时右上角已是结论，正文不再重复一句"已收到回复"；
+  // 失败原因和浏览器预览提示仍保留明细。
+  const shown = state === "verified" ? "" : detail;
+  $("ai-test-result").textContent = shown;
+  $("ai-test-result").classList.toggle("hidden", !shown);
   $("ai-test-result").dataset.state = state;
 }
 
@@ -687,6 +768,24 @@ function renderActions(actionsView) {
   }
 }
 
+// 「面键-右下」→「右下面键」：位置以括号内的次要信息出现，不再占独立视觉位。
+function positionLabel(position) {
+  const value = String(position || "").trim();
+  const facePrefix = "面键-";
+  if (value.startsWith(facePrefix)) return `${value.slice(facePrefix.length)}面键`;
+  return value;
+}
+
+// 按键行的说明文字：确认（右下面键）· 触发 Select + ↑。
+function keyMetaText(btn, triggerHint) {
+  const label = btn.label && btn.label !== "(自定义)" ? btn.label : "";
+  const position = positionLabel(btn.position);
+  let meta = label;
+  if (position) meta = meta ? `${meta}（${position}）` : position;
+  if (triggerHint) meta = meta ? `${meta} · 触发 ${triggerHint}` : `触发 ${triggerHint}`;
+  return meta || "自定义按键";
+}
+
 function renderActionItem(btn, def) {
   const el = document.createElement("div");
   el.className = "action-item";
@@ -695,20 +794,21 @@ function renderActionItem(btn, def) {
   const isUnbound = !def;
   if (isUnbound) el.classList.add("unbound");
 
-  const curType = def ? def.action_type : "unbound";
+  // 后端序列化用 "type"（serde rename），读取时归一到 action_type，历史遗留字段也兼容。
+  const rawType = String(def?.action_type ?? def?.type ?? "unbound");
   const trigHintText = def && Array.isArray(def.trigger) && def.trigger.length > 0
     ? def.trigger.join(" + ")
     : "";
-  const meta = [btn.label, btn.position, trigHintText && `触发 ${trigHintText}`].filter(Boolean).join(" · ");
-  const workingDef = def ? { ...def } : { action_type: "unbound" };
+  const workingDef = def ? { ...def, action_type: rawType } : { action_type: "unbound" };
+  const curType = rawType;
 
   el.innerHTML = `
     <div class="ai-head">
       <div class="key-block">
         <span class="key">${escapeHtml(btn.name)}</span>
-        <span class="key-meta">${escapeHtml(meta || "自定义按键")}</span>
+        <span class="key-meta">${escapeHtml(keyMetaText(btn, trigHintText))}</span>
       </div>
-      <span class="action-summary">${escapeHtml(actionSummary(workingActionType(def), def))}</span>
+      <button type="button" class="action-summary" aria-expanded="false" title="展开编辑详情"></button>
       <select class="a-type" title="动作类型">
         ${ACTION_TYPES.map(t => `<option value="${t}" ${t === curType ? "selected" : ""}>${escapeHtml(ACTION_TYPE_LABELS[t] || t)}</option>`).join("")}
       </select>
@@ -718,10 +818,22 @@ function renderActionItem(btn, def) {
 
   const body = el.querySelector(".ai-body");
   const summary = el.querySelector(".action-summary");
-  const refreshSummary = () => {
-    if (summary) summary.textContent = actionSummary(workingDef.action_type, workingDef);
+  const setExpanded = (expanded) => {
+    el.classList.toggle("expanded", expanded);
+    summary.setAttribute("aria-expanded", String(expanded));
   };
+  const refreshSummary = () => {
+    // 未绑定行不显示摘要，下拉框就是全部状态；绑定后摘要是一句人话，点击展开表单。
+    summary.textContent = workingDef.action_type === "unbound"
+      ? ""
+      : actionSummary(workingDef.action_type, workingDef);
+  };
+  refreshSummary();
   renderActionBody(body, workingDef, refreshSummary);
+
+  summary.addEventListener("click", () => {
+    setExpanded(!el.classList.contains("expanded"));
+  });
 
   const sel = el.querySelector(".a-type");
   sel.addEventListener("change", () => {
@@ -729,13 +841,11 @@ function renderActionItem(btn, def) {
     el.classList.toggle("unbound", sel.value === "unbound");
     refreshSummary();
     renderActionBody(body, workingDef, refreshSummary);
+    // 主动配置动作时自动展开表单；改回未绑定则收起。
+    setExpanded(sel.value !== "unbound");
     markDirty("actions");
   });
   return el;
-}
-
-function workingActionType(def) {
-  return def ? def.action_type : "unbound";
 }
 
 function renderActionBody(body, def, onChange = () => {}) {
@@ -743,10 +853,10 @@ function renderActionBody(body, def, onChange = () => {}) {
   const t = def.action_type;
   if (t === "unbound") return;
 
-  const mk = (label, id, val, type = "text") => {
+  const mk = (label, id, val, type = "text", hint = "") => {
     const row = document.createElement("div");
-    row.className = "row";
-    row.innerHTML = `<label>${label}</label><input data-field="${id}" type="${type}" value="${escapeAttr(val ?? "")}" />`;
+    row.className = hint ? "row with-hint" : "row";
+    row.innerHTML = `<label>${label}</label><input data-field="${id}" type="${type}" value="${escapeAttr(val ?? "")}" />${hint ? `<span class="row-hint">${hint}</span>` : ""}`;
     body.appendChild(row);
     row.querySelector("input").oninput = (event) => {
       setWorkingActionField(def, id, event.target.value);
@@ -779,7 +889,7 @@ function renderActionBody(body, def, onChange = () => {}) {
     mk("触发键", "voice-trigger", trig);
     mk("延迟（秒）", "voice-delay", delay, "number");
   }
-  mk("键盘热键", "kbd", def.keyboard_shortcut || "");
+  mk("键盘快捷键", "kbd", def.keyboard_shortcut || "", "text", "在键盘上按它直接触发，留空关闭");
 }
 
 function setWorkingActionField(def, id, value) {
@@ -1066,6 +1176,8 @@ function renderPermissions(p = {}) {
   $("perm-diagnostics").checked = p.diagnostics_enabled !== false;
   $("perm-onboarding").classList.remove("hidden");
   updatePermissionGateSummary();
+  // renderAppearance 先于本函数执行，首页摘要此刻才拿到真实开关值，必须重算一次。
+  updateHomePermissionCards();
 
   [
     "perm-onboarding-completed",
@@ -1083,6 +1195,7 @@ function renderPermissions(p = {}) {
   ].forEach(id => {
     $(id).onchange = () => {
       updatePermissionGateSummary();
+      updateHomePermissionCards();
       markDirty("permissions");
     };
   });
@@ -1716,17 +1829,20 @@ async function loadAgentSessions() {
   try {
     const snapshot = await invoke("cmd_get_agent_sessions");
     renderAgentSessions(snapshot);
+    refreshConnectorActivity();
     loadRemoteDevices();
     if (status) status.textContent = snapshot?.generated_at_ms ? "已更新" : "等待状态";
   } catch (e) {
     log("加载 Agent 会话失败: " + e);
     renderAgentSessions(null);
+    refreshConnectorActivity();
     if (status) status.textContent = "读取失败";
   }
 }
 
 function startAgentWatchRefresh() {
   loadRemoteInstallCommand();
+  loadConnectorStatuses();
   loadAgentSessions();
   if (agentWatchTimer) return;
   agentWatchTimer = setInterval(() => {
@@ -1796,6 +1912,7 @@ async function loadRemoteDevices() {
 function renderAgentSessions(snapshot) {
   const box = $("aw-sessions");
   if (!box) return;
+  latestAgentSnapshot = snapshot || null;
   const diag = $("aw-diag");
   if (diag) {
     const parts = [];
@@ -1817,7 +1934,7 @@ function renderAgentSessions(snapshot) {
         <span>${escapeHtml(session.status_label || session.status)}</span>
       </div>
       <div class="agent-session-sub">
-        <span>${escapeHtml(agentSourceLabel(session.source))}</span>
+        <span>${escapeHtml(window.AgentSources.label(session.source))}</span>
         ${session.machine ? `<small>${escapeHtml(session.machine)}</small>` : ""}
         <code>${escapeHtml(session.workspace || session.session_id)}</code>
         ${session.tool_name ? `<small>${escapeHtml(session.tool_name)}</small>` : ""}
@@ -1827,12 +1944,118 @@ function renderAgentSessions(snapshot) {
   `).join("");
 }
 
-function agentSourceLabel(source) {
-  if (source === "codex") return "Codex";
-  if (source === "claude_code") return "Claude Code";
-  if (source === "pi") return "pi";
-  if (source === "opencode") return "opencode";
-  return source || "Agent";
+// ── 编程助手连接器（专家模式 · 编程助手看管）──
+// 每个来源一行：安装状态来自 cmd_agent_connectors_status，最近事件时间从
+// 会话快照按来源聚合。「修复」按钮只在该来源未接入时出现。
+
+// 24 小时内有事件才算"已连接"；更久视为已接入但暂时安静。
+const CONNECTOR_FRESH_MS = 24 * 60 * 60 * 1000;
+
+function connectorActivityBySource(snapshot) {
+  const bySource = new Map();
+  (snapshot?.sessions || []).forEach(session => {
+    if (!session?.source) return;
+    const at = Number(session.updated_at_ms || 0);
+    if (at > (bySource.get(session.source) || 0)) bySource.set(session.source, at);
+  });
+  return bySource;
+}
+
+function connectorAgoLabel(deltaMs) {
+  const sec = Math.max(0, Math.floor(deltaMs / 1000));
+  if (sec < 60) return "刚刚";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} 分钟前`;
+  const hour = Math.floor(min / 60);
+  if (hour < 24) return `${hour} 小时前`;
+  return `${Math.floor(hour / 24)} 天前`;
+}
+
+function connectorState(status, lastEventAtMs, nowMs) {
+  if (!status.installed) return { dot: "missing", hint: "未安装连接脚本" };
+  if (!lastEventAtMs) return { dot: "idle", hint: "已安装 · 还没有事件" };
+  const fresh = nowMs - lastEventAtMs < CONNECTOR_FRESH_MS;
+  return {
+    dot: fresh ? "ready" : "idle",
+    hint: `已${fresh ? "连接" : "接入"} · 最近事件 ${connectorAgoLabel(nowMs - lastEventAtMs)}`,
+  };
+}
+
+function renderConnectors() {
+  const box = $("aw-connectors");
+  if (!box) return;
+  if (!Array.isArray(connectorStatuses)) {
+    box.innerHTML = `<div class="empty-note">连接状态不可用，点「检查全部连接」重试。</div>`;
+    return;
+  }
+  const nowMs = Date.now();
+  const activity = connectorActivityBySource(latestAgentSnapshot);
+  box.innerHTML = connectorStatuses.map(status => {
+    const state = connectorState(status, activity.get(status.source) || 0, nowMs);
+    return `
+      <div class="connector-row" data-source="${escapeAttr(status.source)}">
+        <span class="connector-dot" data-state="${state.dot}"></span>
+        <div class="connector-copy">
+          <strong>${escapeHtml(window.AgentSources.label(status.source))}</strong>
+          <span class="row-hint">${escapeHtml(state.hint)}</span>
+        </div>
+        ${status.installed ? "" : `<button class="btn small ghost" type="button" data-repair-source="${escapeAttr(status.source)}">修复</button>`}
+      </div>
+    `;
+  }).join("");
+}
+
+// 会话每 2 秒轮询一次，这里只轻量更新活动文案，避免整行重绘打断点击。
+function refreshConnectorActivity() {
+  const box = $("aw-connectors");
+  if (!box || !Array.isArray(connectorStatuses)) return;
+  const nowMs = Date.now();
+  const activity = connectorActivityBySource(latestAgentSnapshot);
+  connectorStatuses.forEach(status => {
+    // source 是我们自己的 snake_case 枚举值，不含选择器特殊字符，无需 CSS.escape。
+    const row = box.querySelector(`[data-source="${status.source}"]`);
+    if (!row) return;
+    const state = connectorState(status, activity.get(status.source) || 0, nowMs);
+    const dot = row.querySelector(".connector-dot");
+    if (dot) dot.dataset.state = state.dot;
+    const hint = row.querySelector(".row-hint");
+    if (hint) hint.textContent = state.hint;
+  });
+}
+
+// 标题行右侧是带信息量的计数：一眼看出要不要动手。
+// 未接入 > 0 用琥珀色，全接入用绿色；读取失败保留红字错误路径。
+function renderConnectorHeadline() {
+  const status = $("aw-connectors-status");
+  const check = $("aw-connectors-check");
+  const missing = Array.isArray(connectorStatuses)
+    ? connectorStatuses.filter(item => !item.installed).length
+    : -1;
+  if (status) {
+    if (missing < 0) {
+      status.textContent = "读取失败";
+      status.dataset.state = "error";
+    } else if (missing > 0) {
+      status.textContent = `${connectorStatuses.length - missing} 已接入 · ${missing} 未接入`;
+      status.dataset.state = "missing";
+    } else {
+      status.textContent = `${connectorStatuses.length} 已接入`;
+      status.dataset.state = "ready";
+    }
+  }
+  // 有未接入时按钮才醒目；全接入时降为 ghost。
+  if (check) check.classList.toggle("ghost", missing === 0);
+}
+
+async function loadConnectorStatuses() {
+  try {
+    connectorStatuses = await invoke("cmd_agent_connectors_status");
+  } catch (e) {
+    connectorStatuses = null;
+    log("读取连接状态失败: " + e);
+  }
+  renderConnectorHeadline();
+  renderConnectors();
 }
 
 async function deleteMemoryEntry(id) {
@@ -1937,17 +2160,14 @@ function renderUsageSessions(sessions) {
     ].filter(([, value]) => value > 0)
       .map(([label, value]) => `<span>${label} ${formatNumber(value)}</span>`)
       .join("");
+    // 单行聚合：总量 · 模型 · 条数与耗时 · 分类明细 · 时间。
     return `
       <div class="usage-session">
-        <div class="usage-session-main">
-          <strong>${formatNumber(session.total_tokens)}</strong>
-          <span>${escapeHtml(formatDateTime(session.ended_at))}</span>
-        </div>
-        <div class="usage-session-sub">
-          <span>${escapeHtml((session.models || []).join(", ") || "未知模型")}</span>
-          <span>${formatNumber(session.record_count)} 条 · ${formatDuration(session.elapsed_ms_total)}</span>
-        </div>
-        <div class="usage-session-parts">${parts || "<span>无分类明细</span>"}</div>
+        <strong>${formatNumber(session.total_tokens)}</strong>
+        <span class="usage-session-model">${escapeHtml((session.models || []).join(", ") || "未知模型")}</span>
+        <span class="usage-session-meta">${formatNumber(session.record_count)} 条 · ${formatDuration(session.elapsed_ms_total)}</span>
+        ${parts ? `<span class="usage-session-parts">${parts}</span>` : ""}
+        <time class="usage-session-time">${escapeHtml(formatDateTime(session.ended_at))}</time>
       </div>
     `;
   }).join("");
@@ -2435,36 +2655,48 @@ function bindGlobal() {
   bindRefreshButton("memory-refresh", loadMemoryReview);
   bindRefreshButton("reminder-refresh", loadReminders);
   bindRefreshButton("usage-refresh", loadUsageDiagnostics);
-  $("aw-install").addEventListener("click", async () => {
+  // 连接器：行内"修复"只修该来源；"检查全部连接"先探测，再幂等修复未接入的。
+  $("aw-connectors").addEventListener("click", async (event) => {
+    const btn = event.target.closest("[data-repair-source]");
+    if (!btn || connectorBusy) return;
+    const source = btn.dataset.repairSource;
+    connectorBusy = true;
+    btn.disabled = true;
     try {
-      const msg = await invoke("cmd_install_claude_code_hooks");
-      toast(msg || "Claude 连接已检查并修复", "ok");
+      const msg = await invoke("cmd_repair_connector", { source });
+      toast(msg || `${window.AgentSources.label(source)} 连接已修复`, "ok");
     } catch (e) {
-      toast("修复失败：" + String(e), "err");
+      toast(`${window.AgentSources.label(source)} 修复失败：` + String(e), "err");
+    } finally {
+      connectorBusy = false;
+      await loadConnectorStatuses();
     }
   });
-  $("aw-install-codex").addEventListener("click", async () => {
+  $("aw-connectors-check").addEventListener("click", async () => {
+    if (connectorBusy) return;
+    const btn = $("aw-connectors-check");
+    connectorBusy = true;
+    btn.disabled = true;
     try {
-      const msg = await invoke("cmd_install_codex_hooks");
-      toast(msg || "Codex 连接已检查并修复", "ok");
+      connectorStatuses = await invoke("cmd_agent_connectors_status");
+      const repaired = [];
+      for (const item of connectorStatuses.filter(entry => !entry.installed)) {
+        try {
+          await invoke("cmd_repair_connector", { source: item.source });
+          repaired.push(window.AgentSources.label(item.source));
+        } catch (e) {
+          toast(`${window.AgentSources.label(item.source)} 修复失败：` + String(e), "err");
+        }
+      }
+      connectorStatuses = await invoke("cmd_agent_connectors_status");
+      renderConnectorHeadline();
+      renderConnectors();
+      toast(repaired.length ? `已修复连接：${repaired.join("、")}` : "全部连接就绪", "ok");
     } catch (e) {
-      toast("Codex 修复失败：" + String(e), "err");
-    }
-  });
-  $("aw-install-pi").addEventListener("click", async () => {
-    try {
-      const msg = await invoke("cmd_install_pi_extension");
-      toast(msg || "pi 连接已检查并修复", "ok");
-    } catch (e) {
-      toast("pi 修复失败：" + String(e), "err");
-    }
-  });
-  $("aw-install-opencode").addEventListener("click", async () => {
-    try {
-      const msg = await invoke("cmd_install_opencode_plugin");
-      toast(msg || "opencode 连接已检查并修复", "ok");
-    } catch (e) {
-      toast("opencode 修复失败：" + String(e), "err");
+      toast("连接检查失败：" + String(e), "err");
+    } finally {
+      connectorBusy = false;
+      btn.disabled = false;
     }
   });
   const eventApi = window.__TAURI__?.event;
@@ -3011,5 +3243,15 @@ if (typeof window !== "undefined") {
     finishWizard,
     // 闭包内写 SNAPSHOT：eval 环境下顶层 let 不进全局词法，外部无法直接赋值。
     setSnapshot: (value) => { SNAPSHOT = value; },
+    renderConnectors,
+    renderConnectorHeadline,
+    connectorState,
+    connectorAgoLabel,
+    // 闭包内写连接器状态，理由同 setSnapshot。
+    setConnectorStatuses: (value) => { connectorStatuses = value; },
+    setLatestAgentSnapshot: (value) => { latestAgentSnapshot = value; },
+    renderActionItem,
+    keyMetaText,
+    positionLabel,
   };
 }

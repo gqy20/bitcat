@@ -32,6 +32,8 @@ function loadSettings(body = '', invoke = null) {
     addEventListener(type, listener, options);
   };
   if (invoke) dom.window.__TAURI__ = { core: { invoke } };
+  // settings.js 依赖 agent_sources.js 提供的 window.AgentSources（与页面加载顺序一致）。
+  dom.window.eval(fs.readFileSync(resolve(process.cwd(), 'js/agent_sources.js'), 'utf8'));
   const script = fs.readFileSync(resolve(process.cwd(), 'js/settings.js'), 'utf8');
   dom.window.eval(script);
   return { dom, helpers: dom.window.__settingsTest };
@@ -446,6 +448,157 @@ describe('interactive cat preview', () => {
     expect(Object.values(helpers.getDirty()).some(Boolean)).toBe(false);
     helpers.stopPetPreview();
     expect(dom.window.document.getElementById('pet-preview-state').textContent).toBe('安静待着');
+    dom.window.close();
+  });
+});
+
+describe('agent connectors panel', () => {
+  const statuses = [
+    { source: 'claude_code', installed: true, path: '~/.claude/settings.json' },
+    { source: 'codex', installed: true, path: '~/.codex/config.toml' },
+    { source: 'pi', installed: false, path: '~/.pi/agent/extensions/bitcat-watch.ts' },
+    { source: 'opencode', installed: true, path: '~/.config/opencode/plugins/bitcat-watch.js' },
+  ];
+
+  function loadConnectors(sessions = []) {
+    const { dom, helpers } = loadSettings('<div id="aw-connectors"></div>');
+    helpers.setConnectorStatuses(statuses);
+    helpers.setLatestAgentSnapshot({ sessions });
+    helpers.renderConnectors();
+    return { dom, helpers };
+  }
+
+  it('renders one row per source and shows the repair button only for missing ones', () => {
+    const { dom } = loadConnectors();
+    const rows = [...dom.window.document.querySelectorAll('.connector-row')];
+    expect(rows.map(row => row.dataset.source)).toEqual(['claude_code', 'codex', 'pi', 'opencode']);
+    expect(rows.map(row => row.querySelector('strong').textContent))
+      .toEqual(['Claude Code', 'Codex', 'pi', 'opencode']);
+    const repairButtons = dom.window.document.querySelectorAll('[data-repair-source]');
+    expect(repairButtons.length).toBe(1);
+    expect(repairButtons[0].dataset.repairSource).toBe('pi');
+    dom.window.close();
+  });
+
+  it('marks rows connected only with a recent event, otherwise idle', () => {
+    const now = Date.now();
+    const { dom, helpers } = loadConnectors([
+      { source: 'claude_code', updated_at_ms: now - 60_000 },
+      { source: 'codex', updated_at_ms: now - 3 * 24 * 60 * 60 * 1000 },
+    ]);
+    const stateOf = source =>
+      dom.window.document.querySelector(`[data-source="${source}"] .connector-dot`).dataset.state;
+    expect(stateOf('claude_code')).toBe('ready');
+    expect(stateOf('codex')).toBe('idle');
+    expect(stateOf('pi')).toBe('missing');
+    expect(stateOf('opencode')).toBe('idle');
+    expect(helpers.connectorState({ source: 'pi', installed: false }, 0, now)).toEqual({
+      dot: 'missing', hint: '未安装连接脚本',
+    });
+    dom.window.close();
+  });
+});
+
+describe('action key rows', () => {
+  const catalogBtn = { name: 'A', label: '确认', position: '面键-右下', order: 2 };
+  const launchDef = { type: 'launch', program: 'D:\\tools\\obs.exe', args: '', workdir: '', terminal: true };
+
+  it('merges position into the key meta as a parenthetical', () => {
+    const { helpers } = loadSettings('<div></div>');
+    expect(helpers.positionLabel('面键-右下')).toBe('右下面键');
+    expect(helpers.positionLabel('左上边缘')).toBe('左上边缘');
+    expect(helpers.keyMetaText(catalogBtn, '')).toBe('确认（右下面键）');
+    expect(helpers.keyMetaText({ name: 'X', label: '', position: '' }, 'Select + ↑'))
+      .toBe('触发 Select + ↑');
+  });
+
+  it('renders unbound rows without a summary and collapsed', () => {
+    const { dom, helpers } = loadSettings('<div id="holder"></div>');
+    const row = helpers.renderActionItem(catalogBtn, null);
+    dom.window.document.getElementById('holder').appendChild(row);
+    expect(row.classList.contains('unbound')).toBe(true);
+    expect(row.querySelector('.key-meta').textContent).toBe('确认（右下面键）');
+    expect(row.querySelector('.action-summary').textContent).toBe('');
+    // 隐藏靠 CSS 的 .unbound 规则（jsdom 不加载外部样式表），这里断言类契约。
+    expect(row.classList.contains('expanded')).toBe(false);
+    dom.window.close();
+  });
+
+  it('shows a one-line summary for bound rows and expands the form on click', () => {
+    const { dom, helpers } = loadSettings('<div id="holder"></div>');
+    const row = helpers.renderActionItem(catalogBtn, launchDef);
+    dom.window.document.getElementById('holder').appendChild(row);
+    expect(row.classList.contains('unbound')).toBe(false);
+    // 类型已由右侧下拉框表达，摘要只说"做什么"，不重复类型名。
+    expect(row.querySelector('.action-summary').textContent).toBe('打开 D:\\tools\\obs.exe');
+    expect(row.classList.contains('expanded')).toBe(false);
+
+    row.querySelector('.action-summary').click();
+    expect(row.classList.contains('expanded')).toBe(true);
+    expect(row.querySelector('.action-summary').getAttribute('aria-expanded')).toBe('true');
+    const labels = [...row.querySelectorAll('.ai-body label')].map(l => l.textContent);
+    expect(labels).toContain('键盘快捷键');
+    expect(row.querySelector('.row.with-hint .row-hint').textContent).toContain('留空关闭');
+    dom.window.close();
+  });
+
+  it('auto-expands when a type is picked and collapses back on unbind', () => {
+    const { dom, helpers } = loadSettings('<div id="holder"></div>');
+    const row = helpers.renderActionItem(catalogBtn, null);
+    dom.window.document.getElementById('holder').appendChild(row);
+    const select = row.querySelector('.a-type');
+    select.value = 'screenshot';
+    select.dispatchEvent(new dom.window.Event('change'));
+    expect(row.classList.contains('expanded')).toBe(true);
+    expect(row.querySelector('.action-summary').textContent).toBe('立即截图分析');
+
+    select.value = 'unbound';
+    select.dispatchEvent(new dom.window.Event('change'));
+    expect(row.classList.contains('expanded')).toBe(false);
+    expect(row.classList.contains('unbound')).toBe(true);
+    dom.window.close();
+  });
+});
+
+describe('connector headline', () => {
+  const head = '<div id="aw-connectors"></div><span id="aw-connectors-status"></span><button id="aw-connectors-check"></button>';
+
+  it('summarizes counts in the section head and de-emphasizes the check button when all connected', () => {
+    const { dom, helpers } = loadSettings(head);
+    const status = dom.window.document.getElementById('aw-connectors-status');
+    const check = dom.window.document.getElementById('aw-connectors-check');
+
+    helpers.setConnectorStatuses([
+      { source: 'claude_code', installed: true },
+      { source: 'codex', installed: true },
+      { source: 'pi', installed: false },
+      { source: 'opencode', installed: true },
+    ]);
+    helpers.renderConnectorHeadline();
+    expect(status.textContent).toBe('3 已接入 · 1 未接入');
+    expect(status.dataset.state).toBe('missing');
+    expect(check.classList.contains('ghost')).toBe(false);
+
+    helpers.setConnectorStatuses([
+      { source: 'claude_code', installed: true },
+      { source: 'codex', installed: true },
+      { source: 'pi', installed: true },
+      { source: 'opencode', installed: true },
+    ]);
+    helpers.renderConnectorHeadline();
+    expect(status.textContent).toBe('4 已接入');
+    expect(status.dataset.state).toBe('ready');
+    expect(check.classList.contains('ghost')).toBe(true);
+    dom.window.close();
+  });
+
+  it('keeps the error path when statuses cannot be read', () => {
+    const { dom, helpers } = loadSettings(head);
+    helpers.setConnectorStatuses(null);
+    helpers.renderConnectorHeadline();
+    const status = dom.window.document.getElementById('aw-connectors-status');
+    expect(status.textContent).toBe('读取失败');
+    expect(status.dataset.state).toBe('error');
     dom.window.close();
   });
 });

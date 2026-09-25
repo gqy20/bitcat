@@ -279,11 +279,12 @@
           </div>
 
           <div class="usage-block">
-            <div class="usage-block-title">刚才的活动</div>
+            <div class="usage-block-title usage-block-head">
+              <span>近期活动</span>
+              <span id="usage-status" class="status-line"></span>
+            </div>
             <div id="usage-sessions" class="usage-sessions"></div>
           </div>
-
-          <div id="usage-status" class="status-line"></div>
         </section>
 
         <!-- ④ 它怎么陪着我：唯一“开心”的分区 -->
@@ -596,22 +597,18 @@
           </div>
 
           <div class="expert-page hidden" data-expert-pane="agent-watch">
-            <div class="pane-head agent-watch-hero">
-              <div class="agent-watch-hero-copy">
-                <p class="hint">只读看管 Claude Code / Codex / pi / opencode 的任务状态；数据来自本机连接脚本</p>
-                <div class="agent-watch-chips" aria-label="支持的 agent">
-                  <span>Claude Code</span>
-                  <span>Codex</span>
-                  <span>pi</span>
-                  <span>opencode</span>
+            <div class="section-panel">
+              <div class="section-head">
+                <div>
+                  <h3>连接</h3>
+                  <p class="group-sub">接入谁，浮窗就看管谁</p>
+                </div>
+                <div class="section-head-actions">
+                  <span id="aw-connectors-status" class="status-line">等待</span>
+                  <button id="aw-connectors-check" class="btn small" type="button">检查全部连接</button>
                 </div>
               </div>
-              <div class="head-actions">
-                <button id="aw-install" class="btn small" type="button">修复 Claude 连接</button>
-                <button id="aw-install-codex" class="btn small ghost" type="button">修复 Codex 连接</button>
-                <button id="aw-install-pi" class="btn small ghost" type="button">修复 pi 连接</button>
-                <button id="aw-install-opencode" class="btn small ghost" type="button">修复 opencode 连接</button>
-              </div>
+              <div id="aw-connectors" class="settings-card compact embedded connector-list"></div>
             </div>
 
             <div class="section-panel">
@@ -748,30 +745,27 @@
               <div class="section-head">
                 <div>
                   <h3>全局默认</h3>
-                  <p class="group-sub">启动程序和呼出窗口的通用行为</p>
+                  <p class="group-sub">只影响「启动程序」动作</p>
                 </div>
               </div>
               <div class="settings-card compact embedded">
                 <div class="setting-row">
                   <div class="setting-copy">
-                    <label for="actions-term">默认终端</label>
+                    <label for="actions-term">启动方式</label>
                   </div>
-                  <select id="actions-term">
-                    <option value="powershell">PowerShell 5.1</option>
-                    <option value="pwsh">PowerShell 7</option>
-                    <option value="cmd">Command Prompt</option>
-                    <option value="wt">Windows Terminal</option>
-                  </select>
-                </div>
-                <div class="setting-row">
-                  <div class="setting-copy">
-                    <label for="actions-win">默认窗口</label>
+                  <div class="inline-fields">
+                    <select id="actions-term" aria-label="默认终端">
+                      <option value="powershell">PowerShell 5.1</option>
+                      <option value="pwsh">PowerShell 7</option>
+                      <option value="cmd">Command Prompt</option>
+                      <option value="wt">Windows Terminal</option>
+                    </select>
+                    <select id="actions-win" aria-label="默认窗口">
+                      <option value="maximized">最大化</option>
+                      <option value="normal">默认尺寸</option>
+                      <option value="minimized">最小化后台</option>
+                    </select>
                   </div>
-                  <select id="actions-win">
-                    <option value="maximized">最大化</option>
-                    <option value="normal">默认尺寸</option>
-                    <option value="minimized">最小化后台</option>
-                  </select>
                 </div>
                 <div class="setting-row">
                   <div class="setting-copy">
@@ -1155,6 +1149,7 @@
       </div>
     </div>
   </div>
+  <script src="/js/agent_sources.js"></script>
   <script src="/js/settings.js"></script>
 </body>
 </html>
