@@ -10,6 +10,12 @@
   let folded = localStorage.getItem("agentWatchFolded") === "true";
   let latest = null;
   let suppressNextClick = false;
+  // 拖拽协调：拖拽中不碰 DOM/窗口几何，松手一次性追平
+  let dragging = false;
+  let pendingRender = false;
+  let pendingResize = false;
+  // render diff：内容没变的轮询 tick 跳过重绘与 resize
+  let lastStackHtml = null;
 
   function log(msg, error) {
     const text = error ? `${msg}: ${error.message || error}` : msg;
@@ -30,6 +36,11 @@
   }
 
   async function resizeWatch() {
+    // 拖拽中不改窗口几何：记 pending，松手后 flush 一次
+    if (dragging) {
+      pendingResize = true;
+      return;
+    }
     if (!invoke) return;
     try {
       if (folded) {
@@ -298,6 +309,10 @@
 
   function render(snapshot) {
     latest = snapshot || latest;
+    if (dragging) {
+      pendingRender = true;
+      return;
+    }
     const sessions = latest?.sessions || [];
     const renderableSessions = sortedSessions(sessions).filter(
       (session) => !shouldHideSession(session, sessions)
@@ -306,12 +321,17 @@
     if (watchTitle) watchTitle.textContent = renderableSessions.length ? `Agent Watch ${renderableSessions.length}` : "Agent Watch";
     const summary = summaryText(sessions);
     if (watchCount) watchCount.textContent = summary;
+    const emptyHtml = `<div class="empty">暂无 Agent 任务</div>`;
     if (!sessions.length || !renderableSessions.length) {
-      stack.innerHTML = `<div class="empty">暂无 Agent 任务</div>`;
+      if (lastStackHtml !== emptyHtml) {
+        stack.innerHTML = emptyHtml;
+        lastStackHtml = emptyHtml;
+        resizeWatch();
+      }
       setFolded(false);
       return;
     }
-    stack.innerHTML = renderableSessions.map((session) => {
+    const html = renderableSessions.map((session) => {
       const id = session.session_id;
       const status = session.status || "idle";
       const view = viewOf(session);
@@ -342,7 +362,25 @@
           <button class="task-dismiss" type="button" data-action="dismiss" title="隐藏这条任务" aria-label="隐藏这条任务">×</button>
         </article>`;
     }).join("");
-    resizeWatch();
+    if (html !== lastStackHtml) {
+      stack.innerHTML = html;
+      lastStackHtml = html;
+      resizeWatch();
+    }
+  }
+
+  // 拖拽结束追平：一次 render + 一次 resize，避免拖拽期间逐帧改 DOM/几何
+  function flushAfterDrag() {
+    const needRender = pendingRender;
+    pendingRender = false;
+    if (needRender) {
+      render(latest);
+      pendingResize = false;
+    }
+    if (pendingResize) {
+      pendingResize = false;
+      resizeWatch();
+    }
   }
 
   async function refresh() {
@@ -479,14 +517,21 @@
       suppressNextClick = true;
       const win = currentWindow();
       if (!win) return;
+      // 上报用户摆放 fire-and-forget：不阻塞起手，避免 follower 抢位造成抓取瞬间跳一下
       try {
-        await invoke?.("cmd_agent_watch_mark_user_placed");
+        invoke?.("cmd_agent_watch_mark_user_placed")?.catch?.(() => {});
       } catch (_) {}
+      dragging = true;
+      document.body.classList.add("dragging");
       try {
+        // promise 在 OS 拖拽结束时才 resolve，用作拖拽态的天然边界
         await win.startDragging();
       } catch (e) {
         log("drag failed", e);
       }
+      dragging = false;
+      document.body.classList.remove("dragging");
+      flushAfterDrag();
     });
 
     for (const type of ["pointerup", "pointercancel", "pointerleave"]) {

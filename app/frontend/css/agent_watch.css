@@ -61,6 +61,14 @@ body {
   backdrop-filter: blur(10px) saturate(1.08);
 }
 
+/* 拖拽中：关掉背景采样、切实底，把每帧预算让给 OS 合成；松手恢复。 */
+body.dragging .watch-shell {
+  backdrop-filter: none;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04)),
+    rgba(48, 49, 54, 0.97);
+}
+
 .watch-dot {
   width: 9px;
   height: 9px;
@@ -144,9 +152,8 @@ body {
   border-radius: 14px;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)),
-    var(--card);
+    rgba(28, 30, 34, 0.82);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(18px) saturate(1.16);
   transition: min-height 160ms ease, border-color 160ms ease, background 160ms ease, transform 160ms ease;
 }
 
