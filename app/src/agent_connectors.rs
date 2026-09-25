@@ -104,8 +104,8 @@ mod tests {
                 AgentSource::OpenCode.as_str()
             ]
         );
-        assert_eq!(rows[1].installed, false);
-        assert_eq!(rows[3].installed, false);
+        assert!(!rows[1].installed);
+        assert!(!rows[3].installed);
     }
 
     #[test]
