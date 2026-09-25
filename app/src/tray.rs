@@ -2,7 +2,7 @@ use crate::commands::SharedWindowState;
 use std::sync::atomic::Ordering;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu},
-    tray::TrayIconBuilder,
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, LogicalPosition, Manager, WebviewWindow,
 };
 use tracing::info;
@@ -66,6 +66,17 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .icon(app.default_window_icon().unwrap().clone())
         .menu(&menu)
         .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray, event| {
+            // 左键单击托盘图标 = 弹出/收起设置；右键仍是菜单。
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                crate::settings::toggle_settings(tray.app_handle());
+            }
+        })
         .on_menu_event(move |app, event| match event.id.as_ref() {
             MENU_SCREENSHOT => {
                 analyze_current_screen(app);
