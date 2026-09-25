@@ -1084,6 +1084,18 @@ input[type="checkbox"]:checked::after {
   margin-bottom: 14px;
 }
 
+.row-hint b {
+  color: var(--text-main);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 同一行第二个 hint（如金币速率）：弱化并与前段拉开间距。 */
+.row-hint + .row-hint {
+  margin-left: 12px;
+  color: var(--text-faint);
+}
+
 /* 标题行右侧的动作区：状态文字 + 按钮（如「检查全部连接」）。
    align-self: center 让按钮组与左侧单行标题共享同一视觉中线。 */
 .section-head-actions {
@@ -3221,15 +3233,18 @@ input[type="checkbox"]:checked::after {
   border-left: 0;
 }
 
-.strip-item[data-goto] {
+.strip-item[data-goto],
+.strip-item[data-scrollto] {
   cursor: pointer;
 }
 
-.strip-item[data-goto]:hover {
+.strip-item[data-goto]:hover,
+.strip-item[data-scrollto]:hover {
   background: rgba(34, 48, 64, 0.03);
 }
 
-.strip-item[data-goto]:focus-visible {
+.strip-item[data-goto]:focus-visible,
+.strip-item[data-scrollto]:focus-visible {
   outline: none;
   box-shadow: inset 0 0 0 2px rgba(34, 48, 64, 0.22);
 }
@@ -3481,4 +3496,11 @@ body {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 22px;
+}
+
+/* 向导显式跳过出口：居中弱按钮，不抢主行动位。 */
+.wizard-foot {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
 }

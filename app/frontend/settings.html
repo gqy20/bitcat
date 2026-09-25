@@ -46,7 +46,7 @@
               <svg class="pixel-icon" aria-hidden="true"><use href="/assets/settings/icons.svg#connection"></use></svg><span class="strip-label">连接 <span id="ov-ai-key" class="status-dot" role="img" aria-label="等待配置状态" title="等待配置状态"></span></span>
               <strong id="ov-ai-model">-</strong>
             </div>
-            <div class="strip-item">
+            <div class="strip-item" role="button" tabindex="0" data-scrollto="perm-screenshot">
               <svg class="pixel-icon" aria-hidden="true"><use href="/assets/settings/icons.svg#monitor"></use></svg><span>屏幕观察</span>
               <strong id="qs-screenshot" aria-describedby="ss-interval-hint">-</strong>
               <small id="ss-interval-hint" class="sr-only">等待观察状态</small>
@@ -241,7 +241,7 @@
                 <div class="connection-field"><label for="ai-provider">连接方式</label><select id="ai-provider"><option value="official">Anthropic 官方服务</option><option value="custom">自定义兼容服务</option></select></div>
                 <div id="ai-custom-endpoint" class="connection-field hidden"><label for="ai-baseurl">服务地址</label><input id="ai-baseurl" type="url" placeholder="https://你的服务地址" spellcheck="false" /><span class="connection-help">需要兼容 Anthropic Messages 接口。</span></div>
                 <div class="connection-field">
-                  <div class="connection-label"><label for="ai-key">API Key</label><span id="ai-key-current" class="connection-help"></span></div>
+                  <div class="connection-label"><label for="ai-key">密钥（API Key）</label><span id="ai-key-current" class="connection-help"></span></div>
                   <div class="connection-secret"><input id="ai-key" type="password" placeholder="输入新密钥以替换，留空保持不变" autocomplete="off" spellcheck="false" /><button class="icon-btn" id="ai-key-toggle" type="button" title="显示新输入的密钥" aria-label="显示新输入的密钥"><span class="icon-eye"></span></button></div>
                   <div class="connection-key-actions"><span class="connection-help">密钥只保存在本机，已保存的密钥不回显。</span><button id="ai-clear-key" type="button" class="btn small ghost">移除本机密钥</button></div>
                   <p id="ai-clear-note" class="connection-help hidden">保存后移除本机密钥；如有外部配置，将回到外部配置。</p>
@@ -340,14 +340,8 @@
             <div class="settings-card compact embedded">
               <div class="setting-row">
                 <div class="setting-copy">
-                  <label>今天陪了你</label>
-                  <span class="row-hint" id="screen-time-today">—</span>
-                </div>
-              </div>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <label>最近 7 天</label>
-                  <span class="row-hint" id="screen-time-week">—</span>
+                  <label>陪伴时长</label>
+                  <span class="row-hint">今天 <b id="screen-time-today">—</b><span id="screen-time-week-wrap"> · 最近 7 天 <b id="screen-time-week">—</b></span></span>
                 </div>
               </div>
             </div>
@@ -364,33 +358,30 @@
                 <div class="setting-copy">
                   <label>今天已赚</label>
                   <span class="row-hint" id="earnings-today">未开启</span>
+                  <span class="row-hint" id="earnings-rate"></span>
                 </div>
               </div>
               <div class="setting-row">
                 <div class="setting-copy">
-                  <label for="a-earnings-salary">月薪（元）</label>
+                  <label for="a-earnings-salary">月薪与工作日</label>
                   <span class="row-hint">只存本机</span>
                 </div>
-                <input id="a-earnings-salary" type="number" min="0" step="100" style="width:110px" />
+                <div class="inline-fields">
+                  <input id="a-earnings-salary" type="number" min="0" step="100" style="width:110px" aria-label="月薪（元）" />
+                  <span class="field-sep">元/月</span>
+                  <input id="a-earnings-workdays" type="number" min="1" max="31" step="0.25" style="width:80px" aria-label="每月工作日" />
+                  <span class="field-sep">天/月</span>
+                </div>
               </div>
               <div class="setting-row">
                 <div class="setting-copy">
-                  <label for="a-earnings-start">上班时间</label>
+                  <label for="a-earnings-start">上下班时间</label>
                 </div>
-                <input id="a-earnings-start" type="time" style="width:110px" />
-              </div>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <label for="a-earnings-end">下班时间</label>
+                <div class="inline-fields">
+                  <input id="a-earnings-start" type="time" style="width:110px" aria-label="上班时间" />
+                  <span class="field-sep">至</span>
+                  <input id="a-earnings-end" type="time" style="width:110px" aria-label="下班时间" />
                 </div>
-                <input id="a-earnings-end" type="time" style="width:110px" />
-              </div>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <label for="a-earnings-workdays">每月工作日</label>
-                  <span class="row-hint">默认 21.75</span>
-                </div>
-                <input id="a-earnings-workdays" type="number" min="1" max="31" step="0.25" style="width:110px" />
               </div>
             </div>
           </div>
@@ -437,6 +428,36 @@
                 <input id="a-reminder-ai" type="checkbox" />
               </div>
             </div>
+              <details class="quiet-details embedded">
+                <summary>提醒与提示音</summary>
+                <div class="settings-card compact embedded">
+                  <div class="setting-row">
+                    <div class="setting-copy">
+                <label for="a-reminder-ai-timeout">提醒润色超时（毫秒）</label><span class="row-hint">超时用原文</span>
+              </div>
+
+                    <input id="a-reminder-ai-timeout" type="number" min="500" max="10000" step="500" placeholder="3000" />
+                  </div>
+                  <div class="setting-row switch-row">
+                    <div class="setting-copy">
+                      <label for="a-notify-sound-reminder">提醒到期时</label>
+                    </div>
+                    <input id="a-notify-sound-reminder" type="checkbox" />
+                  </div>
+                  <div class="setting-row switch-row">
+                    <div class="setting-copy">
+                      <label for="a-notify-sound-agent">编程助手状态变化时</label>
+                    </div>
+                    <input id="a-notify-sound-agent" type="checkbox" />
+                  </div>
+                  <div class="setting-row switch-row">
+                    <div class="setting-copy">
+                      <label for="a-notify-sound-skip-tts">语音提醒时静音</label>
+                    </div>
+                    <input id="a-notify-sound-skip-tts" type="checkbox" />
+                  </div>
+                </div>
+              </details>
             <div id="reminder-review" class="reminder-review"></div>
           </div>
 
@@ -627,17 +648,15 @@
                 </div>
                 <div class="setting-row">
                   <div class="setting-copy">
-                <label for="aw-first">首次提醒（秒）</label><span class="row-hint">离开多久后第一次提醒</span>
+                <label for="aw-first">提醒节奏</label><span class="row-hint">离开多久后第一次提醒、两次之间最少间隔</span>
               </div>
 
-                  <input id="aw-first" type="number" min="10" max="3600" step="5" />
-                </div>
-                <div class="setting-row">
-                  <div class="setting-copy">
-                <label for="aw-repeat">重复冷却（分钟）</label><span class="row-hint">两次提醒的最小间隔</span>
-              </div>
-
-                  <input id="aw-repeat" type="number" min="1" max="240" step="1" />
+                  <div class="inline-fields">
+                    <input id="aw-first" type="number" min="10" max="3600" step="5" style="width:80px" aria-label="首次提醒（秒）" />
+                    <span class="field-sep">秒首提醒 · 每</span>
+                    <input id="aw-repeat" type="number" min="1" max="240" step="1" style="width:70px" aria-label="重复冷却（分钟）" />
+                    <span class="field-sep">分钟冷却</span>
+                  </div>
                 </div>
                 <div class="setting-row switch-row">
                   <div class="setting-copy">
@@ -850,10 +869,12 @@
               <div class="settings-card compact embedded">
                 <div class="setting-row switch-row">
                   <div class="setting-copy">
-                <label for="perm-camera">摄像头观察（权限层）</label><span class="row-hint">需诊断子页功能层一起打开</span>
+                <label for="camera-master-expert">摄像头观察</label><span class="row-hint">权限与功能两层同步开关，保守描述、不识别身份</span>
               </div>
 
-                  <input id="perm-camera" type="checkbox" />
+                  <input id="camera-master-expert" type="checkbox" />
+                  <input id="perm-camera" type="checkbox" hidden />
+                  <input id="a-camera-enabled" type="checkbox" hidden />
                 </div>
                 <div class="setting-row switch-row">
                   <div class="setting-copy">
@@ -898,6 +919,33 @@
                   <input id="perm-hotkey" type="checkbox" />
                 </div>
               </div>
+
+              <details class="quiet-details embedded">
+                <summary>屏幕与摄像头</summary>
+                <div class="settings-card compact embedded">
+                  <div class="setting-row">
+                    <div class="setting-copy">
+                <label for="a-ss-interval">屏幕观察间隔（秒）</label><span class="row-hint">对话进行中会自动暂停</span>
+              </div>
+
+                    <input id="a-ss-interval" type="number" min="5" max="3600" step="5" placeholder="30" />
+                  </div>
+                  <div class="setting-row switch-row">
+                    <div class="setting-copy">
+                <label for="a-ss-bubble">屏幕观察弹气泡</label>
+              </div>
+
+                    <input id="a-ss-bubble" type="checkbox" />
+                  </div>
+                  <div class="setting-row switch-row">
+                    <div class="setting-copy">
+                <label for="a-camera-save">保存摄像头原图</label><span class="row-hint">默认只保存分析结果</span>
+              </div>
+
+                    <input id="a-camera-save" type="checkbox" />
+                  </div>
+                </div>
+              </details>
             </div>
 
             <div class="section-panel">
@@ -947,7 +995,6 @@
                   <strong id="resource-updated" class="resource-time">等待采样</strong>
                 </div>
               </div>
-              <div id="usage-status" class="status-line embedded"></div>
             </div>
 
             <div class="section-panel">
@@ -958,77 +1005,6 @@
                 </div>
               </div>
               <div id="pet-events" class="pet-events embedded"></div>
-            </div>
-
-            <div class="section-panel">
-              <div class="section-head">
-                <div>
-                  <h3>观察与提醒</h3>
-                  <p class="group-sub">低频参数，默认收起</p>
-                </div>
-              </div>
-              <details class="quiet-details embedded">
-                <summary>屏幕与摄像头</summary>
-                <div class="settings-card compact embedded">
-                  <div class="setting-row">
-                    <div class="setting-copy">
-                <label for="a-ss-interval">屏幕观察间隔（秒）</label><span class="row-hint">对话进行中会自动暂停</span>
-              </div>
-
-                    <input id="a-ss-interval" type="number" min="5" max="3600" step="5" placeholder="30" />
-                  </div>
-                  <div class="setting-row switch-row">
-                    <div class="setting-copy">
-                      <label for="a-ss-bubble">屏幕观察弹气泡</label>
-                    </div>
-                    <input id="a-ss-bubble" type="checkbox" />
-                  </div>
-                  <div class="setting-row switch-row">
-                    <div class="setting-copy">
-                <label for="a-camera-enabled">摄像头观察（功能层）</label><span class="row-hint">需权限明细权限层一起打开</span>
-              </div>
-
-                    <input id="a-camera-enabled" type="checkbox" />
-                  </div>
-                  <div class="setting-row switch-row">
-                    <div class="setting-copy">
-                <label for="a-camera-save">保存摄像头原图</label><span class="row-hint">默认只保存分析结果</span>
-              </div>
-
-                    <input id="a-camera-save" type="checkbox" />
-                  </div>
-                </div>
-              </details>
-              <details class="quiet-details embedded">
-                <summary>提醒与提示音</summary>
-                <div class="settings-card compact embedded">
-                  <div class="setting-row">
-                    <div class="setting-copy">
-                <label for="a-reminder-ai-timeout">提醒润色超时（毫秒）</label><span class="row-hint">超时用原文</span>
-              </div>
-
-                    <input id="a-reminder-ai-timeout" type="number" min="500" max="10000" step="500" placeholder="3000" />
-                  </div>
-                  <div class="setting-row switch-row">
-                    <div class="setting-copy">
-                      <label for="a-notify-sound-reminder">提醒到期时</label>
-                    </div>
-                    <input id="a-notify-sound-reminder" type="checkbox" />
-                  </div>
-                  <div class="setting-row switch-row">
-                    <div class="setting-copy">
-                      <label for="a-notify-sound-agent">编程助手状态变化时</label>
-                    </div>
-                    <input id="a-notify-sound-agent" type="checkbox" />
-                  </div>
-                  <div class="setting-row switch-row">
-                    <div class="setting-copy">
-                      <label for="a-notify-sound-skip-tts">语音提醒时静音</label>
-                    </div>
-                    <input id="a-notify-sound-skip-tts" type="checkbox" />
-                  </div>
-                </div>
-              </details>
             </div>
 
             <div class="section-panel">
@@ -1133,6 +1109,10 @@
             <button class="btn primary" id="wiz-finish" type="button">完成，去见它</button>
           </div>
         </section>
+
+        <div class="wizard-foot">
+          <button id="wizard-later" class="btn ghost" type="button">稍后再说</button>
+        </div>
       </div>
     </div>
 

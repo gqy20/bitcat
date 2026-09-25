@@ -139,6 +139,12 @@ async function mockInvoke(command, args = {}) {
         camera_observation_enabled: false,
         camera_observation_interval_sec: 30,
         camera_save_frames: false,
+        earnings: {
+          monthly_salary_cents: 1500000,
+          work_start_minutes: 540,
+          work_end_minutes: 1080,
+          workdays_per_month: 21.75,
+        },
         pet_asset_url: "",
       },
       storage: {
@@ -327,6 +333,12 @@ async function mockInvoke(command, args = {}) {
       { source: "opencode", installed: mockConnectorInstalled.opencode },
     ];
   }
+  if (command === "cmd_screen_time_summary") {
+    return { enabled: true, today_minutes: 18, week_minutes: 96 };
+  }
+  if (command === "cmd_earnings_summary") {
+    return { enabled: true, today_cents: 4250, coins: 45, coins_emitted: 42 };
+  }
   if (command === "cmd_repair_connector") {
     const source = String(args?.source || "");
     if (source in mockConnectorInstalled) mockConnectorInstalled[source] = true;
@@ -345,7 +357,12 @@ function toast(text, kind = "ok") {
   el.classList.remove("hidden", "ok", "err");
   el.classList.add(kind);
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => el.classList.add("hidden"), 2200);
+  // 错误是三段式文案，2.2 秒读不完；成功提示快消失。点击可提前关掉。
+  toast._t = setTimeout(() => el.classList.add("hidden"), kind === "err" ? 5500 : 2200);
+  el.onclick = () => {
+    clearTimeout(toast._t);
+    el.classList.add("hidden");
+  };
 }
 
 function confirmDialog(options = {}) {
@@ -574,7 +591,7 @@ function renderAi(ai) {
   $("ov-ai-model").textContent = eff.model ? eff.model.replace(/-\d{8}$/, "") : "-";
   $("ov-ai-model").title = eff.model || "";
   const connection = $("ov-ai-key");
-  const connectionLabel = ai.has_effective_key ? "已配置，尚未检测" : "尚未配置 API Key";
+  const connectionLabel = ai.has_effective_key ? "已配置，尚未检测" : "尚未配置密钥";
   connection.dataset.state = "missing";
   connection.setAttribute("aria-label", connectionLabel);
   connection.title = connectionLabel;
@@ -607,7 +624,7 @@ function collectConnectionDraft() {
 
 const CONNECTION_RESULTS = {
   verified: ["verified", "检测通过", "已收到模型回复，当前文字对话连接可用。"],
-  missing_key: ["error", "缺少密钥", "没有可用密钥，请填写 API Key 后重试。"],
+  missing_key: ["error", "缺少密钥", "没有可用密钥，请填写密钥后重试。"],
   invalid_config: ["error", "配置不完整", "请检查服务地址和模型名称后重试。"],
   unauthorized: ["error", "密钥无效", "服务没有接受这个密钥，请检查是否复制完整或已被撤销。"],
   forbidden: ["error", "没有访问权限", "当前账号没有访问权限，请检查服务商的账号与模型授权。"],
@@ -702,13 +719,13 @@ function renderOverviewNotices(ai) {
   if (!box) return;
   const notices = [];
   if (!ai.has_effective_key) {
-    notices.push(["API Key 未配置", "对话不可用"]);
+    notices.push(["密钥未配置", "对话不可用"]);
   }
   if (!ai.effective?.model) {
     notices.push(["模型未配置", ""]);
   }
   if (!notices.length) {
-    box.innerHTML = `<div class="empty compact">连接配置已填写，可在 AI 服务中检测是否可用。</div>`;
+    box.innerHTML = `<div class="empty compact">一切正常，没有需要你处理的。</div>`;
     return;
   }
   box.innerHTML = notices.map(([title, body]) => `
@@ -1129,12 +1146,29 @@ async function loadEarningsSummary() {
   if (!el) return;
   try {
     const s = await invoke("cmd_earnings_summary");
+    const rateEl = $("earnings-rate");
     if (!s.enabled) {
-      el.textContent = "未开启";
+      el.textContent = "未开启 · 填月薪后生效";
+      if (rateEl) rateEl.textContent = "";
       return;
     }
     const yuan = (s.today_cents / 100).toFixed(2);
-    el.textContent = "¥" + yuan + " · 已落 " + s.coins + " 枚金币";
+    // "已落"用实际掉落数（息屏跳过不计），账本和视觉保持一致。
+    el.textContent = `¥${yuan} · 已落 ${s.coins_emitted ?? s.coins ?? 0} 枚金币`;
+    // 机制自解释：面额 + 按月薪/工时算出的掉币速率。
+    if (rateEl) {
+      const e = SNAPSHOT?.appearance?.earnings || {};
+      const workMin = (e.work_end_minutes ?? 1080) - (e.work_start_minutes ?? 540);
+      const centsPerMin = e.monthly_salary_cents > 0 && workMin > 0 && e.workdays_per_month > 0
+        ? e.monthly_salary_cents / e.workdays_per_month / workMin
+        : 0;
+      const coinsPerMin = centsPerMin / 10;
+      rateEl.textContent = coinsPerMin >= 1
+        ? `1 枚 = 1 角 · 每分钟约 ${Math.round(coinsPerMin)} 枚`
+        : coinsPerMin > 0
+          ? `1 枚 = 1 角 · 约每 ${Math.max(1, Math.round(1 / coinsPerMin))} 分钟一枚`
+          : "1 枚 = 1 角";
+    }
   } catch (e) {
     log("上班金币加载失败: " + e);
     el.textContent = "—";
@@ -1145,14 +1179,16 @@ async function loadEarningsSummary() {
 async function loadScreenTimeSummary() {
   const today = $("screen-time-today");
   const week = $("screen-time-week");
+  const weekWrap = $("screen-time-week-wrap");
   if (!today || !week) return;
   try {
     const s = await invoke("cmd_screen_time_summary");
     if (!s.enabled) {
-      today.textContent = "已关闭";
-      week.textContent = "可在「它能做什么」里开启";
+      today.textContent = "已关闭，可在「它能做什么」开启";
+      if (weekWrap) weekWrap.hidden = true;
       return;
     }
+    if (weekWrap) weekWrap.hidden = false;
     today.textContent = formatDurationMin(s.today_minutes);
     week.textContent = formatDurationMin(s.week_minutes);
   } catch (e) {
@@ -1305,23 +1341,32 @@ function updateHomePermissionCards() {
     else summary.textContent = `已允许 ${enabledCount} 类操作，危险命令仍会拦截`;
   }
 
-  const master = $("camera-master");
-  if (master) master.checked = !!($("perm-camera")?.checked) && !!($("a-camera-enabled")?.checked);
+  const masterOn = !!($("perm-camera")?.checked) && !!($("a-camera-enabled")?.checked);
+  ["camera-master", "camera-master-expert"].forEach(id => {
+    const el = $(id);
+    if (el) el.checked = masterOn;
+  });
 }
 
-// 首页摄像头开关是一个用户能力，底层同步权限层和功能层两个设置。
+// 摄像头观察主开关有两处（首页 + 专家），任一处都同步权限层与功能层两个底层设置。
 function bindCameraMaster() {
-  const master = $("camera-master");
-  if (!master) return;
-  master.onchange = () => {
-    const on = master.checked;
-    if ($("perm-camera")) $("perm-camera").checked = on;
-    if ($("a-camera-enabled")) $("a-camera-enabled").checked = on;
-    markDirty("permissions");
-    markDirty("appearance");
-    updatePermissionGateSummary();
-    updateHomePermissionCards();
-  };
+  ["camera-master", "camera-master-expert"].forEach(id => {
+    const master = $(id);
+    if (!master) return;
+    master.onchange = () => {
+      const on = master.checked;
+      if ($("perm-camera")) $("perm-camera").checked = on;
+      if ($("a-camera-enabled")) $("a-camera-enabled").checked = on;
+      ["camera-master", "camera-master-expert"].forEach(other => {
+        const el = $(other);
+        if (el) el.checked = on;
+      });
+      markDirty("permissions");
+      markDirty("appearance");
+      updatePermissionGateSummary();
+      updateHomePermissionCards();
+    };
+  });
 }
 
 async function revokeAllPermissions() {
@@ -1447,6 +1492,9 @@ async function finishWizard() {
 function setupWizard() {
   const wizard = $("onboarding-wizard");
   if (!wizard) return;
+  // 显式跳过出口：关掉窗口、下次启动再回来；比隐藏的 Esc 更可控。
+  const later = $("wizard-later");
+  if (later) later.onclick = () => tryClose();
   wizard.querySelectorAll("[data-wizard-next]").forEach((btn) => {
     btn.addEventListener("click", () => setWizardStep(wizardStep + 1));
   });
@@ -1914,7 +1962,7 @@ async function loadAgentSessions() {
     renderAgentSessions(snapshot);
     refreshConnectorActivity();
     loadRemoteDevices();
-    if (status) status.textContent = snapshot?.generated_at_ms ? "已更新" : "等待状态";
+    if (status) status.textContent = snapshot?.generated_at_ms ? `更新于 ${formatDateTime(snapshot.generated_at_ms)}` : "等待状态";
   } catch (e) {
     log("加载 Agent 会话失败: " + e);
     renderAgentSessions(null);
@@ -2507,8 +2555,13 @@ function formatReminderSchedule(entry) {
   );
 }
 
+let savingAll = false;
+
 async function saveAll() {
-  if (connectionBusy) return;
+  if (connectionBusy || savingAll) return;
+  savingAll = true;
+  const saveBtn = $("btn-save");
+  if (saveBtn) saveBtn.disabled = true;
   try {
     if (dirty.ai && !await saveAiConnection(false)) return;
     if (dirty.user) {
@@ -2544,6 +2597,9 @@ async function saveAll() {
   } catch (e) {
     log("保存失败: " + e);
     toast("保存失败：" + String(e), "err");
+  } finally {
+    savingAll = false;
+    if (saveBtn) saveBtn.disabled = false;
   }
 }
 
@@ -2718,6 +2774,20 @@ function bindGlobal() {
       }
     });
   });
+  // 首页速答条：本分区内的条目点击滚到对应开关，跨分区的走 data-goto。
+  document.querySelectorAll("[data-scrollto]").forEach(el => {
+    const go = () => {
+      const target = document.getElementById(el.dataset.scrollto);
+      target?.closest(".section-panel")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    };
+    el.addEventListener("click", go);
+    el.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        go();
+      }
+    });
+  });
   $("perm-tools-jump").addEventListener("click", () => {
     switchTab("expert");
     switchExpertPage("permissions");
@@ -2805,7 +2875,11 @@ function bindGlobal() {
   });
   window.addEventListener("keydown", (e) => {
     if (confirmDialogOpen()) return;
-    if (e.key === "Escape") tryClose();
+    if (e.key === "Escape") {
+      // 向导模态打开时忽略 Esc：跳过要走显式的「稍后再说」，避免模态态误关窗。
+      if (!$("onboarding-wizard")?.classList.contains("hidden")) return;
+      tryClose();
+    }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
       e.preventDefault();
       saveAll();
