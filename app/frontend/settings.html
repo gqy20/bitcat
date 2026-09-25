@@ -448,32 +448,23 @@
               </summary>
               <div class="memories-body">
                 <div class="usage-block points-overview">
-                  <div class="points-level-card">
-                    <div class="points-level-badge points-metric">
+                  <div class="points-head">
+                    <button type="button" class="points-level-badge" id="points-level-badge" title="点一下有只小蛇">
                       <span class="points-level-number" id="points-level">1</span>
                       <span class="points-level-title" id="points-level-title">初识</span>
-                    </div>
-                    <div class="points-main">
-                      <div class="points-total points-metric">
-                        <strong id="points-total">0</strong>
-                        <span>总积分</span>
+                    </button>
+                    <div class="points-head-copy">
+                      <div class="points-head-line">
+                        <span class="points-exp-text" id="points-exp-text"></span>
+                        <span class="points-streak-longest">最长连续 <b id="points-longest-streak">0</b> 天</span>
                       </div>
-                      <div class="points-exp-bar">
+                      <div class="points-exp-bar" id="points-exp-bar">
                         <div class="points-exp-fill" id="points-exp-fill" style="width:0%"></div>
-                        <span id="points-exp-text">0 / 50</span>
                       </div>
                     </div>
-                    <div class="points-streak">
-                      <span class="points-metric"><strong id="points-streak">0</strong><small>连续天数</small></span>
-                      <span class="points-metric"><strong id="points-longest-streak">0</strong><small>最长连续</small></span>
-                    </div>
                   </div>
-                  <div class="points-activity-panel" aria-label="积分活动">
-                    <div class="points-activity-grid" id="points-activity-grid"></div>
-                  </div>
-                  <div class="points-categories" id="points-breakdown">
-                    <div class="points-empty">暂无成长记录</div>
-                  </div>
+                  <div class="points-caption" id="points-breakdown"></div>
+                  <div id="points-snake-stage" class="points-snake-stage hidden"></div>
                 </div>
 
                 <div class="usage-block">
@@ -481,6 +472,7 @@
                   <div class="achievements-grid" id="achievements-grid">
                     <div class="points-empty">暂无成长记录</div>
                   </div>
+                  <button id="achievements-more" class="points-more" type="button" hidden></button>
                 </div>
 
                 <div class="usage-block">
@@ -772,7 +764,10 @@
                 <label for="a-shortcut">全局快捷键</label><span class="row-hint">随时呼出它的组合键</span>
               </div>
 
-                  <input id="a-shortcut" type="text" placeholder="CommandOrControl+Alt+Space" spellcheck="false" />
+                  <div class="shortcut-field" id="shortcut-field">
+                    <div id="a-shortcut-chips" class="key-chips" role="button" tabindex="0" title="点击修改组合键"></div>
+                    <input id="a-shortcut" type="text" placeholder="CommandOrControl+Alt+Space" spellcheck="false" />
+                  </div>
                 </div>
               </div>
             </div>
@@ -789,25 +784,31 @@
           </div>
 
           <div class="expert-page hidden" data-expert-pane="permissions">
-            <div class="settings-card permission-gate-card" aria-label="Demo 权限闸门状态">
-              <div class="permission-gate-copy">
-                <h2 id="perm-gate-title">等待首次确认</h2>
-                <p id="perm-gate-summary">确认后，BitCat 会按这里的开关执行观察和系统工具权限。</p>
+            <div class="section-panel permission-gate-panel">
+              <div class="section-head">
+                <div>
+                  <h3 id="perm-gate-title">等待首次确认</h3>
+                  <p class="group-sub" id="perm-gate-summary">确认后，BitCat 会按这里的开关执行观察和系统工具权限。</p>
+                </div>
               </div>
-              <div class="permission-gate-grid">
-                <div class="permission-gate-item">
+              <div class="permission-gate-strip" role="list" aria-label="权限状态速览">
+                <div class="gate-item" role="listitem">
+                  <span class="connector-dot" id="perm-dot-screenshot" data-state="idle"></span>
                   <span>屏幕观察</span>
                   <strong id="perm-status-screenshot">-</strong>
                 </div>
-                <div class="permission-gate-item">
+                <div class="gate-item" role="listitem">
+                  <span class="connector-dot" id="perm-dot-camera" data-state="idle"></span>
                   <span>摄像头观察</span>
                   <strong id="perm-status-camera">-</strong>
                 </div>
-                <div class="permission-gate-item">
+                <div class="gate-item" role="listitem">
+                  <span class="connector-dot" id="perm-dot-tools" data-state="idle"></span>
                   <span>高风险工具</span>
                   <strong id="perm-status-tools">-</strong>
                 </div>
-                <div class="permission-gate-item">
+                <div class="gate-item" role="listitem">
+                  <span class="connector-dot" id="perm-dot-remote" data-state="idle"></span>
                   <span>远程看管</span>
                   <strong id="perm-status-remote">-</strong>
                 </div>

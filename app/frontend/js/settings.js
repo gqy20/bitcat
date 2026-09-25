@@ -257,9 +257,17 @@ async function mockInvoke(command, args = {}) {
           games_played: 2,
           screenshots: 11,
           praises: 4,
+          login_days: 3,
         },
       },
-      achievements: [],
+      achievements: [
+        { name: "初次对话", icon: "💬", description: "完成第一次对话", unlocked: true, hidden: false, points_reward: 10 },
+        { name: "观察员", icon: "🖥️", description: "屏幕观察累计 10 次", unlocked: true, hidden: false, points_reward: 15 },
+        { name: "好伙伴", icon: "🐾", description: "连续陪伴 3 天", unlocked: true, hidden: false, points_reward: 20 },
+        { name: "话痨", icon: "📣", description: "单日对话 20 轮", unlocked: false, hidden: false, points_reward: 30 },
+        { name: "记忆守护", icon: "💾", description: "长期记忆 50 条", unlocked: false, hidden: false, points_reward: 40 },
+        { name: "提醒达人", icon: "⏰", description: "完成 10 个提醒", unlocked: false, hidden: true, points_reward: 50 },
+      ],
       recent_events: [
         { event_kind: "ChatCompleted", points_awarded: 5, timestamp: new Date().toISOString() },
         { event_kind: "ScreenshotObserved", points_awarded: 3, timestamp: new Date().toISOString() },
@@ -1019,6 +1027,8 @@ function renderAppearance(a) {
   $("a-reminder-ai").checked = !!a.reminder_ai_personalization_enabled;
   $("a-reminder-ai-timeout").value = a.reminder_ai_timeout_ms ?? 3000;
   $("a-shortcut").value = a.global_shortcut;
+  renderShortcutChips();
+  bindShortcutChips();
   $("a-ss-interval").value = a.screenshot_interval_sec ?? 30;
   $("a-ss-bubble").checked = a.screenshot_show_bubble !== false;
   $("a-camera-enabled").checked = !!a.camera_observation_enabled;
@@ -1152,6 +1162,74 @@ async function loadScreenTimeSummary() {
   }
 }
 
+// ─── 全局快捷键键帽展示 ───
+// 加速器词表（CommandOrControl+Alt+Space）是开发者语汇；展示时拆成键帽，
+// CommandOrControl 按平台翻译。编辑时才露出原始文本框。
+const IS_MAC = typeof navigator !== "undefined"
+  && /Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent || "");
+
+const SHORTCUT_TOKEN_LABELS = {
+  commandorcontrol: () => (IS_MAC ? "⌘" : "Ctrl"),
+  cmdorctrl: () => (IS_MAC ? "⌘" : "Ctrl"),
+  command: () => "⌘",
+  cmd: () => "⌘",
+  control: () => "Ctrl",
+  ctrl: () => "Ctrl",
+  alt: () => "Alt",
+  option: () => "Alt",
+  shift: () => "Shift",
+  space: () => "空格",
+  plus: () => "+",
+  up: () => "↑",
+  down: () => "↓",
+  left: () => "←",
+  right: () => "→",
+};
+
+function shortcutChips(value) {
+  return String(value || "")
+    .split("+")
+    .map(token => token.trim())
+    .filter(Boolean)
+    .map(token => {
+      const label = SHORTCUT_TOKEN_LABELS[token.toLowerCase()];
+      return label ? label() : token;
+    });
+}
+
+function renderShortcutChips() {
+  const chips = $("a-shortcut-chips");
+  if (!chips) return;
+  const labels = shortcutChips($("a-shortcut")?.value);
+  chips.innerHTML = labels.length
+    ? labels.map(label => `<kbd>${escapeHtml(label)}</kbd>`).join("")
+    : `<span class="key-chips-empty">未设置，点击输入</span>`;
+}
+
+function bindShortcutChips() {
+  const field = $("shortcut-field");
+  const chips = $("a-shortcut-chips");
+  const input = $("a-shortcut");
+  if (!field || !chips || !input) return;
+  const edit = () => {
+    field.classList.add("editing");
+    input.focus();
+  };
+  const done = () => {
+    field.classList.remove("editing");
+    renderShortcutChips();
+  };
+  chips.onclick = edit;
+  chips.onkeydown = (event) => {
+    if (event.key === "Enter" || event.key === " ") { event.preventDefault(); edit(); }
+  };
+  input.onblur = done;
+  input.onkeydown = (event) => {
+    if (event.key === "Enter") { event.preventDefault(); done(); }
+    if (event.key === "Escape") { input.value = SNAPSHOT?.appearance?.global_shortcut || input.value; done(); }
+  };
+}
+
 function formatDurationMin(minutes) {
   const m = Number(minutes) || 0;
   if (m < 60) return m + " 分钟";
@@ -1265,28 +1343,33 @@ async function revokeAllPermissions() {
   toast("已全部收权，点击保存后生效", "ok");
 }
 
+// 状态词表全 app 统一：开启 / 关闭 / 拦截（高风险工具按六开关实际状态细分）。
+// "默认"前缀不再出现在状态行——默认值属于开关提示，不属于当前状态。
+function setGateStatus(key, dotState, label) {
+  const dot = $(`perm-dot-${key}`);
+  const value = $(`perm-status-${key}`);
+  if (dot) dot.dataset.state = dotState;
+  if (value) value.textContent = label;
+}
+
 function updatePermissionGateSummary() {
   const completed = $("perm-onboarding-completed")?.checked;
   const screenshot = $("perm-screenshot")?.checked;
   const camera = $("perm-camera")?.checked;
   const remote = $("perm-agent-remote")?.checked;
-  const highRiskEnabled = [
-    "perm-shell",
-    "perm-read-file",
-    "perm-clipboard",
-    "perm-foreground",
-    "perm-launch",
-    "perm-hotkey",
-  ].some(id => $(id)?.checked);
+  const toolIds = ["perm-shell", "perm-read-file", "perm-clipboard", "perm-foreground", "perm-launch", "perm-hotkey"];
+  const enabledCount = toolIds.filter(id => $(id)?.checked).length;
 
-  $("perm-gate-title").textContent = completed ? "Demo 权限已确认" : "等待首次确认";
+  $("perm-gate-title").textContent = completed ? "首次说明已确认" : "等待首次确认";
   $("perm-gate-summary").textContent = completed
-    ? "这些设置会持久化到 app_settings.json，重启后继续生效。"
+    ? "改动保存后生效，只存本机。"
     : "完成前会自动打开本页，便于审查 AI、观察和系统工具边界。";
-  $("perm-status-screenshot").textContent = screenshot ? "可见开启" : "关闭";
-  $("perm-status-camera").textContent = camera ? "已允许" : "默认关闭";
-  $("perm-status-tools").textContent = highRiskEnabled ? "部分允许" : "默认拦截";
-  $("perm-status-remote").textContent = remote ? "已允许" : "关闭";
+  setGateStatus("screenshot", screenshot ? "ready" : "idle", screenshot ? "开启" : "关闭");
+  setGateStatus("camera", camera ? "ready" : "idle", camera ? "开启" : "关闭");
+  if (enabledCount === 0) setGateStatus("tools", "missing", "拦截");
+  else if (enabledCount === toolIds.length) setGateStatus("tools", "ready", "全部允许");
+  else setGateStatus("tools", "missing", `部分允许 ${enabledCount}/${toolIds.length}`);
+  setGateStatus("remote", remote ? "ready" : "idle", remote ? "开启" : "关闭");
 }
 
 function collectPermissions() {
@@ -1916,32 +1999,37 @@ function renderAgentSessions(snapshot) {
   const diag = $("aw-diag");
   if (diag) {
     const parts = [];
-    if (snapshot?.monitor_port) parts.push(`端口 ${snapshot.monitor_port}`);
-    if (typeof snapshot?.event_count === "number") parts.push(`事件 ${snapshot.event_count}`);
-    if (snapshot?.last_event_at_ms) parts.push(`最近 ${new Date(snapshot.last_event_at_ms).toLocaleTimeString()}`);
-    if (snapshot?.log_dir) parts.push(`日志 ${snapshot.log_dir}`);
-    diag.innerHTML = parts.map(part => `<span>${escapeHtml(part)}</span>`).join("");
+    if (snapshot?.monitor_port) parts.push(escapeHtml(`端口 ${snapshot.monitor_port}`));
+    if (typeof snapshot?.event_count === "number") parts.push(escapeHtml(`事件 ${snapshot.event_count}`));
+    if (snapshot?.last_event_at_ms) parts.push(escapeHtml(`最近 ${new Date(snapshot.last_event_at_ms).toLocaleTimeString()}`));
+    if (snapshot?.log_dir) parts.push(`日志 <code>${escapeHtml(snapshot.log_dir)}</code>`);
+    // 诊断辅助信息降成一行小字：不值得四颗药丸的存在感。
+    diag.innerHTML = parts.length ? `<span>${parts.join(" · ")}</span>` : "";
   }
   const sessions = snapshot?.sessions || [];
   if (!sessions.length) {
     box.innerHTML = `<div class="empty-note">暂无 Agent 会话。</div>`;
     return;
   }
-  box.innerHTML = sessions.map(session => `
+  // 每会话两行：身份行（项目·状态·来源·机器）+ 任务行（路径·提示词）。
+  box.innerHTML = sessions.map(session => {
+    const path = session.workspace || session.session_id;
+    return `
     <div class="agent-session ${escapeAttr(session.status)}">
       <div class="agent-session-main">
         <strong>${escapeHtml(session.workspace_name || "未知项目")}</strong>
-        <span>${escapeHtml(session.status_label || session.status)}</span>
+        <span class="agent-session-status">${escapeHtml(session.status_label || session.status)}</span>
+        <span>${escapeHtml(window.AgentSources.label(session.source))}</span>
+        ${session.machine ? `<span>${escapeHtml(session.machine)}</span>` : ""}
+        ${session.tool_name ? `<span>${escapeHtml(session.tool_name)}</span>` : ""}
       </div>
       <div class="agent-session-sub">
-        <span>${escapeHtml(window.AgentSources.label(session.source))}</span>
-        ${session.machine ? `<small>${escapeHtml(session.machine)}</small>` : ""}
-        <code>${escapeHtml(session.workspace || session.session_id)}</code>
-        ${session.tool_name ? `<small>${escapeHtml(session.tool_name)}</small>` : ""}
+        <code title="${escapeAttr(path)}">${escapeHtml(path)}</code>
+        ${session.user_prompt_preview ? `<span class="agent-session-prompt" title="${escapeAttr(session.user_prompt_preview)}">${escapeHtml(session.user_prompt_preview)}</span>` : ""}
       </div>
-      ${session.user_prompt_preview ? `<p>${escapeHtml(session.user_prompt_preview)}</p>` : ""}
     </div>
-  `).join("");
+  `;
+  }).join("");
 }
 
 // ── 编程助手连接器（专家模式 · 编程助手看管）──
@@ -2924,17 +3012,27 @@ function shortText(value, limit) {
 
 const POINTS_CATEGORY_LABELS = {
   Chat: "对话", Memory: "记忆", Routine: "日常",
-  Fun: "娱乐", Observation: "观察", Bond: "互动", Daily: "每日",
+  Fun: "娱乐", Observation: "观察", Bond: "互动", Daily: "陪伴",
 };
+
+let achievementsExpanded = false;
+let lastAchievementsView = null;
 
 async function loadPointsState() {
   try {
     const view = await invoke("cmd_get_points_state");
     renderPointsLevel(view.state);
-    renderPointsActivityGrid(view.state, view.recent_events);
     renderPointsBreakdown(view.state);
     renderAchievements(view.achievements, view.state);
     renderPointsEvents(view.recent_events);
+    // 彩蛋与徽章展开都是显式动作，用 onclick 赋值保证重复加载不叠监听。
+    const badge = document.getElementById("points-level-badge");
+    if (badge) badge.onclick = () => togglePointsSnake();
+    const more = document.getElementById("achievements-more");
+    if (more) more.onclick = () => {
+      achievementsExpanded = !achievementsExpanded;
+      if (lastAchievementsView) renderAchievements(lastAchievementsView.achievements, lastAchievementsView.state);
+    };
   } catch (e) {
     log("加载积分状态失败: " + e);
   }
@@ -2944,28 +3042,32 @@ function renderPointsLevel(state) {
   const el = (id) => document.getElementById(id);
   const lv = el("points-level");
   const title = el("points-level-title");
-  const total = el("points-total");
   const fill = el("points-exp-fill");
+  const bar = el("points-exp-bar");
   const expText = el("points-exp-text");
-  const streak = el("points-streak");
   const longestStreak = el("points-longest-streak");
 
-  if (lv) lv.textContent = state.level || 1;
+  const level = Number(state.level || 1);
+  if (lv) lv.textContent = level;
   if (title) title.textContent = state.level_title || "-";
-  if (total) total.textContent = formatNumber(state.total_points || 0);
 
-  const expIn = state.experience_in_current || 0;
-  const expNext = state.experience_to_next || 1;
+  const expIn = Number(state.experience_in_current || 0);
+  const expNext = Number(state.experience_to_next || 0);
   const pct = expNext > 0 ? Math.min(100, Math.round((expIn / expNext) * 100)) : 100;
   if (fill) fill.style.width = pct + "%";
-  if (expText) expText.textContent = `${formatNumber(expIn)} / ${formatNumber(expNext)}`;
-  if (streak) streak.textContent = state.current_streak_days || 0;
+  // 折叠摘要行已有等级/总分/连续，这里只补"还差多少"；原始进度放 tooltip。
+  if (expText) {
+    expText.textContent = expNext > 0
+      ? `距 Lv.${level + 1} 还差 ${formatNumber(Math.max(0, expNext - expIn))} 分`
+      : "已是最高等级";
+  }
+  if (bar) bar.title = expNext > 0 ? `${formatNumber(expIn)} / ${formatNumber(expNext)}` : "";
   if (longestStreak) longestStreak.textContent = state.longest_streak_days || 0;
 
-  // 折叠态摘要行：Lv5 · 1,200 分 · 连续 12 天
+  // 折叠态摘要行：Lv2 熟悉 · 42 分 · 连续 3 天
   const recall = el("recall-summary");
   if (recall) {
-    const parts = [`Lv.${state.level || 1}`, `${formatNumber(state.total_points || 0)} 分`];
+    const parts = [`Lv.${level} ${state.level_title || ""}`.trim(), `${formatNumber(state.total_points || 0)} 分`];
     if (state.current_streak_days) parts.push(`连续 ${state.current_streak_days} 天`);
     recall.textContent = parts.join(" · ");
   }
@@ -2987,50 +3089,43 @@ function renderPointsBreakdown(state) {
     ["Daily", "login_days", cats.login_days || 0],
   ];
 
+  // 单行 caption：分类计数不值得一条横幅。
   container.innerHTML = items
     .filter(([, , v]) => v > 0)
-    .map(
-      ([key, , value]) =>
-        `<div class="points-cat-item">
-          <span class="points-cat-value">${value}</span>
-          <span class="points-cat-label">${POINTS_CATEGORY_LABELS[key] || key}</span>
-        </div>`
-    )
-    .join("") || '<div class="points-empty">暂无成长记录</div>';
+    .map(([key, , value]) => `<span>${POINTS_CATEGORY_LABELS[key] || key} <b>${formatNumber(value)}</b></span>`)
+    .join("") || "<span>暂无成长记录</span>";
 }
 
-function renderPointsActivityGrid(state, events) {
-  const grid = document.getElementById("points-activity-grid");
-  if (!grid) return;
-
-  const total = Number(state?.total_points || 0);
-  const cats = state?.categories || {};
-  const eventCount = Array.isArray(events) ? events.length : 0;
-  const categoryScore = Object.values(cats).reduce((sum, value) => sum + Number(value || 0), 0);
-  const levelBase = Number(state?.level || 1) * 6;
-  const seed = Math.max(total, categoryScore, eventCount, levelBase);
-  const cellCount = 52 * 7;
-  const activeCells = Math.min(cellCount, Math.max(18, Math.round(seed * 1.65)));
-  pointsSnakeLength = Math.min(8, Math.max(5, Math.round(activeCells / 16)));
+// ── 贪吃蛇彩蛋：点等级徽章显式触发，跑 12 秒自动收起 ──
+// 不再寄生在"热力图"上：那张图的格子是装饰性伪数据，已移除。
+function togglePointsSnake() {
+  const stage = document.getElementById("points-snake-stage");
+  if (!stage) return;
+  clearTimeout(togglePointsSnake._timer);
+  if (!stage.classList.contains("hidden")) {
+    stopPointsSnake();
+    stage.classList.add("hidden");
+    stage.innerHTML = "";
+    return;
+  }
+  stage.classList.remove("hidden");
+  stage.innerHTML = `
+    <svg class="points-snake-layer" viewBox="0 0 828 108" aria-hidden="true">
+      <polyline class="points-snake-line" points=""></polyline>
+      <circle class="points-snake-head-dot" r="5"></circle>
+    </svg>
+    <span class="points-snake-note">彩蛋：小蛇散步中，再点一次徽章收起</span>
+  `;
   pointsSnakePath = buildPointsSnakePath();
-  pointsSnakeOffset = Math.max(0, pointsSnakePath.length - pointsSnakeLength - 12);
-
-  grid.innerHTML = Array.from({ length: cellCount }, (_, i) => {
-    const col = Math.floor(i / 7);
-    const row = i % 7;
-    const wave = (i * 31 + total * 7 + categoryScore * 3 + eventCount * 11) % 101;
-    const rightBias = col / 51;
-    const clusterBoost = col > 32 ? 13 : col > 24 ? 6 : 0;
-    const rowTexture = row === 0 || row === 6 ? -3 : 0;
-    const threshold = Math.min(48, 4 + seed / 8 + rightBias * 22 + clusterBoost + rowTexture);
-    const isActive = wave < threshold;
-    const level = isActive ? Math.max(1, Math.min(4, Math.ceil((wave + rightBias * 35) / 22))) : 0;
-    const classes = ["points-activity-cell", `level-${level}`];
-    return `<span class="${classes.join(" ")}" data-cell="${i}" aria-hidden="true"></span>`;
-  }).join("");
-  ensurePointsSnakeLayer(grid);
+  pointsSnakeLength = 7;
+  pointsSnakeOffset = 0;
   drawPointsSnake();
   startPointsSnake();
+  togglePointsSnake._timer = setTimeout(() => {
+    stopPointsSnake();
+    stage.classList.add("hidden");
+    stage.innerHTML = "";
+  }, 12000);
 }
 
 function buildPointsSnakePath() {
@@ -3061,6 +3156,12 @@ function startPointsSnake() {
   pointsSnakeRaf = window.requestAnimationFrame(animatePointsSnake);
 }
 
+function stopPointsSnake() {
+  if (!pointsSnakeRaf) return;
+  window.cancelAnimationFrame(pointsSnakeRaf);
+  pointsSnakeRaf = null;
+}
+
 function animatePointsSnake(now) {
   const elapsed = Math.min(80, now - pointsSnakeLastFrame);
   pointsSnakeLastFrame = now;
@@ -3071,23 +3172,10 @@ function animatePointsSnake(now) {
   pointsSnakeRaf = window.requestAnimationFrame(animatePointsSnake);
 }
 
-function ensurePointsSnakeLayer(grid) {
-  if (grid.querySelector(".points-snake-layer")) return;
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("class", "points-snake-layer");
-  svg.setAttribute("viewBox", "0 0 828 108");
-  svg.setAttribute("aria-hidden", "true");
-  svg.innerHTML = `
-    <polyline class="points-snake-line" points=""></polyline>
-    <circle class="points-snake-head-dot" r="5"></circle>
-  `;
-  grid.appendChild(svg);
-}
-
 function drawPointsSnake() {
-  const grid = document.getElementById("points-activity-grid");
-  const line = grid?.querySelector(".points-snake-line");
-  const head = grid?.querySelector(".points-snake-head-dot");
+  const stage = document.getElementById("points-snake-stage");
+  const line = stage?.querySelector(".points-snake-line");
+  const head = stage?.querySelector(".points-snake-head-dot");
   if (!line || !head || !pointsSnakePath.length || !pointsSnakeLength) return;
 
   const sampleCount = pointsSnakeLength * 5;
@@ -3133,20 +3221,25 @@ function pointsCellPoint(index) {
 function renderAchievements(achievements, state) {
   const grid = document.getElementById("achievements-grid");
   const countEl = document.getElementById("achievement-count");
+  const more = document.getElementById("achievements-more");
   if (!grid) return;
 
   achievements = Array.isArray(achievements) ? achievements : [];
-  const unlockedIds = new Set(state.achievements || []);
+  lastAchievementsView = { achievements, state };
   const unlockedCount = achievements.filter((a) => a.unlocked).length;
 
   if (countEl) countEl.textContent = unlockedCount;
 
   if (achievements.length === 0) {
     grid.innerHTML = '<div class="points-empty">暂无成长记录</div>';
+    if (more) more.hidden = true;
     return;
   }
 
-  grid.innerHTML = achievements
+  // 未解锁的灰卡不常驻两屏：默认只展示已解锁，折叠成一行名单按需展开。
+  const locked = achievements.filter((a) => !a.unlocked);
+  const shown = achievementsExpanded ? achievements : achievements.filter((a) => a.unlocked);
+  grid.innerHTML = shown
     .map((a) => {
       const cls = a.unlocked ? "achievement-badge unlocked" : "achievement-badge locked";
       const icon = a.unlocked || !a.hidden ? a.icon : "?";
@@ -3156,7 +3249,20 @@ function renderAchievements(achievements, state) {
         ${a.unlocked ? `<span class="achievement-bonus">+${a.points_reward}</span>` : ""}
       </div>`;
     })
-    .join("");
+    .join("") || '<div class="points-empty">还没有解锁的徽章</div>';
+
+  if (more) {
+    if (!locked.length) {
+      more.hidden = true;
+    } else if (achievementsExpanded) {
+      more.hidden = false;
+      more.textContent = "收起未解锁";
+    } else {
+      const names = locked.slice(0, 4).map((a) => a.name).join("、");
+      more.hidden = false;
+      more.textContent = `还有 ${locked.length} 枚：${names}${locked.length > 4 ? "…" : ""}（展开）`;
+    }
+  }
 }
 
 function renderPointsEvents(events) {
@@ -3253,5 +3359,8 @@ if (typeof window !== "undefined") {
     renderActionItem,
     keyMetaText,
     positionLabel,
+    shortcutChips,
+    renderShortcutChips,
+    updatePermissionGateSummary,
   };
 }

@@ -469,63 +469,26 @@ code {
   line-height: var(--leading-compact);
 }
 
-.permission-gate-card {
-  display: grid;
-  grid-template-columns: minmax(260px, 0.95fr) minmax(360px, 1.05fr);
-  gap: 20px;
-  align-items: stretch;
-  padding: 22px 24px;
-}
-
-.permission-gate-copy {
+/* 权限状态带：四个只读状态一行排开，点色即语义（复用连接器状态点）。 */
+.permission-gate-strip {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px 32px;
+  padding: 2px 2px 4px;
+}
+
+.gate-item {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  min-width: 0;
-}
-
-.permission-gate-copy h2 {
-  margin: 0;
-  color: var(--text-main);
-  font-size: var(--text-xl);
-  line-height: var(--leading-tight);
-}
-
-.permission-gate-copy p {
-  margin: 0;
-  max-width: 48ch;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: var(--text-sm);
-  line-height: var(--leading-body);
 }
 
-.permission-gate-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.permission-gate-item {
-  display: grid;
-  gap: 6px;
-  align-content: center;
-  min-height: 74px;
-  padding: 12px 16px;
-  border-radius: 8px;
-  background: rgba(34, 48, 64, 0.035);
-  border: 0;
-}
-
-.permission-gate-item span {
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-}
-
-.permission-gate-item strong {
+.gate-item strong {
   color: var(--text-main);
-  font-size: var(--text-md);
-  line-height: var(--leading-label);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
 }
 
 .permission-card .setting-row {
@@ -1689,32 +1652,31 @@ input[type="checkbox"]:checked::after {
   white-space: nowrap;
 }
 
+/* 诊断信息一行小字 caption，不用药丸。 */
 .agent-watch-diag {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
   margin-bottom: 12px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
 }
 
 .agent-watch-diag span {
-  max-width: 100%;
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  border: 1px solid rgba(var(--accent-blue-rgb), 0.18);
-  border-radius: 999px;
-  padding: 4px 9px;
-  color: #526d88;
-  background: rgba(var(--accent-blue-rgb), 0.058);
+}
+
+.agent-watch-diag code {
+  color: #52606f;
   font-size: var(--text-xs);
 }
 
+/* 会话卡两行：身份行 + 任务行。 */
 .agent-session {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(160px, 280px);
-  align-items: center;
-  gap: 12px;
-  padding: 14px 18px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  padding: 12px 18px;
   border: 1px solid var(--line-subtle);
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.68);
@@ -1741,8 +1703,9 @@ input[type="checkbox"]:checked::after {
 .agent-session-sub {
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
 }
 
 .agent-session-main strong {
@@ -1761,40 +1724,37 @@ input[type="checkbox"]:checked::after {
   font-size: var(--text-sm);
 }
 
-.agent-session-sub {
-  align-items: flex-end;
-  max-width: 280px;
-  text-align: right;
+/* 状态着色：扫一眼分出在跑 / 等待 / 出错 / 完成。 */
+.agent-session.working .agent-session-status,
+.agent-session.tool_running .agent-session-status,
+.agent-session.compacting .agent-session-status {
+  color: #32835c;
 }
 
-.agent-session-sub code,
-.agent-session-sub small {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.agent-session.waiting .agent-session-status {
+  color: #a77624;
 }
 
-.agent-session-sub span {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.agent-session.error .agent-session-status {
+  color: #9f3e34;
 }
 
 .agent-session-sub code {
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #52606f;
   font-size: var(--text-xs);
 }
 
-.agent-session p {
-  grid-column: 1 / -1;
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
+.agent-session-sub .agent-session-prompt {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-secondary);
 }
 
 .memory-title {
@@ -2511,7 +2471,6 @@ input[type="checkbox"]:checked::after {
 
   .setting-row,
   .agent-watch-card,
-  .permission-gate-card,
   .switch-row,
   .usage-session,
   .agent-session,
@@ -2526,15 +2485,6 @@ input[type="checkbox"]:checked::after {
 
   .action-item .a-type {
     flex: 1 1 150px;
-  }
-
-  .agent-session-sub {
-    align-items: flex-start;
-    text-align: left;
-  }
-
-  .permission-gate-grid {
-    grid-template-columns: 1fr;
   }
 
   .agent-watch-card .setting-row {
@@ -2554,44 +2504,27 @@ input[type="checkbox"]:checked::after {
 
 /* ─── 积分与成就系统 ─── */
 
-.points-level-card {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  grid-template-areas:
-    "badge header"
-    "bar bar"
-    "streak streak";
-  gap: 14px 18px;
-  align-items: center;
-  padding: 18px 20px;
-  background: linear-gradient(135deg, rgba(var(--accent-blue-rgb), 0.06), rgba(var(--accent-green-rgb), 0.035));
-  border: 1px solid rgba(var(--accent-blue-rgb), 0.14);
-  border-radius: var(--radius);
-  margin-bottom: 14px;
-}
-
-.points-level-header {
-  grid-area: header;
+/* 回忆卡头部：徽章 + 升级进度 + 最长连续。
+   折叠摘要行已有等级/总分/连续，展开态只补新信息，不重复数字。 */
+.points-head {
   display: flex;
-  align-items: baseline;
-  gap: 14px;
-  min-width: 0;
+  align-items: center;
+  gap: 16px;
 }
 
 .points-level-badge {
-  grid-area: badge;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0;
   width: 60px;
   height: 60px;
+  padding: 0;
   border-radius: 50%;
   background: linear-gradient(145deg, rgba(var(--accent-green-rgb), 0.16), rgba(var(--accent-blue-rgb), 0.06));
   border: 1px solid rgba(var(--accent-green-rgb), 0.26);
-  justify-content: center;
   flex-shrink: 0;
+  cursor: pointer;
 }
 
 .points-level-number {
@@ -2609,49 +2542,45 @@ input[type="checkbox"]:checked::after {
   line-height: var(--leading-tight);
 }
 
-.points-total {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
+.points-head-copy {
+  flex: 1;
   min-width: 0;
+  display: grid;
+  gap: 6px;
 }
 
-.points-total strong {
-  font-size: var(--type-metric-compact);
-  font-weight: var(--weight-bold);
-  color: var(--text-main);
-  font-family: var(--font-brand);
-  line-height: var(--leading-flat);
-  letter-spacing: 0;
-  font-variant-numeric: tabular-nums;
+.points-head-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.points-total span {
-  font-size: var(--type-dense-badge);
+.points-streak-longest {
   color: var(--text-muted);
-  line-height: var(--leading-tight);
+  font-size: var(--type-dense-badge);
+  white-space: nowrap;
+}
+
+.points-streak-longest b {
+  color: var(--sun-amber);
+  font-weight: var(--weight-bold);
 }
 
 .points-exp-bar {
-  grid-area: bar;
   position: relative;
   width: 100%;
-  height: 20px;
-  display: flex;
-  align-items: center;
+  height: 12px;
 }
 
 .points-exp-fill {
   position: absolute;
   left: 0;
-  top: 6px;
-  height: 8px;
+  top: 4px;
+  height: 4px;
   z-index: 1;
-  border-radius: 6px;
-  background: #26333f;
-  opacity: 0.85;
+  border-radius: 4px;
+  background: #40c463;
   transition: width 0.5s ease;
 }
 
@@ -2660,81 +2589,66 @@ input[type="checkbox"]:checked::after {
   position: absolute;
   left: 0;
   right: 0;
-  top: 6px;
-  height: 8px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.05);
+  top: 4px;
+  height: 4px;
+  border-radius: 4px;
+  background: rgba(34, 48, 64, 0.08);
 }
 
 #points-exp-text,
 .points-exp-text {
-  position: absolute;
-  z-index: 2;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: var(--type-dense-badge);
-  color: var(--text-faint);
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0;
-  white-space: nowrap;
-  text-shadow: none;
-}
-
-.points-streak {
-  grid-area: streak;
-  display: flex;
-  gap: 18px;
-  margin-top: 2px;
-  font-size: var(--type-tag);
+  font-size: var(--type-control);
   color: var(--text-secondary);
-  line-height: var(--leading-label);
-}
-
-.points-streak strong {
-  color: var(--sun-amber);
-  font-weight: var(--weight-bold);
-}
-
-/* 分类网格 */
-.points-categories {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
-  gap: 8px;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.54);
-  border-radius: var(--radius-sm);
-  margin-bottom: 4px;
-}
-
-.points-cat-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 8px 4px;
-  border-radius: var(--radius-sm);
-  transition: background 0.15s;
-}
-
-.points-cat-item:hover {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.points-cat-label {
-  font-size: var(--type-dense-badge);
-  color: var(--text-muted);
-  line-height: var(--leading-tight);
-}
-
-.points-cat-value {
-  font-size: var(--type-body);
-  font-weight: var(--weight-bold);
-  color: var(--text-main);
-  font-family: var(--font-mono);
-  line-height: var(--leading-flat);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 分类计数单行 caption */
+.points-caption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.points-caption b {
+  color: var(--text-main);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 蛇彩蛋舞台：点徽章才出现 */
+.points-snake-stage {
+  position: relative;
+}
+
+.points-snake-stage.hidden {
+  display: none;
+}
+
+.points-snake-note {
+  position: absolute;
+  right: 0;
+  top: -18px;
+  color: var(--text-faint);
+  font-size: var(--type-dense-badge);
+}
+
+.points-more {
+  margin-top: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.points-more:hover {
+  color: var(--text-main);
+  text-decoration: underline;
 }
 
 /* 成就徽章 */
@@ -2844,227 +2758,13 @@ input[type="checkbox"]:checked::after {
 
 .points-overview {
   display: grid;
-  gap: 10px;
-}
-
-.points-overview .usage-block-title {
-  margin-bottom: 0;
-  width: max-content;
-  color: var(--text-main);
-  font-size: var(--type-control);
-  font-weight: var(--weight-bold);
-  line-height: var(--leading-heading);
-}
-
-.points-overview .points-level-card {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-template-areas: none;
-  gap: 14px;
-  align-items: start;
-  width: 100%;
-  padding: 0;
-  margin: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.points-overview .points-level-badge,
-.points-overview .points-exp-bar,
-.points-overview .points-streak {
-  grid-area: auto;
-}
-
-.points-main {
-  min-width: 0;
-  display: grid;
-  gap: 7px;
-}
-
-.points-overview .points-level-badge {
-  width: auto;
-  height: auto;
-  border-radius: var(--radius-sm);
-  gap: 4px;
-  align-self: stretch;
-}
-
-.points-overview .points-metric {
-  min-height: 58px;
-  padding: 8px 10px;
-  display: grid;
-  align-content: center;
-  gap: 4px;
-  border: 1px solid rgba(34, 48, 64, 0.055);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.42);
-}
-
-.points-overview .points-level-number {
-  font-size: var(--type-metric);
-  font-family: var(--font-mono);
-  font-weight: var(--weight-bold);
-  line-height: var(--leading-flat);
-  color: #30a14e;
-  text-shadow: none;
-}
-
-.points-overview .points-level-title {
-  max-width: 100%;
-  overflow: hidden;
-  font-size: var(--type-dense-badge);
-  line-height: var(--leading-tight);
-  color: var(--text-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.points-overview .points-total {
-  display: grid;
-  align-content: center;
-  gap: 4px;
-}
-
-.points-overview .points-total strong {
-  color: var(--text-main);
-  font-family: var(--font-mono);
-  font-size: var(--type-metric);
-  font-weight: var(--weight-bold);
-  line-height: var(--leading-flat);
-  font-variant-numeric: tabular-nums;
-}
-
-.points-overview .points-total span {
-  font-size: var(--type-tag);
-  color: var(--text-muted);
-}
-
-.points-overview .points-exp-bar {
-  height: 14px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  opacity: 0.72;
-}
-
-.points-overview .points-exp-bar::before,
-.points-overview .points-exp-fill {
-  top: 5px;
-  height: 4px;
-  border-radius: 4px;
-}
-
-.points-overview .points-exp-bar::before {
-  right: 42px;
-  background: rgba(34, 48, 64, 0.07);
-}
-
-.points-overview .points-exp-fill {
-  max-width: calc(100% - 42px);
-  background: #40c463;
-  box-shadow: none;
-}
-
-.points-overview #points-exp-text,
-.points-overview .points-exp-text {
-  position: static;
-  justify-self: end;
-  transform: none;
-  font-size: var(--type-dense-badge);
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  line-height: var(--leading-flat);
-  white-space: nowrap;
-  text-shadow: none;
-}
-
-.points-overview .points-streak {
-  grid-column: span 2;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin: 0;
-  justify-content: stretch;
-}
-
-.points-overview .points-streak span {
-  display: grid;
-  align-content: start;
-  gap: 3px;
-  min-width: 0;
-  text-align: left;
-}
-
-.points-overview .points-streak strong {
-  color: var(--text-main);
-  font-family: var(--font-mono);
-  font-size: var(--type-metric);
-  font-weight: var(--weight-bold);
-  line-height: var(--leading-flat);
-  font-variant-numeric: tabular-nums;
-}
-
-.points-overview .points-streak small {
-  color: var(--text-muted);
-  font-size: var(--type-dense-badge);
-  line-height: var(--leading-tight);
-  white-space: nowrap;
-}
-
-.points-activity-panel {
-  width: 100%;
-  overflow-x: auto;
-  padding: 12px 6px;
-  border-radius: 8px;
-  background: transparent;
-  box-shadow: none;
-}
-
-.points-activity-grid {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(52, 12px);
-  grid-template-rows: repeat(7, 12px);
-  grid-auto-flow: column;
-  gap: 4px;
-  width: max-content;
-  min-width: max-content;
-  margin: 0 auto;
-}
-
-.points-activity-cell {
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-  background: #e9edf1;
-  box-shadow: none;
-}
-
-.points-activity-cell.level-1 {
-  background: #9be9a8;
-}
-
-.points-activity-cell.level-2 {
-  background: #58d26b;
-}
-
-.points-activity-cell.level-3 {
-  background: #30a14e;
-}
-
-.points-activity-cell.level-4 {
-  background: #216e39;
+  gap: 12px;
 }
 
 .points-snake-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  width: 828px;
-  height: 108px;
+  display: block;
+  width: 100%;
+  height: auto;
   overflow: visible;
   pointer-events: none;
 }
@@ -3081,47 +2781,6 @@ input[type="checkbox"]:checked::after {
   fill: #6a1b9a;
   stroke: rgba(255, 255, 255, 0.82);
   stroke-width: 1px;
-}
-
-.points-overview .points-categories {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 0;
-  padding: 6px 0 0;
-  margin: 0;
-  border-top: 1px solid rgba(34, 48, 64, 0.055);
-  border-bottom: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-.points-overview .points-categories:has(.points-empty:only-child) {
-  display: block;
-  padding: 0;
-  border: 0;
-}
-
-.points-overview .points-cat-item {
-  min-width: 0;
-  padding: 4px 8px;
-  border-radius: 0;
-  border-right: 1px solid rgba(34, 48, 64, 0.045);
-}
-
-.points-overview .points-cat-item:last-child {
-  border-right: 0;
-}
-
-.points-overview .points-cat-value {
-  font-size: var(--type-item);
-  font-weight: var(--weight-bold);
-  line-height: var(--leading-flat);
-}
-
-.points-overview .points-cat-label {
-  margin-top: 2px;
-  font-size: var(--type-dense-badge);
-  line-height: var(--leading-tight);
 }
 
 .points-empty {
@@ -3186,22 +2845,12 @@ input[type="checkbox"]:checked::after {
 }
 
 @media (max-width: 760px) {
-  .points-overview .points-level-card {
-    grid-template-columns: auto minmax(0, 1fr);
+  .points-head {
+    flex-wrap: wrap;
   }
 
-  .points-overview .points-streak {
-    grid-column: 1 / -1;
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .points-overview .points-streak span {
-    padding-left: 0;
-    border-left: 0;
-  }
-
-  .points-overview .points-categories {
-    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  .points-head-copy {
+    flex: 1 1 100%;
   }
 }
 
@@ -3651,6 +3300,52 @@ body {
 .inline-fields select {
   width: 152px;
   height: 36px;
+}
+
+/* 全局快捷键：键帽展示，点击才切回原始加速器文本框。 */
+.shortcut-field {
+  min-width: 0;
+}
+
+.shortcut-field:not(.editing) input {
+  display: none;
+}
+
+.shortcut-field.editing .key-chips {
+  display: none;
+}
+
+.key-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 36px;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.key-chips:hover {
+  background: rgba(34, 48, 64, 0.05);
+}
+
+.key-chips kbd {
+  min-width: 34px;
+  padding: 5px 10px;
+  border: 1px solid var(--line-normal);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text-main);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-code);
+  text-align: center;
+}
+
+.key-chips-empty {
+  color: var(--text-faint);
+  font-size: var(--text-sm);
 }
 
 .inline-fields input[type="time"] {

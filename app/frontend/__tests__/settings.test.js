@@ -602,3 +602,69 @@ describe('connector headline', () => {
     dom.window.close();
   });
 });
+
+describe('shortcut keycaps', () => {
+  it('maps accelerator tokens to platform keycap labels', () => {
+    const { helpers } = loadSettings('<div></div>');
+    // jsdom 非 Mac 环境：CommandOrControl 译为 Ctrl。
+    expect(helpers.shortcutChips('CommandOrControl+Alt+Space')).toEqual(['Ctrl', 'Alt', '空格']);
+    expect(helpers.shortcutChips('Ctrl+Shift+Z')).toEqual(['Ctrl', 'Shift', 'Z']);
+    expect(helpers.shortcutChips('cmd+left')).toEqual(['⌘', '←']);
+    expect(helpers.shortcutChips('')).toEqual([]);
+  });
+
+  it('renders one keycap per subcommand with visible separation', () => {
+    const { dom, helpers } = loadSettings(
+      '<div class="shortcut-field" id="shortcut-field"><div id="a-shortcut-chips"></div><input id="a-shortcut" value="CommandOrControl+Alt+Space" /></div>'
+    );
+    helpers.renderShortcutChips();
+    const keys = [...dom.window.document.querySelectorAll('#a-shortcut-chips kbd')];
+    expect(keys.map(k => k.textContent)).toEqual(['Ctrl', 'Alt', '空格']);
+    dom.window.close();
+  });
+});
+
+describe('permission gate strip', () => {
+  const gateDom = `
+    <input type="checkbox" id="perm-onboarding-completed" checked />
+    <input type="checkbox" id="perm-screenshot" checked />
+    <input type="checkbox" id="perm-camera" />
+    <input type="checkbox" id="perm-shell" checked />
+    <input type="checkbox" id="perm-read-file" />
+    <input type="checkbox" id="perm-clipboard" />
+    <input type="checkbox" id="perm-foreground" />
+    <input type="checkbox" id="perm-launch" />
+    <input type="checkbox" id="perm-hotkey" />
+    <input type="checkbox" id="perm-agent-remote" />
+    <h3 id="perm-gate-title"></h3>
+    <p id="perm-gate-summary"></p>
+    <span class="connector-dot" id="perm-dot-screenshot"></span><strong id="perm-status-screenshot"></strong>
+    <span class="connector-dot" id="perm-dot-camera"></span><strong id="perm-status-camera"></strong>
+    <span class="connector-dot" id="perm-dot-tools"></span><strong id="perm-status-tools"></strong>
+    <span class="connector-dot" id="perm-dot-remote"></span><strong id="perm-status-remote"></strong>
+  `;
+
+  it('uses the unified vocabulary and dot states', () => {
+    const { dom, helpers } = loadSettings(gateDom);
+    helpers.updatePermissionGateSummary();
+    const doc = dom.window.document;
+    expect(doc.getElementById('perm-gate-title').textContent).toBe('首次说明已确认');
+    expect(doc.getElementById('perm-gate-summary').textContent).not.toContain('app_settings.json');
+    expect(doc.getElementById('perm-status-screenshot').textContent).toBe('开启');
+    expect(doc.getElementById('perm-dot-screenshot').dataset.state).toBe('ready');
+    expect(doc.getElementById('perm-status-camera').textContent).toBe('关闭');
+    expect(doc.getElementById('perm-dot-camera').dataset.state).toBe('idle');
+    expect(doc.getElementById('perm-status-tools').textContent).toBe('部分允许 1/6');
+    expect(doc.getElementById('perm-dot-tools').dataset.state).toBe('missing');
+    dom.window.close();
+  });
+
+  it('reports 拦截 when no high-risk tool is enabled', () => {
+    const { dom, helpers } = loadSettings(gateDom);
+    dom.window.document.getElementById('perm-shell').checked = false;
+    helpers.updatePermissionGateSummary();
+    expect(dom.window.document.getElementById('perm-status-tools').textContent).toBe('拦截');
+    expect(dom.window.document.getElementById('perm-dot-tools').dataset.state).toBe('missing');
+    dom.window.close();
+  });
+});
