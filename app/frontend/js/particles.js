@@ -30,19 +30,22 @@
     }, 2500);
   }
 
-  // A4 上班金币：掉 count 枚金币（调度器增量推送，错开生成）
-  function dropCoins(count) {
-    const n = Math.max(1, Math.min(count, 8));
+  // A4 上班金币：掉 count 枚金币（调度器增量推送，错开生成）。
+  // fountain = 下班结算仪式，放宽单次上限，不让一天最重要的节拍被夹半。
+  function dropCoins(count, fountain = false) {
+    const cap = fountain ? 16 : 8;
+    const n = Math.max(1, Math.min(count, cap));
     for (let i = 0; i < n; i++) {
       const x = 24 + Math.random() * 72;
-      const delay = i * 90;
-      setTimeout(() => spawn('¥', 'p-coin', x, 34), delay);
+      const delay = i * (fountain ? 60 : 90);
+      setTimeout(() => spawn('', 'p-coin', x, 34), delay);
     }
   }
 
-  // 进入新状态时一次性触发（happy 喷心）
-  function onStateEnter(state) {
-    if (state === 'happy') {
+  // 进入新状态时一次性触发（happy 喷心；opts.hearts=false 时只切状态不喷，
+  // 供掉币反应复用 happy 而不和币雨叠心）
+  function onStateEnter(state, opts) {
+    if (state === 'happy' && !(opts && opts.hearts === false)) {
       // 喷 5 颗心，错开生成时间
       for (let i = 0; i < 5; i++) {
         const dx = (Math.random() - 0.5) * 56;

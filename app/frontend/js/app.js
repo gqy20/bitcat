@@ -842,6 +842,11 @@ import { PerformerHost } from './performance/performer-host.js';
   // idle 动画帧时长 1500ms → 重绘从 60fps 降到 ~0.7fps，GPU 空转消失
   // （常驻资源审计 A1）。尺寸变化通过 invalidateSpriteRender() 显式失效。
   let lastRenderKey = null;
+  // E 基础版：批量掉币时节流触发猫反应，并抑制该次 happy 的心喷（避免和币雨叠）
+  let suppressHeartsOnce = false;
+  let lastCoinReactAt = 0;
+  // D：宠物 mode 同步到 body dataset，睡眠/游戏时 CSS 不演掉币
+  let lastBodyMode = null;
 
   function currentRenderKey() {
     return pet.visualState() + '|' + pet.frame + '|' + pet.facingRight + '|' + viewportRenderScale();
@@ -868,11 +873,17 @@ import { PerformerHost } from './performance/performer-host.js';
         if (pet.state !== prevState) {
           syncStateClass(pet.state);
           flashSprite();
-          Particles.onStateEnter(pet.state);
+          Particles.onStateEnter(pet.state, suppressHeartsOnce ? { hearts: false } : undefined);
+          suppressHeartsOnce = false;
           prevState = pet.state;
         }
 
         Particles.tick(pet.state, dt);
+
+        if (lastBodyMode !== pet.mode) {
+          lastBodyMode = pet.mode;
+          document.body.dataset.petMode = pet.mode || "";
+        }
 
         var renderKey = currentRenderKey();
         if (renderKey !== lastRenderKey) {
@@ -1257,10 +1268,16 @@ import { PerformerHost } from './performance/performer-host.js';
       setHiddenScreenshotCount(event.payload);
     });
 
-    // A4 上班金币：调度器定向推送增量，粒子系统掉落
+    // A4 上班金币：调度器定向推送增量，粒子系统掉落；结算喷泉带 fountain 放宽上限。
     window.__TAURI__.event.listen('coin-drop', (event) => {
       const count = Number(event.payload?.count) || 0;
-      if (count > 0) Particles.dropCoins(Math.min(count, 8));
+      if (count > 0) Particles.dropCoins(count, event.payload?.fountain === true);
+      // E 基础版：批量掉币时节流让猫高兴一下（idle 才打断，一分钟至多一次）
+      if (count >= 6 && pet && pet.state === 'idle' && Date.now() - lastCoinReactAt > 60_000) {
+        lastCoinReactAt = Date.now();
+        suppressHeartsOnce = true;
+        pet.setState('happy');
+      }
     });
 
     // pet badge：agent 会话快照推送驱动（替代 2.5s 全量轮询）。
