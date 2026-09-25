@@ -105,7 +105,7 @@
       kind: display.action_label || "Task",
       detail: display.detail || "",
       project,
-      source: display.source_label || agentSourceLabel(session.source),
+      source: display.source_label || window.AgentSources.label(session.source),
       machine: session.machine || "",
       age: display.age_label || ageLabel(session.age_sec),
       tone: display.tone || session.status || "idle",
@@ -207,20 +207,6 @@
     return `${Math.floor(ageSec / 3600)}h`;
   }
 
-  function agentSourceLabel(source) {
-    if (source === "codex") return "Codex";
-    if (source === "claude_code") return "Claude Code";
-    if (source === "pi") return "pi";
-    if (source === "opencode") return "opencode";
-    return source || "Agent";
-  }
-
-  function compactSourceLabel(source) {
-    if (source === "Claude Code") return "Claude";
-    if (source === "Codex") return "Codex";
-    return source;
-  }
-
   function renderMetaItem(item) {
     const cls = item.className ? ` ${item.className}` : "";
     return `<span class="task-meta-item${cls}" title="${escapeAttr(item.value)}">${escapeHtml(item.value)}</span>`;
@@ -231,7 +217,7 @@
       ? `<span class="task-device" title="${escapeAttr(view.machine)}">${escapeHtml(view.machine)}</span>`
       : "";
     const source = view.source
-      ? `<span class="task-source" title="${escapeAttr(view.source)}">${escapeHtml(compactSourceLabel(view.source))}</span>`
+      ? `<span class="task-source" title="${escapeAttr(view.source)}">${escapeHtml(window.AgentSources.compact(view.source))}</span>`
       : "";
     const usage = view.usage
       ? `<span class="task-usage" title="${escapeAttr(view.usageTooltip)}">${escapeHtml(view.usage)}</span>`
@@ -525,7 +511,8 @@
 
   window.__agentWatchRefresh = refresh;
   window.__agentWatchTest = {
-    agentSourceLabel,
+    // 来源标签已收敛到 agent_sources.js，导出仅作兼容测试断言。
+    agentSourceLabel: source => window.AgentSources.label(source),
     renderMetaItem,
     lineParts,
     deviceHue,
