@@ -66,3 +66,6 @@ app/config/
 # playwright-cli snapshot outputs (use --filename=.playwright-cli/xxx.yml)
 /*.snapshot.yml
 *.zip
+
+# 本地运行时数据（应用/测试把数据目录写到仓库根时）
+.bitcat/
