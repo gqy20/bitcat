@@ -46,6 +46,11 @@ pub fn install_pi_extension() -> Result<String, String> {
     ))
 }
 
+/// 探测 BitCat 转发扩展是否已安装在 pi 扩展目录。
+pub fn is_installed() -> bool {
+    extension_path().map(|path| path.is_file()).unwrap_or(false)
+}
+
 #[tauri::command]
 pub async fn cmd_install_pi_extension() -> Result<String, String> {
     install_pi_extension()

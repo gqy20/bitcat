@@ -61,6 +61,11 @@ pub fn install_opencode_plugin() -> Result<String, String> {
     ))
 }
 
+/// 探测 BitCat 插件是否已安装在 opencode 插件目录。
+pub fn is_installed() -> bool {
+    plugin_path().map(|path| path.is_file()).unwrap_or(false)
+}
+
 #[tauri::command]
 pub async fn cmd_install_opencode_plugin() -> Result<String, String> {
     install_opencode_plugin()

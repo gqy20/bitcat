@@ -16,6 +16,7 @@
 //! 使用了 Win32 API。这些 unsafe 的安全前提在各子模块的 `//!` 中单独说明。
 
 pub mod action_bus;
+pub mod agent_connectors;
 pub mod agent_monitor;
 pub mod agent_watch_window;
 pub mod audio_reactive;
@@ -189,6 +190,8 @@ pub fn run() {
             pi_hooks::cmd_open_pi_extensions_dir,
             opencode_hooks::cmd_install_opencode_plugin,
             opencode_hooks::cmd_open_opencode_plugins_dir,
+            agent_connectors::cmd_agent_connectors_status,
+            agent_connectors::cmd_repair_connector,
             pet_event_bus::cmd_get_pet_event_log,
             screen_time::cmd_screen_time_summary,
             earnings_scheduler::cmd_earnings_summary,
