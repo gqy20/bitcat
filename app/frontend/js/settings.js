@@ -1266,6 +1266,40 @@ function bindShortcutChips() {
   };
 }
 
+// 主 pane 的 overlay 滚动拇指：原生滚动条宽度为 0（不占位），
+// 滚动时显示自绘拇指，停止 700ms 后淡出。
+function setupPaneScrollIndicator() {
+  const pane = document.querySelector(".pane");
+  const thumb = $("pane-scroll-thumb");
+  if (!pane || !thumb) return;
+  let hideTimer = 0;
+
+  const update = () => {
+    const max = pane.scrollHeight - pane.clientHeight;
+    if (max <= 0) {
+      thumb.classList.remove("visible");
+      return;
+    }
+    const viewport = pane.clientHeight;
+    const height = Math.max(36, (viewport / pane.scrollHeight) * viewport);
+    const top = (pane.scrollTop / max) * (viewport - height);
+    thumb.style.height = `${Math.round(height)}px`;
+    thumb.style.top = `${Math.round(pane.offsetTop + top)}px`;
+    thumb.classList.add("visible");
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => thumb.classList.remove("visible"), 700);
+  };
+
+  pane.addEventListener("scroll", update, { passive: true });
+  window.addEventListener("resize", update);
+  // 内容高度变化（切分区、异步渲染）后校正拇指比例
+  if (typeof ResizeObserver !== "undefined") {
+    const ro = new ResizeObserver(() => update());
+    ro.observe(pane);
+    pane.querySelectorAll(":scope > section").forEach(section => ro.observe(section));
+  }
+}
+
 function formatDurationMin(minutes) {
   const m = Number(minutes) || 0;
   if (m < 60) return m + " 分钟";
@@ -3391,6 +3425,7 @@ document.addEventListener("DOMContentLoaded", () => {
   bindConnection();
   bindPetPreview();
   setupWizard();
+  setupPaneScrollIndicator();
   loadSnapshot();
 });
 

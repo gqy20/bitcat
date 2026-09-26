@@ -343,16 +343,37 @@ summary {
   padding: 34px 52px 42px;
 }
 
-.pane::-webkit-scrollbar,
+/* 主 pane 的原生滚动条归零：overlay 拇指由 JS 自绘，永不占位、永不跳动。
+   textarea 等小容器保留经典自定义滚动条。 */
+.pane::-webkit-scrollbar { width: 0; height: 0; }
 textarea::-webkit-scrollbar { width: 10px; }
-.pane::-webkit-scrollbar-track,
 textarea::-webkit-scrollbar-track { background: transparent; }
-.pane::-webkit-scrollbar-thumb,
 textarea::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
   border-radius: 999px;
   background: rgba(34, 48, 64, 0.18);
   background-clip: padding-box;
+}
+
+/* overlay 滚动拇指：滚动时出现，停下淡出。 */
+.pane-scroll-thumb {
+  position: absolute;
+  right: 4px;
+  width: 8px;
+  border-radius: 999px;
+  background: rgba(36, 51, 45, 0.28);
+  opacity: 0;
+  transition: opacity 180ms ease;
+  pointer-events: none;
+  z-index: 40;
+}
+
+.pane-scroll-thumb.visible {
+  opacity: 1;
+}
+
+.pane-scroll-thumb:hover {
+  background: rgba(36, 51, 45, 0.38);
 }
 
 .tab.hidden { display: none; }
