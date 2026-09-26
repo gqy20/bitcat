@@ -73,6 +73,12 @@ body.state-idle #sprite {
   animation: breath 2.4s ease-in-out infinite;
 }
 
+/* Authored pixel animations already contain their own breathing/attention cues. */
+body.stable-pet-body.state-idle #sprite,
+body.stable-pet-body.state-sleep #sprite {
+  animation: none;
+}
+
 body.pet-hotspot-observe #sprite {
   filter: brightness(1.05) saturate(1.08) drop-shadow(0 0 4px rgba(112, 214, 255, 0.22));
 }

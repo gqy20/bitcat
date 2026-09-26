@@ -176,6 +176,9 @@ class PetStateMachine {
     this.actionConfig = options.actionConfig || {};
     this.state = 'idle';
     this.action = null;
+    this.locomotionAction = null;
+    this.dragHeld = false;
+    this.dragPhase = null;
     this.frame = 0;
     this.frameTimeMs = 0;
     this.stateTimeMs = 0;
@@ -198,6 +201,11 @@ class PetStateMachine {
 
   setState(newState) {
     if (this.state === newState) return;
+    if (this.locomotionAction) {
+      this.action = null;
+      this.locomotionAction = null;
+      this.actionTimeMs = 0;
+    }
     this.state = newState;
     this.frame = 0;
     this.frameTimeMs = 0;
@@ -215,6 +223,11 @@ class PetStateMachine {
     const config = this.actionConfig[action] || this.stateConfig[action];
     if (!config || !Array.isArray(config.frames) || config.frames.length === 0) return false;
     options = options || {};
+    if (this.dragPhase && !options.drag) return false;
+    if (!options.locomotion && this.stateConfig.walk?.locomotion && this.state === 'walk') {
+      this.setState(this.currentVisualState());
+    }
+    this.locomotionAction = options.locomotion || null;
     this.action = action;
     this.actionTimeMs = 0;
     this.frame = config.frames[0].sprite;
@@ -223,16 +236,84 @@ class PetStateMachine {
   }
 
   clearAction() {
+    const locomotion = this.locomotionAction;
     this.action = null;
+    this.locomotionAction = null;
+    this.dragHeld = false;
+    this.dragPhase = null;
     this.actionTimeMs = 0;
     this.frameTimeMs = 0;
     this.frame = 0;
-    this.applySemanticState();
+    if (locomotion !== 'enter') this.applySemanticState();
   }
 
   walkTo(x) {
+    if (this.dragPhase) return;
+    if (!Number.isFinite(x)) return;
+    const walking = this.state === 'walk';
+    const motion = this.stateConfig.walk?.locomotion;
+    if (motion && x === this.x) {
+      if (walking) this.finishWalk();
+      return;
+    }
     this.setState('walk');
     this.targetX = x;
+    if (motion) {
+      if (x !== this.x) this.facingRight = x > this.x;
+      this.speed = motion.speed;
+      if (!walking) this.playAction(motion.enterAction, { locomotion: 'enter' });
+    }
+  }
+
+  finishWalk() {
+    const motion = this.stateConfig.walk?.locomotion;
+    this.setState(this.currentVisualState());
+    if (motion && this.state === 'idle') {
+      this.playAction(motion.exitAction, { locomotion: 'exit' });
+    }
+  }
+
+  // A physical drag owns the visual layer until explicit release/cancellation.
+  // Notifications can update the underlying semantic state without dropping the cat.
+  beginDrag() {
+    if (this.dragHeld) return true;
+    if (!this.actionConfig.dragging) return false;
+    this.clearAction();
+    this.targetX = null;
+    this.setState(this.currentVisualState());
+    this.dragHeld = true;
+    this.dragPhase = this.actionConfig.pickup ? 'pickup' : 'hold';
+    return this.playAction(this.dragPhase === 'pickup' ? 'pickup' : 'dragging', { drag: true });
+  }
+
+  endDrag() {
+    if (!this.dragHeld) return false;
+    this.dragHeld = false;
+    if (!this.actionConfig.drop) { this.clearAction(); return true; }
+    this.dragPhase = 'drop';
+    this.playAction('drop', { drag: true });
+    return true;
+  }
+
+  cancelDrag() {
+    if (this.dragPhase) this.clearAction();
+  }
+
+  advanceDrag(dtMs) {
+    let config = this.actionConfig[this.action];
+    this.actionTimeMs += dtMs;
+    const duration = timelineDuration(config.frames);
+    if (this.dragPhase === 'pickup' && this.actionTimeMs >= duration) {
+      const remaining = this.actionTimeMs - duration;
+      this.dragPhase = 'hold';
+      this.playAction('dragging', { drag: true });
+      this.actionTimeMs = remaining;
+      config = this.actionConfig.dragging;
+    } else if (this.dragPhase === 'drop' && this.actionTimeMs >= duration) {
+      this.clearAction();
+      return;
+    }
+    this.frame = resolveTimelineSprite(config.frames, this.actionTimeMs);
   }
 
   setMode(mode) {
@@ -320,7 +401,16 @@ class PetStateMachine {
   }
 
   update(dtMs) {
+    if (!Number.isFinite(dtMs) || dtMs < 0) return;
     this.expireNotifications(performance.now());
+    if (this.dragPhase) { this.advanceDrag(dtMs); return; }
+    if (this.locomotionAction) {
+      const action = this.actionConfig[this.action];
+      const remaining = Math.max(0, timelineDuration(action.frames) * (action.repeat || 1) - this.actionTimeMs);
+      if (this.advanceAction(dtMs)) return;
+      dtMs = Math.max(0, dtMs - remaining);
+      if (dtMs === 0) return;
+    }
     this.stateTimeMs += dtMs;
     this.frameTimeMs += dtMs;
 
@@ -352,8 +442,12 @@ class PetStateMachine {
     if (this.state === 'walk' && this.targetX !== null) {
       const dx = this.targetX - this.x;
       const move = this.speed * dtMs / 1000;
-      if (Math.abs(dx) < move) {
+      if (Math.abs(dx) <= move) {
         this.x = this.targetX;
+        if (config.locomotion) {
+          this.finishWalk();
+          return;
+        }
       } else {
         this.x += Math.sign(dx) * move;
       }

@@ -1,0 +1,22 @@
+{
+  "status": "preview-only",
+  "image": "tuxedo-idle-stabilized.png",
+  "frameWidth": 450,
+  "frameHeight": 612,
+  "columns": 4,
+  "frameCount": 4,
+  "frames": [
+    { "sprite": 0, "duration": 2600 },
+    { "sprite": 1, "duration": 140 },
+    { "sprite": 0, "duration": 1800 },
+    { "sprite": 2, "duration": 240 },
+    { "sprite": 0, "duration": 180 },
+    { "sprite": 3, "duration": 260 },
+    { "sprite": 0, "duration": 180 },
+    { "sprite": 2, "duration": 200 },
+    { "sprite": 0, "duration": 1900 },
+    { "sprite": 1, "duration": 130 },
+    { "sprite": 0, "duration": 2300 }
+  ],
+  "loop": true
+}

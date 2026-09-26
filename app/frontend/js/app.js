@@ -1,11 +1,15 @@
 // app.js — Tauri 事件监听 + 主循环入口 + 右键菜单 + 折叠/展开 + 拖拽
 
 import { PerformerHost } from './performance/performer-host.js';
+import { WindowWalk } from './window-walk.js';
+import { NativePetDrag } from './native-pet-drag.js';
 
 (function() {
   'use strict';
 
   let SpriteRenderer = window.SpriteRenderer;
+  let windowWalk = null;
+  let nativeDrag = null;
   const PetState = window.PetState;
   const Particles = window.Particles;
 
@@ -192,10 +196,17 @@ import { PerformerHost } from './performance/performer-host.js';
       stateConfig: SpriteRenderer && SpriteRenderer.stateConfig,
       actionConfig: SpriteRenderer && SpriteRenderer.actionConfig,
     });
+    windowWalk = new WindowWalk({ pet, getWindow: getCurrentWin,
+      getApi: () => window.__TAURI__.window,
+      getScale: () => normalPetWidth / SpriteRenderer.frameWidth });
+    nativeDrag = new NativePetDrag({ pet,
+      isPressed: () => window.__TAURI__.core.invoke('cmd_pet_drag_button_down'),
+      onDrop: finishNativeDrag });
 
     canvas = document.getElementById('sprite');
     ctx = canvas.getContext('2d');
     bodyEl = document.body;
+    bodyEl.classList.toggle('stable-pet-body', SpriteRenderer.stableBody === true);
     var normalSize = resolveNormalPetSize();
     normalSize = loadSavedPetSize(normalSize);
     normalPetWidth = normalSize.w;
@@ -384,7 +395,10 @@ import { PerformerHost } from './performance/performer-host.js';
 
   async function initPullState() {
     try {
-      if (!window.__TAURI__ || !window.__TAURI__.core) return;
+      if (!window.__TAURI__ || !window.__TAURI__.core) {
+        await applyViewportSize(normalPetWidth, normalPetHeight, false);
+        return;
+      }
       const snap = await window.__TAURI__.core.invoke('cmd_get_window_state');
       console.log('[pet] pull 状态:', snap);
 
@@ -412,6 +426,28 @@ import { PerformerHost } from './performance/performer-host.js';
     var DRAG_THRESHOLD_PX = 6;
     var OBSERVE_DBLCLICK_GRACE_MS = 240;
     var activeGesture = null;
+    var pendingNativeGesture = null;
+
+    function released(event) {
+      if (event.button != null && event.button !== 0) return;
+      if (pendingNativeGesture) pendingNativeGesture.released = true;
+      if (nativeDrag) nativeDrag.release();
+    }
+    window.addEventListener('pointerup', released);
+    window.addEventListener('mouseup', released);
+    window.addEventListener('pointercancel', () => {
+      if (pendingNativeGesture) pendingNativeGesture.released = true;
+      // Native dragging may take capture away from WebView while still held.
+      // Its button query remains authoritative after the native session starts.
+      if (nativeDrag && !nativeDrag.session) nativeDrag.cancel();
+    });
+    window.addEventListener('pointermove', event => {
+      if (event.pointerType !== 'touch' && event.buttons === 0) {
+        if (pendingNativeGesture) pendingNativeGesture.released = true;
+        if (nativeDrag?.session?.nativePolling === false) nativeDrag.release();
+      }
+    });
+    window.addEventListener('pagehide', () => nativeDrag && nativeDrag.cancel());
     var observeClickTimer = null;
 
     function logPet(msg) {
@@ -562,10 +598,13 @@ import { PerformerHost } from './performance/performer-host.js';
       e.preventDefault();
 
       if (gesture.win) {
-        playPetAction('dragging');
+        pendingNativeGesture = gesture;
+        if (windowWalk) await windowWalk.cancel();
+        if (gesture.released) { pendingNativeGesture = null; return; }
         logPet('pet drag mode');
-        try { await gesture.win.startDragging(); } catch (_) {}
-        startSnapPoll(gesture.win);
+        const request = nativeDrag.start(gesture.win);
+        pendingNativeGesture = null;
+        await request;
       }
     });
 
@@ -597,40 +636,18 @@ import { PerformerHost } from './performance/performer-host.js';
 
   }
 
-  /// 轮询检测拖拽结束，判断是否需要吸附
-  function startSnapPoll(win) {
-    let lastKey = '';
-    let stableCount = 0;
-    const pollId = setInterval(async () => {
-      try {
-        const pos = await win.outerPosition();
-        const key = pos.x + ',' + pos.y;
-        if (key === lastKey) {
-          stableCount++;
-          if (stableCount >= 3) {
-            clearInterval(pollId);
-            console.log('[pet] 拖拽结束，位置:', pos);
-            // 调用 Rust 计算吸附目标（只有靠近边缘才返回有效结果）
-            const result = await cmdSnapPet(pos.x, pos.y);
-            console.log('[pet] cmd_snap_pet 结果:', result);
-            if (result && result.edge && result.edge !== 'none') {
-              const { edge, x: toX, y: toY } = result;
-              console.log('[pet] 吸附到', edge, toX, toY);
-              // 先动画到吸附位置，再切换为竖条窗口
-              await animateSnap(win, pos.x, pos.y, toX, toY);
-              // 等动画完成再切换窗口
-              await new Promise(r => setTimeout(r, 320));
-              await cmdSnapTransform(edge, toX, toY);
-            } else {
-              await cmdSavePetPosition(pos.x, pos.y);
-            }
-          }
-        } else {
-          lastKey = key;
-          stableCount = 0;
-        }
-      } catch (_) { clearInterval(pollId); }
-    }, 100);
+  // Only called after an explicit release; a stationary held window is not a drop.
+  async function finishNativeDrag(win, current) {
+    const pos = await win.outerPosition();
+    if (!current()) return;
+    const result = await cmdSnapPet(pos.x, pos.y);
+    if (!current()) return;
+    if (result && result.edge && result.edge !== 'none') {
+      await animateSnap(win, pos.x, pos.y, result.x, result.y, current);
+      if (current()) await cmdSnapTransform(result.edge, result.x, result.y);
+    } else if (current()) {
+      await cmdSavePetPosition(pos.x, pos.y);
+    }
   }
 
   /// 调用 Rust cmd_snap_pet，返回 { edge, x, y }
@@ -678,6 +695,8 @@ import { PerformerHost } from './performance/performer-host.js';
 
     handle.addEventListener('pointerdown', function(e) {
       if (e.button !== 0 || collapsed) return;
+      if (windowWalk) windowWalk.cancel();
+      if (nativeDrag) nativeDrag.cancel();
       e.preventDefault();
       e.stopPropagation();
       clearHoverActivity();
@@ -814,26 +833,23 @@ import { PerformerHost } from './performance/performer-host.js';
   }
 
   /// 从当前位置动画滑到吸附目标
-  async function animateSnap(win, fromX, fromY, toX, toY) {
-    console.log('[pet] animateSnap 开始:', { fromX, fromY, toX, toY, scale: win.scaleFactor });
-    // outerPosition() 返回物理像素，PhysicalPosition 也用物理像素，保持一致
+  async function animateSnap(win, fromX, fromY, toX, toY, current = () => true) {
     const duration = 300;
     const start = performance.now();
     const Pos = window.__TAURI__.window.PhysicalPosition;
-
-    function frame(now) {
-      const t = Math.min((now - start) / duration, 1);
-      const e = easeOutBack(t);
-      const cx = Math.round(fromX + (toX - fromX) * e);
-      const cy = Math.round(fromY + (toY - fromY) * e);
-      win.setPosition(new Pos(cx, cy));
-      if (t < 1) {
-        requestAnimationFrame(frame);
-      } else {
-        console.log('[pet] animateSnap 完成，位置:', cx, cy);
+    await new Promise((resolve, reject) => {
+      async function frame(now) {
+        if (!current()) { resolve(); return; }
+        const t = Math.min((now - start) / duration, 1);
+        const e = easeOutBack(t);
+        try {
+          await win.setPosition(new Pos(Math.round(fromX + (toX-fromX)*e), Math.round(fromY + (toY-fromY)*e)));
+          if (t < 1 && current()) requestAnimationFrame(frame);
+          else resolve();
+        } catch (error) { reject(error); }
       }
-    }
-    requestAnimationFrame(frame);
+      requestAnimationFrame(frame);
+    });
   }
 
   // ========== 主循环 ==========
@@ -868,11 +884,12 @@ import { PerformerHost } from './performance/performer-host.js';
       } else {
         // 正常模式：状态机驱动
         pet.update(dt);
+        if (windowWalk) windowWalk.update();
         var visualState = pet.visualState();
 
         if (pet.state !== prevState) {
           syncStateClass(pet.state);
-          flashSprite();
+          if (!SpriteRenderer.stableBody) flashSprite();
           Particles.onStateEnter(pet.state, suppressHeartsOnce ? { hearts: false } : undefined);
           suppressHeartsOnce = false;
           prevState = pet.state;
@@ -1019,6 +1036,7 @@ import { PerformerHost } from './performance/performer-host.js';
   }
 
   function triggerHoverActivity() {
+    if (pet && pet.dragPhase) return;
     if (!bodyEl || isSnapWindow) return;
     bodyEl.classList.add('pet-hover-active');
     clearTimeout(hoverActivityTimer);
@@ -1224,6 +1242,14 @@ import { PerformerHost } from './performance/performer-host.js';
 
     window.__TAURI__.event.listen('pet-event', (event) => {
       const payload = event.payload;
+      if (payload && payload.type === 'walk_to' && pet.stateConfig.walk?.locomotion) {
+        if (pet.dragPhase) return;
+        if (!collapsed && !(performerHost && performerHost.hasActive())) windowWalk.walkTo(payload.x);
+        return;
+      }
+      if (payload && ['notify', 'react', 'set_mode', 'play_action', 'play_dance', 'exit'].includes(payload.type)) {
+        if (windowWalk) windowWalk.cancel();
+      }
       if (payload && payload.type === 'play_dance' && payload.name) {
         try {
           window.__TAURI__.core.invoke('cmd_play_dance', { danceName: payload.name });
@@ -1245,6 +1271,8 @@ import { PerformerHost } from './performance/performer-host.js';
     window.__TAURI__.event.listen('pet-toggle-collapse', (event) => {
       console.log('[pet] 收到 pet-toggle-collapse:', event.payload);
       collapsed = event.payload;
+      if (collapsed && windowWalk) windowWalk.cancel();
+      if (collapsed && nativeDrag) nativeDrag.cancel();
       applyCollapse();
     });
 
@@ -1287,6 +1315,12 @@ import { PerformerHost } from './performance/performer-host.js';
 
     window.__TAURI__.event.listen('performance-start', async (event) => {
       if (!performerHost) return;
+      if (pet.dragHeld) {
+        await notifyPerformanceFinished(event.payload?.session_id, 'interrupted_by_drag');
+        return;
+      }
+      if (nativeDrag) nativeDrag.cancel();
+      if (windowWalk) await windowWalk.cancel();
       await performerHost.start(event.payload || {});
     });
 

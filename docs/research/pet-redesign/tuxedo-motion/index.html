@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BitCat · 黑白猫动作预览</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#ededee;color:#282830;font:16px/1.65 system-ui,sans-serif}main{max-width:1100px;margin:auto;padding:32px 24px}h1{font-size:28px;margin:0 0 8px}p{margin:0 0 20px}.controls{display:flex;flex-wrap:wrap;gap:12px;margin:24px 0;align-items:center}button,select{font:inherit;padding:6px 10px;background:white;color:inherit;border:1px solid #777;border-radius:5px}button{cursor:pointer}button:focus-visible,select:focus-visible{outline:3px solid #856400;outline-offset:3px}.stages{display:grid;grid-template-columns:1fr 1fr}.stage{background:#fafafa;min-width:0;padding:16px 0;color:#34343a}.stage.dark{background:#252730;color:#eee}.label{padding:0 20px}.scene{position:relative;height:210px;overflow:hidden}.floor{position:absolute;left:0;right:0;bottom:30px;border-top:1px solid #93939b55}.cat{position:absolute;image-rendering:pixelated;bottom:14px}.frames{display:flex;gap:12px;flex-wrap:wrap;padding:24px 0;border-top:1px solid #bbb}figure{margin:0;text-align:center}figure canvas{width:80px;height:80px;image-rendering:pixelated}figcaption{font-size:12px}.note,#status{font-size:14px}a{color:#6a5100}details{margin:20px 0}@media(max-width:600px){main{padding:24px 16px}.stages{grid-template-columns:1fr}.scene{height:180px}}
+</style>
+<main>
+<h1>黑白猫 · 待机与行走</h1>
+<p>坐着眨眼，慢慢起身，走几步，再坐下。四肢分段弯曲，落地时保持爪子平稳。</p>
+<div class="controls">
+<label>动作 <select id="mode"><option value="cycle">完整动作循环</option><option value="rise">单独检查起身</option><option value="sit">单独检查坐下</option><option value="idle">安静待机</option><option value="walk">走路 · 原地检查</option><option value="travel">走路 · 移动检查</option></select></label>
+<label>显示 <select id="size"><option value="80">80px</option><option value="96" selected>96px</option><option value="192">192px · 放大</option></select></label>
+<label>速度 <select id="speed"><option value="0.5">半速</option><option value="1" selected>正常</option><option value="1.5">加快</option></select></label>
+<button id="play" disabled>暂停</button><button id="step" disabled>下一帧</button><button id="download" disabled>下载当前动作图集</button>
+</div>
+<div class="stages">
+<section class="stage"><div class="label">浅色桌面</div><div class="scene"><div class="floor"></div><canvas class="cat" width="96" height="96" aria-label="浅色背景动画"></canvas></div></section>
+<section class="stage dark"><div class="label">深色桌面</div><div class="scene"><div class="floor"></div><canvas class="cat" width="96" height="96" aria-label="深色背景动画"></canvas></div></section>
+</div>
+<p id="status" role="status">正在加载…</p>
+<p class="note"><a href="cycle-preview-v2.gif">查看完整循环 GIF</a> · <a href="idle-preview-v2.gif">查看待机 GIF</a> · <a href="walk-preview-v2.gif">查看走路 GIF</a> · <a href="animation-v2.json" download>下载动作配置</a></p>
+<div id="frames" class="frames"></div>
+<p class="note">这是第二版动作验证。走路扩为十六帧，起身与坐下各六帧。完整循环结束后位置重置再播放；坐下暂由起身姿势逆序编排。应用宠物尚未替换。</p>
+<details><summary>动作制作说明</summary><p>美术由图片生成工具制作。坐姿与站姿来自同一组过渡图，站姿的脸和身体继续用于行走；四肢拆成上下段，脚掌单独保持水平。动作还保留少量剪纸感，站姿切换到分层四肢的接缝需要继续观察。</p></details>
+<a href="previous.html">对比上一版</a> · <a href="../cat-collection/v2/index.html">返回十类猫精修对比</a>
+</main>
+<script src="motion.js"></script>
+</html>

@@ -1,0 +1,7 @@
+<!doctype html><meta charset="utf-8"><title>Pixel cat asset builder</title>
+<script type="module">
+import {buildPixelPack} from '/app/frontend/tools/pixel-cat-pack-builder.js';
+window.sources=await fetch('./sources.json').then(r=>r.json());
+window.buildPixelPack=async id=>{const spec=window.sources.find(c=>c.id===id);const result=await buildPixelPack(spec);return{manifest:result.manifest,png:result.sheet.toDataURL()};};
+document.body.dataset.ready='true';
+</script>

@@ -526,6 +526,22 @@ code {
   padding: 10px 24px;
 }
 
+/* 只读行（无右侧控件）：说明跨满两列，否则空的控件列会把文案挤到截断。 */
+.setting-row > .setting-copy:only-child {
+  grid-column: 1 / -1;
+}
+
+/* 只读行文案宁可折行也不省略：信息完整性优先于单行美观。 */
+.setting-row > .setting-copy:only-child .row-hint {
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+}
+
+.setting-row > .setting-copy:only-child label {
+  white-space: nowrap;
+}
+
 /* 开关行右侧只有一个 checkbox：右列按内容收缩（auto），label/hint 列
    拿回被 424px 固定列浪费的空间——860 窄窗下提示不再截断，1040 下单行 */
 .setting-row.switch-row {

@@ -1,0 +1,544 @@
+{
+  "actions": {
+    "acknowledge": {
+      "fallback": "idle",
+      "frames": [
+        {
+          "duration": 180,
+          "sprite": 32
+        },
+        {
+          "duration": 180,
+          "sprite": 33
+        },
+        {
+          "duration": 180,
+          "sprite": 34
+        }
+      ],
+      "repeat": 1,
+      "spriteFrames": [
+        32,
+        33,
+        34
+      ]
+    },
+    "blocked": {
+      "fallback": "idle",
+      "frames": [
+        {
+          "duration": 300,
+          "sprite": 35
+        }
+      ],
+      "repeat": 1,
+      "spriteFrames": [
+        35
+      ]
+    },
+    "dragging": {
+      "fallback": "idle",
+      "frames": [
+        {
+          "duration": 1100,
+          "sprite": 39
+        },
+        {
+          "duration": 160,
+          "sprite": 40
+        },
+        {
+          "duration": 1000,
+          "sprite": 39
+        }
+      ],
+      "loop": true,
+      "spriteFrames": [
+        39,
+        40
+      ]
+    },
+    "drop": {
+      "fallback": "idle",
+      "frames": [
+        {
+          "duration": 80,
+          "sprite": 41
+        },
+        {
+          "duration": 110,
+          "sprite": 42
+        },
+        {
+          "duration": 130,
+          "sprite": 43
+        },
+        {
+          "duration": 150,
+          "sprite": 44
+        },
+        {
+          "duration": 200,
+          "sprite": 45
+        }
+      ],
+      "repeat": 1,
+      "spriteFrames": [
+        41,
+        42,
+        43,
+        44,
+        45
+      ]
+    },
+    "jump": {
+      "fallback": "idle",
+      "frames": [
+        {
+          "duration": 180,
+          "sprite": 32
+        },
+        {
+          "duration": 180,
+          "sprite": 33
+        },
+        {
+          "duration": 180,
+          "sprite": 34
+        }
+      ],
+      "repeat": 1,
+      "spriteFrames": [
+        32,
+        33,
+        34
+      ]
+    },
+    "nudge": {
+      "fallback": "idle",
+      "frames": [
+        {
+          "duration": 300,
+          "sprite": 35
+        }
+      ],
+      "repeat": 1,
+      "spriteFrames": [
+        35
+      ]
+    },
+    "observe": {
+      "fallback": "idle",
+      "frames": [
+        {
+          "duration": 300,
+          "sprite": 35
+        }
+      ],
+      "repeat": 1,
+      "spriteFrames": [
+        35
+      ]
+    },
+    "pickup": {
+      "fallback": "idle",
+      "frames": [
+        {
+          "duration": 70,
+          "sprite": 36
+        },
+        {
+          "duration": 150,
+          "sprite": 37
+        },
+        {
+          "duration": 100,
+          "sprite": 38
+        }
+      ],
+      "repeat": 1,
+      "spriteFrames": [
+        36,
+        37,
+        38
+      ]
+    },
+    "rise": {
+      "fallback": "idle",
+      "frames": [
+        {
+          "duration": 140,
+          "sprite": 2
+        },
+        {
+          "duration": 140,
+          "sprite": 3
+        },
+        {
+          "duration": 140,
+          "sprite": 4
+        },
+        {
+          "duration": 140,
+          "sprite": 5
+        },
+        {
+          "duration": 140,
+          "sprite": 6
+        },
+        {
+          "duration": 140,
+          "sprite": 7
+        }
+      ],
+      "repeat": 1,
+      "spriteFrames": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ]
+    },
+    "shake": {
+      "fallback": "idle",
+      "frames": [
+        {
+          "duration": 300,
+          "sprite": 35
+        }
+      ],
+      "repeat": 1,
+      "spriteFrames": [
+        35
+      ]
+    },
+    "sit": {
+      "fallback": "idle",
+      "frames": [
+        {
+          "duration": 160,
+          "sprite": 24
+        },
+        {
+          "duration": 160,
+          "sprite": 25
+        },
+        {
+          "duration": 160,
+          "sprite": 26
+        },
+        {
+          "duration": 160,
+          "sprite": 27
+        },
+        {
+          "duration": 160,
+          "sprite": 28
+        },
+        {
+          "duration": 160,
+          "sprite": 29
+        }
+      ],
+      "repeat": 1,
+      "spriteFrames": [
+        24,
+        25,
+        26,
+        27,
+        28,
+        29
+      ]
+    },
+    "spin": {
+      "fallback": "idle",
+      "frames": [
+        {
+          "duration": 180,
+          "sprite": 0
+        },
+        {
+          "duration": 180,
+          "sprite": 1
+        }
+      ],
+      "repeat": 1,
+      "spriteFrames": [
+        0,
+        1
+      ]
+    },
+    "wave": {
+      "fallback": "idle",
+      "frames": [
+        {
+          "duration": 180,
+          "sprite": 32
+        },
+        {
+          "duration": 180,
+          "sprite": 33
+        },
+        {
+          "duration": 180,
+          "sprite": 34
+        }
+      ],
+      "repeat": 1,
+      "spriteFrames": [
+        32,
+        33,
+        34
+      ]
+    }
+  },
+  "aliases": {
+    "confused": "curious",
+    "failed": "curious",
+    "focused": "attentive",
+    "gamelose": "curious",
+    "gameplay": "attentive",
+    "gamewin": "happy",
+    "preparing": "attentive",
+    "review": "happy",
+    "talk": "attentive",
+    "waiting": "curious",
+    "working": "attentive"
+  },
+  "description": "像素猫试用资源，带起身、行走和坐下动作。",
+  "displayName": "燕尾服猫 · 像素",
+  "hotspots": {
+    "input": {
+      "h": 0.35,
+      "w": 0.6,
+      "x": 0.15,
+      "y": 0.5
+    },
+    "observe": {
+      "h": 0.4,
+      "w": 0.45,
+      "x": 0.12,
+      "y": 0.15
+    }
+  },
+  "id": "cat-pixel-tuxedo",
+  "metadata": {
+    "assetClass": "pixel-companion",
+    "optimizedFor": "96px desktop",
+    "qualityTier": "preview",
+    "recommendedUse": "desktop companionship",
+    "releaseTier": "trial",
+    "sharedPoses": "talk/focused/preparing/gameplay share attentive; blocked/failed share curious",
+    "source": "docs/research/pet-redesign/production-sources/prompts.json",
+    "style": "generated pixel art with baked articulated walk"
+  },
+  "render": {
+    "displayHeight": 96,
+    "displayWidth": 96,
+    "facing": "left",
+    "mode": "sheet",
+    "pixelated": true,
+    "scale": 1,
+    "stableBody": true
+  },
+  "schemaVersion": 2,
+  "sprite": {
+    "columns": 8,
+    "frameCount": 46,
+    "frameHeight": 96,
+    "frameWidth": 96,
+    "image": "spritesheet.png",
+    "rows": 6
+  },
+  "states": {
+    "attentive": {
+      "frames": [
+        {
+          "duration": 900,
+          "sprite": 0
+        },
+        {
+          "duration": 130,
+          "sprite": 1
+        },
+        {
+          "duration": 1400,
+          "sprite": 0
+        }
+      ],
+      "loop": true,
+      "spriteFrames": [
+        0,
+        1
+      ]
+    },
+    "curious": {
+      "fallback": "idle",
+      "frames": [
+        {
+          "duration": 600,
+          "sprite": 35
+        }
+      ],
+      "repeat": 2,
+      "spriteFrames": [
+        35
+      ]
+    },
+    "happy": {
+      "fallback": "idle",
+      "frames": [
+        {
+          "duration": 240,
+          "sprite": 32
+        },
+        {
+          "duration": 140,
+          "sprite": 33
+        },
+        {
+          "duration": 300,
+          "sprite": 34
+        }
+      ],
+      "repeat": 2,
+      "spriteFrames": [
+        32,
+        33,
+        34
+      ]
+    },
+    "idle": {
+      "frames": [
+        {
+          "duration": 3100,
+          "sprite": 0
+        },
+        {
+          "duration": 130,
+          "sprite": 1
+        },
+        {
+          "duration": 2400,
+          "sprite": 0
+        }
+      ],
+      "loop": true,
+      "spriteFrames": [
+        0,
+        1
+      ]
+    },
+    "sleep": {
+      "frames": [
+        {
+          "duration": 1600,
+          "sprite": 30
+        },
+        {
+          "duration": 1200,
+          "sprite": 31
+        }
+      ],
+      "loop": true,
+      "spriteFrames": [
+        30,
+        31
+      ]
+    },
+    "walk": {
+      "frames": [
+        {
+          "duration": 80,
+          "sprite": 8
+        },
+        {
+          "duration": 80,
+          "sprite": 9
+        },
+        {
+          "duration": 80,
+          "sprite": 10
+        },
+        {
+          "duration": 80,
+          "sprite": 11
+        },
+        {
+          "duration": 80,
+          "sprite": 12
+        },
+        {
+          "duration": 80,
+          "sprite": 13
+        },
+        {
+          "duration": 80,
+          "sprite": 14
+        },
+        {
+          "duration": 80,
+          "sprite": 15
+        },
+        {
+          "duration": 80,
+          "sprite": 16
+        },
+        {
+          "duration": 80,
+          "sprite": 17
+        },
+        {
+          "duration": 80,
+          "sprite": 18
+        },
+        {
+          "duration": 80,
+          "sprite": 19
+        },
+        {
+          "duration": 80,
+          "sprite": 20
+        },
+        {
+          "duration": 80,
+          "sprite": 21
+        },
+        {
+          "duration": 80,
+          "sprite": 22
+        },
+        {
+          "duration": 80,
+          "sprite": 23
+        }
+      ],
+      "locomotion": {
+        "enterAction": "rise",
+        "exitAction": "sit",
+        "speed": 17.5
+      },
+      "loop": true,
+      "spriteFrames": [
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23
+      ]
+    }
+  }
+}

@@ -10,21 +10,21 @@ const invoke = window.__TAURI__?.core?.invoke || mockInvoke;
 const ACTION_TYPES = ["unbound", "launch", "hotkey", "script", "voice", "screenshot"];
 const PET_ASSET_PRESETS = [
   { value: "", label: "默认", group: "推荐" },
-  { value: "/__fixtures__/pets/cat-tabby", label: "狸花猫", group: "推荐" },
-  { value: "/__fixtures__/pets/cat-calico", label: "三花猫", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-siamese", label: "暹罗猫", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-tuxedo", label: "燕尾服猫", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-black", label: "黑猫", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-white", label: "白猫", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-ginger", label: "橘猫", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-pixel-tabby", label: "狸花猫 · 像素", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-pixel-calico", label: "三花猫 · 像素", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-pixel-siamese", label: "暹罗猫 · 像素", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-pixel-tuxedo", label: "燕尾服猫 · 像素", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-pixel-black", label: "黑猫 · 像素", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-pixel-white", label: "白猫 · 像素", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-pixel-ginger", label: "橘猫 · 像素", group: "猫咪" },
   { value: "/__fixtures__/pets/cat-gray", label: "灰猫", group: "猫咪" },
   { value: "/__fixtures__/pets/cat-cream", label: "奶油猫", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-blue-gray", label: "蓝灰猫", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-cow", label: "奶牛猫", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-pixel-british-blue", label: "英短蓝猫 · 像素", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-pixel-cow", label: "奶牛猫 · 像素", group: "猫咪" },
   { value: "/__fixtures__/pets/cat-tortie", label: "玳瑁猫", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-ragdoll", label: "布偶猫", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-pixel-ragdoll", label: "布偶猫 · 像素", group: "猫咪" },
   { value: "/__fixtures__/pets/cat-snowshoe", label: "雪鞋猫", group: "猫咪" },
-  { value: "/__fixtures__/pets/cat-lilac", label: "丁香猫", group: "猫咪" },
+  { value: "/__fixtures__/pets/cat-pixel-maine-coon", label: "缅因猫 · 像素", group: "猫咪" },
 ];
 const PET_ASSET_DEFAULT = "/__fixtures__/pets/cat-tabby";
 const PET_ASSET_DEFAULT_PREVIEW = PET_ASSET_DEFAULT;
@@ -232,7 +232,33 @@ async function mockInvoke(command, args = {}) {
     return {
       generated_at: new Date().toISOString(),
       total_entries: 2,
-      entries: [],
+      // 预览样例：created_at 是完整时间戳，timestamp 是无年展示串（回归 V8 补 2001 年的坑）
+      entries: [
+        {
+          id: "mem_preview_1",
+          title: "用户喜欢被以猫咪角色回应",
+          ai_reply: "喵～主人不用谢！被夸了超开心的喵～",
+          user_msg: "谢谢你今天的帮助",
+          source: "conversation",
+          tags: ["偏好"],
+          importance: 4,
+          aggregated: true,
+          created_at: new Date(Date.now() - 3 * 86400000).toISOString(),
+          timestamp: "09-23 20:25",
+        },
+        {
+          id: "mem_preview_2",
+          title: "主人正在开发语音游戏项目",
+          ai_reply: "喵～让我看看主人最近都在忙什么！",
+          user_msg: "最近在忙语音游戏",
+          source: "agent_reaction",
+          tags: ["编程", "语音游戏"],
+          importance: 4,
+          aggregated: false,
+          created_at: new Date(Date.now() - 26 * 3600000).toISOString(),
+          timestamp: "09-25 18:40",
+        },
+      ],
       markdown: "",
     };
   }
@@ -1781,7 +1807,7 @@ function stopPetPreview(reset = true) {
   }
 }
 
-function playPetPreview(name, label) {
+function playPetPreview(name, label, options = {}) {
   const frames = petPreviewFrames(petPreview.asset, name);
   const canvas = $("pet-large-preview");
   if (!canvas || !frames.length) return false;
@@ -1790,14 +1816,22 @@ function playPetPreview(name, label) {
   petPreview.animation = null;
   $("pet-preview-state").textContent = label;
   drawPetAssetPreview(canvas, petPreview.asset, frames[0].sprite);
-  if (previewReducedMotion?.matches || document.hidden || currentTab !== "companion") return true;
+  if ((previewReducedMotion?.matches && !options.drag) || document.hidden || currentTab !== "companion") return true;
   petPreview.lastFrame = frames[0].sprite;
-  const animation = { start: performance.now(), frames };
+  const animation = { start: performance.now(), frames, drag: options.drag === true };
   petPreview.animation = animation;
   const tick = now => {
     petPreview.raf = 0;
     if (petPreview.animation !== animation) return;
-    if (document.hidden || currentTab !== "companion" || now - animation.start >= 5000) { stopPetPreview(); return; }
+    if (document.hidden || currentTab !== "companion") { stopPetPreview(); return; }
+    const duration = frames.reduce((sum, frame) => sum + frame.duration, 0);
+    if (options.once && now - animation.start >= duration) {
+      petPreview.animation = null;
+      if (options.then) options.then();
+      else stopPetPreview();
+      return;
+    }
+    if (!options.hold && !options.once && now - animation.start >= 5000) { stopPetPreview(); return; }
     const frame = petPreviewFrameAt(frames, now - animation.start);
     if (frame !== petPreview.lastFrame) { drawPetAssetPreview(canvas, petPreview.asset, frame); petPreview.lastFrame = frame; }
     petPreview.raf = window.requestAnimationFrame(tick);
@@ -1816,8 +1850,9 @@ function cyclePetPreview() {
 function bindPetPreview() {
   const button = $("pet-preview-play");
   if (!button) return;
+  button.style.touchAction = "none";
   previewReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
-  previewReducedMotion?.addEventListener("change", () => stopPetPreview());
+  previewReducedMotion?.addEventListener("change", () => { if (!petPreview.animation?.drag) stopPetPreview(); });
   button.onclick = event => {
     if (petPreview.suppressClick && event.detail !== 0) { petPreview.suppressClick = false; return; }
     cyclePetPreview();
@@ -1836,7 +1871,10 @@ function bindPetPreview() {
     if (!gesture.moved) {
       gesture.moved = true;
       button.classList.add("is-dragging");
-      if (!playPetPreview("dragging", "轻轻拎起来")) playPetPreview("walk", "走两步");
+      const hold = () => {
+        if (petPreview.gesture === gesture) playPetPreview("dragging", "悬空中，松手放下", { hold: true, drag: true });
+      };
+      if (!playPetPreview("pickup", "轻轻拎起来", { once: true, drag: true, then: hold })) hold();
     }
     button.style.setProperty("--preview-x", `${Math.max(-18, Math.min(18, dx))}px`);
     button.style.setProperty("--preview-y", `${Math.max(-12, Math.min(12, dy))}px`);
@@ -1848,7 +1886,10 @@ function bindPetPreview() {
     button.classList.remove("is-dragging");
     button.style.removeProperty("--preview-x");
     button.style.removeProperty("--preview-y");
-    if (gesture.moved) { petPreview.suppressClick = true; if (!playPetPreview("happy", "开心")) stopPetPreview(); }
+    if (gesture.moved) {
+      petPreview.suppressClick = true;
+      if (!playPetPreview("drop", "轻轻放下", { once: true, drag: true })) stopPetPreview();
+    }
     if (button.hasPointerCapture?.(event.pointerId)) button.releasePointerCapture(event.pointerId);
   };
   button.onpointercancel = () => stopPetPreview();
@@ -2407,6 +2448,9 @@ function renderMemoryImportance(value) {
 
 function memoryRelativeTime(value, now = Date.now()) {
   if (!value) return "时间未记录";
+  // 只解析含四位年份的完整时间戳："05-30 20:25" 这类无年展示串会被
+  // V8 legacy 解析补成 2001 年，算出"九千多天前"的荒谬值；原样返回兜底。
+  if (!/\d{4}/.test(value)) return value;
   const time = new Date(value).getTime();
   if (!Number.isFinite(time)) return "时间未记录";
   const minutes = Math.max(0, Math.floor((now - time) / 60000));
@@ -2443,7 +2487,7 @@ function renderMemoryReview(review) {
             <button class="icon-btn danger memory-delete" type="button" data-id="${escapeAttr(entry.id)}" aria-label="删除记忆" title="删除记忆">删除</button>
           </div>
           <div class="memory-entry-meta memory-meta-inline">
-            <time title="${escapeAttr(entry.timestamp)}">${escapeHtml(memoryRelativeTime(entry.timestamp))}</time>
+            <time title="${escapeAttr(entry.created_at || entry.timestamp)}">${escapeHtml(memoryRelativeTime(entry.created_at || entry.timestamp))}</time>
             <span class="memory-source">${escapeHtml(source)}</span>
             ${renderMemoryImportance(entry.importance)}
             ${tags}

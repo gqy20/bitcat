@@ -1,13 +1,13 @@
 # 宠物资源包发布计划
 
 > 状态：活跃  
-> 更新日期：2026-06-08
+> 更新日期：2026-09-27
 
 当前宠物渲染已经进入 v2-only 资源包模式。内置默认不再走 `sprite.js` 硬编码 fallback，而是加载 bundled v2 pack；配置了资源包时加载失败会直接暴露错误，避免旧版本兼容路径掩盖问题。
 
 ## 当前基线
 
-最终软件只打包 15 个内置猫咪资源包，目录位于 `app/frontend/__fixtures__/pets/`：
+当前打包保留 15 个原版资源包，并新增 11 个 `cat-pixel-*` 试用资源包（用户已要求接入黑白猫和十类猫），目录位于 `app/frontend/__fixtures__/pets/`。默认仍为原版 `cat-tabby`，已保存的原版地址不自动迁移。
 
 | 资源包 | 类型 | 尺寸策略 | 备注 |
 |------|------|----------|------|
@@ -15,6 +15,9 @@
 | `cat-black` / `cat-blue-gray` / `cat-calico` / `cat-cow` / `cat-cream` | 192x208 WebP v2 sheet | 74x80 显示 | 内置猫咪品种 |
 | `cat-ginger` / `cat-gray` / `cat-lilac` / `cat-ragdoll` / `cat-siamese` | 192x208 WebP v2 sheet | 74x80 显示 | 内置猫咪品种 |
 | `cat-snowshoe` / `cat-tortie` / `cat-tuxedo` / `cat-white` | 192x208 WebP v2 sheet | 74x80 显示 | 内置猫咪品种 |
+| `cat-pixel-*`（11 包） | 96x96 PNG v2 sheet | 96x96 显示 | 像素画风试用，起身 / 十六帧行走 / 坐下 |
+
+新版运行协议、源图、可重建流程与 Windows 验收事项见 [像素猫接入说明](../research/pet-redesign/production-sources/README.md)。源图和生成提示词保存在研究目录，仅烘焙后的 PNG/manifest 进入前端发行包；`xtask prepare-frontend` 已验证收录这些资源。
 
 代码入口：
 
@@ -36,7 +39,7 @@
 ## 待决策
 
 1. **发布包体积预算**
-   - 固定内置 15 个猫咪资源包。
+   - 保留 15 个原版 + 11 个已授权接入的像素试用包，新增烘焙资源约 2.9 MB。
    - 其他实验资源不放入 `app/frontend/__fixtures__/pets/`，避免进入最终软件包。
 
 2. **外部资源包目录**
@@ -49,7 +52,7 @@
    - 自定义地址失败时给出 UI toast，而不是只依赖 console。
 
 4. **资源包分层**
-   - 必选内置：15 个 `cat-*` 品种。
+   - 当前内置：15 个原版与 11 个 `cat-pixel-*` 试用包。
    - 非内置资源：后续若恢复，应放到用户目录或外部下载，不放入最终软件包。
 
 ## 下一步

@@ -1,0 +1,28 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BitCat · 新版猫咪应用预览</title>
+<style>*{box-sizing:border-box}body{margin:0;background:#eee;color:#292930;font:16px/1.6 system-ui,sans-serif}main{max-width:1050px;margin:auto;padding:28px 20px}h1{font-size:27px;margin:0 0 8px}.controls{display:flex;gap:10px;flex-wrap:wrap;margin:24px 0}button,select{font:inherit;padding:7px 11px;border:1px solid #777;background:white;border-radius:5px;color:inherit}button{cursor:pointer}#drag-preview{touch-action:none}.stage{height:210px;position:relative;overflow:hidden;background:#fafafa;border-bottom:1px solid #bbb}.dark{background:#252730;color:white}.label{padding:12px 16px}canvas{position:absolute;bottom:18px;image-rendering:pixelated;width:96px;height:96px}#status{min-height:26px}a{color:#725000}.note{font-size:14px}button:focus-visible,select:focus-visible{outline:3px solid #856400;outline-offset:2px}</style>
+<main><h1>11 只像素猫 · 应用播放预览</h1><p>使用应用的资源加载器和状态机。点“走几步”会先起身，到达后坐下；途中可以用说话或睡眠打断。按住“提起”保持悬空，松手后落地坐稳。</p>
+<div class="controls"><select id="cat" aria-label="选择猫咪"></select><button data-command="walk">走几步</button><button data-command="talk">说话</button><button data-command="happy">开心</button><button data-command="sleep">睡觉</button><button id="drag-preview" data-command="dragging" aria-pressed="false">按住提起</button><button data-command="idle">安静待着</button></div>
+<div class="stage"><div class="label">浅色桌面</div><canvas width="96" height="96" aria-label="浅色背景猫咪"></canvas></div><div class="stage dark"><div class="label">深色桌面</div><canvas width="96" height="96" aria-label="深色背景猫咪"></canvas></div><p id="status" role="status">正在加载…</p><p class="note">桌面原生窗口移动仍需 Windows 实机确认。本页的位移用于核对动作与步幅，后台加载失败会明确显示。</p><a href="../settings.html">打开设置页预览</a></main>
+<script type="module">
+import {loadPetAssetPack} from '../js/sprite-loader.js';
+import {PetStateMachine} from '../js/pet.js';
+import {previewFrame} from './pixel-preview-playback.js';
+const cats=[['tuxedo','燕尾服猫'],['ginger','橘猫'],['tabby','狸花猫'],['calico','三花猫'],['cow','奶牛猫'],['black','黑猫'],['white','白猫'],['british-blue','英短蓝猫'],['siamese','暹罗猫'],['ragdoll','布偶猫'],['maine-coon','缅因猫']];
+const picker=document.querySelector('#cat'),status=document.querySelector('#status'),canvases=[...document.querySelectorAll('canvas')];
+let pet,renderer,last=0,generation=0;
+for(const[value,label]of cats)picker.add(new Option(label,value));
+async function select(){const current=++generation;delete document.body.dataset.ready;if(pet)pet.cancelDrag();pet=null;status.textContent='正在加载…';try{const r=await loadPetAssetPack('/__fixtures__/pets/cat-pixel-'+picker.value);if(current!==generation)return;renderer=r;pet=new PetStateMachine({stateConfig:r.stateConfig,actionConfig:r.actionConfig});pet.x=50;pet.facingRight=false;document.body.dataset.ready=picker.value;window.preview={pet,renderer};}catch(error){status.textContent='加载失败：'+error.message;}}
+picker.onchange=select;
+for(const button of document.querySelectorAll('[data-command]'))button.onclick=event=>{if(!pet)return;const command=button.dataset.command;if(command==='walk'){pet.setMode('idle');pet.clearNotification();pet.reactionMood='idle';const limit=Math.max(50,canvases[0].parentElement.clientWidth-116);pet.walkTo(pet.x<100?Math.min(135,limit):50);}else if(command==='talk')pet.applyEvent({type:'notify',kind:'ai_writing',ttl_ms:3000});else if(command==='happy')pet.react('happy',null,2000);else if(command==='dragging'){if(event.detail===0){if(pet.dragHeld)pet.endDrag();else pet.beginDrag();}}else{pet.cancelDrag();pet.clearAction();pet.clearNotification();pet.reactionMood='idle';pet.setMode(command==='sleep'?'sleep':'idle');}};
+const dragButton=document.querySelector('#drag-preview');
+let heldPointer=null;
+dragButton.addEventListener('pointerdown',event=>{if(event.button!==0||!pet)return;event.preventDefault();heldPointer=event.pointerId;dragButton.setPointerCapture(event.pointerId);pet.beginDrag();});
+dragButton.addEventListener('pointerup',event=>{if(event.pointerId!==heldPointer)return;heldPointer=null;pet?.endDrag();if(dragButton.hasPointerCapture(event.pointerId))dragButton.releasePointerCapture(event.pointerId);});
+const cancelHold=()=>{heldPointer=null;pet?.cancelDrag();};
+dragButton.addEventListener('pointercancel',cancelHold);
+dragButton.addEventListener('lostpointercapture',()=>{if(heldPointer!==null)cancelHold();});
+window.addEventListener('pagehide',cancelHold);
+const reduced=matchMedia('(prefers-reduced-motion: reduce)');
+function tick(now){const dt=last?Math.min(100,now-last):0;last=now;if(pet){if(!document.hidden)pet.update(dt);const frame=previewFrame(pet,reduced.matches);for(const canvas of canvases){renderer.renderSprite(canvas.getContext('2d'),pet.visualState(),frame,pet.facingRight,1);canvas.style.left=Math.min(pet.x,Math.max(0,canvas.parentElement.clientWidth-96))+'px';}status.textContent=cats.find(c=>c[0]===picker.value)[1]+' · '+({rise:'起身',sit:'坐下',walk:'走路',idle:'待机',talk:'说话',happy:'开心',sleep:'睡觉',pickup:'提起',dragging:'悬空',drop:'落地坐稳'}[pet.visualState()]||'回应中');document.body.dataset.state=pet.visualState();document.body.dataset.renderedFrame=String(frame);dragButton.setAttribute('aria-pressed',String(pet.dragHeld));dragButton.textContent=pet.dragHeld?'松开放下':'按住提起';}requestAnimationFrame(tick);}
+select();requestAnimationFrame(tick);
+</script></html>

@@ -37,6 +37,7 @@ pub mod notification_window;
 pub mod observation_gate;
 pub mod opencode_hooks;
 pub mod panel;
+pub mod pet_drag;
 pub mod pet_event_bus;
 pub mod pet_inbox;
 pub mod pi_hooks;
@@ -106,6 +107,7 @@ pub fn run() {
             commands::cmd_play_dance,
             commands::cmd_performance_finished,
             commands::cmd_get_window_state,
+            pet_drag::cmd_pet_drag_button_down,
             audio_reactive::cmd_start_fake_music_dance,
             audio_reactive::cmd_start_wasapi_music_dance,
             audio_reactive::cmd_stop_music_dance,

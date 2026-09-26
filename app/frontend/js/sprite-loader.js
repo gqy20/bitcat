@@ -105,7 +105,7 @@ function rendererFromRuntime(runtime, source) {
     ctx.clearRect(0, 0, canvasW, canvasH);
     ctx.save();
     ctx.imageSmoothingEnabled = !pixelated;
-    if (facingRight === false) {
+    if ((facingRight !== false) !== (runtime.facing !== 'left')) {
       ctx.translate(bx + canvasW, by);
       ctx.scale(-1, 1);
     } else {
@@ -177,6 +177,7 @@ function rendererFromRuntime(runtime, source) {
     displayWidth,
     displayHeight,
     pixelated,
+    stableBody: runtime.stableBody === true,
     getSprite,
     renderSprite,
     renderMini,
@@ -468,6 +469,20 @@ function buildRuntimeFromManifest(manifest, imageData) {
       throw new Error(`missing required state: ${state}`);
     }
   }
+  const motion = stateConfig.walk?.locomotion;
+  if (actionConfig.pickup || actionConfig.drop) {
+    if (!actionConfig.pickup || !actionConfig.dragging || !actionConfig.drop) {
+      throw new Error('drag lifecycle requires pickup, dragging and drop actions');
+    }
+    if (actionConfig.dragging.loop !== true) throw new Error('dragging must loop while held');
+  }
+  if (motion) {
+    if (!Number.isFinite(motion.speed) || motion.speed <= 0) throw new Error('walk.locomotion.speed must be positive');
+    for (const key of ['enterAction', 'exitAction']) {
+      if (!actionConfig[motion[key]]) throw new Error(`walk.locomotion.${key} references missing action`);
+    }
+  }
+  if (render.facing != null && !['left', 'right'].includes(render.facing)) throw new Error('render.facing must be left or right');
   const renderScale = Number.isFinite(render.scale)
     ? render.scale
     : Number.isFinite(render.logicalSize)
@@ -487,6 +502,8 @@ function buildRuntimeFromManifest(manifest, imageData) {
     frameHeight,
     renderScale,
     pixelated: render.pixelated !== false,
+    facing: render.facing || 'right',
+    stableBody: render.stableBody === true,
     displayWidth,
     displayHeight,
     sheetColumns: manifest.sprite.columns,

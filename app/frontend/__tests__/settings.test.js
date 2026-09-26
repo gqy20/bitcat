@@ -668,3 +668,14 @@ describe('permission gate strip', () => {
     dom.window.close();
   });
 });
+
+describe('memory relative time', () => {
+  it('refuses year-less display strings instead of letting V8 default to 2001', () => {
+    const { helpers } = loadSettings('<div></div>');
+    // "05-30 20:25" 无年份：V8 legacy 解析会补 2001 年 → 九千多天前；现在原样返回。
+    expect(helpers.memoryRelativeTime('05-30 20:25')).toBe('05-30 20:25');
+    const threeDaysAgo = new Date(Date.now() - 3 * 86400000).toISOString();
+    expect(helpers.memoryRelativeTime(threeDaysAgo)).toBe('3 天前');
+    expect(helpers.memoryRelativeTime('')).toBe('时间未记录');
+  });
+});

@@ -1,0 +1,463 @@
+{
+  "status": "research-animation-v2",
+  "frameWidth": 96,
+  "frameHeight": 96,
+  "generator": "built-in image_gen with Canvas animation",
+  "cycleDurationMs": 11660,
+  "walkPeriodMs": 1280,
+  "rootDistancePerWalkCycle": 22.4,
+  "assets": {
+    "idle": "idle-atlas-v2.png",
+    "rise": "rise-atlas-v2.png",
+    "sit": "sit-atlas-v2.png",
+    "start": "start-atlas-v2.png",
+    "stop": "stop-atlas-v2.png",
+    "walk": "walk-atlas-v2.png"
+  },
+  "sequence": [
+    {
+      "duration": 2200,
+      "frame": 0,
+      "kind": "idle",
+      "root": 0
+    },
+    {
+      "duration": 130,
+      "frame": 1,
+      "kind": "idle",
+      "root": 0
+    },
+    {
+      "duration": 600,
+      "frame": 0,
+      "kind": "idle",
+      "root": 0
+    },
+    {
+      "duration": 160,
+      "frame": 0,
+      "kind": "rise",
+      "root": 0
+    },
+    {
+      "duration": 130,
+      "frame": 1,
+      "kind": "rise",
+      "root": 0
+    },
+    {
+      "duration": 140,
+      "frame": 2,
+      "kind": "rise",
+      "root": 0
+    },
+    {
+      "duration": 160,
+      "frame": 3,
+      "kind": "rise",
+      "root": 0
+    },
+    {
+      "duration": 170,
+      "frame": 4,
+      "kind": "rise",
+      "root": 0
+    },
+    {
+      "duration": 220,
+      "frame": 5,
+      "kind": "rise",
+      "root": 0
+    },
+    {
+      "duration": 80,
+      "frame": 0,
+      "kind": "start",
+      "root": 0
+    },
+    {
+      "duration": 80,
+      "frame": 1,
+      "kind": "start",
+      "root": 0
+    },
+    {
+      "duration": 80,
+      "frame": 2,
+      "kind": "start",
+      "root": 0
+    },
+    {
+      "duration": 80,
+      "frame": 3,
+      "kind": "start",
+      "root": 0
+    },
+    {
+      "duration": 80,
+      "frame": 4,
+      "kind": "start",
+      "root": 0
+    },
+    {
+      "duration": 80,
+      "frame": 0,
+      "kind": "walk",
+      "root": 0
+    },
+    {
+      "duration": 80,
+      "frame": 1,
+      "kind": "walk",
+      "root": 1.4
+    },
+    {
+      "duration": 80,
+      "frame": 2,
+      "kind": "walk",
+      "root": 2.8
+    },
+    {
+      "duration": 80,
+      "frame": 3,
+      "kind": "walk",
+      "root": 4.2
+    },
+    {
+      "duration": 80,
+      "frame": 4,
+      "kind": "walk",
+      "root": 5.6
+    },
+    {
+      "duration": 80,
+      "frame": 5,
+      "kind": "walk",
+      "root": 7
+    },
+    {
+      "duration": 80,
+      "frame": 6,
+      "kind": "walk",
+      "root": 8.4
+    },
+    {
+      "duration": 80,
+      "frame": 7,
+      "kind": "walk",
+      "root": 9.8
+    },
+    {
+      "duration": 80,
+      "frame": 8,
+      "kind": "walk",
+      "root": 11.2
+    },
+    {
+      "duration": 80,
+      "frame": 9,
+      "kind": "walk",
+      "root": 12.6
+    },
+    {
+      "duration": 80,
+      "frame": 10,
+      "kind": "walk",
+      "root": 14
+    },
+    {
+      "duration": 80,
+      "frame": 11,
+      "kind": "walk",
+      "root": 15.4
+    },
+    {
+      "duration": 80,
+      "frame": 12,
+      "kind": "walk",
+      "root": 16.8
+    },
+    {
+      "duration": 80,
+      "frame": 13,
+      "kind": "walk",
+      "root": 18.2
+    },
+    {
+      "duration": 80,
+      "frame": 14,
+      "kind": "walk",
+      "root": 19.6
+    },
+    {
+      "duration": 80,
+      "frame": 15,
+      "kind": "walk",
+      "root": 21
+    },
+    {
+      "duration": 80,
+      "frame": 0,
+      "kind": "walk",
+      "root": 22.4
+    },
+    {
+      "duration": 80,
+      "frame": 1,
+      "kind": "walk",
+      "root": 23.8
+    },
+    {
+      "duration": 80,
+      "frame": 2,
+      "kind": "walk",
+      "root": 25.2
+    },
+    {
+      "duration": 80,
+      "frame": 3,
+      "kind": "walk",
+      "root": 26.6
+    },
+    {
+      "duration": 80,
+      "frame": 4,
+      "kind": "walk",
+      "root": 28
+    },
+    {
+      "duration": 80,
+      "frame": 5,
+      "kind": "walk",
+      "root": 29.4
+    },
+    {
+      "duration": 80,
+      "frame": 6,
+      "kind": "walk",
+      "root": 30.8
+    },
+    {
+      "duration": 80,
+      "frame": 7,
+      "kind": "walk",
+      "root": 32.2
+    },
+    {
+      "duration": 80,
+      "frame": 8,
+      "kind": "walk",
+      "root": 33.6
+    },
+    {
+      "duration": 80,
+      "frame": 9,
+      "kind": "walk",
+      "root": 35
+    },
+    {
+      "duration": 80,
+      "frame": 10,
+      "kind": "walk",
+      "root": 36.4
+    },
+    {
+      "duration": 80,
+      "frame": 11,
+      "kind": "walk",
+      "root": 37.8
+    },
+    {
+      "duration": 80,
+      "frame": 12,
+      "kind": "walk",
+      "root": 39.2
+    },
+    {
+      "duration": 80,
+      "frame": 13,
+      "kind": "walk",
+      "root": 40.6
+    },
+    {
+      "duration": 80,
+      "frame": 14,
+      "kind": "walk",
+      "root": 42
+    },
+    {
+      "duration": 80,
+      "frame": 15,
+      "kind": "walk",
+      "root": 43.4
+    },
+    {
+      "duration": 80,
+      "frame": 0,
+      "kind": "walk",
+      "root": 44.8
+    },
+    {
+      "duration": 80,
+      "frame": 1,
+      "kind": "walk",
+      "root": 46.2
+    },
+    {
+      "duration": 80,
+      "frame": 2,
+      "kind": "walk",
+      "root": 47.6
+    },
+    {
+      "duration": 80,
+      "frame": 3,
+      "kind": "walk",
+      "root": 49
+    },
+    {
+      "duration": 80,
+      "frame": 4,
+      "kind": "walk",
+      "root": 50.4
+    },
+    {
+      "duration": 80,
+      "frame": 5,
+      "kind": "walk",
+      "root": 51.8
+    },
+    {
+      "duration": 80,
+      "frame": 6,
+      "kind": "walk",
+      "root": 53.2
+    },
+    {
+      "duration": 80,
+      "frame": 7,
+      "kind": "walk",
+      "root": 54.6
+    },
+    {
+      "duration": 80,
+      "frame": 8,
+      "kind": "walk",
+      "root": 56
+    },
+    {
+      "duration": 80,
+      "frame": 9,
+      "kind": "walk",
+      "root": 57.4
+    },
+    {
+      "duration": 80,
+      "frame": 10,
+      "kind": "walk",
+      "root": 58.8
+    },
+    {
+      "duration": 80,
+      "frame": 11,
+      "kind": "walk",
+      "root": 60.2
+    },
+    {
+      "duration": 80,
+      "frame": 12,
+      "kind": "walk",
+      "root": 61.6
+    },
+    {
+      "duration": 80,
+      "frame": 13,
+      "kind": "walk",
+      "root": 63
+    },
+    {
+      "duration": 80,
+      "frame": 14,
+      "kind": "walk",
+      "root": 64.4
+    },
+    {
+      "duration": 80,
+      "frame": 15,
+      "kind": "walk",
+      "root": 65.8
+    },
+    {
+      "duration": 80,
+      "frame": 0,
+      "kind": "stop",
+      "root": 67.2
+    },
+    {
+      "duration": 80,
+      "frame": 1,
+      "kind": "stop",
+      "root": 67.2
+    },
+    {
+      "duration": 80,
+      "frame": 2,
+      "kind": "stop",
+      "root": 67.2
+    },
+    {
+      "duration": 80,
+      "frame": 3,
+      "kind": "stop",
+      "root": 67.2
+    },
+    {
+      "duration": 80,
+      "frame": 4,
+      "kind": "stop",
+      "root": 67.2
+    },
+    {
+      "duration": 200,
+      "frame": 0,
+      "kind": "sit",
+      "root": 67.2
+    },
+    {
+      "duration": 170,
+      "frame": 1,
+      "kind": "sit",
+      "root": 67.2
+    },
+    {
+      "duration": 160,
+      "frame": 2,
+      "kind": "sit",
+      "root": 67.2
+    },
+    {
+      "duration": 160,
+      "frame": 3,
+      "kind": "sit",
+      "root": 67.2
+    },
+    {
+      "duration": 170,
+      "frame": 4,
+      "kind": "sit",
+      "root": 67.2
+    },
+    {
+      "duration": 250,
+      "frame": 5,
+      "kind": "sit",
+      "root": 67.2
+    },
+    {
+      "duration": 2000,
+      "frame": 0,
+      "kind": "idle",
+      "root": 67.2
+    }
+  ]
+}
