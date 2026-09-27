@@ -44,8 +44,11 @@ describe('pixel companion packs',()=>{
 
   it('retargets mid-rise without restarting and faces the new direction',()=>{
     const p=petFor();p.walkTo(p.x+30);p.update(100);p.walkTo(p.x-10);
-    expect(p.actionTimeMs).toBe(100);expect(p.facingRight).toBe(false);
-    p.update(duration(p.actionConfig.rise)-100+100);expect(p.x).toBeCloseTo(62.25);
+    expect(p.actionTimeMs).toBe(100);expect(p.facingRight).toBe(true);
+    p.update(duration(p.actionConfig.rise)-100);expect(p.visualState()).toBe('turn');
+    expect(p.x).toBe(64);
+    p.update(duration(p.actionConfig.turn)+100);expect(p.x).toBeCloseTo(62.25);
+    expect(p.facingRight).toBe(false);
   });
 
   it('dragging cancels walking, then returns to a semantic state',()=>{

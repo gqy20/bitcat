@@ -1,20 +1,24 @@
-//! Windows SAPI 文本转语音模块。
+//! 平台隔离的文本转语音入口，Windows 使用 SAPI。
 //!
 //! 通过 COM 互操作调用系统自带的 `ISpVoice` 接口实现朗读。
 //! `speak()` 是同步阻塞调用——会等到 SAPI 朗读完毕才返回，
 //! 因此必须在独立线程（而非 async runtime 线程）上调用。
 //! 模块内部用 `AtomicBool` 防止并发朗读，调用方无需额外加锁。
-//! 仅与 `bridge`（按键→命令分发）交互：收到 TTS 请求时调用 `speak()`。
+//! 非 Windows 平台明确报告不支持，避免把 COM 符号链接到其他平台。
+//! 与 `bridge`（按键→命令分发）交互：收到 TTS 请求时调用 `speak()`。
 
+#[cfg(target_os = "windows")]
 use core::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::{debug, warn};
+#[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Com::*;
 
 /// 全局朗读锁：`true` 表示正在朗读，后续请求直接跳过。
 /// 使用 `SeqCst` 排序保证与 COM 操作的可见性。
 static SPEAKING: AtomicBool = AtomicBool::new(false);
 
+#[cfg(target_os = "windows")]
 const CLSID_SP_VOICE: windows_sys::core::GUID = windows_sys::core::GUID {
     data1: 0x96749377,
     data2: 0x3391,
@@ -22,6 +26,7 @@ const CLSID_SP_VOICE: windows_sys::core::GUID = windows_sys::core::GUID {
     data4: [0x9E, 0xE3, 0x00, 0xC0, 0x4F, 0x79, 0x73, 0x96],
 };
 
+#[cfg(target_os = "windows")]
 const IID_ISP_VOICE: windows_sys::core::GUID = windows_sys::core::GUID {
     data1: 0x6C44DF74,
     data2: 0x72B9,
@@ -38,6 +43,7 @@ const IID_ISP_VOICE: windows_sys::core::GUID = windows_sys::core::GUID {
 ///
 /// 字段顺序必须严格匹配 Windows COM vtable 布局；任何偏移都会导致
 /// 调用错误的虚函数指针，引发未定义行为或进程崩溃。
+#[cfg(target_os = "windows")]
 #[repr(C)]
 struct ISpVoiceVtbl {
     // IUnknown
@@ -74,16 +80,21 @@ struct ISpVoiceVtbl {
 }
 
 /// COM `ISpVoice` 对象的 Rust 投影：仅包含指向 vtable 的指针。
+#[cfg(target_os = "windows")]
 #[repr(C)]
 struct ISpVoice {
     lp_vtbl: *const ISpVoiceVtbl,
 }
 
+#[cfg(target_os = "windows")]
 const SVSF_DEFAULT: u32 = 0;
+#[cfg(target_os = "windows")]
 const SVSF_PURGE_BEFORE_SPEAK: u32 = 2;
+#[cfg(target_os = "windows")]
 const S_FALSE: i32 = 1;
 
 /// 判断 COM `HRESULT` 是否表示成功（`>= 0`）。
+#[cfg(target_os = "windows")]
 fn succeeded(hr: i32) -> bool {
     hr >= 0
 }
@@ -117,6 +128,7 @@ pub fn speak(text: &str) {
 ///   因此不能在已初始化为单线程单元（STA）的线程上调用，否则会返回冲突错误。
 /// - vtable 指针解引用前已通过 `CoCreateInstance` 验证 `voice` 非空；
 ///   `release` 函数指针取自 vtable 固定偏移（index 2），布局由 `ISpVoiceVtbl` 保证。
+#[cfg(target_os = "windows")]
 fn do_speak(text: &str) -> Result<(), String> {
     unsafe {
         let hr = CoInitializeEx(std::ptr::null(), COINIT_MULTITHREADED as u32);
@@ -169,4 +181,20 @@ pub fn stop() {
 /// 查询当前是否正在朗读。
 pub fn is_speaking() -> bool {
     SPEAKING.load(Ordering::SeqCst)
+}
+
+/// SAPI 仅支持 Windows；其他平台返回明确错误，由公共入口记录诊断。
+#[cfg(not(target_os = "windows"))]
+fn do_speak(_text: &str) -> Result<(), String> {
+    Err("当前平台不支持 Windows SAPI 语音播放".to_owned())
+}
+
+#[cfg(all(test, not(target_os = "windows")))]
+mod tests {
+    #[test]
+    fn unsupported_platform_reports_error_and_releases_speaking_state() {
+        assert!(super::do_speak("测试").is_err());
+        super::speak("测试");
+        assert!(!super::is_speaking());
+    }
 }

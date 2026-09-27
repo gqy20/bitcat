@@ -11,11 +11,11 @@
 ## 烘焙资源
 
 发行资源：`app/frontend/__fixtures__/pets/cat-pixel-*/`，每包一个 `spritesheet.png` 和 `manifest.json`。
-统一 96×96 帧，八列排布。燕尾服猫 46 帧，其余十包各 50 帧，共 546 帧；每包有十六帧行走。PNG 与配置总量约 2.9 MB。
+统一 96×96 帧，八列排布。燕尾服猫 51 帧，其余十包各 53 帧，共 581 帧；每包有十六帧行走。PNG 与配置总量约 3.2 MB。
 日常运行只切片播放；生成模型、图像分析工具及 Canvas 四肢计算均不在运行路径。
 
 帧覆盖：待机、眨眼、起身、行走、坐下、睡觉、开心、好奇、拖拽反馈。说话/思考/工作/准备/游戏进行复用专注待机，失败/阻止复用好奇姿势；这些映射写在 manifest 的 aliases 与 metadata.sharedPoses，不会回退到旧猫图像。
-11 类猫均有独立的提起、两张悬空变化、着地、缓冲和坐稳原画，已接入 pickup / dragging / drop。普通行走后的坐下仍为起身姿势逆序编排。仍有分层动画感，定位为试用美术，非最终逐像素精修资源。
+11 类猫均有独立的提起、两张悬空变化、着地、缓冲和坐稳原画，已接入 pickup / dragging / drop。普通行走后的坐下已替换为专门补绘的落胯、收身和坐稳姿势，转向加入正面与斜侧面过渡。仍有分层动画感，定位为试用美术，非最终逐像素精修资源。
 
 ## 生成与重建
 
@@ -65,9 +65,26 @@ Vitest 覆盖资源加载/引用/PNG 尺寸/朝向、到达坐下、起身中重
 新增 `pixel-preview-playback.test.js` 覆盖正常与减少动态效果下的行走、过渡和待机。
 实际浏览器开启减少动态效果后，逐只点击 11 类猫的“走几步”，采样 Canvas 腿部区域：每类均捕获 16 个不同的行走帧及 16 种不同腿部画面，显示帧与状态机帧一致，位置正常推进。
 
-`make build` 成功生成前端发行目录，Linux 原生链接被现有 `app/src/tts.rs` 的 Windows COM 符号（CoInitializeEx/CoCreateInstance/CoUninitialize）阻止。本次未更改该模块。
+2026-09-27 已修复 Linux 构建：Windows SAPI 的类型与 COM 调用按平台编译，非 Windows 明确报告不支持朗读；`xtask prepare-exe` 按本机可执行文件后缀检查输出。`make build` 全流程已通过，产出 `target/debug/bitcat`，Windows portable 仍使用 `bitcat.exe`。
 仍需 Windows 实机核对窗口跟随、拖拽交接、150%/200% DPI、多屏边界与气泡跟随；不把浏览器模拟验证当作原生验收。
-`npm run check:typography` 仍被原有 `.p-coin { font-size: 0; }` 阻止，此声明在本次改动前即存在，未为本任务改动字体检查器或金币样式。
+字号检查已通过：金币使用无文字的空元素绘图，删除了多余的 `font-size: 0`，检查器没有增加豁免。
+
+
+### 2026-09-27：专门的坐下与转身过渡
+
+每只猫新增 `settle-turn.png` 八姿势原画，提示词在 `settle-turn-prompts.json`。上排为站稳、屈膝落胯、收身、坐稳；下排提供斜侧面、正面与另一侧的转身视角。
+坐下最终烘焙为六帧，末帧与原待机帧一致。转身烘焙为五帧，首尾与当前/相反朝向的行走帧一致，中间使用补绘角度图，避免直接翻面。燕尾服猫的首个斜侧面源图方向由 `sources.json` 中的 `mirrorFrames` 明确校正。
+
+`walk.locomotion.turnAction` 是可选配置。起身完成或行走中换向时，状态机暂停位移，播放转身，完成后才提交方向。重新指定目标会在当前转身完成后按最终目标衔接，拖拽/通知可以取消；取消不会误提交未完成的朝向。大时间步按实际消耗扣除各过渡时长，剩余时间才用于移动。
+
+可复现的画面回归（先在 `app/frontend` 启动静态服务）：
+
+```sh
+node app/frontend/tools/check-pixel-cats.mjs http://127.0.0.1:4191
+```
+
+检查真实 Canvas 像素、位移和完成姿态，结果写入被忽略的 `.playwright-cli/pixel-regression.json`。本轮 11 类 × 普通/减少动态效果两种模式共 22 组通过：每组 16 种行走画面、5 种转身画面、6 种坐下画面；转身期间位置不变，完成后方向正确，最终返回待机。全部 581 帧非空、主体未触及边缘。
+最新测试：前端 309 项、app 178 项（4 项跳过）、xtask 2 项通过；格式、Clippy、字号检查通过。SAPI 文件整份复制到最小 crate，并按 app 的 edition 和 windows-sys features 通过 Windows MSVC 交叉检查。
 
 ## 产品自检
 
