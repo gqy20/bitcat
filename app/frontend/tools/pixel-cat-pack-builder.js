@@ -26,6 +26,7 @@ function rig(image,bounds){
   ctx.drawImage(image,...body,8,by,80,bh);return c;
  };
 }
+function mirror(source){const c=canvas(),ctx=c.getContext('2d');ctx.translate(S,0);ctx.scale(-1,1);ctx.drawImage(source,0,0);return c;}
 function timeline(refs,durations,extra={}){return{spriteFrames:[...new Set(refs)],frames:refs.map((sprite,i)=>({sprite,duration:Array.isArray(durations)?durations[i]:durations})),...extra};}
 export async function buildPixelPack(spec){
  let bank={};
@@ -44,8 +45,14 @@ export async function buildPixelPack(spec){
   const walking=rig(parts,spec.parts.bounds);bank.walk=Array.from({length:16},(_,i)=>walking(i/16));
   const rs=Math.min(68/spec.rise.bounds[0][3],86/Math.max(...spec.rise.bounds.map(b=>b[2])));
   bank.rise=[idle,...spec.rise.bounds.slice(1,5).map(b=>fit(rise,b,rs)),walking(0,0),walking(0,.5),bank.walk[0]];
-  bank.sit=bank.rise.slice().reverse();
  }
+ // Authored weight-lowering poses replace reverse playback of the rise.
+ const refineArt=await load(spec.refinement.url),rb=spec.refinement.bounds;
+ const refineScale=Math.min(66/rb[3][3],82/Math.max(...rb.map(b=>b[2])),74/Math.max(...rb.map(b=>b[3])));
+ const refined=i=>{const frame=fit(refineArt,rb[i],refineScale);return spec.refinement.mirrorFrames.includes(i)?mirror(frame):frame;};
+ bank.sit=[bank.walk[0],refined(0),refined(1),refined(2),refined(3),bank.idle[0]];
+ // Endpoints exactly match opposite walk poses; the middle frames change perspective.
+ bank.turn=[bank.walk[0],refined(4),refined(5),refined(6),mirror(bank.walk[0])];
  // All breeds have authored pickup, suspended and touchdown art.
  const dragArt=await load(spec.drag.url),db=spec.drag.bounds;
  const heldHeight=Math.max(db[1][3],db[2][3]);
@@ -67,13 +74,13 @@ export async function buildPixelPack(spec){
  const columns=8,rows=Math.ceil(all.length/columns),sheet=canvas(columns*S,rows*S),ctx=sheet.getContext('2d');all.forEach((f,i)=>ctx.drawImage(f,i%columns*S,Math.floor(i/columns)*S));
  const states={
   idle:timeline([index.idle[0],index.idle[1],index.idle[0]],[3100,130,2400],{loop:true}),
-  walk:timeline(index.walk,80,{loop:true,locomotion:{enterAction:'rise',exitAction:'sit',speed:17.5}}),
+  walk:timeline(index.walk,80,{loop:true,locomotion:{enterAction:'rise',exitAction:'sit',turnAction:'turn',speed:17.5}}),
   sleep:timeline(index.sleep,[1600,1200],{loop:true}),
   happy:timeline(index.happy,[240,140,300],{repeat:2,fallback:'idle'}),
   curious:timeline(index.curious,600,{repeat:2,fallback:'idle'}),
   attentive:timeline([index.idle[0],index.idle[1],index.idle[0]],[900,130,1400],{loop:true})
  };
- const actions={rise:timeline(index.rise,140,{repeat:1,fallback:'idle'}),sit:timeline(index.sit,160,{repeat:1,fallback:'idle'}),pickup:timeline(index.pickup,[70,150,100],{repeat:1,fallback:'idle'}),dragging:timeline([index.dragging[0],index.dragging[1],index.dragging[0]],[1100,160,1000],{loop:true,fallback:'idle'}),drop:timeline(index.drop,[80,110,130,150,200],{repeat:1,fallback:'idle'})};
+ const actions={rise:timeline(index.rise,140,{repeat:1,fallback:'idle'}),sit:timeline(index.sit,[90,120,140,160,180,200],{repeat:1,fallback:'idle'}),turn:timeline(index.turn,[70,100,120,100,70],{repeat:1,fallback:'idle'}),pickup:timeline(index.pickup,[70,150,100],{repeat:1,fallback:'idle'}),dragging:timeline([index.dragging[0],index.dragging[1],index.dragging[0]],[1100,160,1000],{loop:true,fallback:'idle'}),drop:timeline(index.drop,[80,110,130,150,200],{repeat:1,fallback:'idle'})};
  for(const key of ['observe','nudge','blocked','shake'])actions[key]=timeline(index.curious,300,{repeat:1,fallback:'idle'});
  for(const key of ['acknowledge','wave','jump'])actions[key]=timeline(index.happy,180,{repeat:1,fallback:'idle'});
  actions.spin=timeline(index.idle,180,{repeat:1,fallback:'idle'});

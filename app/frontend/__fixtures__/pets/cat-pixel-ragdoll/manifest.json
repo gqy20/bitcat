@@ -41,21 +41,21 @@
       "frames": [
         {
           "duration": 1100,
-          "sprite": 43
+          "sprite": 46
         },
         {
           "duration": 160,
-          "sprite": 44
+          "sprite": 47
         },
         {
           "duration": 1000,
-          "sprite": 43
+          "sprite": 46
         }
       ],
       "loop": true,
       "spriteFrames": [
-        43,
-        44
+        46,
+        47
       ]
     },
     "drop": {
@@ -63,32 +63,32 @@
       "frames": [
         {
           "duration": 80,
-          "sprite": 45
-        },
-        {
-          "duration": 110,
-          "sprite": 46
-        },
-        {
-          "duration": 130,
-          "sprite": 47
-        },
-        {
-          "duration": 150,
           "sprite": 48
         },
         {
-          "duration": 200,
+          "duration": 110,
           "sprite": 49
+        },
+        {
+          "duration": 130,
+          "sprite": 50
+        },
+        {
+          "duration": 150,
+          "sprite": 51
+        },
+        {
+          "duration": 200,
+          "sprite": 52
         }
       ],
       "repeat": 1,
       "spriteFrames": [
-        45,
-        46,
-        47,
         48,
-        49
+        49,
+        50,
+        51,
+        52
       ]
     },
     "jump": {
@@ -145,22 +145,22 @@
       "frames": [
         {
           "duration": 70,
-          "sprite": 40
+          "sprite": 43
         },
         {
           "duration": 150,
-          "sprite": 41
+          "sprite": 44
         },
         {
           "duration": 100,
-          "sprite": 42
+          "sprite": 45
         }
       ],
       "repeat": 1,
       "spriteFrames": [
-        40,
-        41,
-        42
+        43,
+        44,
+        45
       ]
     },
     "rise": {
@@ -228,15 +228,15 @@
       "fallback": "idle",
       "frames": [
         {
-          "duration": 160,
+          "duration": 90,
           "sprite": 32
         },
         {
-          "duration": 160,
+          "duration": 120,
           "sprite": 33
         },
         {
-          "duration": 160,
+          "duration": 140,
           "sprite": 34
         },
         {
@@ -244,20 +244,12 @@
           "sprite": 35
         },
         {
-          "duration": 160,
+          "duration": 180,
           "sprite": 36
         },
         {
-          "duration": 160,
+          "duration": 200,
           "sprite": 37
-        },
-        {
-          "duration": 160,
-          "sprite": 38
-        },
-        {
-          "duration": 160,
-          "sprite": 39
         }
       ],
       "repeat": 1,
@@ -267,9 +259,7 @@
         34,
         35,
         36,
-        37,
-        38,
-        39
+        37
       ]
     },
     "spin": {
@@ -288,6 +278,39 @@
       "spriteFrames": [
         0,
         1
+      ]
+    },
+    "turn": {
+      "fallback": "idle",
+      "frames": [
+        {
+          "duration": 70,
+          "sprite": 38
+        },
+        {
+          "duration": 100,
+          "sprite": 39
+        },
+        {
+          "duration": 120,
+          "sprite": 40
+        },
+        {
+          "duration": 100,
+          "sprite": 41
+        },
+        {
+          "duration": 70,
+          "sprite": 42
+        }
+      ],
+      "repeat": 1,
+      "spriteFrames": [
+        38,
+        39,
+        40,
+        41,
+        42
       ]
     },
     "wave": {
@@ -366,7 +389,7 @@
   "schemaVersion": 2,
   "sprite": {
     "columns": 8,
-    "frameCount": 50,
+    "frameCount": 53,
     "frameHeight": 96,
     "frameWidth": 96,
     "image": "spritesheet.png",
@@ -538,7 +561,8 @@
       "locomotion": {
         "enterAction": "rise",
         "exitAction": "sit",
-        "speed": 17.5
+        "speed": 17.5,
+        "turnAction": "turn"
       },
       "loop": true,
       "spriteFrames": [

@@ -294,7 +294,6 @@ body.pet-resizing .resize-handle,
   box-shadow:
     inset 2px 2px 0 rgba(255, 255, 255, 0.55),
     inset -2px -2px 0 rgba(0, 0, 0, 0.22);
-  font-size: 0;
   color: transparent;
   text-shadow: none;
   animation: coin-drop 1.05s steps(12, end) forwards;

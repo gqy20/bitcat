@@ -177,6 +177,7 @@ class PetStateMachine {
     this.state = 'idle';
     this.action = null;
     this.locomotionAction = null;
+    this.turnFacing = null;
     this.dragHeld = false;
     this.dragPhase = null;
     this.frame = 0;
@@ -201,6 +202,7 @@ class PetStateMachine {
 
   setState(newState) {
     if (this.state === newState) return;
+    this.turnFacing = null;
     if (this.locomotionAction) {
       this.action = null;
       this.locomotionAction = null;
@@ -235,8 +237,10 @@ class PetStateMachine {
     return true;
   }
 
-  clearAction() {
+  clearAction(completed = false) {
     const locomotion = this.locomotionAction;
+    if (completed && locomotion === 'turn' && this.turnFacing != null) this.facingRight = this.turnFacing;
+    this.turnFacing = null;
     this.action = null;
     this.locomotionAction = null;
     this.dragHeld = false;
@@ -244,7 +248,8 @@ class PetStateMachine {
     this.actionTimeMs = 0;
     this.frameTimeMs = 0;
     this.frame = 0;
-    if (locomotion !== 'enter') this.applySemanticState();
+    if (completed && (locomotion === 'enter' || locomotion === 'turn')) this.turnTowardTarget();
+    else this.applySemanticState();
   }
 
   walkTo(x) {
@@ -259,10 +264,23 @@ class PetStateMachine {
     this.setState('walk');
     this.targetX = x;
     if (motion) {
-      if (x !== this.x) this.facingRight = x > this.x;
+      if (!motion.turnAction && x !== this.x) this.facingRight = x > this.x;
       this.speed = motion.speed;
       if (!walking) this.playAction(motion.enterAction, { locomotion: 'enter' });
+      else if (!this.locomotionAction) this.turnTowardTarget();
     }
+  }
+
+  // Turn frames are authored from the current facing to the opposite side.
+  // Commit the facing only at the end; retargeting during a turn can queue another.
+  turnTowardTarget() {
+    if (this.state !== 'walk' || this.targetX == null || this.targetX === this.x) return false;
+    const nextFacing = this.targetX > this.x;
+    if (nextFacing === this.facingRight) return false;
+    const turn = this.stateConfig.walk?.locomotion?.turnAction;
+    if (!turn) { this.facingRight = nextFacing; return false; }
+    this.turnFacing = nextFacing;
+    return this.playAction(turn, { locomotion: 'turn' });
   }
 
   finishWalk() {
@@ -404,10 +422,11 @@ class PetStateMachine {
     if (!Number.isFinite(dtMs) || dtMs < 0) return;
     this.expireNotifications(performance.now());
     if (this.dragPhase) { this.advanceDrag(dtMs); return; }
-    if (this.locomotionAction) {
+    while (this.locomotionAction) {
       const action = this.actionConfig[this.action];
       const remaining = Math.max(0, timelineDuration(action.frames) * (action.repeat || 1) - this.actionTimeMs);
-      if (this.advanceAction(dtMs)) return;
+      if (dtMs < remaining) { this.advanceAction(dtMs); return; }
+      this.advanceAction(remaining);
       dtMs = Math.max(0, dtMs - remaining);
       if (dtMs === 0) return;
     }
@@ -507,7 +526,7 @@ class PetStateMachine {
     const duration = timelineDuration(config.frames);
     const repeat = config.repeat == null ? 1 : config.repeat;
     if (duration === 0 || this.actionTimeMs >= duration * repeat) {
-      this.clearAction();
+      this.clearAction(true);
       return false;
     }
 

@@ -481,6 +481,9 @@ function buildRuntimeFromManifest(manifest, imageData) {
     for (const key of ['enterAction', 'exitAction']) {
       if (!actionConfig[motion[key]]) throw new Error(`walk.locomotion.${key} references missing action`);
     }
+    if (motion.turnAction != null && !actionConfig[motion.turnAction]) {
+      throw new Error('walk.locomotion.turnAction references missing action');
+    }
   }
   if (render.facing != null && !['left', 'right'].includes(render.facing)) throw new Error('render.facing must be left or right');
   const renderScale = Number.isFinite(render.scale)

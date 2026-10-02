@@ -122,7 +122,7 @@ fn parse_prepare_exe_args(args: Vec<String>) -> Result<PathBuf> {
 fn prepare_exe_cmd(out_dir: PathBuf) -> Result<()> {
     let repo_root = env::current_dir()?;
     let out_dir = repo_root.join(out_dir);
-    let bitcat_exe = out_dir.join("bitcat.exe");
+    let bitcat_exe = out_dir.join(format!("bitcat{}", env::consts::EXE_SUFFIX));
     if !bitcat_exe.is_file() {
         return Err(format!("executable not found: {}", bitcat_exe.display()).into());
     }
@@ -525,6 +525,18 @@ package-portable options:
 mod tests {
     use super::*;
     use std::io::Read;
+
+    #[test]
+    fn prepare_exe_accepts_native_filename_and_rejects_missing_output() {
+        let dir = env::temp_dir().join(format!("bitcat_prepare_exe_{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join(format!("bitcat{}", env::consts::EXE_SUFFIX));
+        fs::write(&exe, b"test executable").unwrap();
+        assert!(prepare_exe_cmd(dir.clone()).is_ok());
+        fs::remove_file(exe).unwrap();
+        assert!(prepare_exe_cmd(dir.clone()).is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     /// zip crate 行为冒烟：portable 打包与诊断包导出共用的写/读调用面。
     /// CI 不跑 `make dist`，跨大版本升级（如 2→8）只靠编译无法发现打包
