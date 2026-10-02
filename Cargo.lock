@@ -752,7 +752,7 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
- "windows 0.61.3",
+ "windows 0.62.2",
  "windows-sys 0.61.2",
  "zip",
 ]
