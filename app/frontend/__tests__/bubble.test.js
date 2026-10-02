@@ -748,7 +748,7 @@ describe('agent toast copy', () => {
     expect(sheet).toContain('body.notice.show .bubble');
     expect(sheet).toContain('body.notice:has(.agent-toast.tone-task_done) .bubble');
     expect(sheet).toContain('@keyframes notice-soft-in');
-    expect(sheet).toContain('font-size: 13.5px;');
+    expect(readCssBlock(sheet, 'body.notice .content')).toContain('font-size: var(--type-dense-body);');
 
     // 布局契约：固定图标列 + 可收缩文本列，高度紧凑（单行）
     const toastBlock = readCssBlock(sheet, '.agent-toast');

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BitCat · 猫咪精修对比</title>
+<style>
+*{box-sizing:border-box}body{margin:0;color:#27272d;background:#ededee;font:16px/1.65 system-ui,sans-serif}main{max-width:1280px;margin:auto;padding:32px 24px}h1{font-size:28px;margin:0 0 8px}h2{font-size:18px;margin:0 0 12px}p{margin:0 0 20px;max-width:880px}.controls{display:flex;gap:16px;flex-wrap:wrap;margin:24px 0}label{display:flex;gap:8px;align-items:center}select{font:inherit;border:1px solid #74747c;border-radius:5px;padding:6px;color:inherit;background:white}select:focus-visible,a:focus-visible{outline:3px solid #8c6800;outline-offset:3px}.compare{display:grid;grid-template-columns:1fr 1fr;gap:24px}.surface{background:var(--surface,#fafafa);color:var(--ink,#292932);padding:20px 12px;min-width:0}.surface img{display:block;width:100%;height:auto}.poses{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px 8px;min-height:200px;align-items:end;padding-bottom:24px;border-bottom:1px solid #8888;margin-bottom:20px}figure{margin:0;text-align:center}canvas{display:block;image-rendering:pixelated;margin:auto;max-width:100%;height:auto!important}figcaption{font-size:12px}a{color:#6b5000}.surface a{color:inherit}details{margin-top:20px}summary{cursor:pointer}#status{margin-top:20px;font-size:14px}.note{font-size:14px}@media(max-width:760px){.compare{grid-template-columns:1fr}main{padding:24px 16px}.controls{gap:12px}}
+</style>
+<main>
+<h1>十类猫 · 第二轮精修</h1>
+<p>比较色块、眼睛和轮廓。小图按同一比例缩放并对齐脚底，睡姿保持自然高度；原始设计图保留在下方。</p>
+<div class="controls">
+<label>猫咪 <select id="cat"></select></label>
+<label>桌面 <select id="background"><option value="light">浅色</option><option value="dark">深色</option><option value="blue">蓝色</option></select></label>
+<label>预览画布 <select id="size"><option value="80">80px</option><option value="96" selected>96px</option><option value="144">144px</option></select></label>
+</div>
+<div class="compare">
+<section class="surface"><h2>初版</h2><div id="original-poses" class="poses"></div><img id="original-sheet" alt="初版六姿势设计图"><a id="original-download" download>下载初版</a></section>
+<section class="surface"><h2>精修版</h2><div id="refined-poses" class="poses"></div><img id="refined-sheet" alt="精修版六姿势设计图"><a id="refined-download" download>下载精修版</a></section>
+</div>
+<p id="status" role="status">正在加载…</p>
+<p class="note">当前是关键帧精修稿。走路仍需补过渡帧，眨眼需固定身体像素；这里的脚底对齐仅用于比较造型，不代表动画已完成。应用中的宠物尚未替换。</p>
+<details><summary>透明背景检查说明</summary><p>图片预览器可能显示透明像素中存储的隐藏颜色，看起来像光晕；这里按实际透明通道合成。十张精修图均识别出六个主体，画布外边缘没有明显不透明像素。抗锯齿和半透明细节仍需在最终像素素材阶段检查。</p></details>
+<a href="../index.html">查看第一轮完整总览</a>
+</main>
+<script src="audit-data.js"></script>
+<script src="review.js"></script>
+</html>

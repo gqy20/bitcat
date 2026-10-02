@@ -67,7 +67,7 @@ html, body {
 .title {
   min-width: 0;
   font-family: var(--font-brand);
-  font-weight: 720;
+  font-weight: var(--weight-bold);
   color: var(--text-main);
   letter-spacing: 0;
   overflow: hidden;
@@ -155,16 +155,16 @@ html, body {
   border-radius: var(--radius-sm);
   background: rgba(var(--accent-blue-rgb), 0.09);
   color: var(--text-main);
-  font-size: 21px;
-  line-height: 1;
+  font-size: var(--type-icon);
+  line-height: var(--leading-flat);
 }
 
 .cell .label {
   max-width: 100%;
   color: var(--text-secondary);
   font-size: var(--text-sm);
-  font-weight: 650;
-  line-height: 1.25;
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-label);
   text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;

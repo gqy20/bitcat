@@ -1,0 +1,94 @@
+{
+  "status": "research-animation",
+  "frameWidth": 96,
+  "frameHeight": 96,
+  "idle": {
+    "image": "idle-atlas.png",
+    "frames": [
+      {
+        "sprite": 0,
+        "duration": 3100
+      },
+      {
+        "sprite": 1,
+        "duration": 120
+      },
+      {
+        "sprite": 0,
+        "duration": 2000
+      },
+      {
+        "sprite": 2,
+        "duration": 220
+      },
+      {
+        "sprite": 0,
+        "duration": 160
+      },
+      {
+        "sprite": 3,
+        "duration": 220
+      },
+      {
+        "sprite": 0,
+        "duration": 180
+      },
+      {
+        "sprite": 2,
+        "duration": 200
+      },
+      {
+        "sprite": 0,
+        "duration": 2400
+      },
+      {
+        "sprite": 1,
+        "duration": 140
+      },
+      {
+        "sprite": 0,
+        "duration": 1800
+      }
+    ],
+    "loop": true
+  },
+  "walk": {
+    "image": "walk-atlas.png",
+    "frames": [
+      {
+        "sprite": 0,
+        "duration": 140
+      },
+      {
+        "sprite": 1,
+        "duration": 140
+      },
+      {
+        "sprite": 2,
+        "duration": 140
+      },
+      {
+        "sprite": 3,
+        "duration": 140
+      },
+      {
+        "sprite": 4,
+        "duration": 140
+      },
+      {
+        "sprite": 5,
+        "duration": 140
+      },
+      {
+        "sprite": 6,
+        "duration": 140
+      },
+      {
+        "sprite": 7,
+        "duration": 140
+      }
+    ],
+    "loop": true,
+    "rootDistancePerCycle": 25.6
+  }
+}

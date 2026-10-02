@@ -78,7 +78,7 @@ summary {
   border-radius: 999px;
   background: transparent;
   color: var(--text-secondary);
-  line-height: 1;
+  line-height: var(--leading-flat);
   cursor: pointer;
   transition: 140ms ease;
 }
@@ -177,8 +177,8 @@ summary {
   display: block;
   color: var(--text-main);
   font-family: var(--font-brand);
-  font-size: 15px;
-  font-weight: 720;
+  font-size: var(--type-item);
+  font-weight: var(--weight-bold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -343,16 +343,37 @@ summary {
   padding: 34px 52px 42px;
 }
 
-.pane::-webkit-scrollbar,
+/* 主 pane 的原生滚动条归零：overlay 拇指由 JS 自绘，永不占位、永不跳动。
+   textarea 等小容器保留经典自定义滚动条。 */
+.pane::-webkit-scrollbar { width: 0; height: 0; }
 textarea::-webkit-scrollbar { width: 10px; }
-.pane::-webkit-scrollbar-track,
 textarea::-webkit-scrollbar-track { background: transparent; }
-.pane::-webkit-scrollbar-thumb,
 textarea::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
   border-radius: 999px;
   background: rgba(34, 48, 64, 0.18);
   background-clip: padding-box;
+}
+
+/* overlay 滚动拇指：滚动时出现，停下淡出。 */
+.pane-scroll-thumb {
+  position: absolute;
+  right: 4px;
+  width: 8px;
+  border-radius: 999px;
+  background: rgba(36, 51, 45, 0.28);
+  opacity: 0;
+  transition: opacity 180ms ease;
+  pointer-events: none;
+  z-index: 40;
+}
+
+.pane-scroll-thumb.visible {
+  opacity: 1;
+}
+
+.pane-scroll-thumb:hover {
+  background: rgba(36, 51, 45, 0.38);
 }
 
 .tab.hidden { display: none; }
@@ -395,25 +416,25 @@ h1 {
   margin-bottom: 0;
   color: var(--text-main);
   font-size: var(--font-size-page-title);
-  font-weight: 720;
-  line-height: 1.15;
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
 }
 
 /* 分区去框后 h3 成为分区锚点：加字距提升扫描性 */
 h3 {
   color: var(--text-main);
   font-size: var(--font-size-section-title);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   letter-spacing: 0.02em;
-  line-height: 1.2;
+  line-height: var(--leading-label);
 }
 
 .hint {
   max-width: 780px;
   margin: 0;
   color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: var(--type-control);
+  line-height: var(--leading-body);
 }
 
 code,
@@ -466,66 +487,29 @@ code {
 .permission-callout span {
   color: var(--text-muted);
   font-size: var(--text-sm);
-  line-height: 1.45;
+  line-height: var(--leading-compact);
 }
 
-.permission-gate-card {
-  display: grid;
-  grid-template-columns: minmax(260px, 0.95fr) minmax(360px, 1.05fr);
-  gap: 20px;
-  align-items: stretch;
-  padding: 22px 24px;
-}
-
-.permission-gate-copy {
+/* 权限状态带：四个只读状态一行排开，点色即语义（复用连接器状态点）。 */
+.permission-gate-strip {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px 32px;
+  padding: 2px 2px 4px;
+}
+
+.gate-item {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  min-width: 0;
-}
-
-.permission-gate-copy h2 {
-  margin: 0;
-  color: var(--text-main);
-  font-size: var(--text-xl);
-  line-height: 1.18;
-}
-
-.permission-gate-copy p {
-  margin: 0;
-  max-width: 48ch;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: var(--text-sm);
-  line-height: 1.5;
 }
 
-.permission-gate-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.permission-gate-item {
-  display: grid;
-  gap: 6px;
-  align-content: center;
-  min-height: 74px;
-  padding: 12px 16px;
-  border-radius: 8px;
-  background: rgba(34, 48, 64, 0.035);
-  border: 0;
-}
-
-.permission-gate-item span {
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-}
-
-.permission-gate-item strong {
+.gate-item strong {
   color: var(--text-main);
-  font-size: var(--text-md);
-  line-height: 1.2;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
 }
 
 .permission-card .setting-row {
@@ -540,6 +524,36 @@ code {
   align-items: center;
   gap: 4px 24px;
   padding: 10px 24px;
+}
+
+/* 只读行（无右侧控件）：说明跨满两列，否则空的控件列会把文案挤到截断。 */
+.setting-row > .setting-copy:only-child {
+  grid-column: 1 / -1;
+}
+
+/* 只读行文案宁可折行也不省略：信息完整性优先于单行美观。 */
+.setting-row > .setting-copy:only-child .row-hint {
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+}
+
+.setting-row > .setting-copy:only-child label {
+  white-space: nowrap;
+}
+
+/* 开关行右侧只有一个 checkbox：右列按内容收缩（auto），label/hint 列
+   拿回被 424px 固定列浪费的空间——860 窄窗下提示不再截断，1040 下单行 */
+.setting-row.switch-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+/* 宽控件行（输入框/下拉）的 label 列还挤着 field-current 占位，hint
+   折行会挤出多行难看——这类行维持单行省略，文案本身都很短 */
+.setting-row:not(.switch-row) .row-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 控件列固定 424px：所有控件右对齐，右边界统一（mac 风格） */
@@ -579,11 +593,10 @@ input[type="number"] {
   min-width: 0;
   color: var(--text-muted);
   font-size: var(--text-sm);
-  font-weight: 400;
-  line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-compact);
+  /* 窄窗口（860 最小宽）下允许提示折行而非截断——默认 1040 宽仍单行 */
+  white-space: normal;
 }
 
 .setting-row.tall {
@@ -606,15 +619,15 @@ label,
 .setting-copy label {
   color: var(--text-main);
   font-size: var(--text-md);
-  font-weight: 650;
-  line-height: 1.25;
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-label);
 }
 
 .setting-copy span,
 .section-head span {
   color: var(--text-muted);
   font-size: var(--text-sm);
-  line-height: 1.45;
+  line-height: var(--leading-compact);
 }
 
 /* 当前生效值内联跟在 label 后：永不换行，空间不足时省略 */
@@ -627,8 +640,8 @@ label,
   border-left: 1px solid var(--line-normal);
   color: var(--text-faint);
   font-size: var(--text-xs);
-  line-height: 1.35;
-  font-weight: 400;
+  line-height: var(--leading-heading);
+  font-weight: var(--weight-regular);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -666,7 +679,7 @@ textarea {
   color: var(--text-main);
   font-family: var(--font-mono);
   font-size: var(--font-size-code);
-  line-height: 1.65;
+  line-height: var(--leading-reading);
 }
 
 input::placeholder,
@@ -766,7 +779,7 @@ input[type="checkbox"]:checked::after {
 .pet-asset-field small {
   color: var(--text-muted);
   font-size: var(--text-xs);
-  line-height: 1.4;
+  line-height: var(--leading-compact);
 }
 
 .pet-asset-picker {
@@ -782,7 +795,7 @@ input[type="checkbox"]:checked::after {
 .pet-asset-group-title {
   color: var(--text-faint);
   font-size: var(--text-xs);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   letter-spacing: 0;
 }
 
@@ -836,7 +849,7 @@ input[type="checkbox"]:checked::after {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .icon-btn,
@@ -927,8 +940,8 @@ input[type="checkbox"]:checked::after {
   color: var(--text-main);
   font-family: var(--font-brand);
   font-size: var(--font-size-metric-lg);
-  font-weight: 720;
-  line-height: 1.12;
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -966,19 +979,19 @@ input[type="checkbox"]:checked::after {
   margin: 0;
   color: var(--text-main);
   font-family: var(--font-brand);
-  font-size: 22px;
-  font-weight: 780;
-  line-height: 1.05;
+  font-size: var(--type-metric-compact);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .usage-metric .metric-main.metric-value-compact {
-  font-size: 20px;
+  font-size: var(--type-metric-compact);
 }
 
 .usage-metric .metric-main.metric-value-tight {
-  font-size: 18px;
+  font-size: var(--type-metric-small);
 }
 
 .usage-metric .metric-main small {
@@ -986,7 +999,7 @@ input[type="checkbox"]:checked::after {
   color: var(--text-muted);
   font-family: var(--font-sans);
   font-size: var(--font-size-control-sm);
-  font-weight: 680;
+  font-weight: var(--weight-bold);
 }
 
 .usage-metric .metric-pair {
@@ -1025,9 +1038,9 @@ input[type="checkbox"]:checked::after {
   min-width: 0;
   color: var(--text-main);
   font-family: var(--font-brand);
-  font-size: 21px;
-  font-weight: 780;
-  line-height: 1;
+  font-size: var(--type-metric-compact);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-flat);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
@@ -1035,23 +1048,34 @@ input[type="checkbox"]:checked::after {
 }
 
 .usage-metric .metric-pair b.metric-value-compact {
-  font-size: 19px;
+  font-size: var(--type-metric-compact);
 }
 
 .usage-metric .metric-pair b.metric-value-tight {
-  font-size: 17px;
+  font-size: var(--type-section);
 }
 
-/* 分区去框（方案 B）：内容与 pane-head 对齐（去掉原框的 24px 内缩），
-   分区之间用 hairline + 大留白分隔，最后一个分区不留底线 */
+/* 分区去框（方案 B）：内容与 pane-head 对齐（去掉原框的 24px 内缩）。
+   分区之间靠大留白分隔，辅以标题下方一小段锚点短线（56px）——
+   通栏 hairline 在浅渐变背景上要么看不清要么显重，短线兼顾两者 */
 .section-panel {
   padding: 6px 0 0;
 }
 
 .section-panel + .section-panel {
+  position: relative;
   margin-top: 28px;
   padding-top: 30px;
-  border-top: 1px solid rgba(34, 48, 64, 0.14);
+}
+
+.section-panel + .section-panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 56px;
+  height: 1px;
+  background: rgba(34, 48, 64, 0.22);
 }
 
 .overview-growth {
@@ -1079,7 +1103,7 @@ input[type="checkbox"]:checked::after {
   display: block;
   color: var(--text-main);
   font-size: var(--text-md);
-  font-weight: 720;
+  font-weight: var(--weight-bold);
 }
 
 .notice-item span {
@@ -1096,6 +1120,37 @@ input[type="checkbox"]:checked::after {
   gap: 14px;
   margin-bottom: 14px;
 }
+
+.row-hint b {
+  color: var(--text-main);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 同一行第二个 hint（如金币速率）：弱化并与前段拉开间距。 */
+.row-hint + .row-hint {
+  margin-left: 12px;
+  color: var(--text-faint);
+}
+
+/* 标题行右侧的动作区：状态文字 + 按钮（如「检查全部连接」）。
+   align-self: center 让按钮组与左侧单行标题共享同一视觉中线。 */
+.section-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.section-head-actions .status-line {
+  margin-top: 0;
+  min-height: 0;
+}
+
+.section-head-actions .status-line[data-state="ready"] { color: #32835c; }
+.section-head-actions .status-line[data-state="missing"] { color: #a77624; }
+.section-head-actions .status-line[data-state="error"] { color: #9f3e34; }
 
 
 .usage-summary {
@@ -1143,9 +1198,9 @@ input[type="checkbox"]:checked::after {
   gap: 5px;
   color: var(--text-main);
   font-family: var(--font-brand);
-  font-size: 20px;
-  font-weight: 780;
-  line-height: 1.08;
+  font-size: var(--type-metric-compact);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
@@ -1157,9 +1212,9 @@ input[type="checkbox"]:checked::after {
   margin: 0;
   color: var(--text-main);
   font-family: var(--font-brand);
-  font-size: 20px;
-  font-weight: 780;
-  line-height: 1.08;
+  font-size: var(--type-metric-compact);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1168,7 +1223,7 @@ input[type="checkbox"]:checked::after {
   color: var(--text-muted);
   font-family: var(--font-sans);
   font-size: var(--font-size-control-sm);
-  font-weight: 680;
+  font-weight: var(--weight-bold);
 }
 
 .resource-card small {
@@ -1189,10 +1244,24 @@ input[type="checkbox"]:checked::after {
 .usage-block-title {
   margin-bottom: 10px;
   color: var(--text-main);
-  font-size: 12px;
-  font-weight: 650;
-  line-height: 1.25;
+  font-size: var(--type-caption);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-label);
   letter-spacing: 0;
+}
+
+/* 标题行右侧放状态（如"更新于 …"）。 */
+.usage-block-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.usage-block-head .status-line {
+  margin-top: 0;
+  min-height: 0;
+  text-align: right;
 }
 
 .usage-breakdown {
@@ -1246,15 +1315,45 @@ input[type="checkbox"]:checked::after {
   gap: 8px;
 }
 
+/* 近期活动：单行聚合——总量 · 模型 · 条数与耗时 · 分类明细 · 时间。 */
 .usage-session {
-  display: grid;
-  grid-template-columns: 124px minmax(0, 1fr) minmax(170px, 0.72fr);
+  display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 18px;
+  gap: 12px;
+  padding: 10px 18px;
   border: 1px solid var(--line-subtle);
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.68);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.usage-session strong {
+  color: var(--text-main);
+  font-family: var(--font-brand);
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  min-width: 68px;
+}
+
+.usage-session-model {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.usage-session-meta,
+.usage-session-time {
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-session-time {
+  margin-left: auto;
 }
 
 .pet-event {
@@ -1268,7 +1367,6 @@ input[type="checkbox"]:checked::after {
   background: rgba(255, 255, 255, 0.68);
 }
 
-.usage-session-main,
 .pet-event-main,
 .pet-event-sub {
   min-width: 0;
@@ -1277,36 +1375,15 @@ input[type="checkbox"]:checked::after {
   gap: 4px;
 }
 
-.usage-session-main strong {
-  color: var(--text-main);
-  font-family: var(--font-brand);
-  font-size: var(--text-xl);
-  font-weight: 780;
-  font-variant-numeric: tabular-nums;
-}
-
-.usage-session-main span,
-.usage-session-sub,
-.usage-session-parts,
 .pet-event-main span,
 .pet-event-sub span {
   color: var(--text-faint);
   font-size: var(--text-sm);
 }
 
-.usage-session-sub span:first-child {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-secondary);
-}
-
 .usage-session-parts {
   display: flex;
   gap: 6px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
   min-width: 0;
 }
 
@@ -1330,7 +1407,7 @@ input[type="checkbox"]:checked::after {
 .pet-event-main strong {
   color: var(--text-main);
   font-size: var(--text-md);
-  font-weight: 720;
+  font-weight: var(--weight-bold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1345,7 +1422,7 @@ input[type="checkbox"]:checked::after {
   min-width: 0;
   color: #52606f;
   font-size: var(--text-xs);
-  line-height: 1.45;
+  line-height: var(--leading-compact);
   overflow-wrap: anywhere;
   white-space: normal;
 }
@@ -1354,27 +1431,6 @@ input[type="checkbox"]:checked::after {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.agent-watch-hero {
-  align-items: flex-start;
-  padding: 18px 20px;
-  border: 1px solid rgba(var(--accent-green-rgb), 0.18);
-  border-radius: var(--radius);
-  background:
-    linear-gradient(135deg, rgba(var(--accent-green-rgb), 0.08), rgba(var(--accent-blue-rgb), 0.04)),
-    rgba(255, 255, 255, 0.68);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.66);
-}
-
-.agent-watch-hero-copy {
-  min-width: 0;
-  display: block;
-}
-
-.agent-watch-hero h1 {
-  margin-bottom: 7px;
-  font-size: var(--font-size-page-title);
 }
 
 .reminder-log-path {
@@ -1459,8 +1515,8 @@ input[type="checkbox"]:checked::after {
   border: 1px solid rgba(var(--accent-amber-rgb), 0.24);
   background: rgba(var(--accent-amber-rgb), 0.1);
   font-size: var(--text-xs);
-  font-weight: 700;
-  line-height: 1.25;
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-label);
   text-align: center;
   white-space: nowrap;
 }
@@ -1489,7 +1545,7 @@ input[type="checkbox"]:checked::after {
   padding: 0 10px;
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
-  line-height: 1;
+  line-height: var(--leading-flat);
 }
 
 .reminder-actions .reminder-snooze {
@@ -1503,40 +1559,54 @@ input[type="checkbox"]:checked::after {
   border-radius: var(--radius-sm);
 }
 
-.agent-watch-hero .hint {
-  max-width: 760px;
-}
-
-.agent-watch-chips,
-.head-actions {
+/* 连接器列表：每个编程助手一行 = 状态点 + 名字 + 按需出现的「修复」。 */
+.connector-list {
+  margin-bottom: 24px;
+  padding: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
 }
 
-.agent-watch-chips {
-  margin-top: 12px;
+.connector-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  min-height: 0;
 }
 
-.agent-watch-chips span {
-  border: 1px solid var(--line-normal);
-  border-radius: 999px;
-  padding: 5px 10px;
-  color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.6);
+.connector-row + .connector-row {
+  border-top: 1px solid var(--line-subtle);
+}
+
+.connector-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: #79877e;
+}
+
+.connector-dot[data-state="ready"] { background: #32835c; }
+.connector-dot[data-state="idle"] { background: #79877e; }
+.connector-dot[data-state="missing"] { background: #a77624; }
+
+.connector-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.connector-copy strong {
+  font-size: var(--text-sm);
+  color: var(--text-main);
+}
+
+.connector-copy .row-hint {
   font-size: var(--text-xs);
-  font-weight: 680;
-}
-
-.head-actions {
-  align-content: flex-start;
-  justify-content: flex-end;
-  min-width: 210px;
-}
-
-.head-actions .btn {
-  min-width: 164px;
-  justify-content: center;
+  color: var(--text-secondary);
 }
 
 .agent-watch-card {
@@ -1631,32 +1701,31 @@ input[type="checkbox"]:checked::after {
   white-space: nowrap;
 }
 
+/* 诊断信息一行小字 caption，不用药丸。 */
 .agent-watch-diag {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
   margin-bottom: 12px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
 }
 
 .agent-watch-diag span {
-  max-width: 100%;
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  border: 1px solid rgba(var(--accent-blue-rgb), 0.18);
-  border-radius: 999px;
-  padding: 4px 9px;
-  color: #526d88;
-  background: rgba(var(--accent-blue-rgb), 0.058);
+}
+
+.agent-watch-diag code {
+  color: #52606f;
   font-size: var(--text-xs);
 }
 
+/* 会话卡两行：身份行 + 任务行。 */
 .agent-session {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(160px, 280px);
-  align-items: center;
-  gap: 12px;
-  padding: 14px 18px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  padding: 12px 18px;
   border: 1px solid var(--line-subtle);
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.68);
@@ -1683,14 +1752,15 @@ input[type="checkbox"]:checked::after {
 .agent-session-sub {
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
 }
 
 .agent-session-main strong {
   color: var(--text-main);
   font-size: var(--text-md);
-  font-weight: 720;
+  font-weight: var(--weight-bold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1703,40 +1773,37 @@ input[type="checkbox"]:checked::after {
   font-size: var(--text-sm);
 }
 
-.agent-session-sub {
-  align-items: flex-end;
-  max-width: 280px;
-  text-align: right;
+/* 状态着色：扫一眼分出在跑 / 等待 / 出错 / 完成。 */
+.agent-session.working .agent-session-status,
+.agent-session.tool_running .agent-session-status,
+.agent-session.compacting .agent-session-status {
+  color: #32835c;
 }
 
-.agent-session-sub code,
-.agent-session-sub small {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.agent-session.waiting .agent-session-status {
+  color: #a77624;
 }
 
-.agent-session-sub span {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.agent-session.error .agent-session-status {
+  color: #9f3e34;
 }
 
 .agent-session-sub code {
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #52606f;
   font-size: var(--text-xs);
 }
 
-.agent-session p {
-  grid-column: 1 / -1;
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
+.agent-session-sub .agent-session-prompt {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-secondary);
 }
 
 .memory-title {
@@ -1775,7 +1842,7 @@ input[type="checkbox"]:checked::after {
   display: block;
   color: var(--text-main);
   font-size: var(--text-md);
-  font-weight: 720;
+  font-weight: var(--weight-bold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1785,7 +1852,7 @@ input[type="checkbox"]:checked::after {
   margin: 6px 0 0;
   color: var(--text-muted);
   font-size: var(--text-sm);
-  line-height: 1.5;
+  line-height: var(--leading-body);
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -1797,7 +1864,7 @@ input[type="checkbox"]:checked::after {
   height: 32px;
   color: #ffb4aa;
   font-size: var(--font-size-icon-sm);
-  line-height: 1;
+  line-height: var(--leading-flat);
 }
 
 .memory-detail {
@@ -1830,7 +1897,7 @@ input[type="checkbox"]:checked::after {
   color: var(--text-muted);
   background: rgba(255, 255, 255, 0.54);
   font-size: var(--text-sm);
-  line-height: 1.5;
+  line-height: var(--leading-body);
   overflow-wrap: anywhere;
 }
 
@@ -1876,8 +1943,7 @@ input[type="checkbox"]:checked::after {
 }
 
 .action-item .ai-head {
-  display: grid;
-  grid-template-columns: minmax(260px, 1.05fr) minmax(160px, 0.7fr) minmax(132px, 168px);
+  display: flex;
   align-items: center;
   gap: 12px;
 }
@@ -1887,6 +1953,7 @@ input[type="checkbox"]:checked::after {
   align-items: center;
   gap: 12px;
   min-width: 0;
+  flex: 0 1 auto;
 }
 
 .key {
@@ -1904,7 +1971,7 @@ input[type="checkbox"]:checked::after {
   color: #287953;
   font-family: var(--font-mono);
   font-size: var(--font-size-code);
-  font-weight: 760;
+  font-weight: var(--weight-bold);
   box-shadow: none;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1916,27 +1983,49 @@ input[type="checkbox"]:checked::after {
   overflow: hidden;
   color: #405365;
   font-size: var(--text-md);
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* 摘要即按钮：一句话点开表单；未绑定行整个隐藏，下拉框就是状态。 */
 .action-summary {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  color: var(--text-faint);
-  font-size: 13px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: #526d88;
+  font-family: inherit;
+  font-size: var(--type-control);
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
 }
 
-.action-item:not(.unbound) .action-summary {
-  color: #526d88;
+.action-summary:hover {
+  background: rgba(34, 48, 64, 0.06);
+  color: #3d5a75;
 }
 
-.action-item.unbound .key-meta,
 .action-item.unbound .action-summary {
+  display: none;
+}
+
+.action-item.unbound .key-meta {
   color: #7e8d9c;
+}
+
+.action-item .a-type {
+  flex: 0 0 150px;
+}
+
+/* 表单默认收起，点摘要展开。 */
+.action-item:not(.expanded) .ai-body {
+  display: none;
 }
 
 .ai-body {
@@ -1962,11 +2051,24 @@ input[type="checkbox"]:checked::after {
 .row > label {
   color: var(--text-muted);
   font-size: var(--text-xs);
-  line-height: 1.2;
+  line-height: var(--leading-label);
 }
 
 .row.toggle {
   grid-template-columns: 92px auto;
+}
+
+/* 带说明的输入行：提示语挂在输入框正下方。 */
+.row.with-hint {
+  grid-template-rows: auto auto;
+  align-items: center;
+}
+
+.row.with-hint .row-hint {
+  grid-column: 2;
+  margin-top: -4px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-label);
 }
 
 .row input:not([type="checkbox"]),
@@ -2058,9 +2160,9 @@ input[type="checkbox"]:checked::after {
   list-style: none;
   cursor: pointer;
   color: var(--text-main);
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.2;
+  font-size: var(--type-control);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-label);
   transition: color 140ms ease, background 140ms ease;
 }
 
@@ -2121,8 +2223,8 @@ input[type="checkbox"]:checked::after {
   margin-bottom: 12px;
   color: var(--text-main);
   font-size: var(--text-md);
-  font-weight: 700;
-  line-height: 1.2;
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-label);
 }
 
 .about-file-list {
@@ -2149,8 +2251,8 @@ input[type="checkbox"]:checked::after {
   min-width: 0;
   color: var(--text-muted);
   font-size: var(--text-sm);
-  font-weight: 650;
-  line-height: 1.2;
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-label);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2163,7 +2265,7 @@ input[type="checkbox"]:checked::after {
   color: var(--text-secondary);
   background: transparent;
   font-size: var(--font-size-control-sm);
-  line-height: 1.35;
+  line-height: var(--leading-heading);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2257,18 +2359,18 @@ input[type="checkbox"]:checked::after {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
-  font-weight: 760;
-  line-height: 1.15;
+  font-size: var(--type-body);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
   letter-spacing: 0;
 }
 
 .confirm-copy span {
   min-width: 0;
   color: rgba(255, 255, 255, 0.7);
-  font-size: 12px;
-  font-weight: 560;
-  line-height: 1.35;
+  font-size: var(--type-caption);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-heading);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2289,8 +2391,8 @@ input[type="checkbox"]:checked::after {
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.86);
   font: inherit;
-  font-size: 13px;
-  font-weight: 720;
+  font-size: var(--type-control);
+  font-weight: var(--weight-bold);
   cursor: pointer;
   transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
 }
@@ -2322,7 +2424,7 @@ input[type="checkbox"]:checked::after {
   min-width: 92px;
   min-height: var(--control-h);
   padding: 0 var(--control-px);
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .btn.small {
@@ -2334,7 +2436,7 @@ input[type="checkbox"]:checked::after {
 
 .pane-head .btn.small,
 .usage-toolbar .btn.small,
-.head-actions .btn.small {
+.section-head-actions .btn.small {
   min-height: var(--control-h-icon);
 }
 
@@ -2418,36 +2520,20 @@ input[type="checkbox"]:checked::after {
 
   .setting-row,
   .agent-watch-card,
-  .permission-gate-card,
   .switch-row,
-  .action-item .ai-head,
   .usage-session,
   .agent-session,
   .pet-event {
     grid-template-columns: 1fr;
   }
 
-  .agent-session-sub {
-    align-items: flex-start;
-    text-align: left;
+  /* 按键行已改 flex：窄窗口时允许换行。 */
+  .action-item .ai-head {
+    flex-wrap: wrap;
   }
 
-  .permission-gate-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .agent-watch-hero,
-  .head-actions {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .head-actions {
-    justify-content: flex-start;
-  }
-
-  .head-actions .btn {
-    width: 100%;
+  .action-item .a-type {
+    flex: 1 1 150px;
   }
 
   .agent-watch-card .setting-row {
@@ -2467,104 +2553,83 @@ input[type="checkbox"]:checked::after {
 
 /* ─── 积分与成就系统 ─── */
 
-.points-level-card {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  grid-template-areas:
-    "badge header"
-    "bar bar"
-    "streak streak";
-  gap: 14px 18px;
-  align-items: center;
-  padding: 18px 20px;
-  background: linear-gradient(135deg, rgba(var(--accent-blue-rgb), 0.06), rgba(var(--accent-green-rgb), 0.035));
-  border: 1px solid rgba(var(--accent-blue-rgb), 0.14);
-  border-radius: var(--radius);
-  margin-bottom: 14px;
-}
-
-.points-level-header {
-  grid-area: header;
+/* 回忆卡头部：徽章 + 升级进度 + 最长连续。
+   折叠摘要行已有等级/总分/连续，展开态只补新信息，不重复数字。 */
+.points-head {
   display: flex;
-  align-items: baseline;
-  gap: 14px;
-  min-width: 0;
+  align-items: center;
+  gap: 16px;
 }
 
 .points-level-badge {
-  grid-area: badge;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0;
   width: 60px;
   height: 60px;
+  padding: 0;
   border-radius: 50%;
   background: linear-gradient(145deg, rgba(var(--accent-green-rgb), 0.16), rgba(var(--accent-blue-rgb), 0.06));
   border: 1px solid rgba(var(--accent-green-rgb), 0.26);
-  justify-content: center;
   flex-shrink: 0;
+  cursor: pointer;
 }
 
 .points-level-number {
-  font-size: 18px;
-  font-weight: 740;
+  font-size: var(--type-metric-small);
+  font-weight: var(--weight-bold);
   color: var(--cat-green);
-  line-height: 0.95;
+  line-height: var(--leading-flat);
 }
 
 .points-level-title {
-  font-size: 10px;
-  font-weight: 600;
+  font-size: var(--type-dense-badge);
+  font-weight: var(--weight-semibold);
   color: var(--text-secondary);
   letter-spacing: 0;
-  line-height: 1.1;
+  line-height: var(--leading-tight);
 }
 
-.points-total {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
+.points-head-copy {
+  flex: 1;
   min-width: 0;
+  display: grid;
+  gap: 6px;
 }
 
-.points-total strong {
-  font-size: 20px;
-  font-weight: 740;
-  color: var(--text-main);
-  font-family: var(--font-brand);
-  line-height: 0.98;
-  letter-spacing: 0;
-  font-variant-numeric: tabular-nums;
+.points-head-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.points-total span {
-  font-size: 10px;
+.points-streak-longest {
   color: var(--text-muted);
-  line-height: 1.15;
+  font-size: var(--type-dense-badge);
+  white-space: nowrap;
+}
+
+.points-streak-longest b {
+  color: var(--sun-amber);
+  font-weight: var(--weight-bold);
 }
 
 .points-exp-bar {
-  grid-area: bar;
   position: relative;
   width: 100%;
-  height: 20px;
-  display: flex;
-  align-items: center;
+  height: 12px;
 }
 
 .points-exp-fill {
   position: absolute;
   left: 0;
-  top: 6px;
-  height: 8px;
+  top: 4px;
+  height: 4px;
   z-index: 1;
-  border-radius: 6px;
-  background: #26333f;
-  opacity: 0.85;
+  border-radius: 4px;
+  background: #40c463;
   transition: width 0.5s ease;
 }
 
@@ -2573,81 +2638,66 @@ input[type="checkbox"]:checked::after {
   position: absolute;
   left: 0;
   right: 0;
-  top: 6px;
-  height: 8px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.05);
+  top: 4px;
+  height: 4px;
+  border-radius: 4px;
+  background: rgba(34, 48, 64, 0.08);
 }
 
 #points-exp-text,
 .points-exp-text {
-  position: absolute;
-  z-index: 2;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 10px;
-  color: var(--text-faint);
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0;
-  white-space: nowrap;
-  text-shadow: none;
-}
-
-.points-streak {
-  grid-area: streak;
-  display: flex;
-  gap: 18px;
-  margin-top: 2px;
-  font-size: 11px;
+  font-size: var(--type-control);
   color: var(--text-secondary);
-  line-height: 1.25;
-}
-
-.points-streak strong {
-  color: var(--sun-amber);
-  font-weight: 760;
-}
-
-/* 分类网格 */
-.points-categories {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
-  gap: 8px;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.54);
-  border-radius: var(--radius-sm);
-  margin-bottom: 4px;
-}
-
-.points-cat-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 8px 4px;
-  border-radius: var(--radius-sm);
-  transition: background 0.15s;
-}
-
-.points-cat-item:hover {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.points-cat-label {
-  font-size: 10px;
-  color: var(--text-muted);
-  line-height: 1.15;
-}
-
-.points-cat-value {
-  font-size: 14px;
-  font-weight: 740;
-  color: var(--text-main);
-  font-family: var(--font-mono);
-  line-height: 1;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 分类计数单行 caption */
+.points-caption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.points-caption b {
+  color: var(--text-main);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 蛇彩蛋舞台：点徽章才出现 */
+.points-snake-stage {
+  position: relative;
+}
+
+.points-snake-stage.hidden {
+  display: none;
+}
+
+.points-snake-note {
+  position: absolute;
+  right: 0;
+  top: -18px;
+  color: var(--text-faint);
+  font-size: var(--type-dense-badge);
+}
+
+.points-more {
+  margin-top: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.points-more:hover {
+  color: var(--text-main);
+  text-decoration: underline;
 }
 
 /* 成就徽章 */
@@ -2684,22 +2734,22 @@ input[type="checkbox"]:checked::after {
 }
 
 .achievement-icon {
-  font-size: 22px;
-  line-height: 1;
+  font-size: var(--type-metric-compact);
+  line-height: var(--leading-flat);
 }
 
 .achievement-name {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--type-tag);
+  font-weight: var(--weight-semibold);
   color: var(--text-secondary);
-  line-height: 1.2;
+  line-height: var(--leading-label);
 }
 
 .achievement-bonus {
-  font-size: 10px;
+  font-size: var(--type-dense-badge);
   color: var(--sun-amber);
-  font-weight: 600;
-  line-height: 1;
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-flat);
 }
 
 .achievement-badge.locked .achievement-name {
@@ -2722,7 +2772,7 @@ input[type="checkbox"]:checked::after {
   border: 1px solid var(--line-subtle);
   border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.62);
-  font-size: 12px;
+  font-size: var(--type-caption);
 }
 
 .points-event-kind {
@@ -2733,14 +2783,14 @@ input[type="checkbox"]:checked::after {
 .points-event strong {
   color: var(--cat-green);
   font-family: var(--font-mono);
-  font-weight: 760;
-  font-size: 13px;
-  line-height: 1;
+  font-weight: var(--weight-bold);
+  font-size: var(--type-control);
+  line-height: var(--leading-flat);
 }
 
 .points-event-time {
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--type-tag);
   text-align: right;
   font-family: var(--font-mono);
 }
@@ -2757,227 +2807,13 @@ input[type="checkbox"]:checked::after {
 
 .points-overview {
   display: grid;
-  gap: 10px;
-}
-
-.points-overview .usage-block-title {
-  margin-bottom: 0;
-  width: max-content;
-  color: var(--text-main);
-  font-size: 13px;
-  font-weight: 760;
-  line-height: 1.3;
-}
-
-.points-overview .points-level-card {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-template-areas: none;
-  gap: 14px;
-  align-items: start;
-  width: 100%;
-  padding: 0;
-  margin: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.points-overview .points-level-badge,
-.points-overview .points-exp-bar,
-.points-overview .points-streak {
-  grid-area: auto;
-}
-
-.points-main {
-  min-width: 0;
-  display: grid;
-  gap: 7px;
-}
-
-.points-overview .points-level-badge {
-  width: auto;
-  height: auto;
-  border-radius: var(--radius-sm);
-  gap: 4px;
-  align-self: stretch;
-}
-
-.points-overview .points-metric {
-  min-height: 58px;
-  padding: 8px 10px;
-  display: grid;
-  align-content: center;
-  gap: 4px;
-  border: 1px solid rgba(34, 48, 64, 0.055);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.42);
-}
-
-.points-overview .points-level-number {
-  font-size: 23px;
-  font-family: var(--font-mono);
-  font-weight: 720;
-  line-height: 1;
-  color: #30a14e;
-  text-shadow: none;
-}
-
-.points-overview .points-level-title {
-  max-width: 100%;
-  overflow: hidden;
-  font-size: 10px;
-  line-height: 1.1;
-  color: var(--text-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.points-overview .points-total {
-  display: grid;
-  align-content: center;
-  gap: 4px;
-}
-
-.points-overview .points-total strong {
-  color: var(--text-main);
-  font-family: var(--font-mono);
-  font-size: 23px;
-  font-weight: 720;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-.points-overview .points-total span {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.points-overview .points-exp-bar {
-  height: 14px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  opacity: 0.72;
-}
-
-.points-overview .points-exp-bar::before,
-.points-overview .points-exp-fill {
-  top: 5px;
-  height: 4px;
-  border-radius: 4px;
-}
-
-.points-overview .points-exp-bar::before {
-  right: 42px;
-  background: rgba(34, 48, 64, 0.07);
-}
-
-.points-overview .points-exp-fill {
-  max-width: calc(100% - 42px);
-  background: #40c463;
-  box-shadow: none;
-}
-
-.points-overview #points-exp-text,
-.points-overview .points-exp-text {
-  position: static;
-  justify-self: end;
-  transform: none;
-  font-size: 10px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  line-height: 1;
-  white-space: nowrap;
-  text-shadow: none;
-}
-
-.points-overview .points-streak {
-  grid-column: span 2;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin: 0;
-  justify-content: stretch;
-}
-
-.points-overview .points-streak span {
-  display: grid;
-  align-content: start;
-  gap: 3px;
-  min-width: 0;
-  text-align: left;
-}
-
-.points-overview .points-streak strong {
-  color: var(--text-main);
-  font-family: var(--font-mono);
-  font-size: 23px;
-  font-weight: 720;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-.points-overview .points-streak small {
-  color: var(--text-muted);
-  font-size: 10px;
-  line-height: 1.1;
-  white-space: nowrap;
-}
-
-.points-activity-panel {
-  width: 100%;
-  overflow-x: auto;
-  padding: 12px 6px;
-  border-radius: 8px;
-  background: transparent;
-  box-shadow: none;
-}
-
-.points-activity-grid {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(52, 12px);
-  grid-template-rows: repeat(7, 12px);
-  grid-auto-flow: column;
-  gap: 4px;
-  width: max-content;
-  min-width: max-content;
-  margin: 0 auto;
-}
-
-.points-activity-cell {
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-  background: #e9edf1;
-  box-shadow: none;
-}
-
-.points-activity-cell.level-1 {
-  background: #9be9a8;
-}
-
-.points-activity-cell.level-2 {
-  background: #58d26b;
-}
-
-.points-activity-cell.level-3 {
-  background: #30a14e;
-}
-
-.points-activity-cell.level-4 {
-  background: #216e39;
+  gap: 12px;
 }
 
 .points-snake-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  width: 828px;
-  height: 108px;
+  display: block;
+  width: 100%;
+  height: auto;
   overflow: visible;
   pointer-events: none;
 }
@@ -2996,52 +2832,11 @@ input[type="checkbox"]:checked::after {
   stroke-width: 1px;
 }
 
-.points-overview .points-categories {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 0;
-  padding: 6px 0 0;
-  margin: 0;
-  border-top: 1px solid rgba(34, 48, 64, 0.055);
-  border-bottom: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-.points-overview .points-categories:has(.points-empty:only-child) {
-  display: block;
-  padding: 0;
-  border: 0;
-}
-
-.points-overview .points-cat-item {
-  min-width: 0;
-  padding: 4px 8px;
-  border-radius: 0;
-  border-right: 1px solid rgba(34, 48, 64, 0.045);
-}
-
-.points-overview .points-cat-item:last-child {
-  border-right: 0;
-}
-
-.points-overview .points-cat-value {
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.points-overview .points-cat-label {
-  margin-top: 2px;
-  font-size: 10px;
-  line-height: 1.1;
-}
-
 .points-empty {
   grid-column: 1 / -1;
   padding: 3px 0;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--type-tag);
   text-align: left;
 }
 
@@ -3075,11 +2870,11 @@ input[type="checkbox"]:checked::after {
 }
 
 .overview-growth .achievement-icon {
-  font-size: 18px;
+  font-size: var(--type-metric-small);
 }
 
 .overview-growth .achievement-name {
-  font-size: 10px;
+  font-size: var(--type-dense-badge);
 }
 
 .overview-growth .points-events {
@@ -3099,22 +2894,12 @@ input[type="checkbox"]:checked::after {
 }
 
 @media (max-width: 760px) {
-  .points-overview .points-level-card {
-    grid-template-columns: auto minmax(0, 1fr);
+  .points-head {
+    flex-wrap: wrap;
   }
 
-  .points-overview .points-streak {
-    grid-column: 1 / -1;
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .points-overview .points-streak span {
-    padding-left: 0;
-    border-left: 0;
-  }
-
-  .points-overview .points-categories {
-    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  .points-head-copy {
+    flex: 1 1 100%;
   }
 }
 
@@ -3233,7 +3018,7 @@ input[type="checkbox"]:checked::after {
 .perm-summary-row span {
   font-size: var(--text-sm);
   color: var(--text-muted);
-  line-height: 1.45;
+  line-height: var(--leading-compact);
 }
 
 /* 一键收权：安心动作，放在分组底部 */
@@ -3248,7 +3033,7 @@ input[type="checkbox"]:checked::after {
 .revoke-bar > span {
   font-size: var(--text-sm);
   color: var(--text-muted);
-  line-height: 1.45;
+  line-height: var(--leading-compact);
   flex: 1;
 }
 
@@ -3318,7 +3103,7 @@ input[type="checkbox"]:checked::after {
 }
 
 .expert-page .pane-head h1 {
-  font-size: var(--text-lg, 18px);
+  font-size: var(--type-section);
 }
 
 /* ② 你告诉它的：折叠画像 */
@@ -3357,8 +3142,8 @@ input[type="checkbox"]:checked::after {
   margin-top: 0;
   color: var(--text-muted);
   font-size: var(--text-sm);
-  font-weight: 400;
-  line-height: 1.4;
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-compact);
 }
 
 /* 提示词“默认 / 已自定义”徽标：留空即内置默认的 overlay 语义显性化 */
@@ -3377,7 +3162,7 @@ input[type="checkbox"]:checked::after {
   border-color: rgba(34, 48, 64, 0.3);
   background: transparent;
   color: var(--text-main);
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 /* 组内编辑器：不再是独立大块，跟随 section-panel 分组容器 */
@@ -3402,7 +3187,7 @@ input[type="checkbox"]:checked::after {
 
 .resource-card .resource-time {
   font-size: var(--text-sm);
-  font-weight: 400;
+  font-weight: var(--weight-regular);
   color: var(--text-muted);
 }
 
@@ -3485,15 +3270,18 @@ input[type="checkbox"]:checked::after {
   border-left: 0;
 }
 
-.strip-item[data-goto] {
+.strip-item[data-goto],
+.strip-item[data-scrollto] {
   cursor: pointer;
 }
 
-.strip-item[data-goto]:hover {
+.strip-item[data-goto]:hover,
+.strip-item[data-scrollto]:hover {
   background: rgba(34, 48, 64, 0.03);
 }
 
-.strip-item[data-goto]:focus-visible {
+.strip-item[data-goto]:focus-visible,
+.strip-item[data-scrollto]:focus-visible {
   outline: none;
   box-shadow: inset 0 0 0 2px rgba(34, 48, 64, 0.22);
 }
@@ -3505,9 +3293,9 @@ input[type="checkbox"]:checked::after {
 
 .strip-item strong {
   color: var(--text-main);
-  font-size: 15px;
-  font-weight: 650;
-  line-height: 1.2;
+  font-size: var(--type-item);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-label);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3561,6 +3349,57 @@ body {
   gap: 8px;
 }
 
+.inline-fields select {
+  width: 152px;
+  height: 36px;
+}
+
+/* 全局快捷键：键帽展示，点击才切回原始加速器文本框。 */
+.shortcut-field {
+  min-width: 0;
+}
+
+.shortcut-field:not(.editing) input {
+  display: none;
+}
+
+.shortcut-field.editing .key-chips {
+  display: none;
+}
+
+.key-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 36px;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.key-chips:hover {
+  background: rgba(34, 48, 64, 0.05);
+}
+
+.key-chips kbd {
+  min-width: 34px;
+  padding: 5px 10px;
+  border: 1px solid var(--line-normal);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text-main);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-code);
+  text-align: center;
+}
+
+.key-chips-empty {
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+}
+
 .inline-fields input[type="time"] {
   height: 36px;
   padding: 0 8px;
@@ -3574,7 +3413,7 @@ body {
 
 .field-sep {
   color: var(--muted, rgba(255, 255, 255, 0.55));
-  font-size: 12px;
+  font-size: var(--type-caption);
 }
 
 /* ---- D1 三步信任向导 ---- */
@@ -3625,29 +3464,29 @@ body {
 }
 
 .wizard-cat {
-  font-size: 44px;
-  line-height: 1;
+  font-size: var(--type-icon-large);
+  line-height: var(--leading-flat);
   text-align: center;
   margin-bottom: 10px;
 }
 
 .wizard-card h2 {
-  font-size: 19px;
-  font-weight: 780;
+  font-size: var(--type-metric-compact);
+  font-weight: var(--weight-bold);
   text-align: center;
   margin-bottom: 10px;
 }
 
 .wizard-lead {
   color: var(--text-main);
-  line-height: 1.65;
+  line-height: var(--leading-reading);
   margin-bottom: 10px;
 }
 
 .wizard-note {
   color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: var(--type-caption);
+  line-height: var(--leading-reading);
 }
 
 .wizard-choices {
@@ -3679,14 +3518,14 @@ body {
 }
 
 .choice-copy strong {
-  font-size: 13.5px;
-  font-weight: 720;
+  font-size: var(--type-control);
+  font-weight: var(--weight-bold);
 }
 
 .choice-copy span {
   color: var(--text-muted);
-  font-size: 11.5px;
-  line-height: 1.5;
+  font-size: var(--type-tag);
+  line-height: var(--leading-body);
 }
 
 .wizard-actions {
@@ -3694,4 +3533,11 @@ body {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 22px;
+}
+
+/* 向导显式跳过出口：居中弱按钮，不抢主行动位。 */
+.wizard-foot {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
 }

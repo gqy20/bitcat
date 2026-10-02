@@ -301,6 +301,18 @@ panel / AI start_game → ActionBus 内置游戏动作
 
 后续不要平行新建重复账本。成长上下文、权限 gate、商店、每日任务和心情系统应复用 `points` 的事件和状态，再在更高层补 `Progression`/授权 overlay。
 
+### B8. 本地决策模型 / System 1（2026-09-21 调研完成，暂缓）
+
+调研与双模型实测结论见 [research/system1-decision-models-2026-09-21.md](research/system1-decision-models-2026-09-21.md)。要点：
+
+- 品类已成型：151M 非自回归编码器（openJev-verdict-2.0），`choice`/`score`/`noul` 三原语 + 校准弃权，CPU 60–160ms，自带 fp16 ONNX。定位是**把例行云调用（如对话收尾 Extractor）蒸馏到本地**——省钱、零延迟、离线可用，不产生新能力。
+- 实测未过准入线：9 题业务初筛 67–78%（线是 85%）；最想要的截图语义 gate 无区分度；`score` 类（nudge/紧急度）是唯一值得继续的方向。Laya 对照后出局（中文选错、无弃权、score 无区分）。
+- 纯文本模型，图片永远在管道上游由感知层转换，本 Track 不含视觉部分。
+
+**当前唯一排期项（阶段 0）：AgentReaction 输入+输出 JSONL 落盘。** 双重价值：复盘调试（"它为什么是这个心情"目前只在内存 ring buffer 留 50 条，查不到）+ 未来教师蒸馏的唯一标签源。关键认知：现有 `agent_watch_nudges.jsonl` 是规则输出，蒸馏规则毫无意义；教师标签只能来自每轮对话的 Extractor 输出，**不落盘就在每天流失**。
+
+后续阶段的触发条件（缺一不谈集成）：语料 ≥ 数千条；日志构造测评集 verdict-2.0 过 85% 线；更新 `design-tradeoffs.md` 论证与 B4 "不做前置小分类器"原则的边界——本条做的是收尾判断本地化，不是意图理解前置。集成形态：`model_fp16.onnx` + `ort` crate，专家模式开关，默认关闭。
+
 ---
 
 ## Track C: 渲染升级

@@ -79,6 +79,18 @@ pub fn install_codex_hooks() -> Result<String, String> {
 
     Ok(report.message("Codex", &script_path))
 }
+
+/// 探测 `~/.codex/config.toml` 中是否仍有 BitCat hook 配置。
+pub fn is_installed() -> bool {
+    config_path()
+        .and_then(|path| std::fs::read_to_string(path).map_err(|e| e.to_string()))
+        .map(|content| config_has_marker(&content))
+        .unwrap_or(false)
+}
+
+fn config_has_marker(content: &str) -> bool {
+    content.contains(BITCAT_HOOK_MARKER)
+}
 fn read_config_toml(path: &PathBuf) -> Result<DocumentMut, String> {
     if !path.exists() {
         return Ok(DocumentMut::new());

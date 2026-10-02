@@ -1,6 +1,8 @@
 (function () {
   'use strict';
 
+  const CANVAS_UI_FONT = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement).getPropertyValue("--font-ui").trim() || "monospace" : "monospace";
+
   const COLORS = {
     bg: '#0d1117',
     deskGlow: 'rgba(142, 202, 230, 0.10)',
@@ -622,7 +624,7 @@
       this.drawTargetShape(ctx, target, p, color);
       ctx.shadowBlur = 0;
       ctx.fillStyle = COLORS.text;
-      ctx.font = '700 10px system-ui, sans-serif';
+      ctx.font = `700 10px ${CANVAS_UI_FONT}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(target.title, p.x, p.y + target.r + 12);
@@ -725,7 +727,7 @@
         ctx.fillStyle = 'rgba(18,22,29,0.36)';
         ctx.fillRect(p.x - r * 0.82, p.y - r * 0.38, r * 1.64, r * 0.42);
         ctx.fillStyle = COLORS.targetInk;
-        ctx.font = '900 13px ui-monospace, Consolas, monospace';
+        ctx.font = `900 13px ${CANVAS_UI_FONT}`;
         ctx.textAlign = 'center';
         ctx.fillText('>_', p.x, p.y + r * 0.35);
       } else {
@@ -751,7 +753,7 @@
       }
       if (target.kind !== 'agent_task') {
         ctx.fillStyle = target.stolen ? 'rgba(255,255,255,0.42)' : COLORS.targetInk;
-        ctx.font = '900 14px system-ui, sans-serif';
+        ctx.font = `900 14px ${CANVAS_UI_FONT}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(labelFor(target.kind), p.x, p.y + 1);
@@ -782,7 +784,7 @@
       ctx.shadowBlur = 0;
       if ((enemy.hp || 1) > 1) {
         ctx.fillStyle = COLORS.text;
-        ctx.font = '900 10px system-ui, sans-serif';
+        ctx.font = `900 10px ${CANVAS_UI_FONT}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(String(enemy.hp), p.x, p.y - enemy.r - 8);
@@ -1048,7 +1050,7 @@
         { label: 'Y dash', ready: this.sprintCooldownMs <= 0, cd: this.sprintCooldownMs },
       ];
       ctx.save();
-      ctx.font = '800 12px system-ui, sans-serif';
+      ctx.font = `800 12px ${CANVAS_UI_FONT}`;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       skills.forEach((skill, index) => {
@@ -1083,7 +1085,7 @@
       ctx.fill();
       ctx.stroke();
       ctx.fillStyle = COLORS.text;
-      ctx.font = '900 15px system-ui, sans-serif';
+      ctx.font = `900 15px ${CANVAS_UI_FONT}`;
       ctx.fillText(`wave ${this.wave}`, cx, cy);
       ctx.restore();
     }
@@ -1092,7 +1094,7 @@
       ctx.save();
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.font = '700 14px system-ui, sans-serif';
+      ctx.font = `700 14px ${CANVAS_UI_FONT}`;
       for (const effect of this.effects) {
         const p = toPx(effect.x, effect.y);
         ctx.globalAlpha = 1 - effect.age / 720;

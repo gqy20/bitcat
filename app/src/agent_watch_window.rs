@@ -64,7 +64,6 @@ pub fn show_snapshot(app: &AppHandle, snapshot: &AgentSessionsSnapshot) {
         let _ = window.hide();
     }
     let _ = app.emit_to(WINDOW_LABEL, "agent-watch-update", snapshot);
-    let _ = window.eval("window.__agentWatchRefresh && window.__agentWatchRefresh();");
 }
 
 fn ensure_agent_watch_window(app: &AppHandle) -> Result<WebviewWindow, tauri::Error> {

@@ -1,4 +1,5 @@
 (function () {
+  const CANVAS_UI_FONT = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement).getPropertyValue("--font-ui").trim() || "monospace" : "monospace";
   document.body.dataset.gameEngineScript = 'loaded';
   const invoke = window.__TAURI__?.core?.invoke;
   const listen = window.__TAURI__?.event?.listen;
@@ -1118,7 +1119,7 @@
   function drawGridEffects(ctx, effects, cell) {
     if (!effects.length) return;
     ctx.save();
-    ctx.font = `800 ${Math.max(14, cell * 0.22)}px "Segoe UI", sans-serif`;
+    ctx.font = `800 ${Math.max(14, cell * 0.22)}px ${CANVAS_UI_FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const effect of effects) {
@@ -1165,7 +1166,7 @@
       ctx.arc(cardX + cardW / 2, cardY + cardH / 2, inset, 0, Math.PI * 2);
       ctx.stroke();
       ctx.fillStyle = 'rgba(255,255,255,0.18)';
-      ctx.font = `800 ${Math.max(18, cell * 0.22)}px "Segoe UI", sans-serif`;
+      ctx.font = `800 ${Math.max(18, cell * 0.22)}px ${CANVAS_UI_FONT}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('?', cardX + cardW / 2, cardY + cardH / 2 + 1);
@@ -1447,9 +1448,9 @@
     const hpRatio = engine.petHpRatio();
     const targetRatio = engine.targetScore > 0 ? clamp(engine.score / engine.targetScore, 0, 1) : 0;
     ctx.fillStyle = '#f7fbff';
-    ctx.font = '700 16px "Segoe UI", "Microsoft YaHei", sans-serif';
+    ctx.font = `700 16px ${CANVAS_UI_FONT}`;
     ctx.fillText(engine.battle.monster.name, 22, 36);
-    ctx.font = '600 13px "Segoe UI", "Microsoft YaHei", sans-serif';
+    ctx.font = `600 13px ${CANVAS_UI_FONT}`;
     ctx.fillText(`桌宠 HP ${engine.pet.hp}/${engine.pet.maxHp}`, 22, 58);
     drawHudBar(ctx, 96, 48, 150, 12, hpRatio, hpRatio < 0.35 ? '#ff6b6b' : '#95d5b2');
     ctx.fillText(`Targets ${engine.score}/${engine.targetScore}`, 22, 82);
@@ -1487,10 +1488,10 @@
       ctx.fillRect(skill.x, skill.y, skill.w, skill.h);
       ctx.strokeRect(skill.x, skill.y, skill.w, skill.h);
       ctx.fillStyle = ready ? '#20242a' : '#f7fbff';
-      ctx.font = '800 18px "Segoe UI", sans-serif';
+      ctx.font = `800 18px ${CANVAS_UI_FONT}`;
       ctx.textAlign = 'center';
       ctx.fillText(String(skill.slot), skill.x + skill.w / 2, skill.y + 24);
-      ctx.font = '700 11px "Segoe UI", "Microsoft YaHei", sans-serif';
+      ctx.font = `700 11px ${CANVAS_UI_FONT}`;
       ctx.fillText(skill.name.slice(0, 4), skill.x + skill.w / 2, skill.y + skill.h - 10);
       if (!ready) {
         ctx.fillStyle = 'rgba(0,0,0,0.32)';
@@ -1504,7 +1505,7 @@
 
   function drawFloaters(ctx, metrics, floaters) {
     ctx.save();
-    ctx.font = '800 18px "Segoe UI", sans-serif';
+    ctx.font = `800 18px ${CANVAS_UI_FONT}`;
     ctx.textAlign = 'center';
     floaters.forEach((f) => {
       const life = f.life || 900;
@@ -2033,6 +2034,10 @@
 
   async function init() {
     document.body.dataset.gameEngineInit = 'start';
+    // Canvas textures may be drawn only once; load the shared fonts before building them.
+    if (document.fonts?.load) {
+      await Promise.allSettled([400, 600, 700, 800].map(weight => document.fonts.load(`${weight} 14px ${CANVAS_UI_FONT}`, 'ABC0123中文')));
+    }
     log('init start');
     resizeCanvas();
     let config;

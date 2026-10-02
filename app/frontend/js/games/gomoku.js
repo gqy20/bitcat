@@ -1,4 +1,5 @@
 (function () {
+  const CANVAS_UI_FONT = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement).getPropertyValue("--font-ui").trim() || "monospace" : "monospace";
   window.BitCatGames = window.BitCatGames || {};
 
   const BOARD_SIZE = 15;
@@ -489,7 +490,7 @@
     ctx.lineWidth = 1;
     ctx.stroke();
     ctx.fillStyle = '#f7fbff';
-    ctx.font = '800 17px "Microsoft YaHei", "Segoe UI", sans-serif';
+    ctx.font = `800 17px ${CANVAS_UI_FONT}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillText(title, x + 16, y + 14);
@@ -504,7 +505,7 @@
     ctx.textBaseline = 'top';
     if (!items.length) {
       ctx.fillStyle = 'rgba(226, 235, 242, 0.62)';
-      ctx.font = '600 15px "Microsoft YaHei", "Segoe UI", sans-serif';
+      ctx.font = `600 15px ${CANVAS_UI_FONT}`;
       wrapText(ctx, '等我落子后，这里会记录每一手的想法。', x + 16, y + 50, w - 32, 22, 3);
       ctx.restore();
       return;
@@ -512,17 +513,17 @@
     let cy = y + 52;
     items.slice(-4).forEach((item) => {
       ctx.fillStyle = 'rgba(232, 196, 114, 0.95)';
-      ctx.font = '800 14px "Microsoft YaHei", "Segoe UI", sans-serif';
+      ctx.font = `800 14px ${CANVAS_UI_FONT}`;
       ctx.fillText(`第 ${item.move} 手  ${formatCoord([item.x, item.y])}${item.ai_elapsed_ms ? ` · ${formatDuration(item.ai_elapsed_ms)}` : ''}`, x + 16, cy);
       cy += 22;
       const line = formatThoughtLine(item);
       if (line) {
         ctx.fillStyle = 'rgba(132, 206, 168, 0.9)';
-        ctx.font = '800 13px "Microsoft YaHei", "Segoe UI", sans-serif';
+        ctx.font = `800 13px ${CANVAS_UI_FONT}`;
         cy += wrapText(ctx, line, x + 16, cy, w - 32, 18, 3) + 6;
       }
       ctx.fillStyle = 'rgba(230, 238, 245, 0.82)';
-      ctx.font = '600 14px "Microsoft YaHei", "Segoe UI", sans-serif';
+      ctx.font = `600 14px ${CANVAS_UI_FONT}`;
       cy += wrapText(ctx, item.text || '这手先稳住局势。', x + 16, cy, w - 32, 21, 5) + 14;
     });
     ctx.restore();
@@ -551,17 +552,17 @@
     if (!latest) {
       engine.lastCommentaryLayout = [];
       ctx.fillStyle = 'rgba(226, 235, 242, 0.62)';
-      ctx.font = '600 15px "Microsoft YaHei", "Segoe UI", sans-serif';
+      ctx.font = `600 15px ${CANVAS_UI_FONT}`;
       wrapText(ctx, engine.commentaryLoading ? '正在观察棋势。' : '满两回合后，我会隔一手点评一次。', x + 16, cy, w - 32, 22, 4);
       ctx.restore();
       return;
     }
     ctx.fillStyle = advantageColor(latest.advantage);
-    ctx.font = '800 14px "Microsoft YaHei", "Segoe UI", sans-serif';
+    ctx.font = `800 14px ${CANVAS_UI_FONT}`;
     ctx.fillText(`${advantageLabel(latest.advantage)} · 第 ${latest.move} 手`, x + 16, cy);
     cy += 27;
     ctx.fillStyle = '#f7fbff';
-    ctx.font = '700 15px "Microsoft YaHei", "Segoe UI", sans-serif';
+    ctx.font = `700 15px ${CANVAS_UI_FONT}`;
     cy += wrapText(ctx, latest.summary || '局势仍在展开。', x + 16, cy, w - 32, 22, 5) + 14;
     const bottom = y + h - 42;
     const recommendations = latest.recommendations || [];
@@ -570,7 +571,7 @@
       const rowY = cy;
       const label = `${recommendationPriorityLabel(item.priority)} ${recommendationReasonLabel(item.reason)} ${formatCoord(item.coord)} ${item.text || ''}`.trim();
       ctx.fillStyle = recommendationColor(item.priority);
-      ctx.font = '800 14px "Microsoft YaHei", "Segoe UI", sans-serif';
+      ctx.font = `800 14px ${CANVAS_UI_FONT}`;
       const maxLines = Math.max(1, Math.min(5, Math.floor((bottom - cy) / 21)));
       const used = wrapText(ctx, `→ ${label}`, x + 16, cy, w - 32, 21, maxLines);
       engine.lastCommentaryLayout.push({ x: x + 10, y: rowY - 3, w: w - 20, h: used + 6, recommendation: item });
@@ -580,20 +581,20 @@
     points.slice(0, 3).forEach((point) => {
       if (cy >= bottom) return;
       ctx.fillStyle = 'rgba(230, 238, 245, 0.76)';
-      ctx.font = '600 14px "Microsoft YaHei", "Segoe UI", sans-serif';
+      ctx.font = `600 14px ${CANVAS_UI_FONT}`;
       const maxLines = Math.max(1, Math.min(5, Math.floor((bottom - cy) / 21)));
       cy += wrapText(ctx, `· ${point}`, x + 16, cy, w - 32, 21, maxLines) + 7;
     });
     if (latest.suggestion && cy < bottom) {
       cy += 6;
       ctx.fillStyle = 'rgba(232, 196, 114, 0.92)';
-      ctx.font = '700 14px "Microsoft YaHei", "Segoe UI", sans-serif';
+      ctx.font = `700 14px ${CANVAS_UI_FONT}`;
       const maxLines = Math.max(2, Math.floor((bottom - cy) / 21));
       wrapText(ctx, latest.suggestion, x + 16, cy, w - 32, 21, maxLines);
     }
     if (engine.commentaryLoading) {
       ctx.fillStyle = 'rgba(226, 235, 242, 0.5)';
-      ctx.font = '600 11px "Microsoft YaHei", "Segoe UI", sans-serif';
+      ctx.font = `600 11px ${CANVAS_UI_FONT}`;
       ctx.fillText('更新点评中...', x + 16, y + h - 28);
     }
     ctx.restore();
@@ -671,7 +672,7 @@
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle = recommendationColor(item.priority);
-      ctx.font = `800 ${Math.max(10, board.gap * 0.28)}px "Microsoft YaHei", sans-serif`;
+      ctx.font = `800 ${Math.max(10, board.gap * 0.28)}px ${CANVAS_UI_FONT}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(String(index + 1), x, y);
@@ -785,7 +786,7 @@
     const labels = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五'];
     ctx.save();
     ctx.fillStyle = 'rgba(74, 50, 28, 0.72)';
-    ctx.font = `600 ${Math.max(10, board.gap * 0.24)}px "Microsoft YaHei", sans-serif`;
+    ctx.font = `600 ${Math.max(10, board.gap * 0.24)}px ${CANVAS_UI_FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (let i = 0; i < BOARD_SIZE; i++) {
@@ -864,13 +865,13 @@
     const totalMs = Math.max(0, (engine.finishedAtMs || Date.now()) - engine.startedAtMs);
     const turnText = `${engine.aiThinking ? 'BitCat 思考中' : '轮到你落子'} · 第 ${engine.moves.length} 手 · 本局 ${formatDuration(totalMs)}`;
     ctx.fillStyle = '#f7fbff';
-    ctx.font = '800 15px "Microsoft YaHei", "Segoe UI", sans-serif';
+    ctx.font = `800 15px ${CANVAS_UI_FONT}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(turnText, board.x + 18, panelY + panelH / 2);
 
     ctx.fillStyle = 'rgba(226, 235, 242, 0.82)';
-    ctx.font = '600 13px "Microsoft YaHei", "Segoe UI", sans-serif';
+    ctx.font = `600 13px ${CANVAS_UI_FONT}`;
     ctx.textAlign = 'right';
     ctx.fillText(engine.message || '五子连线即胜', board.x + board.size - 18, panelY + panelH / 2);
     ctx.restore();

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BitCat · 黑白猫待机预览</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #ededed; color: #24242a; font: 16px/1.65 system-ui,sans-serif; }
+  main { max-width: 960px; padding: 40px 24px; margin: auto; }
+  h1 { font-size: 28px; margin: 0 0 8px; }
+  p { margin: 0 0 24px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 24px 0; }
+  button, select { font: inherit; color: inherit; background: white; border: 1px solid #797981; border-radius: 6px; padding: 7px 14px; }
+  button { cursor: pointer; }
+  button:focus-visible, select:focus-visible { outline: 3px solid #846100; outline-offset: 3px; }
+  .stages { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .stage { min-height: 330px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; background: #fafafa; }
+  .dark { background: #252730; color: #efeff3; }
+  canvas { image-rendering: pixelated; max-width: 100%; }
+  .frames { display: flex; flex-wrap: wrap; gap: 24px; padding: 24px 0; border-top: 1px solid #b4b4ba; }
+  figure { margin: 0; text-align: center; }
+  figcaption, .note { font-size: 14px; }
+  a { color: #765500; }
+  @media(max-width: 560px) { main { padding: 24px 16px; } .stage { min-height: 260px; } }
+</style>
+<main>
+  <h1>黑白猫，安静待着</h1>
+  <p>短暂眨眼，偶尔轻摆尾尖。两侧同步播放，比较深浅桌面上的效果。</p>
+  <div class="controls">
+    <button id="play" disabled>暂停</button>
+    <label>显示高度 <select id="size"><option value="80">80 像素</option><option value="96" selected>96 像素</option><option value="144">144 像素</option><option value="288">288 像素 · 放大检查</option></select></label>
+    <button id="step" disabled>查看下一帧</button>
+    <button id="export" disabled>下载待机图集</button>
+  </div>
+  <div class="stages">
+    <section class="stage"><canvas id="light" width="450" height="612" aria-label="浅色背景上的待机动画"></canvas><span>浅色桌面</span></section>
+    <section class="stage dark"><canvas id="dark" width="450" height="612" aria-label="深色背景上的待机动画"></canvas><span>深色桌面</span></section>
+  </div>
+  <p id="status" role="status">正在加载动画…</p>
+  <div class="frames" id="frames"></div>
+  <p class="note">这是待机动画初版。身体保持固定，眼睛与尾巴使用局部帧切换；高分辨率原图仍需做像素网格与边缘清理。未替换应用中的宠物。</p>
+</main>
+<script src="idle-preview.js"></script>
+</html>
