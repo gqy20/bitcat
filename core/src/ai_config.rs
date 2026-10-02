@@ -27,7 +27,11 @@ impl AiConfig {
     /// being loaded into the process environment, so system variables cannot
     /// accidentally outrank the configured app sources.
     pub fn load() -> Result<Self, String> {
-        let overlay = crate::app_settings::AppSettings::load().ai;
+        Self::load_with_override(&crate::app_settings::AppSettings::load().ai)
+    }
+
+    /// Resolve a settings draft with the same read-only fallback sources, without saving it.
+    pub fn load_with_override(overlay: &crate::app_settings::AiOverride) -> Result<Self, String> {
         let exe_env = load_exe_env().unwrap_or_default();
         let claude = load_claude_env().unwrap_or_default();
 

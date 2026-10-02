@@ -1,3 +1,5 @@
+@import url("/css/fonts.css");
+
 * {
   margin: 0;
   padding: 0;
@@ -9,7 +11,7 @@ html, body {
   height: var(--pet-height, 128px);
   background-color: rgba(0, 0, 0, 0);
   overflow: hidden;
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 
 /* 拖拽区域：占满窗口，鼠标样式 */
@@ -69,6 +71,12 @@ body.screenshot-capturing.pet-hover-active #sprite {
 /* idle 状态下的呼吸节奏（轻微缩放） */
 body.state-idle #sprite {
   animation: breath 2.4s ease-in-out infinite;
+}
+
+/* Authored pixel animations already contain their own breathing/attention cues. */
+body.stable-pet-body.state-idle #sprite,
+body.stable-pet-body.state-sleep #sprite {
+  animation: none;
 }
 
 body.pet-hotspot-observe #sprite {
@@ -198,7 +206,7 @@ body.state-walk .shadow {
   border: 1px solid rgba(125, 199, 255, 0.42);
   box-shadow: 0 2px 8px rgba(14, 56, 92, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.15);
   color: #ffffff;
-  font: 700 12px/17px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font: var(--weight-bold) var(--type-caption)/var(--line-dense-body) var(--font-ui);
   text-align: center;
   cursor: pointer;
   pointer-events: auto;
@@ -254,8 +262,8 @@ body.pet-resizing .resize-handle,
 
 .particle {
   position: absolute;
-  font-size: 13px;
-  font-weight: bold;
+  font-size: var(--type-control);
+  font-weight: var(--weight-bold);
   pointer-events: none;
   user-select: none;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
@@ -275,26 +283,54 @@ body.pet-resizing .resize-handle,
   100% { transform: translateY(-32px) scale(0.6); opacity: 0; }
 }
 
-/* A4 上班金币：从窗口顶落到宠物旁弹跳 */
+/* A4 上班金币：像素方块币，从窗口顶落到宠物旁弹跳。
+   方块币面 + steps() 阶梯动画，和像素精灵同一套视觉语言。 */
 .p-coin {
-  color: #f5b800;
-  font-size: 15px;
-  animation: coin-drop 1.1s cubic-bezier(0.3, 0.7, 0.4, 1) forwards;
+  width: 12px;
+  height: 12px;
+  background: #f5b800;
+  border: 2px solid #c98f00;
+  border-radius: 3px;
+  box-shadow:
+    inset 2px 2px 0 rgba(255, 255, 255, 0.55),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.22);
+  color: transparent;
+  text-shadow: none;
+  animation: coin-drop 1.05s steps(12, end) forwards;
 }
 
 @keyframes coin-drop {
-  0%   { transform: translateY(-44px) scale(0.5) rotate(0deg); opacity: 0; }
-  15%  { transform: translateY(-26px) scale(1) rotate(120deg); opacity: 1; }
-  70%  { transform: translateY(4px) scale(1) rotate(360deg); opacity: 1; }
-  84%  { transform: translateY(-2px) rotate(410deg); opacity: 1; }
-  100% { transform: translateY(3px) scale(0.9) rotate(460deg); opacity: 0; }
+  0%   { transform: translateY(-44px) scaleX(1); opacity: 0; }
+  10%  { transform: translateY(-32px) scaleX(0.35); opacity: 1; }
+  22%  { transform: translateY(-20px) scaleX(1); opacity: 1; }
+  34%  { transform: translateY(-10px) scaleX(0.35); opacity: 1; }
+  50%  { transform: translateY(0px) scaleX(1); opacity: 1; }
+  64%  { transform: translateY(4px) scaleX(0.35); opacity: 1; }
+  78%  { transform: translateY(-2px) scaleX(1); opacity: 1; }
+  90%  { transform: translateY(3px) scaleX(1); opacity: 1; }
+  100% { transform: translateY(3px) scaleX(1); opacity: 0; }
+}
+
+/* 睡眠/游戏模式不演掉币：账本照计，只是不表演（Z 等状态粒子不受影响）。 */
+body[data-pet-mode="sleep"] .p-coin,
+body[data-pet-mode="game_play"] .p-coin,
+body[data-pet-mode="gameplay"] .p-coin {
+  display: none;
+}
+
+/* 无障碍：reduced-motion 偏好下粒子不显示；兜底超时仍会清理节点。 */
+@media (prefers-reduced-motion: reduce) {
+  .particle {
+    animation: none !important;
+    opacity: 0 !important;
+  }
 }
 
 /* sleep: Z 字向右上方漂浮 */
 .p-zzz {
   color: #88aadd;
   font-style: italic;
-  font-family: 'Courier New', monospace;
+  font-family: var(--font-mono);
   animation: zzz-float 1.8s ease-out forwards;
 }
 

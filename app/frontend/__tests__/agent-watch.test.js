@@ -5,6 +5,8 @@ import { resolve } from 'node:path';
 
 const scriptPath = resolve(process.cwd(), 'js/agent_watch.js');
 const script = readFileSync(scriptPath, 'utf8');
+// agent_watch.js 依赖 agent_sources.js 提供的 window.AgentSources（与页面加载顺序一致）。
+const sourcesScript = readFileSync(resolve(process.cwd(), 'js/agent_sources.js'), 'utf8');
 
 function createDom(invoke) {
   const dom = new JSDOM(`<!doctype html>
@@ -21,6 +23,7 @@ function createDom(invoke) {
   dom.window.__TAURI__ = invoke ? { core: { invoke } } : {};
   dom.window.localStorage.clear();
   dom.window.setInterval = () => 0;
+  dom.window.eval(sourcesScript);
   dom.window.eval(script);
   return dom;
 }

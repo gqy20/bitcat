@@ -16,6 +16,7 @@
 //! 使用了 Win32 API。这些 unsafe 的安全前提在各子模块的 `//!` 中单独说明。
 
 pub mod action_bus;
+pub mod agent_connectors;
 pub mod agent_monitor;
 pub mod agent_watch_window;
 pub mod audio_reactive;
@@ -36,6 +37,7 @@ pub mod notification_window;
 pub mod observation_gate;
 pub mod opencode_hooks;
 pub mod panel;
+pub mod pet_drag;
 pub mod pet_event_bus;
 pub mod pet_inbox;
 pub mod pi_hooks;
@@ -105,6 +107,7 @@ pub fn run() {
             commands::cmd_play_dance,
             commands::cmd_performance_finished,
             commands::cmd_get_window_state,
+            pet_drag::cmd_pet_drag_button_down,
             audio_reactive::cmd_start_fake_music_dance,
             audio_reactive::cmd_start_wasapi_music_dance,
             audio_reactive::cmd_stop_music_dance,
@@ -189,6 +192,8 @@ pub fn run() {
             pi_hooks::cmd_open_pi_extensions_dir,
             opencode_hooks::cmd_install_opencode_plugin,
             opencode_hooks::cmd_open_opencode_plugins_dir,
+            agent_connectors::cmd_agent_connectors_status,
+            agent_connectors::cmd_repair_connector,
             pet_event_bus::cmd_get_pet_event_log,
             screen_time::cmd_screen_time_summary,
             earnings_scheduler::cmd_earnings_summary,
@@ -204,6 +209,7 @@ pub fn run() {
             settings::cmd_complete_reminder,
             settings::cmd_snooze_reminder,
             settings::cmd_settings_save_ai,
+            settings::cmd_settings_test_ai,
             settings::cmd_settings_save_actions,
             settings::cmd_settings_save_prompts,
             settings::cmd_settings_save_user,

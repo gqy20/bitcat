@@ -50,27 +50,7 @@
   --radius-sm: 6px;
   --radius-lg: 12px;
 
-  /* 字体变量定义在 fonts.css（避免双源漂移）。 */
-
-  --text-xs: 11px;
-  --text-sm: 12px;
-  --text-md: 14px;
-  --text-lg: 16px;
-  --text-xl: 20px;
-  --text-2xl: 28px;
-  --text-3xl: 34px;
-
-  --font-size-control: var(--text-md);
-  --font-size-control-sm: 13px;
-  --font-size-code: 13px;
-  --font-size-page-title: 26px;
-  --font-size-hero-title: var(--text-3xl);
-  --font-size-section-title: var(--text-lg);
-  --font-size-icon: var(--text-xl);
-  --font-size-icon-sm: 18px;
-  --font-size-metric-lg: 23px;
-  --font-size-metric-md: 22px;
-  --font-size-metric-sm: 22px;
+  /* Typography roles and legacy aliases are defined in typography.css via fonts.css. */
 
   --control-h: 42px;
   --control-h-sm: 36px;

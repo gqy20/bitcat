@@ -1,0 +1,1122 @@
+[
+  {
+    "id": "01-ginger",
+    "name": "橘猫",
+    "original": {
+      "size": [
+        1536,
+        1024
+      ],
+      "transparentFraction": 0.5162,
+      "nearOpaqueFraction": 0.3802,
+      "intermediateAlphaFraction": 0.1036,
+      "visibleBorderPixels": 0,
+      "regions": [
+        {
+          "x": 99,
+          "y": 23,
+          "width": 401,
+          "height": 495,
+          "area": 108877
+        },
+        {
+          "x": 559,
+          "y": 23,
+          "width": 398,
+          "height": 496,
+          "area": 108820
+        },
+        {
+          "x": 957,
+          "y": 98,
+          "width": 556,
+          "height": 390,
+          "area": 105740
+        },
+        {
+          "x": 12,
+          "y": 573,
+          "width": 561,
+          "height": 393,
+          "area": 107262
+        },
+        {
+          "x": 575,
+          "y": 663,
+          "width": 465,
+          "height": 293,
+          "area": 105280
+        },
+        {
+          "x": 1084,
+          "y": 520,
+          "width": 429,
+          "height": 474,
+          "area": 109638
+        }
+      ]
+    },
+    "refined": {
+      "size": [
+        1536,
+        1024
+      ],
+      "transparentFraction": 0.5465,
+      "nearOpaqueFraction": 0.3619,
+      "intermediateAlphaFraction": 0.0916,
+      "visibleBorderPixels": 0,
+      "regions": [
+        {
+          "x": 95,
+          "y": 39,
+          "width": 402,
+          "height": 468,
+          "area": 104425
+        },
+        {
+          "x": 568,
+          "y": 39,
+          "width": 397,
+          "height": 468,
+          "area": 103663
+        },
+        {
+          "x": 969,
+          "y": 105,
+          "width": 533,
+          "height": 378,
+          "area": 104194
+        },
+        {
+          "x": 20,
+          "y": 583,
+          "width": 526,
+          "height": 379,
+          "area": 102974
+        },
+        {
+          "x": 577,
+          "y": 658,
+          "width": 420,
+          "height": 299,
+          "area": 96317
+        },
+        {
+          "x": 1096,
+          "y": 524,
+          "width": 409,
+          "height": 463,
+          "area": 106734
+        }
+      ]
+    }
+  },
+  {
+    "id": "02-tabby",
+    "name": "狸花猫",
+    "original": {
+      "size": [
+        1536,
+        1024
+      ],
+      "transparentFraction": 0.6228,
+      "nearOpaqueFraction": 0.2966,
+      "intermediateAlphaFraction": 0.0805,
+      "visibleBorderPixels": 0,
+      "regions": [
+        {
+          "x": 119,
+          "y": 57,
+          "width": 353,
+          "height": 446,
+          "area": 84730
+        },
+        {
+          "x": 587,
+          "y": 57,
+          "width": 353,
+          "height": 446,
+          "area": 84448
+        },
+        {
+          "x": 992,
+          "y": 124,
+          "width": 516,
+          "height": 362,
+          "area": 92214
+        },
+        {
+          "x": 36,
+          "y": 609,
+          "width": 518,
+          "height": 333,
+          "area": 84435
+        },
+        {
+          "x": 579,
+          "y": 686,
+          "width": 421,
+          "height": 233,
+          "area": 76924
+        },
+        {
+          "x": 1117,
+          "y": 539,
+          "width": 362,
+          "height": 428,
+          "area": 85276
+        }
+      ]
+    },
+    "refined": {
+      "size": [
+        1536,
+        1024
+      ],
+      "transparentFraction": 0.6034,
+      "nearOpaqueFraction": 0.3029,
+      "intermediateAlphaFraction": 0.0937,
+      "visibleBorderPixels": 0,
+      "regions": [
+        {
+          "x": 112,
+          "y": 58,
+          "width": 363,
+          "height": 446,
+          "area": 87293
+        },
+        {
+          "x": 584,
+          "y": 58,
+          "width": 361,
+          "height": 446,
+          "area": 86822
+        },
+        {
+          "x": 988,
+          "y": 124,
+          "width": 514,
+          "height": 363,
+          "area": 93275
+        },
+        {
+          "x": 32,
+          "y": 607,
+          "width": 517,
+          "height": 339,
+          "area": 89893
+        },
+        {
+          "x": 582,
+          "y": 684,
+          "width": 409,
+          "height": 236,
+          "area": 75997
+        },
+        {
+          "x": 1110,
+          "y": 541,
+          "width": 376,
+          "height": 426,
+          "area": 88682
+        }
+      ]
+    }
+  },
+  {
+    "id": "03-calico",
+    "name": "三花猫",
+    "original": {
+      "size": [
+        1536,
+        1024
+      ],
+      "transparentFraction": 0.5645,
+      "nearOpaqueFraction": 0.3293,
+      "intermediateAlphaFraction": 0.1062,
+      "visibleBorderPixels": 0,
+      "regions": [
+        {
+          "x": 97,
+          "y": 46,
+          "width": 366,
+          "height": 468,
+          "area": 94830
+        },
+        {
+          "x": 556,
+          "y": 47,
+          "width": 369,
+          "height": 468,
+          "area": 95316
+        },
+        {
+          "x": 950,
+          "y": 139,
+          "width": 563,
+          "height": 361,
+          "area": 94267
+        },
+        {
+          "x": 29,
+          "y": 601,
+          "width": 563,
+          "height": 358,
+          "area": 95278
+        },
+        {
+          "x": 599,
+          "y": 687,
+          "width": 444,
+          "height": 267,
+          "area": 90999
+        },
+        {
+          "x": 1136,
+          "y": 534,
+          "width": 380,
+          "height": 445,
+          "area": 92055
+        }
+      ]
+    },
+    "refined": {
+      "size": [
+        1536,
+        1024
+      ],
+      "transparentFraction": 0.5845,
+      "nearOpaqueFraction": 0.319,
+      "intermediateAlphaFraction": 0.0965,
+      "visibleBorderPixels": 0,
+      "regions": [
+        {
+          "x": 86,
+          "y": 56,
+          "width": 374,
+          "height": 448,
+          "area": 90578
+        },
+        {
+          "x": 552,
+          "y": 56,
+          "width": 370,
+          "height": 448,
+          "area": 90239
+        },
+        {
+          "x": 945,
+          "y": 142,
+          "width": 560,
+          "height": 353,
+          "area": 92034
+        },
+        {
+          "x": 16,
+          "y": 600,
+          "width": 560,
+          "height": 356,
+          "area": 94850
+        },
+        {
+          "x": 606,
+          "y": 689,
+          "width": 415,
+          "height": 263,
+          "area": 84888
+        },
+        {
+          "x": 1137,
+          "y": 539,
+          "width": 379,
+          "height": 437,
+          "area": 91769
+        }
+      ]
+    }
+  },
+  {
+    "id": "04-cow",
+    "name": "奶牛猫",
+    "original": {
+      "size": [
+        1536,
+        1024
+      ],
+      "transparentFraction": 0.6135,
+      "nearOpaqueFraction": 0.3018,
+      "intermediateAlphaFraction": 0.0847,
+      "visibleBorderPixels": 0,
+      "regions": [
+        {
+          "x": 102,
+          "y": 62,
+          "width": 378,
+          "height": 432,
+          "area": 84976
+        },
+        {
+          "x": 584,
+          "y": 62,
+          "width": 376,
+          "height": 432,
+          "area": 85051
+        },
+        {
+          "x": 1018,
+          "y": 105,
+          "width": 490,
+          "height": 365,
+          "area": 88587
+        },
+        {
+          "x": 46,
+          "y": 584,
+          "width": 477,
+          "height": 359,
+          "area": 87220
+        },
+        {
+          "x": 571,
+          "y": 685,
+          "width": 396,
+          "height": 248,
+          "area": 77867
+        },
+        {
+          "x": 1085,
+          "y": 538,
+          "width": 403,
+          "height": 435,
+          "area": 91831
+        }
+      ]
+    },
+    "refined": {
+      "size": [
+        1536,
+        1024
+      ],
+      "transparentFraction": 0.6057,
+      "nearOpaqueFraction": 0.3156,
+      "intermediateAlphaFraction": 0.0787,
+      "visibleBorderPixels": 0,
+      "regions": [
+        {
+          "x": 96,
+          "y": 55,
+          "width": 392,
+          "height": 440,
+          "area": 91514
+        },
+        {
+          "x": 588,
+          "y": 55,
+          "width": 379,
+          "height": 440,
+          "area": 89706
+        },
+        {
+          "x": 1013,
+          "y": 102,
+          "width": 493,
+          "height": 376,
+          "area": 92830
+        },
+        {
+          "x": 41,
+          "y": 595,
+          "width": 479,
+          "height": 351,
+          "area": 89634
+        },
+        {
+          "x": 570,
+          "y": 681,
+          "width": 403,
+          "height": 255,
+          "area": 79577
+        },
+        {
+          "x": 1090,
+          "y": 542,
+          "width": 400,
+          "height": 429,
+          "area": 93055
+        }
+      ]
+    }
+  },
+  {
+    "id": "05-black",
+    "name": "纯黑猫",
+    "original": {
+      "size": [
+        1536,
+        1024
+      ],
+      "transparentFraction": 0.6466,
+      "nearOpaqueFraction": 0.3008,
+      "intermediateAlphaFraction": 0.0525,
+      "visibleBorderPixels": 0,
+      "regions": [
+        {
+          "x": 121,
+          "y": 66,
+          "width": 375,
+          "height": 452,
+          "area": 87830
+        },
+        {
+          "x": 602,
+          "y": 66,
+          "width": 374,
+          "height": 452,
+          "area": 87785
+        },
+        {
+          "x": 1007,
+          "y": 133,
+          "width": 494,
+          "height": 368,
+          "area": 85977
+        },
+        {
+          "x": 36,
+          "y": 588,
+          "width": 490,
+          "height": 372,
+          "area": 82728
+        },
+        {
+          "x": 577,
+          "y": 681,
+          "width": 386,
+          "height": 239,
+          "area": 73844
+        },
+        {
+          "x": 1079,
+          "y": 538,
+          "width": 378,
+          "height": 428,
+          "area": 86693
+        }
+      ]
+    },
+    "refined": {
+      "size": [
+        1536,
+        1024
+      ],
+      "transparentFraction": 0.6235,
+      "nearOpaqueFraction": 0.3099,
+      "intermediateAlphaFraction": 0.0666,
+      "visibleBorderPixels": 0,
+      "regions": [
+        {
+          "x": 117,
+          "y": 69,
+          "width": 395,
+          "height": 451,
+          "area": 90491
+        },
+        {
+          "x": 598,
+          "y": 69,
+          "width": 394,
+          "height": 451,
+          "area": 90406
+        },
+        {
+          "x": 1008,
+          "y": 128,
+          "width": 500,
+          "height": 376,
+          "area": 89847
+        },
+        {
+          "x": 34,
+          "y": 581,
+          "width": 495,
+          "height": 381,
+          "area": 86614
+        },
+        {
+          "x": 576,
+          "y": 686,
+          "width": 392,
+          "height": 240,
+          "area": 74768
+        },
+        {
+          "x": 1078,
+          "y": 534,
+          "width": 397,
+          "height": 434,
+          "area": 91628
+        }
+      ]
+    }
+  },
+  {
+    "id": "06-white",
+    "name": "白猫",
+    "original": {
+      "size": [
+        1536,
+        1024
+      ],
+      "transparentFraction": 0.5735,
+      "nearOpaqueFraction": 0.3166,
+      "intermediateAlphaFraction": 0.1099,
+      "visibleBorderPixels": 0,
+      "regions": [
+        {
+          "x": 133,
+          "y": 62,
+          "width": 366,
+          "height": 455,
+          "area": 89969
+        },
+        {
+          "x": 572,
+          "y": 62,
+          "width": 367,
+          "height": 455,
+          "area": 90152
+        },
+        {
+          "x": 966,
+          "y": 111,
+          "width": 524,
+          "height": 373,
+          "area": 94390
+        },
+        {
+          "x": 43,
+          "y": 575,
+          "width": 521,
+          "height": 370,
+          "area": 90438
+        },
+        {
+          "x": 590,
+          "y": 677,
+          "width": 387,
+          "height": 280,
+          "area": 83824
+        },
+        {
+          "x": 1078,
+          "y": 530,
+          "width": 395,
+          "height": 440,
+          "area": 93666
+        }
+      ]
+    },
+    "refined": {
+      "size": [
+        1536,
+        1024
+      ],
+      "transparentFraction": 0.5698,
+      "nearOpaqueFraction": 0.3258,
+      "intermediateAlphaFraction": 0.1044,
+      "visibleBorderPixels": 0,
+      "regions": [
+        {
+          "x": 126,
+          "y": 67,
+          "width": 371,
+          "height": 451,
+          "area": 91024
+        },
+        {
+          "x": 570,
+          "y": 66,
+          "width": 371,
+          "height": 452,
+          "area": 91575
+        },
+        {
+          "x": 965,
+          "y": 114,
+          "width": 527,
+          "height": 372,
+          "area": 94991
+        },
+        {
+          "x": 33,
+          "y": 576,
+          "width": 528,
+          "height": 369,
+          "area": 93252
+        },
+        {
+          "x": 595,
+          "y": 667,
+          "width": 401,
+          "height": 291,
+          "area": 90077
+        },
+        {
+          "x": 1085,
+          "y": 533,
+          "width": 400,
+          "height": 438,
+          "area": 94968
+        }
+      ]
+    }
+  },
+  {
+    "id": "07-british-blue",
+    "name": "英短蓝猫",
+    "original": {
+      "size": [
+        1536,
+        1024
+      ],
+      "transparentFraction": 0.5476,
+      "nearOpaqueFraction": 0.3978,
+      "intermediateAlphaFraction": 0.0545,
+      "visibleBorderPixels": 0,
+      "regions": [
+        {
+          "x": 88,
+          "y": 76,
+          "width": 408,
+          "height": 430,
+          "area": 106949
+        },
+        {
+          "x": 575,
+          "y": 76,
+          "width": 401,
+          "height": 430,
+          "area": 106933
+        },
+        {
+          "x": 982,
+          "y": 148,
+          "width": 529,
+          "height": 351,
+          "area": 116536
+        },
+        {
+          "x": 43,
+          "y": 599,
+          "width": 541,
+          "height": 349,
+          "area": 117314
+        },
+        {
+          "x": 577,
+          "y": 667,
+          "width": 441,
+          "height": 281,
+          "area": 98941
+        },
+        {
+          "x": 1076,
+          "y": 526,
+          "width": 424,
+          "height": 433,
+          "area": 109128
+        }
+      ]
+    },
+    "refined": {
+      "size": [
+        1536,
+        1024
+      ],
+      "transparentFraction": 0.554,
+      "nearOpaqueFraction": 0.3906,
+      "intermediateAlphaFraction": 0.0554,
+      "visibleBorderPixels": 0,
+      "regions": [
+        {
+          "x": 90,
+          "y": 76,
+          "width": 405,
+          "height": 429,
+          "area": 104691
+        },
+        {
+          "x": 570,
+          "y": 76,
+          "width": 405,
+          "height": 429,
+          "area": 104850
+        },
+        {
+          "x": 977,
+          "y": 148,
+          "width": 519,
+          "height": 352,
+          "area": 113441
+        },
+        {
+          "x": 37,
+          "y": 597,
+          "width": 532,
+          "height": 351,
+          "area": 116805
+        },
+        {
+          "x": 581,
+          "y": 667,
+          "width": 435,
+          "height": 281,
+          "area": 97980
+        },
+        {
+          "x": 1084,
+          "y": 526,
+          "width": 414,
+          "height": 433,
+          "area": 106471
+        }
+      ]
+    }
+  },
+  {
+    "id": "08-siamese",
+    "name": "暹罗猫",
+    "original": {
+      "size": [
+        1536,
+        1024
+      ],
+      "transparentFraction": 0.622,
+      "nearOpaqueFraction": 0.2861,
+      "intermediateAlphaFraction": 0.092,
+      "visibleBorderPixels": 0,
+      "regions": [
+        {
+          "x": 116,
+          "y": 45,
+          "width": 371,
+          "height": 464,
+          "area": 81989
+        },
+        {
+          "x": 563,
+          "y": 46,
+          "width": 372,
+          "height": 463,
+          "area": 81975
+        },
+        {
+          "x": 942,
+          "y": 103,
+          "width": 580,
+          "height": 373,
+          "area": 83529
+        },
+        {
+          "x": 7,
+          "y": 581,
+          "width": 568,
+          "height": 363,
+          "area": 82942
+        },
+        {
+          "x": 603,
+          "y": 682,
+          "width": 392,
+          "height": 259,
+          "area": 79243
+        },
+        {
+          "x": 1089,
+          "y": 518,
+          "width": 402,
+          "height": 456,
+          "area": 84602
+        }
+      ]
+    },
+    "refined": {
+      "size": [
+        1536,
+        1024
+      ],
+      "transparentFraction": 0.6125,
+      "nearOpaqueFraction": 0.2849,
+      "intermediateAlphaFraction": 0.1026,
+      "visibleBorderPixels": 0,
+      "regions": [
+        {
+          "x": 111,
+          "y": 53,
+          "width": 379,
+          "height": 455,
+          "area": 82893
+        },
+        {
+          "x": 560,
+          "y": 53,
+          "width": 378,
+          "height": 455,
+          "area": 82895
+        },
+        {
+          "x": 944,
+          "y": 120,
+          "width": 569,
+          "height": 353,
+          "area": 83989
+        },
+        {
+          "x": 7,
+          "y": 588,
+          "width": 567,
+          "height": 357,
+          "area": 83175
+        },
+        {
+          "x": 606,
+          "y": 693,
+          "width": 387,
+          "height": 253,
+          "area": 76550
+        },
+        {
+          "x": 1097,
+          "y": 527,
+          "width": 396,
+          "height": 448,
+          "area": 85353
+        }
+      ]
+    }
+  },
+  {
+    "id": "09-ragdoll",
+    "name": "布偶猫",
+    "original": {
+      "size": [
+        1536,
+        1024
+      ],
+      "transparentFraction": 0.5443,
+      "nearOpaqueFraction": 0.3725,
+      "intermediateAlphaFraction": 0.0832,
+      "visibleBorderPixels": 0,
+      "regions": [
+        {
+          "x": 61,
+          "y": 52,
+          "width": 433,
+          "height": 452,
+          "area": 108224
+        },
+        {
+          "x": 566,
+          "y": 52,
+          "width": 435,
+          "height": 452,
+          "area": 109030
+        },
+        {
+          "x": 986,
+          "y": 114,
+          "width": 533,
+          "height": 375,
+          "area": 112881
+        },
+        {
+          "x": 18,
+          "y": 605,
+          "width": 515,
+          "height": 346,
+          "area": 99041
+        },
+        {
+          "x": 563,
+          "y": 670,
+          "width": 424,
+          "height": 281,
+          "area": 91403
+        },
+        {
+          "x": 1084,
+          "y": 541,
+          "width": 434,
+          "height": 437,
+          "area": 108644
+        }
+      ]
+    },
+    "refined": {
+      "size": [
+        1536,
+        1024
+      ],
+      "transparentFraction": 0.5539,
+      "nearOpaqueFraction": 0.3645,
+      "intermediateAlphaFraction": 0.0816,
+      "visibleBorderPixels": 0,
+      "regions": [
+        {
+          "x": 59,
+          "y": 63,
+          "width": 435,
+          "height": 441,
+          "area": 104644
+        },
+        {
+          "x": 565,
+          "y": 63,
+          "width": 432,
+          "height": 441,
+          "area": 105334
+        },
+        {
+          "x": 982,
+          "y": 120,
+          "width": 524,
+          "height": 371,
+          "area": 108711
+        },
+        {
+          "x": 21,
+          "y": 605,
+          "width": 512,
+          "height": 347,
+          "area": 97587
+        },
+        {
+          "x": 566,
+          "y": 668,
+          "width": 418,
+          "height": 285,
+          "area": 90322
+        },
+        {
+          "x": 1086,
+          "y": 547,
+          "width": 429,
+          "height": 432,
+          "area": 105672
+        }
+      ]
+    }
+  },
+  {
+    "id": "10-maine-coon",
+    "name": "缅因猫",
+    "original": {
+      "size": [
+        1536,
+        1024
+      ],
+      "transparentFraction": 0.5316,
+      "nearOpaqueFraction": 0.3711,
+      "intermediateAlphaFraction": 0.0973,
+      "visibleBorderPixels": 0,
+      "regions": [
+        {
+          "x": 104,
+          "y": 42,
+          "width": 417,
+          "height": 472,
+          "area": 110383
+        },
+        {
+          "x": 570,
+          "y": 44,
+          "width": 332,
+          "height": 470,
+          "area": 92663
+        },
+        {
+          "x": 936,
+          "y": 99,
+          "width": 575,
+          "height": 404,
+          "area": 122388
+        },
+        {
+          "x": 30,
+          "y": 572,
+          "width": 581,
+          "height": 394,
+          "area": 118324
+        },
+        {
+          "x": 621,
+          "y": 705,
+          "width": 405,
+          "height": 273,
+          "area": 84659
+        },
+        {
+          "x": 1073,
+          "y": 530,
+          "width": 439,
+          "height": 459,
+          "area": 112696
+        }
+      ]
+    },
+    "refined": {
+      "size": [
+        1536,
+        1024
+      ],
+      "transparentFraction": 0.5341,
+      "nearOpaqueFraction": 0.3755,
+      "intermediateAlphaFraction": 0.0904,
+      "visibleBorderPixels": 0,
+      "regions": [
+        {
+          "x": 99,
+          "y": 41,
+          "width": 421,
+          "height": 471,
+          "area": 110913
+        },
+        {
+          "x": 569,
+          "y": 41,
+          "width": 337,
+          "height": 471,
+          "area": 94065
+        },
+        {
+          "x": 939,
+          "y": 111,
+          "width": 576,
+          "height": 392,
+          "area": 122518
+        },
+        {
+          "x": 30,
+          "y": 583,
+          "width": 557,
+          "height": 382,
+          "area": 114742
+        },
+        {
+          "x": 612,
+          "y": 706,
+          "width": 407,
+          "height": 271,
+          "area": 84971
+        },
+        {
+          "x": 1073,
+          "y": 530,
+          "width": 436,
+          "height": 455,
+          "area": 112509
+        }
+      ]
+    }
+  }
+]
