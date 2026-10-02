@@ -1,8 +1,8 @@
 // bubble.js — 独立气泡窗口前端
 //
-// 策略: 前端通过定时轮询 cmd_consume_bubble_text 拉取后端累积的文本,
-// 完全不依赖逐 chunk 事件的到达时序。
-// bubble-start/end 表达生成生命周期；主动会话保留输入与草稿，短回应按时退场。
+// 策略: 每轮回复按 request_id 接收开始、进度和结束，并轮询该请求的正文快照。
+// 普通通知继续走 cmd_consume_bubble_text；排队请求只提示，开始后才切换正文。
+// 主动会话保留输入与草稿；停止和收起分别保护执行边界与用户的可见性选择。
 //
 // 滚动: Tauri 透明无框窗口中 native scroll 经常失效,
 //       用 wheel 事件手动 scrollTop 兜底 + 动态调整窗口高度。
@@ -43,7 +43,7 @@
   let toolProgressEl = null;
   let toolProgressLabelEl = null;
   let thinkingEl = null;
-  let headerStatus = 'none'; // 'none' | 'thinking' | 'tool' | 'stopped'
+  let headerStatus = 'none'; // 'none' | 'waiting' | 'thinking' | 'tool' | 'stopped'
   let pollTimer = null;
   let currentWinH = MIN_H;
   let currentWinW = NOTICE_W;
@@ -68,8 +68,14 @@
   let hiddenByUser = false;
   let submitting = false;
   let stopping = false;
-  let awaitingStreamStart = false;
-  let submissionStarted = false;
+  let currentRequestId = null;
+  let currentRequestFinished = true;
+  let highestAcceptedId = 0;
+  let cancelledThroughId = 0;
+  let confirmedCancelledThroughId = 0;
+  let hiddenThroughId = 0;
+  let queuedRequests = new Map();
+  let draftRevision = 0;
   let pollEpoch = 0;
   let viewEpoch = 0;
   let hideWindowTimer = null;
@@ -247,21 +253,61 @@
 
   function startHideTimer() {
     clearHideTimer();
-    if (readingMode || chatSessionActive || submitting) return;
+    if (readingMode || chatSessionActive || submitting || queuedRequests.size > 0) return;
     hideTimer = setTimeout(hide, HIDE_AFTER_MS);
   }
 
   function updateComposer() {
     if (!sendBtnEl) return;
-    sendBtnEl.disabled = !streaming && (submitting || stopping || !(inputEl && inputEl.value.trim()));
-    sendBtnEl.textContent = streaming ? '停止' : (stopping ? '稍等' : (submitting ? (cancelled ? '稍等' : '发送中') : '发送'));
-    sendBtnEl.title = streaming ? '停止回复' : '发送消息';
-    sendBtnEl.setAttribute('aria-label', streaming ? '停止回复' : '发送消息');
-    sendBtnEl.classList.toggle('stop', streaming);
+    var busy = hasPendingWork();
+    sendBtnEl.disabled = stopping || (!busy && (submitting || !(inputEl && inputEl.value.trim())));
+    sendBtnEl.textContent = stopping ? '稍等' : (busy ? '停止' : (submitting ? '发送中' : '发送'));
+    sendBtnEl.title = busy ? '停止回复' : '发送消息';
+    sendBtnEl.setAttribute('aria-label', busy ? '停止回复' : '发送消息');
+    sendBtnEl.classList.toggle('stop', busy);
     var stopText = stopping ? '正在停止' : '已停止';
     if (controlNoteEl && controlNoteEl.textContent !== stopText) controlNoteEl.textContent = stopText;
     if (inputRowEl) inputRowEl.setAttribute('aria-busy', submitting || stopping ? 'true' : 'false');
     renderHeaderStatus();
+  }
+
+  function hasPendingWork() {
+    return streaming || queuedRequests.size > 0;
+  }
+
+  function requestIdOf(payload) {
+    var id = payload && payload.request_id;
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  }
+
+  function refreshQueueFeedback() {
+    if (queuedRequests.size > 0 && !streaming && !stopping) setHeaderStatus('waiting');
+    else if (headerStatus === 'waiting') setHeaderStatus('none');
+    if (chatFeedbackEl && chatFeedbackEl.dataset.kind === 'error' && !chatFeedbackEl.hidden) return;
+    setFeedback(queuedRequests.size > 0 && streaming ? '已收到，等这句说完' : '');
+  }
+
+  function clearAcceptedDraft(submission) {
+    if (!submission || submission.cancelled || !inputEl) return;
+    if (draftRevision === submission.revision && inputEl.value === submission.draft) inputEl.value = '';
+  }
+
+  function recordAcceptedRequest(payload) {
+    var id = requestIdOf(payload);
+    if (id === null) return null;
+    highestAcceptedId = Math.max(highestAcceptedId, id);
+    if (pendingDraft && payload.source === 'text' && payload.user_text === pendingDraft.text &&
+        (pendingDraft.requestId === id || (pendingDraft.requestId === null && id > pendingDraft.seenThrough))) {
+      pendingDraft.requestId = id;
+      pendingDraft.accepted = true;
+      if (pendingDraft.suppressed) hiddenThroughId = Math.max(hiddenThroughId, id);
+      if (id > cancelledThroughId) clearAcceptedDraft(pendingDraft);
+    }
+    if (id <= cancelledThroughId || (currentRequestId !== null && id <= currentRequestId)) return id;
+    queuedRequests.set(id, payload);
+    refreshQueueFeedback();
+    updateComposer();
+    return id;
   }
 
   // 普通过程与停止共用一处；失败说明独立留在正文，避免窄栏截断。
@@ -271,7 +317,15 @@
   }
 
   function renderHeaderStatus() {
-    if (thinkingEl) thinkingEl.style.display = headerStatus === 'thinking' ? 'flex' : 'none';
+    if (thinkingEl) {
+      var waiting = headerStatus === 'waiting';
+      thinkingEl.style.display = waiting || headerStatus === 'thinking' ? 'flex' : 'none';
+      var description = waiting ? '猫正在准备回复' : '猫正在想';
+      if (thinkingEl.getAttribute('aria-label') !== description) thinkingEl.setAttribute('aria-label', description);
+      var label = thinkingEl.querySelector('.progress-label');
+      var text = waiting ? '正在准备回复…' : '正在想…';
+      if (label && label.textContent !== text) label.textContent = text;
+    }
     if (toolProgressEl) toolProgressEl.style.display = headerStatus === 'tool' ? 'flex' : 'none';
     if (controlNoteEl) controlNoteEl.style.display = headerStatus === 'stopped' ? 'inline-flex' : 'none';
   }
@@ -662,7 +716,7 @@
   }
 
   function showAgentToast(payload) {
-    if (chatSessionActive || submitting || streaming) return;
+    if (chatSessionActive || submitting || stopping || streaming || queuedRequests.size > 0) return;
     hiddenByUser = false;
     setUserMessage('');
     setFeedback('');
@@ -719,6 +773,8 @@
       conversationReadingMode = readingMode;
     }
     hiddenByUser = true;
+    hiddenThroughId = Math.max(hiddenThroughId, highestAcceptedId, currentRequestId || 0);
+    if (pendingDraft) pendingDraft.suppressed = true;
     viewEpoch += 1;
     stopPolling();
     clearHideTimer();
@@ -752,8 +808,10 @@
 
   function handleInputActivity() {
     // 主动会话由用户收起；输入暂停不会清空草稿或退出交互。
+    draftRevision += 1;
     clearHideTimer();
     syncInputLayout();
+    refreshQueueFeedback();
   }
 
   function showInput() {
@@ -784,11 +842,13 @@
     if (restoreConversation && contentEl) contentEl.scrollTop = conversationScrollTop;
     ensureVisible({ applyUserPref: true, userInitiated: true });
     setChatControls(streaming ? 'streaming' : (cancelled ? 'stopped' : (hasReplyText() ? 'reply' : 'hidden')));
-    if (streaming && !pollTimer) startPolling({ resume: true });
+    if (!pollTimer && (streaming || queuedRequests.size > 0)) startPolling();
     requestAnimationFrame(function() {
       if (!hiddenByUser && inputEl) inputEl.focus();
     });
     syncInputLayout();
+    refreshQueueFeedback();
+    readSnapshotForOpen();
   }
 
   function hideInput(source) {
@@ -811,39 +871,49 @@
   }
 
   function hideThinking() {
-    if (headerStatus === 'thinking') setHeaderStatus('none');
+    if (headerStatus === 'thinking' || headerStatus === 'waiting') setHeaderStatus('none');
   }
 
   function submitChat() {
-    if (!inputEl || !window.__TAURI__ || !window.__TAURI__.core || submitting || stopping || streaming) return;
+    if (!inputEl || !window.__TAURI__ || !window.__TAURI__.core || submitting || stopping || hasPendingWork()) return;
     var draft = inputEl.value;
     var text = draft.trim();
     if (!text) return;
     submitting = true;
-    awaitingStreamStart = true;
-    submissionStarted = false;
-    cancelled = false;
-    pendingDraft = { text: text, draft: draft };
+    var submission = {
+      text: text, draft: draft, revision: draftRevision, requestId: null,
+      seenThrough: highestAcceptedId, accepted: false, suppressed: hiddenByUser, cancelled: false,
+    };
+    pendingDraft = submission;
     setFeedback('');
     updateComposer();
     window.__TAURI__.core.invoke('cmd_submit_chat', { text: text })
-      .then(function() {
+      .then(function(result) {
         submitting = false;
-        if (inputEl.value === draft) inputEl.value = '';
-        setFeedback('');
+        var id = requestIdOf(result);
+        if (id === null) throw new Error('submit acknowledgement has no request id');
+        submission.requestId = id;
+        recordAcceptedRequest({ request_id: id, user_text: text, source: 'text' });
+        if (id <= cancelledThroughId) submission.cancelled = true;
+        clearAcceptedDraft(submission);
+        if (pendingDraft === submission) pendingDraft = null;
         syncInputLayout();
-        if (!streaming && !cancelled && !submissionStarted) startPolling({ keepSuppressed: hiddenByUser });
-        lastConversationUser = text;
-        setUserMessage(text, !hiddenByUser);
-        pendingDraft = null;
+        refreshQueueFeedback();
+        // 确认只表示已接收；真正开始的事件或同编号快照决定正文归属。
+        if (id > cancelledThroughId && !(currentRequestId === id && currentRequestFinished)) startPolling();
         updateComposer();
       })
       .catch(function(e) {
         submitting = false;
-        awaitingStreamStart = false;
-        pendingDraft = null;
+        if (pendingDraft === submission) pendingDraft = null;
+        if (submission.accepted) {
+          diag('submit acknowledgement failed after request was accepted: ' + String(e));
+          refreshQueueFeedback();
+          updateComposer();
+          return;
+        }
         // 没有修改输入时恢复原文；用户继续编辑的文字优先保留。
-        if (!inputEl.value) inputEl.value = draft;
+        if (!inputEl.value && draftRevision === submission.revision) inputEl.value = draft;
         setFeedback('这句话没有发出去，原文已保留。请稍后再点发送。', 'error');
         updateComposer();
         syncInputLayout();
@@ -854,36 +924,75 @@
   function submitPrompt(text) {
     if (!inputEl) return;
     inputEl.value = text || '';
+    draftRevision += 1;
     submitChat();
   }
 
-  function cancelChat() {
-    if (!window.__TAURI__ || !window.__TAURI__.core) return;
-    stopping = true;
-    cancelled = true;
-    lastReplyStopped = true;
-    streaming = false;
-    pollEpoch += 1;
-    stopPolling();
-    hideThinking();
-    clearToolStatus();
-    setStreamingClass(false);
-    setChatControls('stopped');
-    autoResize();
-    clearHideTimer();
-    setFeedback('');
-    updateComposer();
-    window.__TAURI__.core.invoke('cmd_cancel_chat').catch(function(e) {
-      diag('cmd_cancel_chat failed: ' + e);
-      cancelled = false;
-      lastReplyStopped = false;
-      streaming = true;
-      startPolling({ resume: true });
-      setFeedback('停止没有成功。应用连接遇到问题，请再点停止。', 'error');
-    }).finally(function() {
-      stopping = false;
-      updateComposer();
+  function applyCancellation(through, confirmed) {
+    if (!Number.isSafeInteger(through) || through <= 0) return;
+    if (confirmed) confirmedCancelledThroughId = Math.max(confirmedCancelledThroughId, through);
+    cancelledThroughId = Math.max(cancelledThroughId, through);
+    queuedRequests.forEach(function(_request, id) {
+      if (id <= through) queuedRequests.delete(id);
     });
+    if (pendingDraft && pendingDraft.requestId !== null && pendingDraft.requestId <= through) pendingDraft.cancelled = true;
+    if ((currentRequestId === null || currentRequestId <= through) && !(currentRequestFinished && cancelled)) {
+      lastReplyStopped = lastReplyStopped || streaming;
+      cancelled = true;
+      currentRequestFinished = true;
+      streaming = false;
+      pollEpoch += 1;
+      stopPolling();
+      hideThinking();
+      clearToolStatus();
+      setChatControls('stopped');
+      clearHideTimer();
+      setFeedback('');
+      autoResize();
+    } else {
+      refreshQueueFeedback();
+    }
+    updateComposer();
+  }
+
+  function cancelChat() {
+    if (!window.__TAURI__ || !window.__TAURI__.core || stopping) return;
+    var through = highestAcceptedId;
+    if (!through) return;
+    var previous = {
+      requestId: currentRequestId, floor: cancelledThroughId, streaming: streaming,
+      finished: currentRequestFinished, stopped: lastReplyStopped, queued: new Map(queuedRequests),
+    };
+    stopping = true;
+    applyCancellation(through, false);
+    window.__TAURI__.core.invoke('cmd_cancel_chat', { throughRequestId: through })
+      .then(function(result) {
+        applyCancellation(requestIdOf(result) || through, true);
+      })
+      .catch(function(e) {
+        diag('cmd_cancel_chat failed: ' + e);
+        // 已收到服务端确认时不复活已停止的请求；新轮也不由旧 Promise 改写。
+        if (confirmedCancelledThroughId >= through) return;
+        cancelledThroughId = Math.max(previous.floor, confirmedCancelledThroughId);
+        previous.queued.forEach(function(request, id) {
+          if (id > cancelledThroughId && (currentRequestId === null || id > currentRequestId)) queuedRequests.set(id, request);
+        });
+        if (currentRequestId === previous.requestId) {
+          cancelled = false;
+          lastReplyStopped = previous.stopped;
+          currentRequestFinished = previous.finished;
+          streaming = previous.streaming;
+          if (pendingDraft && pendingDraft.requestId > cancelledThroughId) pendingDraft.cancelled = false;
+          setChatControls(streaming ? 'streaming' : (hasReplyText() ? 'reply' : 'hidden'));
+          startPolling();
+          setFeedback('停止没有成功。应用连接遇到问题，请再点停止。', 'error');
+        }
+      })
+      .finally(function() {
+        stopping = false;
+        refreshQueueFeedback();
+        updateComposer();
+      });
   }
 
   function getPerformanceToolStatusText(payload, phase, toolName) {
@@ -948,7 +1057,9 @@
   }
 
   function setToolStatus(payload) {
-    if (!toolStatusEl || !toolProgressEl || hiddenByUser || (cancelled && !streaming)) return;
+    var id = requestIdOf(payload);
+    if (!toolStatusEl || !toolProgressEl || hiddenByUser || id !== currentRequestId ||
+        id <= cancelledThroughId || currentRequestFinished) return;
     var phase = payload && payload.phase ? payload.phase : 'planned';
     var kind = payload && payload.kind ? payload.kind : 'utility';
     setBubbleMode('stream');
@@ -981,7 +1092,11 @@
     if (isComposing || e.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (streaming) setFeedback('猫还在回复，你可以先写下一句。');
+      if (hasPendingWork()) {
+        if (!streaming) setFeedback('这句话已收到，你可以先写下一句。');
+        else if (queuedRequests.size > 0) refreshQueueFeedback();
+        else setFeedback('猫还在回复，你可以先写下一句。');
+      }
       else submitChat();
     } else if (e.key === 'Escape') {
       e.preventDefault();
@@ -998,53 +1113,89 @@
     diag('compositionend (IME 结束), valueLen=' + (inputEl ? inputEl.value.length : -1));
   }
 
-  function startPolling(options) {
+  function beginRequest(payload, options) {
+    var id = requestIdOf(payload);
+    if (id === null || id <= cancelledThroughId || (currentRequestId !== null && id < currentRequestId)) return false;
+    recordAcceptedRequest(payload);
+    if (id === currentRequestId) return !currentRequestFinished;
     var opts = options || {};
-    if (streaming && pollTimer) return;
     stopPolling();
-    if (!opts.resume) {
-      archiveConversationTurn();
-      pollEpoch += 1;
-      streaming = true;
-      cancelled = false;
-      if (!opts.keepSuppressed) hiddenByUser = false;
-      userScrolledUp = false;
-      lastRawText = '';
-      lastConversationText = '';
-      lastConversationUser = '';
-      lastReplyStopped = false;
-      setReadingMode(false);
-      setBubbleMode('stream');
-      clearToolStatus();
-      if (!hiddenByUser) showThinking();
+    archiveConversationTurn();
+    pollEpoch += 1;
+    currentRequestId = id;
+    currentRequestFinished = false;
+    streaming = true;
+    cancelled = false;
+    queuedRequests.forEach(function(_request, queuedId) {
+      if (queuedId <= id) queuedRequests.delete(queuedId);
+    });
+    userScrolledUp = false;
+    lastRawText = '';
+    lastConversationText = '';
+    lastConversationUser = typeof payload.user_text === 'string' ? payload.user_text : '';
+    lastReplyStopped = false;
+    readingAnchorPending = false;
+    setReadingMode(false);
+    setBubbleMode('stream');
+    clearToolStatus();
+    setFeedback('');
+    // 收起已知请求后，同一请求不能复活；后来接受的明确输入可以开始新轮。
+    var explicitInput = payload.source === 'text' || payload.source === 'voice' || payload.source === 'gamepad';
+    if (hiddenByUser && id > hiddenThroughId && explicitInput) hiddenByUser = false;
+    setUserMessage(lastConversationUser, !hiddenByUser);
+    if (!hiddenByUser) {
+      showThinking();
+      ensureVisible();
+    } else {
+      if (bodyEl) bodyEl.innerHTML = '';
+      window.__TAURI__.core.invoke('cmd_hide_bubble').catch(function() {});
     }
     setChatControls('streaming');
-    updateComposer();
-    if (hiddenByUser) return;
+    refreshQueueFeedback();
+    if (!opts.deferPolling) startPolling();
+    return true;
+  }
+
+  function pollChatSnapshot() {
+    if (!window.__TAURI__ || !window.__TAURI__.core) return Promise.resolve(null);
+    return window.__TAURI__.core.invoke('cmd_get_bubble_snapshot').catch(function() { return null; });
+  }
+
+  function cacheCompletedSnapshot(snapshot) {
+    var id = requestIdOf(snapshot);
+    if (id === null || snapshot.streaming !== false || id <= cancelledThroughId ||
+        (currentRequestId !== null && id < currentRequestId)) return false;
+    currentRequestId = id;
+    currentRequestFinished = true;
+    highestAcceptedId = Math.max(highestAcceptedId, id);
+    streaming = false;
+    cancelled = false;
+    lastReplyStopped = false;
+    lastConversationText = typeof snapshot.text === 'string' ? snapshot.text : '';
+    lastConversationUser = typeof snapshot.user_text === 'string' ? snapshot.user_text : '';
+    queuedRequests.forEach(function(_request, queuedId) {
+      if (queuedId <= id) queuedRequests.delete(queuedId);
+    });
+    return true;
+  }
+
+  function readSnapshotForOpen() {
+    var epoch = pollEpoch;
+    var view = viewEpoch;
+    pollChatSnapshot().then(function(snapshot) {
+      if (chatSessionActive) onChatSnapshot(snapshot, epoch, view);
+    });
+  }
+
+  function startPolling() {
+    if (pollTimer || hiddenByUser || (!streaming && queuedRequests.size === 0)) return;
     var epoch = pollEpoch;
     function read() {
       var view = viewEpoch;
-      pollPending().then(function(txt) { onPollResult(txt, epoch, view); });
+      pollChatSnapshot().then(function(snapshot) { onChatSnapshot(snapshot, epoch, view); });
     }
     pollTimer = setInterval(read, POLL_INTERVAL_MS);
     read();
-  }
-
-  function watchForStream() {
-    stopPolling();
-    var epoch = ++pollEpoch;
-    pollTimer = setInterval(function() {
-      var view = viewEpoch;
-      pollPending().then(function(txt) {
-        if (!txt || epoch !== pollEpoch || view !== viewEpoch || hiddenByUser) return;
-        stopPolling();
-        streaming = true;
-        setBubbleMode('stream');
-        setChatControls('streaming');
-        onPollResult(txt, pollEpoch, viewEpoch);
-        startPolling({ resume: true });
-      });
-    }, POLL_INTERVAL_MS);
   }
 
   function stopPolling() {
@@ -1062,25 +1213,38 @@
       .catch(function() { return ''; });
   }
 
-  /// 轮询回调：有新文本才渲染（流式模式）
-  function onPollResult(txt, epoch, view) {
-    if (!streaming || hiddenByUser || epoch !== pollEpoch || view !== viewEpoch || !txt) return;
-    if (txt === lastRawText) return;
-    setText(txt);
-    ensureVisible();
-    setStreamingClass(true);
+  /// 只接收当前请求的快照；结束和停止后在途响应没有写入资格。
+  function onChatSnapshot(snapshot, epoch, view) {
+    if (!snapshot || epoch !== pollEpoch || view !== viewEpoch || hiddenByUser) return;
+    var id = requestIdOf(snapshot);
+    if (id === null || id <= cancelledThroughId || (currentRequestId !== null && id < currentRequestId)) return;
+    var adopted = id !== currentRequestId;
+    if (adopted && !beginRequest(snapshot, { deferPolling: true })) return;
+    if (id !== currentRequestId || currentRequestFinished) return;
+    if (snapshot.streaming === false) {
+      finishStreaming(typeof snapshot.text === 'string' ? snapshot.text : '', id);
+      return;
+    }
+    if (typeof snapshot.text === 'string' && snapshot.text) {
+      if (snapshot.text !== lastRawText) {
+        setText(snapshot.text);
+        ensureVisible();
+      }
+      setStreamingClass(true);
+    }
+    if (adopted) startPolling();
   }
 
-  function finishStreaming(finalText, epoch, view) {
-    if (cancelled || epoch !== pollEpoch) return;
+  function finishStreaming(finalText, requestId) {
+    if (requestId !== currentRequestId || requestId <= cancelledThroughId || currentRequestFinished) return;
+    currentRequestFinished = true;
     streaming = false;
-    awaitingStreamStart = false;
     stopPolling();
     hideThinking();
     clearToolStatus({ keepFailure: true });
     setStreamingClass(false);
     var text = typeof finalText === 'string' ? finalText : lastRawText;
-    if (hiddenByUser || view !== viewEpoch) {
+    if (hiddenByUser) {
       lastRawText = text || '';
       lastConversationText = lastRawText;
       updateComposer();
@@ -1095,13 +1259,15 @@
       setChatControls('hidden');
     }
     setFeedback('');
+    refreshQueueFeedback();
     updateComposer();
     autoResize();
     startHideTimer();
+    if (queuedRequests.size > 0) startPolling();
   }
 
   function showNoticeText(text) {
-    if (chatSessionActive || submitting || streaming) return;
+    if (chatSessionActive || submitting || stopping || streaming || queuedRequests.size > 0) return;
     hiddenByUser = false;
     setUserMessage('');
     setFeedback('');
@@ -1247,7 +1413,7 @@
     if (sendBtnEl) {
       sendBtnEl.addEventListener('click', function() {
         diag('sendBtn click');
-        if (streaming) cancelChat();
+        if (streaming || queuedRequests.size > 0) cancelChat();
         else submitChat();
       });
     }
@@ -1407,62 +1573,30 @@
     if (!window.__TAURI__) return;
     var listen = window.__TAURI__.event.listen;
 
-    listen('bubble-start', () => {
-      if (awaitingStreamStart) {
-        awaitingStreamStart = false;
-        submissionStarted = true;
-        if (cancelled) return;
-        if (!streaming) startPolling({ keepSuppressed: hiddenByUser });
-        if (pendingDraft) {
-          lastConversationUser = pendingDraft.text;
-          setUserMessage(pendingDraft.text, !hiddenByUser);
-          if (inputEl && inputEl.value === pendingDraft.draft) inputEl.value = '';
-          syncInputLayout();
-        }
-        if (hiddenByUser) window.__TAURI__.core.invoke('cmd_hide_bubble').catch(function() {});
-      } else if (!streaming) {
-        setUserMessage('');
-        hiddenByUser = false;
-        startPolling();
+    listen('bubble-queued', (event) => {
+      var id = recordAcceptedRequest(event.payload || {});
+      if (id !== null && id > cancelledThroughId && (currentRequestId === null || id >= currentRequestId)) {
+        syncInputLayout();
+        if (!streaming && queuedRequests.size > 0) startPolling();
       }
     });
 
+    listen('bubble-start', (event) => {
+      if (beginRequest(event.payload || {})) syncInputLayout();
+    });
+
     listen('bubble-end', (event) => {
-      // 停止后立即再发时，上一轮结束可迟于新提交确认，但早于新开始。
-      if (event.payload && typeof event.payload.text === 'string' && awaitingStreamStart && !submissionStarted) return;
-      const epoch = pollEpoch;
-      const view = viewEpoch;
-      // 结束快照独立于共享通知缓存，收起后的短通知不能替换回复。
-      if (event.payload && typeof event.payload.text === 'string') {
-        finishStreaming(event.payload.text, epoch, view);
-        return;
-      }
-      pollPending()
-        .then(function(txt) {
-          finishStreaming(txt || lastRawText, epoch, view);
-        })
-        .catch(function() {
-          finishStreaming(lastRawText, epoch, view);
-        });
+      var payload = event.payload || {};
+      var id = requestIdOf(payload);
+      if (id !== null && typeof payload.text === 'string') finishStreaming(payload.text, id);
     });
 
     listen('bubble-tool-event', (event) => {
       setToolStatus(event.payload || {});
     });
 
-    listen('bubble-cancelled', () => {
-      if (!stopping && awaitingStreamStart && !submissionStarted) return;
-      pollEpoch += 1;
-      cancelled = true;
-      lastReplyStopped = true;
-      streaming = false;
-      stopPolling();
-      hideThinking();
-      clearToolStatus();
-      setStreamingClass(false);
-      setChatControls('stopped');
-      updateComposer();
-      autoResize();
+    listen('bubble-cancelled', (event) => {
+      applyCancellation(requestIdOf(event.payload), true);
     });
 
     // 双击宠物 / cmd_open_chat → 展开输入框
@@ -1471,16 +1605,14 @@
       showInput();
     });
 
-    // 冷窗口：已有内容按短回应显示；空内容只等待，不伪装成正在生成。
+    // 冷窗口先核对请求快照；通知通道不会被误当成上一轮正文。
     var initialEpoch = pollEpoch;
-    pollPending().then(function(txt) {
-      if (initialEpoch !== pollEpoch || hiddenByUser) return;
-      if (txt && txt.length > 0) {
-        if (chatSessionActive) setText(txt, { preserveScroll: true });
-        else showNoticeText(txt);
-      } else if (txt !== null) {
-        watchForStream();
-      }
+    var initialView = viewEpoch;
+    Promise.all([pollChatSnapshot(), pollPending()]).then(function(results) {
+      if (initialEpoch !== pollEpoch || initialView !== viewEpoch || hiddenByUser) return;
+      if (!chatSessionActive && results[1] && cacheCompletedSnapshot(results[0])) showNoticeText(results[1]);
+      else if (requestIdOf(results[0]) !== null) onChatSnapshot(results[0], initialEpoch, initialView);
+      else if (!chatSessionActive && !streaming && results[1]) showNoticeText(results[1]);
     });
     updateComposer();
   }
@@ -1495,8 +1627,9 @@
   window.__bubble_compactAgentToastLine = compactAgentToastLine;
   // Rust 端通过 eval 直接触发此函数拉取 pending_text。
   window.__bubble_onShow = function() {
+    var view = viewEpoch;
     pollPending().then(function(txt) {
-      if (txt && txt.length > 0) {
+      if (view === viewEpoch && txt && txt.length > 0) {
         showNoticeText(txt);
       }
     });

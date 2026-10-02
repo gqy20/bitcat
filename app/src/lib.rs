@@ -22,6 +22,7 @@ pub mod agent_watch_window;
 pub mod audio_reactive;
 pub mod bubble;
 pub mod camera;
+mod chat_reaction;
 pub mod claude_hooks;
 pub mod codex_hooks;
 pub mod commands;
@@ -95,6 +96,7 @@ pub fn run() {
         .manage(SharedPendingChat::new())
         .manage(SharedChatCancel::new())
         .manage(SharedChatCore::new())
+        .manage(chat_reaction::SharedChatReaction::new())
         .manage(SharedAgent::new())
         .on_menu_event(tray::handle_pet_context_menu_event)
         // ── IPC 命令注册 ──
@@ -136,6 +138,7 @@ pub fn run() {
             panel::cmd_execute_panel_action,
             panel::cmd_panel_log,
             bubble::cmd_consume_bubble_text,
+            bubble::cmd_get_bubble_snapshot,
             bubble::cmd_hide_bubble,
             bubble::cmd_reposition_bubble,
             camera::cmd_camera_frame,
@@ -537,6 +540,7 @@ pub fn run() {
             }
 
             // ── 后台线程 ──
+            chat_reaction::spawn_worker(app.handle().clone());
             agent_monitor::spawn_agent_monitor(app.handle().clone());
             agent_monitor::spawn_agent_view_server(app.handle().clone());
 

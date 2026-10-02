@@ -11,13 +11,15 @@
 //! - **ProfileStore** — `profile.json`，AI 定期提交 patch 的结构化用户画像
 //!
 //! 与 `agent.rs`（对话后写入）、`bridge.rs`（构建上下文）交互。
+//! 长期记忆的持久化修改在同一进程的短事务内读最新记录并原子保存，避免工具、收尾和人工删除覆盖彼此。
 
 use rig::client::AgentClientExt;
 use rig::providers::anthropic;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use tracing::{debug, info, warn};
 
 use crate::agent_reaction::MemoryCandidate;
@@ -318,39 +320,73 @@ fn long_term_file_path() -> Result<PathBuf, String> {
         .join("long_term.jsonl"))
 }
 
-/// 返回长期记忆的 Markdown 审查视图路径 `~/.bitcat/memory/long_term.md`。
-fn long_term_markdown_path() -> Result<PathBuf, String> {
-    Ok(crate::storage::data_dir()?
-        .join("memory")
-        .join("long_term.md"))
-}
+static LONG_TERM_TRANSACTION_LOCK: Mutex<()> = Mutex::new(());
 
 impl LongTermMemory {
-    /// 从磁盘加载。文件不存在或损坏时返回空记忆。
+    /// 兼容只读调用：缺失文件为空，读取失败记录日志并返回空记忆。
+    /// 持久化修改必须使用 `update_latest`，需要暴露读取错误的调用使用 `load_checked`。
     pub fn load() -> Self {
-        let path = match long_term_file_path() {
-            Ok(p) => p,
+        match Self::load_checked() {
+            Ok(store) => store,
             Err(e) => {
-                warn!(error = %e, "获取长期记忆文件路径失败");
-                return Self {
-                    entries: Vec::new(),
-                };
-            }
-        };
-        if !path.exists() {
-            return Self {
-                entries: Vec::new(),
-            };
-        }
-        match fs::read_to_string(&path) {
-            Ok(content) => load_long_term_jsonl(&content),
-            Err(e) => {
-                warn!(error = %e, "读取长期记忆文件失败");
+                warn!(error = %e, "读取长期记忆失败，只读调用使用空记忆");
                 Self {
                     entries: Vec::new(),
                 }
             }
         }
+    }
+
+    /// 读取最新持久化记录；缺失文件为空，损坏、权限和路径错误明确返回。
+    /// 与写入事务共用进程内锁，不能在 `update_latest` 闭包中再次调用。
+    pub fn load_checked() -> Result<Self, String> {
+        Self::load_checked_at(&long_term_file_path()?)
+    }
+
+    /// 从指定 JSONL 路径严格读取，供隔离存储和临时目录验证使用。
+    pub fn load_checked_at(path: &Path) -> Result<Self, String> {
+        let _guard = LONG_TERM_TRANSACTION_LOCK
+            .lock()
+            .map_err(|_| "长期记忆事务锁不可用".to_string())?;
+        Self::read_at(path)
+    }
+
+    /// 在短事务中读取最新文件、执行修改并原子保存，返回更新后的记录和闭包结果。
+    /// 闭包返回错误时不保存；闭包内不得执行网络请求或再次读取、修改持久化记忆。
+    /// 主 JSONL 保存成功即提交；派生 Markdown 视图失败写入诊断，不误报主记录失败。
+    /// 锁只协调同一进程内的调用，不提供跨进程事务保证。
+    pub fn update_latest<R>(
+        update: impl FnOnce(&mut Self) -> Result<R, String>,
+    ) -> Result<(Self, R), String> {
+        Self::update_latest_at(&long_term_file_path()?, update)
+    }
+
+    /// 在指定路径执行同一事务，并尝试更新同名 Markdown 派生审查视图。
+    pub fn update_latest_at<R>(
+        path: &Path,
+        update: impl FnOnce(&mut Self) -> Result<R, String>,
+    ) -> Result<(Self, R), String> {
+        let _guard = LONG_TERM_TRANSACTION_LOCK
+            .lock()
+            .map_err(|_| "长期记忆事务锁不可用".to_string())?;
+        let mut store = Self::read_at(path)?;
+        let result = update(&mut store)?;
+        store.save_at(path)?;
+        Ok((store, result))
+    }
+
+    fn read_at(path: &Path) -> Result<Self, String> {
+        let content = match fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Self {
+                    entries: Vec::new(),
+                });
+            }
+            Err(e) => return Err(format!("读取长期记忆 {} 失败: {e}", path.display())),
+        };
+        load_long_term_jsonl(&content)
+            .map_err(|e| format!("解析长期记忆 {} 失败: {e}", path.display()))
     }
 
     /// 追加一条记录。超过 max_entries 时淘汰最旧的未聚合条目。
@@ -613,36 +649,29 @@ impl LongTermMemory {
             .collect()
     }
 
-    /// 持久化到磁盘（原子写入：先写临时文件再 rename）。
-    pub fn save(&self) -> Result<(), String> {
-        let path = long_term_file_path()?;
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
-        }
+    fn save_at(&self, path: &Path) -> Result<(), String> {
         let mut jsonl = String::new();
         for entry in &self.entries {
             let line = serde_json::to_string(entry).map_err(|e| format!("序列化失败: {e}"))?;
             jsonl.push_str(&line);
             jsonl.push('\n');
         }
-        let mut tmp = tempfile::NamedTempFile::new_in(path.parent().unwrap())
-            .map_err(|e| format!("创建临时文件失败: {e}"))?;
-        std::io::Write::write_all(&mut tmp, jsonl.as_bytes())
-            .map_err(|e| format!("写入临时文件失败: {e}"))?;
-        tmp.persist(&path)
-            .map_err(|e| format!("原子替换失败: {e}"))?;
-
-        let markdown_path = long_term_markdown_path()?;
+        let markdown_path = path.with_extension("md");
         let markdown = self.review_markdown(usize::MAX);
-        let mut md_tmp = tempfile::NamedTempFile::new_in(markdown_path.parent().unwrap())
-            .map_err(|e| format!("创建长期记忆 Markdown 临时文件失败: {e}"))?;
-        std::io::Write::write_all(&mut md_tmp, markdown.as_bytes())
-            .map_err(|e| format!("写入长期记忆 Markdown 失败: {e}"))?;
-        md_tmp
-            .persist(&markdown_path)
-            .map_err(|e| format!("原子替换长期记忆 Markdown 失败: {e}"))?;
+        crate::storage::write_file_atomically(path, jsonl.as_bytes())
+            .map_err(|e| format!("保存长期记忆 {} 失败: {e}", path.display()))?;
+        if let Err(error) =
+            crate::storage::write_file_atomically(&markdown_path, markdown.as_bytes())
+        {
+            warn!(
+                stage = "derived_markdown",
+                path = %markdown_path.display(),
+                error = %error,
+                "长期记忆主记录已保存，更新审查视图失败"
+            );
+        }
 
-        debug!(path = ?path, markdown_path = ?markdown_path, "长期记忆已持久化");
+        debug!(path = ?path, "长期记忆主记录已持久化");
         Ok(())
     }
 }
@@ -664,28 +693,19 @@ fn long_term_entry_matches(entry: &LongTermEntry, query: &LongTermMemoryQuery) -
     query.tags.iter().all(|tag| entry.tags.contains(tag))
 }
 
-fn load_long_term_jsonl(content: &str) -> LongTermMemory {
+fn load_long_term_jsonl(content: &str) -> Result<LongTermMemory, String> {
     let mut entries = Vec::new();
     for (line_no, line) in content.lines().enumerate() {
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
-        match serde_json::from_str::<LongTermEntry>(line) {
-            Ok(mut entry) => {
-                normalize_loaded_long_term_entry(&mut entry, line_no);
-                entries.push(entry);
-            }
-            Err(e) => {
-                warn!(
-                    line = line_no + 1,
-                    error = %e,
-                    "解析长期 JSONL 记忆行失败，已跳过"
-                );
-            }
-        }
+        let mut entry = serde_json::from_str::<LongTermEntry>(line)
+            .map_err(|e| format!("第 {} 行不是有效记录: {e}", line_no + 1))?;
+        normalize_loaded_long_term_entry(&mut entry, line_no);
+        entries.push(entry);
     }
-    LongTermMemory { entries }
+    Ok(LongTermMemory { entries })
 }
 
 fn normalize_loaded_long_term_entry(entry: &mut LongTermEntry, index: usize) {
@@ -1555,6 +1575,230 @@ mod tests {
         assert!(markdown.contains("confidence: 5"));
         assert!(markdown.contains("ttl: stable"));
         assert!(markdown.contains("tags: project"));
+    }
+
+    #[test]
+    fn concurrent_remember_candidate_and_delete_preserve_updates() {
+        use crate::tools::{RememberArgs, execute_remember_into};
+        use std::collections::HashSet;
+        use std::sync::Barrier;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("long_term.jsonl");
+        let (_, (delete_id, keep_id)) = LongTermMemory::update_latest_at(&path, |store| {
+            store.record("delete during updates", "first", 100);
+            store.record("already deleted", "second", 100);
+            let delete_id = store.entries[0].id.clone();
+            let already_deleted = store.entries[1].id.clone();
+            store.delete_entry_by_id(&already_deleted);
+            store.record("keep unchanged", "original reply", 100);
+            Ok((delete_id, store.entries[2].id.clone()))
+        })
+        .unwrap();
+        let barrier = Barrier::new(3);
+
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                barrier.wait();
+                for index in 0..16 {
+                    LongTermMemory::update_latest_at(&path, |store| {
+                        let result = execute_remember_into(
+                            &RememberArgs {
+                                text: format!("remember-{index}"),
+                                importance: Some(4),
+                                tags: vec!["preference".into()],
+                            },
+                            store,
+                            100,
+                        );
+                        if result.success {
+                            Ok(())
+                        } else {
+                            Err(result.output)
+                        }
+                    })
+                    .unwrap();
+                }
+            });
+            scope.spawn(|| {
+                barrier.wait();
+                for index in 0..16 {
+                    LongTermMemory::update_latest_at(&path, |store| {
+                        store.record_candidate(
+                            &MemoryCandidate::explicit(
+                                format!("candidate-{index}"),
+                                4,
+                                vec!["project".into()],
+                            ),
+                            "conversation",
+                            "reply",
+                            100,
+                        );
+                        Ok(())
+                    })
+                    .unwrap();
+                }
+            });
+            scope.spawn(|| {
+                barrier.wait();
+                LongTermMemory::update_latest_at(&path, |store| {
+                    if store.delete_entry_by_id(&delete_id) {
+                        Ok(())
+                    } else {
+                        Err("initial record disappeared".into())
+                    }
+                })
+                .unwrap();
+            });
+        });
+
+        let saved = LongTermMemory::load_checked_at(&path).unwrap();
+        assert_eq!(saved.entries.len(), 35);
+        assert_eq!(
+            saved.entries.iter().filter(|entry| entry.deleted).count(),
+            2
+        );
+        assert_eq!(saved.review_entries(100).len(), 33);
+        assert!(
+            saved
+                .entries
+                .iter()
+                .find(|entry| entry.id == delete_id)
+                .unwrap()
+                .deleted
+        );
+        assert_eq!(
+            saved
+                .entries
+                .iter()
+                .map(|entry| &entry.id)
+                .collect::<HashSet<_>>()
+                .len(),
+            35
+        );
+        let kept = saved
+            .entries
+            .iter()
+            .find(|entry| entry.id == keep_id)
+            .unwrap();
+        assert_eq!(kept.user_msg, "keep unchanged");
+        assert_eq!(kept.ai_reply, "original reply");
+        assert_eq!(kept.source.as_deref(), Some("conversation"));
+        assert!(!kept.deleted);
+        for (prefix, source) in [
+            ("remember", "remember_tool"),
+            ("candidate", "agent_reaction"),
+        ] {
+            for index in 0..16 {
+                let text = format!("{prefix}-{index}");
+                let entry = saved
+                    .entries
+                    .iter()
+                    .find(|entry| entry.summary.as_deref() == Some(text.as_str()))
+                    .unwrap();
+                assert_eq!(entry.source.as_deref(), Some(source));
+                assert!(!entry.deleted);
+            }
+        }
+    }
+
+    #[rstest::rstest]
+    #[case(b"not json\n")]
+    #[case(b"{\"id\":\"incomplete\"}\n")]
+    #[case(b"[{}]\n")]
+    #[case(b"\xff\n")]
+    fn transaction_rejects_corrupt_records_without_overwriting(#[case] invalid: &[u8]) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("long_term.jsonl");
+        LongTermMemory::update_latest_at(&path, |store| {
+            store.record("valid record", "keep", 100);
+            Ok(())
+        })
+        .unwrap();
+        let mut original = fs::read(&path).unwrap();
+        original.extend_from_slice(invalid);
+        fs::write(&path, &original).unwrap();
+        let original_markdown = fs::read(path.with_extension("md")).unwrap();
+        let invoked = std::cell::Cell::new(false);
+
+        let result = LongTermMemory::update_latest_at(&path, |store| {
+            invoked.set(true);
+            store.record("must not replace corrupt data", "no", 100);
+            Ok(())
+        });
+
+        assert!(result.is_err());
+        assert!(!invoked.get());
+        assert_eq!(fs::read(&path).unwrap(), original);
+        assert_eq!(
+            fs::read(path.with_extension("md")).unwrap(),
+            original_markdown
+        );
+        assert!(LongTermMemory::load_checked_at(&path).is_err());
+    }
+
+    #[test]
+    fn aborted_transaction_preserves_records_and_review() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("long_term.jsonl");
+        LongTermMemory::update_latest_at(&path, |store| {
+            store.record("keep this record", "yes", 100);
+            Ok(())
+        })
+        .unwrap();
+        let original = fs::read(&path).unwrap();
+        let original_markdown = fs::read(path.with_extension("md")).unwrap();
+
+        let result = LongTermMemory::update_latest_at(&path, |store| {
+            store.record("cancelled update", "no", 100);
+            Err::<(), _>("update cancelled".to_string())
+        });
+
+        assert_eq!(result.unwrap_err(), "update cancelled");
+        assert_eq!(fs::read(&path).unwrap(), original);
+        assert_eq!(
+            fs::read(path.with_extension("md")).unwrap(),
+            original_markdown
+        );
+    }
+
+    #[test]
+    fn derived_review_failure_does_not_fail_committed_memory() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("long_term.jsonl");
+        let markdown_path = path.with_extension("md");
+        fs::create_dir(&markdown_path).unwrap();
+        let marker = markdown_path.join("keep.txt");
+        fs::write(&marker, b"preserve this directory").unwrap();
+
+        let (saved, result) = LongTermMemory::update_latest_at(&path, |store| {
+            store.record("successfully remembered", "committed", 100);
+            Ok("committed")
+        })
+        .unwrap();
+
+        assert_eq!(result, "committed");
+        assert_eq!(saved.entries.len(), 1);
+        let reloaded = LongTermMemory::load_checked_at(&path).unwrap();
+        assert_eq!(reloaded.entries.len(), 1);
+        assert_eq!(reloaded.entries[0].id, saved.entries[0].id);
+        assert_eq!(reloaded.entries[0].user_msg, "successfully remembered");
+        assert!(markdown_path.is_dir());
+        assert_eq!(fs::read(&marker).unwrap(), b"preserve this directory");
+    }
+
+    #[test]
+    fn transaction_read_failure_does_not_run_update() {
+        let dir = tempfile::tempdir().unwrap();
+        let invoked = std::cell::Cell::new(false);
+        let result = LongTermMemory::update_latest_at(dir.path(), |_| {
+            invoked.set(true);
+            Ok(())
+        });
+
+        assert!(result.is_err());
+        assert!(!invoked.get());
+        assert!(dir.path().is_dir());
     }
 
     #[test]

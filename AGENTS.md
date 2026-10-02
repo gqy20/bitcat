@@ -148,8 +148,9 @@ Rust workspace（`core` + `app` + `xtask`），Tauri 2.0 多窗口桌面应用�
 ```
 SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
   ├── bridge::handle_button_press() → PetCommand
-  │     └── agent.chat_stream() → 流式 AI 回复 → bubble 窗口
-  ├── voice 按住/释放 → voice.rs（generation 防残留）→ AI 对话
+  │     └── ActionBus → 对话 FIFO → chat_loop → agent.chat_stream() → bubble 窗口
+  ├── voice 按住/释放 → voice.rs（generation 防残留）→ 同一对话 FIFO
+  ├── bubble 文字输入 → ActionBus → 同一对话 FIFO
   ├── panel 导航 → panel.rs（方向键/A/B 独占）
   └── config/actions.yml 热键/启动 → hotkey.rs SendInput
 
@@ -189,7 +190,7 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 
 ### 对话气泡协议
 
-`bubble-start` 开始一轮回复；前端轮询 `cmd_consume_bubble_text` 读取累计正文；`bubble-end` 携带 `{ text }` 不可变最终快照，空串也是明确结果。普通通知不得改写生成或用户聊天/阅读中的正文，也不得混入前端最近问答。主动会话保留输入与草稿，手动收起只结束交互；生成与交互保护分别管理。请求在排队时预留取消编号，停止同时取消排队和在途回复，已经开始的外部动作可能继续完成。当前体验契约与证据见 [对话迭代评估](docs/research/chat-interface-iteration-2026-10-02.md)。
+文字、语音和手柄请求统一经 ActionBus 入 FIFO，由单一 `chat_loop` 顺序执行。接收时分配 `request_id`；`bubble-queued` / `bubble-start` 携带请求编号、`user_text` 和 `source`，工具、结束及 `cmd_get_bubble_snapshot` 同样绑定编号，结束保留不可变最终正文。前端只在实际开始时切换当前问题，旧事件和旧轮询不得覆盖新一轮。`cmd_consume_bubble_text` 仅消费普通通知；通知与对话快照分离，不进入问答历史。主动会话保留输入与草稿，收起只结束交互。停止使用包含端点的请求截止编号，取消当时已接收的排队及在途回复，保留之后的新请求；已经开始的外部动作可能继续完成。完整约定见 [对话执行架构](docs/architecture/chat-runtime.md)，Windows 原生验证状态见 [验收记录](docs/research/chat-native-validation-2026-10-03.md)。
 
 ### 宠物语义事件
 
@@ -204,11 +205,11 @@ app 层通过 `SharedPetEventBus` 统一发送 `pet-event`，集中处理去重�
 
 ### AI Agent
 
-配置优先级：环境变量 > `~/.bitcat/app_settings.json` 覆盖层 > `~/.claude/settings.json` > `.env` > 默认值。当前通过 rig `AgentBuilder` 注册 16 个内置 Tool：`launch_program` / `shell` / `read_file` / `get_time` / `recent_screenshots` / `search_memory` / `remember` / `create_reminder` / `list_reminders` / `cancel_reminder` / `send_hotkey` / `read_clipboard` / `force_foreground` / `perform_dance` / `play_dance` / `start_game`。`max_tokens` 默认 256K。
+AI 连接字段优先级：`~/.bitcat/app_settings.json` 覆盖层 > exe 同目录 `.env` > `~/.claude/settings.json` > 进程环境变量 > 默认值，各字段独立回退。GLM 型号继承的尾部 `[1m]` 只在请求时移除，不改写来源文件或其他模型名。当前通过 rig `AgentBuilder` 注册 16 个内置 Tool：`launch_program` / `shell` / `read_file` / `get_time` / `recent_screenshots` / `search_memory` / `remember` / `create_reminder` / `list_reminders` / `cancel_reminder` / `send_hotkey` / `read_clipboard` / `force_foreground` / `perform_dance` / `play_dance` / `start_game`。`max_tokens` 默认 256K。
 
 主对话使用 `stream_prompt().max_turns(MAX_AGENT_TURNS)`。`PetAgent::chat_stream()` 将 rig 的 `MultiTurnStreamItem` 拆成三类 app 可消费事件：`Text` 流式写入 bubble；`Tool` 携带 `ToolRuntimeEvent` 表达 planned / blocked / finished / failed；`Status` 从文本 delta 和 tool-call item 派生 `AiWriting` / `ToolPreparing`。`PermissionHook` 同时检查六类操作工具的用户授权与危险 shell 命令，通过 rig 0.42 事件化 `AgentHook` 的 `ToolCallAction::Skip` 返回可解释结果。
 
-对话结束后用 rig `Extractor<AgentReaction>` 做结构化收尾：输出最终 `PetMood`、可选 speech 和 `memory_candidates`。失败或超时时 fallback 到 `Idle`，不阻塞主回复。
+正文完成先同步保存短期上下文，再交给 `chat_reaction` 的单一有界后台 worker 用 rig `Extractor<AgentReaction>` 提取最终 `PetMood`、可选 speech 和 `memory_candidates`，不等待提取就可执行下一句。提取超时 8 秒，失败 fallback 到 `Idle`；新请求已接收、请求被停止或距正文完成超过 10 秒时不再发布旧反应。自动画像聚合也由该 worker 空闲时运行，`aggregation_interval_min` 单位为分钟，0 关闭；失败按同一间隔冷却重试。
 
 ### 程序化提醒
 
@@ -233,6 +234,8 @@ AI Agent 通过 `create_reminder` / `list_reminders` / `cancel_reminder` Tool �
 当前默认单条截断为 user 500 字符、AI reply 1000 字符；不要用字节切片处理中文。
 
 长期记忆由 `AgentReaction.memory_candidates` 或 `remember` 工具驱动写入 `LongTermMemory`，不再使用关键词式 `should_store` 判断。结构化条目保留 `summary` / `tags` / `importance` / `source`，并提供 `retrieve_with()` 按 text/tag/source/min_importance 过滤，以及 `review_entries()` / `review_markdown()` 供设置页审查和人工删除。
+
+长期记忆写入统一使用 `LongTermMemory::update_latest()`：进程内锁保护读取最新记录、变更和原子替换 JSONL；`remember`、后台候选和设置页删除不得保存旧缓存覆盖最新文件。`load_checked()` 明确返回读取或解析错误，禁止在读取失败后按空文件覆盖。派生 Markdown 失败写诊断，主 JSONL 已成功则不伪报保存失败。此锁只协调当前进程，不提供多实例写入保护。
 
 长期记忆检索坚持 **grep-first**：优先使用一行一条的 JSONL record / Markdown / 稳定字段，让记忆可以被 `rg`、人工审查和大模型共同读取。当前长期记忆主文件是 `~/.bitcat/memory/long_term.jsonl`，保存当前有效记录并同步生成 `long_term.md` 审查视图，通过 `deleted: true` 软删除，不做 tombstone event sourcing。不要引入 Embeddings / Vector RAG / 向量数据库作为主线方案；当前取舍见 `docs/architecture/design-tradeoffs.md`。需要召回历史时，先用文本、来源、标签、重要度等可解释条件筛出候选，再交给大模型判断和压缩。
 
@@ -358,6 +361,7 @@ AI Agent 通过 `create_reminder` / `list_reminders` / `cancel_reminder` Tool �
 - `app/src/reminder_scheduler.rs` — 到期提醒轮询调度，触发统一通知窗口
 - `app/src/notification_window.rs` — Agent Watch 与提醒共用的灵动岛式通知窗口和提醒动作回写
 - `app/src/voice.rs` — 语音输入窗口 + generation 防残留
-- `app/src/bubble.rs` — 独立气泡窗口 + 流式 chunk 协议
+- `app/src/bubble.rs` — 独立气泡窗口 + 请求编号、正文快照及通知隔离
+- `app/src/chat_reaction.rs` — 单 worker 后台情绪提取、候选记忆事务与空闲画像聚合
 - `app/src/pet_event_bus.rs` — 统一 pet-event 发送入口、事件去重/节流、最近事件诊断日志
 - `app/frontend/js/app.js` — 宠物窗口主逻辑（拖拽、状态同步、精灵渲染）

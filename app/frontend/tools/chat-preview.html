@@ -43,6 +43,7 @@
       <button type="button" data-open disabled>开始聊天 / 恢复</button>
       <button type="button" data-case="short" disabled>下一条：短回复</button>
       <button type="button" data-case="long" disabled>下一条：长文</button>
+      <button type="button" data-queue-demo disabled>文字后接语音</button>
       <button type="button" data-case="error" disabled>下一条：发送失败</button>
       <button type="button" data-notice disabled>普通短回应</button>
       <button type="button" data-tool="planned" disabled>提醒处理中</button>
@@ -99,6 +100,18 @@
           setStatus(scenarioCopy[button.dataset.case]);
         };
       });
+
+      document.querySelector('[data-queue-demo]').onclick = () => {
+        if (!preview) return;
+        preview.open();
+        const previous = preview.state.next;
+        preview.next('long');
+        preview.enqueue('示例文字：帮我安排一个轻松的下午。', 'text');
+        preview.next('short');
+        preview.enqueue('示例语音：先只讲第一步。', 'voice');
+        preview.next(previous);
+        setStatus('两条示例会依次回复，当前内容会等说完再切换。停止会取消尚未完成的示例；输入框里的草稿会保留。');
+      };
 
       document.querySelector('[data-notice]').onclick = () => {
         if (!preview) return;

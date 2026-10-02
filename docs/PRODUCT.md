@@ -33,3 +33,5 @@ product
 支持中文 IME、键盘路径、可见焦点、减少动态效果与桌面 DPI 缩放。文字对比和命中区域按产品规范验收。
 
 详细验收以 [产品规范](product/design-spec.md) 为准；视觉约定见 [文字规范](design/typography.md)、[气泡配色](design/chat-bubble-colors.md) 与 [设置页规范](design/settings-pixel.md)。本轮对话依据见 [调研报告](research/chat-interface-design-2026-10-02.md)，当前行为与证据见 [迭代评估](research/chat-interface-iteration-2026-10-02.md)。
+
+连续输入与后台收尾见[对话执行架构](architecture/chat-runtime.md)；回复表达样本和仍待设备验证的项目见[2026-10-03 验收记录](research/chat-native-validation-2026-10-03.md)。

@@ -59,9 +59,11 @@ python3 -m http.server 4178        # 在 app/frontend 下静态起页，在浏�
 
 对话预览读取生产 `bubble.html`、CSS 和 JS，只在预览页中注入示例回复与窗口尺寸模拟。它不连接真实 AI 服务，也不执行工具。`tools/` 中的预览文件不进入 `xtask prepare-frontend` 的运行时资源包。Windows 输入法、原生置顶与多显示器定位仍需桌面应用验收。
 
-仍然不能做的事：`bitcat` **可执行文件**无法在非 Windows 上链接和运行（截图 BitBlt、
-WASAPI、SendInput、TTS、托盘都是 Win32），`make dist` / UPX / Tauri bundle 同理。
-`cargo test -p bitcat-app --lib` 能跑，是因为测试二进制只链接 lib，Win32 部分被 cfg 排除。
+点“文字后接语音”可体验一条长回复后接语音输入的顺序，过程中可以编辑草稿、停止，然后继续发送。Windows 设备上的输入法、焦点、缩放与双屏步骤见[对话原生验收](chat-native-validation.md)，尚未执行的项目保留明确记录。
+
+非 Windows 构建可以核对编译和回退路径，但无法验证 Windows 截图、WASAPI、SendInput、
+TTS 和原生窗口体验。Windows 便携包仍需 Windows 构建产物。
+本机 app 测试会通过 cfg 排除 Win32 分支，不能据此判断这些分支已经通过。
 
 三个环境注意点：
 
@@ -117,7 +119,7 @@ Release 页面提供）。
 配置优先级从高到低：
 
 ```text
-环境变量 > ~/.bitcat/app_settings.json > ~/.claude/settings.json > 内置默认值
+~/.bitcat/app_settings.json > 可执行文件旁 .env > ~/.claude/settings.json > 进程环境变量 > 内置默认值
 ```
 
 推荐第一次启动后右键系统托盘图标，打开“设置...”，在“AI 与对话”里填写：
@@ -136,6 +138,8 @@ $env:ANTHROPIC_MODEL="claude-sonnet-4-20250514"
 ```
 
 如果你已经使用 Claude Code，应用会只读读取 `~/.claude/settings.json` 中的 Anthropic 配置，不会改写它。
+
+已验证的 GLM Anthropic 兼容接口使用实际型号，例如 `glm-5.3`。从 CLI 配置继承的 GLM 型号若带 `[1m]`，应用会在请求时去掉这个后缀；原配置文件、其他型号和自定义部署名保持原值。
 
 ## 首次运行
 

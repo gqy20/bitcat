@@ -1,3 +1,7 @@
+//! 统一加载对话、观察、记忆和提醒文案的提示词配置。
+//! 编译默认值直接解析同一份 config/prompts.yml，避免运行配置和 Rust 默认人设不同步。
+//! 对话 Agent、视觉分析和设置页通过这些结构读取或保存配置。
+
 use crate::memory::MemoryConfig;
 use crate::screen_summary::ScreenSummaryConfig;
 use serde::{Deserialize, Serialize};
@@ -15,8 +19,10 @@ fn embedded_default<T: for<'de> Deserialize<'de>>() -> T {
 
 // ---- 数据结构 ----
 
+/// 主对话人设；缺省字段沿用编译嵌入的 YAML，不另存一份默认文本。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentPromptConfig {
+    /// 主对话的语气和事实边界，工具 schema 与授权仍由 Agent 层处理。
     #[serde(default = "default_agent_preamble")]
     pub preamble: String,
 }

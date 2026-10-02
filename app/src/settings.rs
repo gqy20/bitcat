@@ -7,6 +7,7 @@
 //!
 //! 安全设计：已保存的 API Key 不回传前端；新密钥仅在用户提交时传入。
 //! 草稿检测不写入配置，只返回分类结果，密钥保持、替换与移除具有明确语义。
+//! 长期记忆审查明确报告读取错误，删除通过读取最新记录的持久化事务完成。
 //!
 //! 与以下模块交互：`ai_config`（AI 配置加载）、`action`（按键绑定）、
 //! `prompts`（提示词）、`user_profile`（用户画像）、`app_settings`（持久化）、`token_tracker`（用量统计）。
@@ -646,7 +647,10 @@ fn model_usage_options<'a>(
 /// Return a reviewable view of grep-first long-term memory.
 #[tauri::command]
 pub async fn cmd_get_memory_review(limit: Option<usize>) -> Result<MemoryReviewView, String> {
-    let store = LongTermMemory::load();
+    let store = LongTermMemory::load_checked().map_err(|error| {
+        warn!(error = %error, "memory review could not read the latest store");
+        "记忆暂时读不了。文件无法读取或内容不完整。请重试；仍失败时从托盘导出诊断包。".to_string()
+    })?;
     Ok(memory_review_view(
         &store,
         limit.unwrap_or(20).clamp(1, 100),
@@ -743,11 +747,14 @@ pub async fn cmd_delete_memory_entry(
     id: String,
     limit: Option<usize>,
 ) -> Result<MemoryReviewView, String> {
-    let mut store = LongTermMemory::load();
-    if !store.delete_entry_by_id(&id) {
-        return Err(format!("memory entry id {id} does not exist"));
+    let (store, deleted) = LongTermMemory::update_latest(|store| Ok(store.delete_entry_by_id(&id)))
+        .map_err(|error| {
+            warn!(error = %error, memory_id = %id, "memory deletion transaction failed");
+            "记忆没有删除成功。记录无法读取或保存。请重试；仍失败时从托盘导出诊断包。".to_string()
+        })?;
+    if !deleted {
+        return Err("这条记忆已经不存在。请刷新列表后再试。".to_string());
     }
-    store.save()?;
     Ok(memory_review_view(
         &store,
         limit.unwrap_or(20).clamp(1, 100),

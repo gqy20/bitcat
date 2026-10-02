@@ -1,8 +1,8 @@
 //! 气泡窗口模块：流式 AI 文本渲染、动态高度调整与普通回应跟随宠物。
 //!
 //! 核心协议是三段式流式推送：`start_streaming_bubble` → `append_bubble_chunk`×N →
-//! `finalize_bubble`。`bubble-start` 通知前端进入流式状态，轮询
-//! `cmd_consume_bubble_text` 读取累积文本，`bubble-end` 携带 `{ text }` 最终快照通知生成结束。
+//! `finalize_bubble`。开始、工具、结束事件携带请求编号，前端用
+//! `cmd_get_bubble_snapshot` 读取对应的正文；普通通知继续使用独立的 consume 接口。
 //! 新窗口可能错过开始事件，初次拉取待消费文本作为兜底；空正文不代表正在生成。
 //! 用户主动聊天或阅读时继续保护会话。
 //! 用户请求的静态说明通过 `show_chat_message` 复用完整回复协议，普通通知继续避让会话。
@@ -159,11 +159,65 @@ fn compute_bubble_placement(
     }
 }
 
-/// 对话保护状态，生成结束与用户收起会话各自释放对应的标记。
+/// 用户请求来源，随请求排队和执行保持不变。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ChatSource {
+    /// 宠物聊天输入框。
+    Text,
+    /// 语音识别得到的真实文本。
+    Voice,
+    /// 手柄或对应按键发起的对话。
+    Gamepad,
+}
+
+/// 已接受的请求元数据，同时用于排队和开始事件。
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ChatRequest {
+    /// 提交时预留的单调编号，停止和事件匹配使用同一个值。
+    pub request_id: u64,
+    /// 本次请求原文，不包含注入的记忆或提示词。
+    pub user_text: String,
+    /// 请求入口，用于恢复语音、文字和手柄的正确问题。
+    pub source: ChatSource,
+}
+
+/// 提交成功确认；排队消息尚未开始生成。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct ChatSubmission {
+    /// 本次已接受请求的编号。
+    pub request_id: u64,
+}
+
+/// 停止操作覆盖的请求范围。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct ChatCancelled {
+    /// 已取消的编号上界，包含该编号；更晚提交的请求继续执行。
+    pub request_id: u64,
+}
+
+/// 冷窗口恢复与轮询读取的请求快照，普通通知不会改写它。
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct BubbleSnapshot {
+    /// 当前或最近完成的请求编号；从未开始请求时为空。
+    pub request_id: Option<u64>,
+    /// 对应请求的原文；没有请求时为空。
+    pub user_text: Option<String>,
+    /// 对应请求的来源；没有请求时为空。
+    pub source: Option<ChatSource>,
+    /// 累积正文，空串也是明确的最终结果。
+    pub text: String,
+    /// 仅表示这个请求仍在生成，后台收尾不占用此标记。
+    pub streaming: bool,
+}
+
+/// 对话保护与正文所有权，旧请求不能追加文本或释放新请求的保护。
 #[derive(Default)]
 struct ChatActivity {
     generating: bool,
     interacting: bool,
+    request: Option<ChatRequest>,
+    text: String,
 }
 
 impl ChatActivity {
@@ -177,7 +231,7 @@ impl ChatActivity {
 /// 首次创建窗口时 emit 时机可能早于前端 listen 注册，
 /// 因此把文本暂存于 `pending_text`，前端 init 时主动 invoke 拉取。
 pub struct SharedBubble {
-    /// 最近的完整累积正文；轮询读取保留内容，下一轮生成开始时重置。
+    /// 普通通知文本，保留旧 consume 接口；与对话正文分别保存。
     pub pending_text: Mutex<Option<String>>,
     activity: Mutex<ChatActivity>,
 }
@@ -201,10 +255,16 @@ impl SharedBubble {
         self.activity.lock().map_or(true, |g| g.interacting)
     }
 
-    /// 更新 AI 生成状态，不改变用户聊天或阅读的保护。
-    pub fn set_generation_active(&self, active: bool) {
+    /// 仅释放匹配请求的生成保护，避免旧守卫影响下一轮。
+    fn release_generation(&self, request_id: u64) {
         if let Ok(mut activity) = self.activity.lock() {
-            activity.generating = active;
+            if activity
+                .request
+                .as_ref()
+                .is_some_and(|r| r.request_id == request_id)
+            {
+                activity.generating = false;
+            }
         }
     }
 
@@ -216,34 +276,57 @@ impl SharedBubble {
     }
 
     /// 新回复开始时清空旧正文，并在同一保护区内标记生成开始。
-    fn begin_stream(&self) -> Result<(), String> {
+    fn begin_stream(&self, request: &ChatRequest) -> Result<(), String> {
         let mut activity = self.activity.lock().map_err(|e| e.to_string())?;
         let mut pending = self.pending_text.lock().map_err(|e| e.to_string())?;
+        if activity.generating {
+            return Err("已有对话正在回复".into());
+        }
         activity.generating = true;
-        *pending = Some(String::new());
+        activity.request = Some(request.clone());
+        activity.text.clear();
+        *pending = None;
         Ok(())
     }
 
     /// 显式回复写入累积正文，用户聊天/阅读保护不会阻止本轮请求的反馈。
-    fn append_stream_text(&self, chunk: &str) -> Result<(), String> {
-        self.pending_text
-            .lock()
-            .map_err(|e| e.to_string())?
-            .get_or_insert_with(String::new)
-            .push_str(chunk);
+    fn append_stream_text(&self, request_id: u64, chunk: &str) -> Result<(), String> {
+        let mut activity = self.activity.lock().map_err(|e| e.to_string())?;
+        if !activity.generating
+            || activity.request.as_ref().map(|r| r.request_id) != Some(request_id)
+        {
+            return Err("回复编号已经过期".into());
+        }
+        activity.text.push_str(chunk);
         Ok(())
     }
 
     /// 释放生成保护前取得不可变的最终正文，后续通知不会污染回复结束事件。
-    fn finish_stream(&self) -> Result<String, String> {
+    fn finish_stream(&self, request_id: u64) -> Result<Option<BubbleEndPayload>, String> {
         let mut activity = self.activity.lock().map_err(|e| e.to_string())?;
-        let text = self
-            .pending_text
-            .lock()
-            .map_err(|e| e.to_string())
-            .map(|pending| pending.clone().unwrap_or_default());
+        if !activity.generating
+            || activity.request.as_ref().map(|r| r.request_id) != Some(request_id)
+        {
+            return Ok(None);
+        }
+        let final_text = BubbleEndPayload {
+            request_id,
+            text: activity.text.clone(),
+        };
         activity.generating = false;
-        text
+        Ok(Some(final_text))
+    }
+
+    /// 原子读取请求元数据、正文和状态，避免把旧轮询结果当成新回复。
+    fn snapshot(&self) -> Result<BubbleSnapshot, String> {
+        let activity = self.activity.lock().map_err(|e| e.to_string())?;
+        Ok(BubbleSnapshot {
+            request_id: activity.request.as_ref().map(|r| r.request_id),
+            user_text: activity.request.as_ref().map(|r| r.user_text.clone()),
+            source: activity.request.as_ref().map(|r| r.source),
+            text: activity.text.clone(),
+            streaming: activity.generating,
+        })
     }
 
     /// 普通通知仅在会话空闲时写入，避免在途观察覆盖流式正文或阅读内容。
@@ -264,21 +347,35 @@ impl Default for SharedBubble {
 }
 
 /// 回复结束时的正文快照；空串也是明确的最终结果。
-#[derive(serde::Serialize, Clone)]
+#[derive(Debug, PartialEq, Eq, serde::Serialize, Clone)]
 pub struct BubbleEndPayload {
+    /// 这条最终正文所属的请求。
+    pub request_id: u64,
+    /// 完整最终正文；空串不能回退到上一轮。
     pub text: String,
 }
 
 #[derive(serde::Serialize, Clone)]
 pub struct BubbleToolPayload {
+    /// 工具事件所属的请求，前端据此过滤迟到的状态。
+    pub request_id: u64,
+    /// 工具 schema 名称。
     pub tool_name: String,
+    /// 工具的人类可读名称。
     pub label: String,
+    /// 工具类别。
     pub kind: String,
+    /// planned、blocked、finished 或 failed。
     pub phase: String,
+    /// 模型服务提供的调用编号。
     pub call_id: Option<String>,
+    /// rig 在当前调用内生成的编号。
     pub internal_call_id: String,
+    /// 供诊断使用的简短结果。
     pub result_preview: Option<String>,
+    /// 执行是否成功；准备阶段为空。
     pub success: Option<bool>,
+    /// 调用耗时，单位为毫秒。
     pub elapsed_ms: Option<u64>,
 }
 
@@ -419,9 +516,9 @@ pub fn precreate_bubble_window(app: &AppHandle) -> Result<(), tauri::Error> {
 ///
 /// 新窗口的 WebView2 可能尚未注册监听，前端初次拉取已有累积文本作为兜底。
 /// 已有窗口使用开始事件重新启动轮询，覆盖语音等未经过输入框提交的对话。
-pub fn start_streaming_bubble(app: &AppHandle) -> Result<(), String> {
+pub fn start_streaming_bubble(app: &AppHandle, request: &ChatRequest) -> Result<(), String> {
     let state: State<SharedBubble> = app.state();
-    state.begin_stream()?;
+    state.begin_stream(request)?;
 
     let window = match app.get_webview_window("bubble") {
         Some(w) => w,
@@ -431,48 +528,60 @@ pub fn start_streaming_bubble(app: &AppHandle) -> Result<(), String> {
     // Windows WebView2: builder 的 background_color 可能不够，运行时再设一次确保透明
     let _ = window.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
     let _ = window.show();
-    let _ = app.emit_to("bubble", "bubble-start", ());
+    let _ = app.emit_to("bubble", "bubble-start", request.clone());
     Ok(())
 }
 
-/// 流式追加：累加到 `pending_text`，前端轮询读取完整累积文本。
-pub fn append_bubble_chunk(app: &AppHandle, chunk: &str) -> Result<(), String> {
+/// 流式追加：写入对应请求的正文，前端通过独立快照读取累计文本。
+pub fn append_bubble_chunk(app: &AppHandle, request_id: u64, chunk: &str) -> Result<(), String> {
     let state: State<SharedBubble> = app.state();
-    state.append_stream_text(chunk)
+    state.append_stream_text(request_id, chunk)
 }
 
 /// 显示用户请求的静态反馈，复用开始、累积正文、结束的完整回复协议。
 ///
 /// 与普通通知不同，它可以回应已经打开的会话；启动或写入失败时也尝试结束生成。
-pub fn show_chat_message(app: &AppHandle, text: &str) -> Result<(), String> {
-    let result = start_streaming_bubble(app).and_then(|_| append_bubble_chunk(app, text));
-    let finished = finalize_bubble(app);
+pub fn show_chat_message(app: &AppHandle, request: &ChatRequest, text: &str) -> Result<(), String> {
+    let result = start_streaming_bubble(app, request)
+        .and_then(|_| append_bubble_chunk(app, request.request_id, text));
+    let finished = finalize_bubble(app, request.request_id);
     result.and(finished)
 }
 
 /// 发送工具运行时事件。工具状态独立于正文，不写入 pending_text。
 pub fn emit_tool_event(app: &AppHandle, payload: BubbleToolPayload) -> Result<(), String> {
+    let state: State<SharedBubble> = app.state();
+    let snapshot = state.snapshot()?;
+    if snapshot.request_id != Some(payload.request_id) || !snapshot.streaming {
+        return Ok(());
+    }
     let _ = app.emit_to("bubble", "bubble-tool-event", payload);
     Ok(())
 }
 
 /// 流式结束：先取得正文快照再释放生成保护，保留用户聊天/阅读的保护。
 ///
-/// `bubble-end` 携带最终 `{ text }`，避免收起会话后的普通通知覆盖前端待读取的回复。
-pub fn finalize_bubble(app: &AppHandle) -> Result<(), String> {
+/// `bubble-end` 携带请求编号与最终正文，避免旧请求或普通通知覆盖当前回复。
+pub fn finalize_bubble(app: &AppHandle, request_id: u64) -> Result<(), String> {
     let state: State<SharedBubble> = app.state();
-    let text = state.finish_stream();
-    // 即使正文读取失败也通知前端结束等待，原始错误由调用方写入诊断日志。
-    let ended = app
-        .emit_to(
-            "bubble",
-            "bubble-end",
-            BubbleEndPayload {
-                text: text.as_ref().cloned().unwrap_or_default(),
-            },
-        )
-        .map_err(|e| e.to_string());
-    text.map(|_| ()).and(ended)
+    match state.finish_stream(request_id) {
+        Ok(Some(payload)) => app
+            .emit_to("bubble", "bubble-end", payload)
+            .map_err(|e| e.to_string()),
+        Ok(None) => Ok(()),
+        Err(error) => {
+            state.release_generation(request_id);
+            let _ = app.emit_to(
+                "bubble",
+                "bubble-end",
+                BubbleEndPayload {
+                    request_id,
+                    text: String::new(),
+                },
+            );
+            Err(error)
+        }
+    }
 }
 
 /// 启动独立的气泡跟随线程，普通回应随宠物移动，主动聊天与阅读时保持位置。
@@ -672,6 +781,14 @@ pub async fn cmd_consume_bubble_text(
     Ok(t.clone())
 }
 
+/// 读取当前请求的原文、来源、正文和生成状态，普通通知走旧 consume 接口。
+#[tauri::command]
+pub async fn cmd_get_bubble_snapshot(
+    state: State<'_, SharedBubble>,
+) -> Result<BubbleSnapshot, String> {
+    state.snapshot()
+}
+
 /// 前端收起或普通通知自动隐藏时调用，结束交互并隐藏窗口。
 #[tauri::command]
 pub async fn cmd_hide_bubble(app: AppHandle) -> Result<(), String> {
@@ -732,6 +849,7 @@ mod tests {
     #[test]
     fn test_tool_payload_serializes() {
         let p = BubbleToolPayload {
+            request_id: 1,
             tool_name: "perform_dance".into(),
             label: "编排舞蹈".into(),
             kind: "performance".into(),
@@ -763,102 +881,124 @@ mod tests {
         assert!(json.contains("data"));
     }
 
-    // ---- 生成与用户交互的独立保护 ----
+    // ---- 请求所有权、交互保护与独立通知 ----
+
+    fn chat_request(request_id: u64, user_text: &str, source: ChatSource) -> ChatRequest {
+        ChatRequest {
+            request_id,
+            user_text: user_text.into(),
+            source,
+        }
+    }
 
     #[test]
     fn test_chat_active_default_false() {
         let b = SharedBubble::new();
         assert!(!b.is_chat_active());
         assert!(!b.is_interacting());
+        assert_eq!(
+            b.snapshot().unwrap(),
+            BubbleSnapshot {
+                request_id: None,
+                user_text: None,
+                source: None,
+                text: String::new(),
+                streaming: false,
+            }
+        );
     }
 
     #[test]
     fn test_generation_completion_preserves_reading_and_reply() {
         let b = SharedBubble::new();
         b.set_interaction_active(true);
-        b.begin_stream().unwrap();
-        *b.pending_text.lock().unwrap() = Some("正在阅读的回复".into());
-
-        // 生成完成或停止只释放生成保护，阅读中的正文仍不能被观察结果覆盖。
-        b.set_generation_active(false);
+        b.begin_stream(&chat_request(1, "请回答", ChatSource::Text))
+            .unwrap();
+        b.append_stream_text(1, "正在阅读的回复").unwrap();
+        let end = b.finish_stream(1).unwrap().unwrap();
         assert!(b.is_chat_active());
         assert!(b.is_interacting());
         assert!(!b.set_notice_text("后台屏幕观察").unwrap());
         assert_eq!(
-            b.pending_text.lock().unwrap().as_deref(),
-            Some("正在阅读的回复")
+            end,
+            BubbleEndPayload {
+                request_id: 1,
+                text: "正在阅读的回复".into()
+            }
         );
-
+        assert_eq!(b.snapshot().unwrap().text, end.text);
         b.set_interaction_active(false);
         assert!(!b.is_chat_active());
-        assert!(!b.is_interacting());
         assert!(b.set_notice_text("新的轻提示").unwrap());
+        assert_eq!(b.snapshot().unwrap().text, "正在阅读的回复");
     }
 
     #[test]
     fn test_collapsing_chat_preserves_in_progress_generation() {
         let b = SharedBubble::new();
         b.set_interaction_active(true);
-        b.begin_stream().unwrap();
-        *b.pending_text.lock().unwrap() = Some("尚未说完".into());
-
-        // 隐藏窗口或退出输入不代表当前请求已经结束。
+        b.begin_stream(&chat_request(1, "请回答", ChatSource::Text))
+            .unwrap();
+        b.append_stream_text(1, "尚未说完").unwrap();
         b.set_interaction_active(false);
         assert!(b.is_chat_active());
         assert!(!b.is_interacting());
         assert!(!b.set_notice_text("后台摄像头观察").unwrap());
-        assert_eq!(b.pending_text.lock().unwrap().as_deref(), Some("尚未说完"));
-
-        b.set_generation_active(false);
+        assert_eq!(b.snapshot().unwrap().text, "尚未说完");
+        b.finish_stream(1).unwrap();
         assert!(!b.is_chat_active());
-        assert_eq!(b.pending_text.lock().unwrap().as_deref(), Some("尚未说完"));
+        assert_eq!(b.snapshot().unwrap().text, "尚未说完");
     }
 
     #[test]
-    fn test_new_reply_replaces_idle_notice_and_blocks_new_notice() {
+    fn test_new_reply_clears_idle_notice_and_keeps_true_voice_question() {
         let b = SharedBubble::new();
         assert!(b.set_notice_text("之前的轻提示").unwrap());
-        b.begin_stream().unwrap();
+        b.begin_stream(&chat_request(7, "这是语音识别的原话", ChatSource::Voice))
+            .unwrap();
         assert!(b.is_chat_active());
         assert!(!b.is_interacting());
-        assert_eq!(b.pending_text.lock().unwrap().as_deref(), Some(""));
+        assert_eq!(b.pending_text.lock().unwrap().as_deref(), None);
         assert!(!b.set_notice_text("刚返回的屏幕观察").unwrap());
-        assert_eq!(b.pending_text.lock().unwrap().as_deref(), Some(""));
+        assert_eq!(
+            b.snapshot().unwrap(),
+            BubbleSnapshot {
+                request_id: Some(7),
+                user_text: Some("这是语音识别的原话".into()),
+                source: Some(ChatSource::Voice),
+                text: String::new(),
+                streaming: true,
+            }
+        );
     }
 
     #[test]
-    fn test_static_chat_feedback_completes_with_reading_protected() {
+    fn test_static_chat_feedback_completes_once_with_reading_protected() {
         let b = SharedBubble::new();
         b.set_interaction_active(true);
-        assert!(!b.set_notice_text("后台观察").unwrap());
-
-        b.begin_stream().unwrap();
-        b.append_stream_text("对话暂时不可用，请检查设置后再试。")
+        b.begin_stream(&chat_request(1, "原始请求", ChatSource::Text))
             .unwrap();
-        b.set_generation_active(false);
-
-        assert!(!b.activity.lock().unwrap().generating);
+        b.append_stream_text(1, "对话暂时不可用，请检查设置后再试。")
+            .unwrap();
+        let end = b.finish_stream(1).unwrap().unwrap();
+        assert_eq!(end.request_id, 1);
+        assert!(!b.snapshot().unwrap().streaming);
         assert!(b.is_interacting());
         assert!(!b.set_notice_text("后返回的后台观察").unwrap());
-        assert_eq!(
-            b.pending_text.lock().unwrap().as_deref(),
-            Some("对话暂时不可用，请检查设置后再试。")
-        );
+        assert_eq!(b.finish_stream(1).unwrap(), None);
     }
 
     #[test]
     fn test_final_reply_snapshot_survives_notice_after_collapse() {
         let b = SharedBubble::new();
-        b.set_interaction_active(true);
-        b.begin_stream().unwrap();
-        b.append_stream_text("收起时仍在生成的最终回复").unwrap();
+        b.begin_stream(&chat_request(1, "原始请求", ChatSource::Gamepad))
+            .unwrap();
+        b.append_stream_text(1, "收起时仍在生成的最终回复").unwrap();
         b.set_interaction_active(false);
-
-        let final_text = b.finish_stream().unwrap();
-        assert!(!b.is_chat_active());
+        let end = b.finish_stream(1).unwrap().unwrap();
         assert!(b.set_notice_text("后到的普通通知").unwrap());
-
-        assert_eq!(final_text, "收起时仍在生成的最终回复");
+        assert_eq!(end.text, "收起时仍在生成的最终回复");
+        assert_eq!(b.snapshot().unwrap().text, end.text);
         assert_eq!(
             b.pending_text.lock().unwrap().as_deref(),
             Some("后到的普通通知")
@@ -866,13 +1006,42 @@ mod tests {
     }
 
     #[test]
-    fn test_pending_accumulates() {
+    fn test_old_finish_and_guard_cannot_touch_new_request() {
         let b = SharedBubble::new();
-        b.begin_stream().unwrap();
-        b.append_stream_text("Hello").unwrap();
-        b.append_stream_text(" World").unwrap();
-        let taken = b.pending_text.lock().unwrap().take();
-        assert_eq!(taken, Some("Hello World".to_string()));
+        b.begin_stream(&chat_request(1, "上一句", ChatSource::Text))
+            .unwrap();
+        b.append_stream_text(1, "上一轮回复").unwrap();
+        b.finish_stream(1).unwrap();
+        b.begin_stream(&chat_request(2, "下一句", ChatSource::Voice))
+            .unwrap();
+        b.append_stream_text(2, "新回复").unwrap();
+        b.release_generation(1);
+        assert_eq!(b.finish_stream(1).unwrap(), None);
+        assert!(b.append_stream_text(1, "迟到的旧字").is_err());
+        assert_eq!(
+            b.snapshot().unwrap(),
+            BubbleSnapshot {
+                request_id: Some(2),
+                user_text: Some("下一句".into()),
+                source: Some(ChatSource::Voice),
+                text: "新回复".into(),
+                streaming: true,
+            }
+        );
+    }
+
+    #[test]
+    fn test_pending_accumulates_only_for_the_owner() {
+        let b = SharedBubble::new();
+        b.begin_stream(&chat_request(1, "原始请求", ChatSource::Text))
+            .unwrap();
+        b.append_stream_text(1, "Hello").unwrap();
+        b.append_stream_text(1, " World").unwrap();
+        assert!(b
+            .begin_stream(&chat_request(2, "意外并发", ChatSource::Voice))
+            .is_err());
+        assert_eq!(b.snapshot().unwrap().text, "Hello World");
+        assert_eq!(b.pending_text.lock().unwrap().as_deref(), None);
     }
 
     // ---- Cycle 1: WM_MOUSEWHEEL 参数构建 ----

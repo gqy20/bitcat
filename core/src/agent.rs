@@ -482,10 +482,10 @@ fn result_tool_event(
 fn repeated_tool_failure_message(tool_name: &str, failures: usize) -> String {
     match tool_name {
         "create_reminder" => format!(
-            "提醒没有创建成功：create_reminder 连续失败 {failures} 次。请不要继续重试工具，告诉主人提醒没有创建成功，并说明最后一次工具错误；如果时间不明确，请主人换成更明确的时间。"
+            "提醒没有创建成功：create_reminder 连续失败 {failures} 次。请不要继续重试工具，告诉用户提醒没有创建成功，并说明最后一次工具错误；如果时间不明确，请用户换成更明确的时间。"
         ),
         _ => format!(
-            "{tool_name} 连续失败 {failures} 次。请不要继续重试工具，告诉主人这次操作没有完成，并说明最后一次错误。"
+            "{tool_name} 连续失败 {failures} 次。请不要继续重试工具，告诉用户这次操作没有完成，并说明最后一次错误。"
         ),
     }
 }

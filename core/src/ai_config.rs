@@ -5,6 +5,7 @@
 //! read-only settings file, and system environment variables. The precedence is:
 //! app settings > exe `.env` > `~/.claude/settings.json` > system environment >
 //! built-in defaults.
+//! Known GLM context hints inherited from a CLI are removed from the wire model id.
 
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -72,7 +73,7 @@ impl AiConfig {
         Ok(Self {
             api_key,
             base_url,
-            model,
+            model: normalize_model_name(&model),
         })
     }
 
@@ -99,6 +100,17 @@ impl AiConfig {
             return n;
         }
         model_max_tokens(&self.model)
+    }
+}
+
+/// GLM 的 `[1m]` 是 CLI 上下文提示，不属于已验证的 Anthropic 兼容接口模型名。
+/// 保留实际 GLM 型号、其他模型和自定义部署名，不隐式切换模型或修改配置文件。
+fn normalize_model_name(model: &str) -> String {
+    let model = model.trim();
+    if model.to_ascii_lowercase().starts_with("glm-") {
+        model.strip_suffix("[1m]").unwrap_or(model).to_string()
+    } else {
+        model.to_string()
     }
 }
 
@@ -308,12 +320,26 @@ mod tests {
         assert_eq!(model_max_tokens("some-unknown-model"), 256_000);
     }
 
+    #[rstest::rstest]
+    #[case("glm-5.3[1m]", "glm-5.3")]
+    #[case(" GLM-5.3[1m] ", "GLM-5.3")]
+    #[case("glm-5.3", "glm-5.3")]
+    #[case("claude-sonnet-4-6", "claude-sonnet-4-6")]
+    #[case("deployment[1m]", "deployment[1m]")]
+    #[case("glm-5.3[custom]", "glm-5.3[custom]")]
+    fn test_wire_model_preserves_type_and_handles_glm_context_hint(
+        #[case] configured: &str,
+        #[case] wire_name: &str,
+    ) {
+        assert_eq!(normalize_model_name(configured), wire_name);
+    }
+
     #[test]
     fn test_config_max_tokens_from_real_settings() {
         if let Ok(cfg) = AiConfig::load() {
             let mt = cfg.max_tokens();
             assert!(mt > 0);
-            eprintln!("model: {}, max_tokens: {}", cfg.model, mt);
+            tracing::debug!(model = %cfg.model, max_tokens = mt, "validated AI output budget");
         }
     }
 }

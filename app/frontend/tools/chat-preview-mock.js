@@ -7,14 +7,14 @@
   const listeners = new Map();
   const resizeListeners = new Set();
   const state = {
-    text: null, next: 'short', timer: null, startTimer: null,
-    generation: false, interaction: false, runId: 0, shortCount: 0,
-    submissions: [], sizes: [],
+    text: '', noticeText: null, next: 'short', timer: null, startTimer: null,
+    generation: false, interaction: false, requestId: null, userText: null, source: null,
+    nextId: 0, cancelledThrough: 0, queue: [], shortCount: 0, submissions: [], sizes: [],
   };
   const shortReplies = [
-    '我在呢。今天可以慢一点。\n\n先做一件小事，剩下的我们再一起想。',
-    '先选一件十分钟内能完成的小事吧。\n\n做完以后歇一会儿，再决定下一步。',
-    '好，我们就按这个节奏来。\n\n你可以接着说，我会认真听。',
+    '我在呢。今天可以慢一点。\n\n想聊就说，安静待一会儿也可以。',
+    '先看眼前这一小步就好。\n\n剩下的可以等你准备好了再说。',
+    '好，我听着。\n\n我们按你觉得舒服的节奏来。',
   ];
   const longReply = [
     '## 先留一点余量',
@@ -38,23 +38,67 @@
   function notifyParent(data) {
     parent.postMessage(data, previewOrigin);
   }
-  function generate(text, runId, kind) {
-    if (runId !== state.runId) return;
+  function requestMeta(request) {
+    return { request_id: request.id, user_text: request.userText, source: request.source };
+  }
+
+  function scheduleNext() {
+    clearTimeout(state.startTimer);
+    if (!state.generation && state.queue.length > 0) state.startTimer = setTimeout(startNext, 110);
+  }
+
+  function startNext() {
+    if (state.generation) return;
+    const request = state.queue.shift();
+    if (!request) return;
+    if (request.id <= state.cancelledThrough) { scheduleNext(); return; }
     clearInterval(state.timer);
+    state.requestId = request.id;
+    state.userText = request.userText;
+    state.source = request.source;
+    state.noticeText = null;
     state.text = '';
     state.generation = true;
-    emit('bubble-start');
+    emit('bubble-start', requestMeta(request));
+    if (request.kind === 'tool') {
+      showTool(request.phase, request.details);
+      return;
+    }
     let cursor = 0;
     state.timer = setInterval(() => {
-      if (runId !== state.runId) { clearInterval(state.timer); return; }
-      cursor += kind === 'long' ? 12 : 3;
-      state.text = text.slice(0, cursor);
-      if (cursor >= text.length) {
+      if (state.requestId !== request.id || request.id <= state.cancelledThrough) return;
+      cursor += request.kind === 'long' ? 12 : 3;
+      state.text = request.reply.slice(0, cursor);
+      if (cursor >= request.reply.length) {
         clearInterval(state.timer);
         state.generation = false;
-        emit('bubble-end', { text: state.text });
+        emit('bubble-end', { request_id: request.id, text: state.text });
+        scheduleNext();
       }
     }, 90);
+  }
+
+  function accept(userText, source, kind) {
+    const request = {
+      id: ++state.nextId, userText, source, kind,
+      reply: kind === 'long' ? longReply : shortReplies[state.shortCount++ % shortReplies.length],
+    };
+    state.queue.push(request);
+    emit('bubble-queued', requestMeta(request));
+    scheduleNext();
+    return { request_id: request.id };
+  }
+
+  function showTool(phase, details) {
+    const payload = Object.assign({ request_id: state.requestId, tool_name: 'create_reminder', phase, kind: 'utility' }, details);
+    emit('bubble-tool-event', payload);
+    if (payload.request_id !== state.requestId) return;
+    if (payload.phase === 'failed' || payload.phase === 'blocked' || payload.phase === 'finished') {
+      clearInterval(state.timer);
+      state.generation = false;
+      emit('bubble-end', { request_id: state.requestId, text: state.text || '' });
+      scheduleNext();
+    }
   }
 
   const currentWindow = {
@@ -76,16 +120,26 @@
   window.__TAURI__ = {
     core: {
       invoke(command, args) {
-        if (command === 'cmd_consume_bubble_text') return Promise.resolve(state.text);
+        if (command === 'cmd_consume_bubble_text') return Promise.resolve(state.noticeText);
+        if (command === 'cmd_get_bubble_snapshot') return Promise.resolve({
+          request_id: state.requestId, user_text: state.userText, source: state.source,
+          text: state.text, streaming: state.generation,
+        });
         if (command === 'cmd_enter_chat') state.interaction = true;
         if (command === 'cmd_exit_chat') state.interaction = false;
         if (command === 'cmd_hide_bubble') notifyParent({ type: 'hidden' });
         if (command === 'cmd_cancel_chat') {
-          state.runId += 1;
+          const through = args && args.throughRequestId || state.nextId;
+          state.cancelledThrough = Math.max(state.cancelledThrough, through);
+          state.queue = state.queue.filter(request => request.id > through);
           clearTimeout(state.startTimer);
-          clearInterval(state.timer);
-          state.generation = false;
-          emit('bubble-cancelled');
+          if (state.requestId <= through) {
+            clearInterval(state.timer);
+            state.generation = false;
+          }
+          emit('bubble-cancelled', { request_id: through });
+          scheduleNext();
+          return Promise.resolve({ request_id: through });
         }
         if (command === 'cmd_submit_chat') {
           const kind = state.next;
@@ -94,11 +148,7 @@
             state.next = 'short';
             return Promise.reject(new Error('preview submission failure'));
           }
-          const reply = kind === 'long' ? longReply : shortReplies[state.shortCount++ % shortReplies.length];
-          const runId = ++state.runId;
-          state.text = '';
-          clearTimeout(state.startTimer);
-          state.startTimer = setTimeout(() => generate(reply, runId, kind), 110);
+          return Promise.resolve(accept(args.text, 'text', kind));
         }
         return Promise.resolve();
       },
@@ -119,29 +169,25 @@
     state,
     open() { notifyParent({ type: 'shown' }); emit('chat-open'); },
     next(kind) { state.next = kind; },
+    enqueue(text, source = 'voice') { return accept(text, source, state.next); },
     notice() {
-      if (state.generation || state.interaction) return false;
-      state.text = '我在这里，慢慢来。';
+      if (state.generation || state.interaction || state.queue.length > 0) return false;
+      state.noticeText = '我在这里，慢慢来。';
       notifyParent({ type: 'shown' });
       window.__bubble_onShow();
       return true;
     },
     tool(phase, details) {
       if (!state.generation) {
-        state.runId += 1;
-        clearTimeout(state.startTimer);
-        clearInterval(state.timer);
-        state.text = '';
-        state.generation = true;
-        emit('bubble-start');
+        const request = {
+          id: ++state.nextId, userText: '预览中的提醒操作', source: 'gamepad', kind: 'tool', phase, details,
+        };
+        state.queue.push(request);
+        emit('bubble-queued', requestMeta(request));
+        scheduleNext();
+        return;
       }
-      emit('bubble-tool-event', Object.assign({ tool_name: 'create_reminder', phase, kind: 'utility' }, details));
-      if (phase === 'failed' || phase === 'blocked' || phase === 'finished') {
-        clearTimeout(state.startTimer);
-        clearInterval(state.timer);
-        state.generation = false;
-        emit('bubble-end', { text: state.text || '' });
-      }
+      showTool(phase, details);
     },
   };
   window.addEventListener('pagehide', () => {

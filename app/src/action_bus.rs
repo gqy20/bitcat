@@ -105,6 +105,23 @@ pub enum ActionSource {
 pub struct ActionBus;
 
 impl ActionBus {
+    /// 统一提交文字、语音和手柄请求；正文仅由单一 chat_loop 执行。
+    pub fn submit_chat(
+        app: &AppHandle,
+        text: String,
+        chat_source: crate::bubble::ChatSource,
+        source: ActionSource,
+    ) -> Result<crate::bubble::ChatSubmission, String> {
+        info!(
+            ?source,
+            ?chat_source,
+            text_chars = text.chars().count(),
+            action = "SubmitChat",
+            "action dispatch"
+        );
+        crate::gamepad::queue_chat(app, text, chat_source)
+    }
+
     /// 把 `ActionDef`（yml 解析结果）翻译为强类型 [`Action`]。
     ///
     /// 只处理**无状态**动作；`voice` 返回 `None`（由 gamepad 物理层管理）；
@@ -165,15 +182,17 @@ impl ActionBus {
                 open_chat_impl(app);
             }
             Action::SubmitChat(text) => {
-                let text_preview = log_preview(text, 80);
-                info!(
-                    ?source,
-                    action = "SubmitChat",
-                    text_chars = text.chars().count(),
-                    text_preview = %text_preview,
-                    "action dispatch"
-                );
-                submit_chat_impl(app, text.clone());
+                let chat_source = if matches!(
+                    source,
+                    ActionSource::Gamepad { .. } | ActionSource::Keyboard { .. }
+                ) {
+                    crate::bubble::ChatSource::Gamepad
+                } else {
+                    crate::bubble::ChatSource::Text
+                };
+                if let Err(error) = Self::submit_chat(app, text.clone(), chat_source, source) {
+                    warn!(%error, "chat request not accepted");
+                }
             }
             Action::PlayDance(name) => {
                 info!(?source, action = "PlayDance", dance = %name, "action dispatch");
@@ -305,30 +324,6 @@ pub(crate) fn action_for_start_game_kind(kind: bitcat_core::game_request::StartG
         bitcat_core::game_request::StartGameKind::Arena => Action::PlayArenaDefault,
         bitcat_core::game_request::StartGameKind::Beads => Action::PlayBeadsDefault,
         bitcat_core::game_request::StartGameKind::Invasion => Action::PlayInvasionDefault,
-    }
-}
-
-/// 先预留取消编号，再将请求写入 [`SharedPendingChat`]，由 chat_loop 消费。
-fn submit_chat_impl(app: &AppHandle, text: String) {
-    let trimmed = text.trim().to_string();
-    if trimmed.is_empty() {
-        warn!("empty SubmitChat action skipped");
-        return;
-    }
-    let cancel: tauri::State<'_, crate::gamepad::SharedChatCancel> = tauri::Manager::state(app);
-    let generation = cancel.begin_chat();
-    let state: tauri::State<'_, crate::gamepad::SharedPendingChat> = tauri::Manager::state(app);
-    if let Err(e) = state.set(crate::gamepad::PendingChatRequest {
-        text: trimmed,
-        generation,
-    }) {
-        warn!(error = %e, "SharedPendingChat write failed");
-        if let Err(e) = crate::bubble::show_chat_message(
-            app,
-            "这句话没有发出去。对话暂时不能继续，请重启应用后再试。",
-        ) {
-            warn!(error = %e, "pending chat failure feedback failed");
-        }
     }
 }
 

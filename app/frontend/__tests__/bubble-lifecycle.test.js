@@ -46,6 +46,7 @@ describe('bubble production lifecycle', () => {
   let dom;
   let registeredListeners;
   let currentWindow;
+  let server;
 
   beforeEach(async () => {
     vi.useFakeTimers();
@@ -67,15 +68,45 @@ describe('bubble production lifecycle', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
 
     handlers = new Map();
+    server = { nextId: 0, currentId: null, streaming: false, autoStart: true, requests: new Map(), lastCancelThrough: 0 };
     api = {
       consume: vi.fn().mockResolvedValue('我在这里。'),
       submit: vi.fn().mockResolvedValue(undefined),
       cancel: vi.fn().mockResolvedValue(undefined),
+      snapshot: vi.fn(() => {
+        const request = server.requests.get(server.currentId);
+        if (!request) return Promise.resolve({ request_id: null, user_text: null, source: null, text: '', streaming: false });
+        const owner = { ...request, streaming: server.streaming };
+        return api.consume().then((text) => ({ ...owner, text: text || '' }));
+      }),
     };
     invoke = vi.fn((command, args) => {
       if (command === 'cmd_consume_bubble_text') return api.consume(args);
-      if (command === 'cmd_submit_chat') return api.submit(args);
-      if (command === 'cmd_cancel_chat') return api.cancel(args);
+      if (command === 'cmd_get_bubble_snapshot') return api.snapshot(args);
+      if (command === 'cmd_submit_chat') {
+        const request = { request_id: ++server.nextId, user_text: args.text, source: 'text', started: false };
+        server.requests.set(request.request_id, request);
+        return api.submit(args).then((acknowledgement) => {
+          const id = acknowledgement?.request_id || request.request_id;
+          const accepted = { ...request, request_id: id };
+          server.requests.set(id, accepted);
+          if (server.autoStart && !accepted.started && !server.streaming) {
+            accepted.started = true;
+            server.currentId = id;
+            server.streaming = true;
+          }
+          handlers.get('bubble-queued')?.({ payload: accepted });
+          return { request_id: id };
+        });
+      }
+      if (command === 'cmd_cancel_chat') {
+        const through = args.throughRequestId;
+        return api.cancel(args).then((result) => {
+          server.lastCancelThrough = through;
+          if (server.currentId <= through) server.streaming = false;
+          return result || { request_id: through };
+        });
+      }
       return Promise.resolve(undefined);
     });
     currentWindow = {
@@ -117,6 +148,9 @@ describe('bubble production lifecycle', () => {
     handlers.clear();
     invoke.mockClear();
     api.consume.mockClear().mockResolvedValue(initialText);
+    server.currentId = null;
+    server.streaming = false;
+    server.requests.clear();
     const page = new DOMParser().parseFromString(bubbleHtml, 'text/html');
     document.documentElement.innerHTML = page.documentElement.innerHTML;
     document.documentElement.removeAttribute('style');
@@ -154,7 +188,35 @@ describe('bubble production lifecycle', () => {
 
   async function emit(name, payload) {
     expect(handlers.has(name), `生产脚本应监听 ${name}`).toBe(true);
-    await handlers.get(name)({ payload });
+    let bound = payload;
+    if (name === 'bubble-start' || name === 'bubble-queued') {
+      let id = payload?.request_id || server.nextId;
+      if (!id) id = ++server.nextId;
+      const request = {
+        request_id: id, user_text: '', source: 'voice',
+        ...server.requests.get(id), ...payload,
+      };
+      server.nextId = Math.max(server.nextId, id);
+      if (name === 'bubble-start') {
+        request.started = true;
+        server.currentId = id;
+        server.streaming = true;
+      }
+      server.requests.set(id, request);
+      bound = request;
+    } else if (name === 'bubble-end') {
+      bound = {
+        request_id: payload?.request_id || server.currentId,
+        text: payload && typeof payload.text === 'string' ? payload.text : (await api.consume()) || '',
+      };
+      if (bound.request_id === server.currentId) server.streaming = false;
+    } else if (name === 'bubble-cancelled') {
+      bound = { request_id: payload?.request_id || server.lastCancelThrough || server.currentId };
+      if (server.currentId <= bound.request_id) server.streaming = false;
+    } else if (name === 'bubble-tool-event') {
+      bound = { request_id: server.currentId, ...payload };
+    }
+    await handlers.get(name)({ payload: bound });
     await flushPromises();
   }
 
@@ -197,6 +259,333 @@ describe('bubble production lifecycle', () => {
     await flushPromises();
     await emit('bubble-start');
   }
+
+  it.each(['voice', 'gamepad'])('queues an accepted %s message without replacing the current conversation', async (source) => {
+    await beginReply('先回答当前的问题');
+    api.consume.mockResolvedValue('当前回复正在逐步展开。');
+    await vi.advanceTimersByTimeAsync(120);
+    typeDraft('还没发送的下一句');
+    const next = { request_id: 2, user_text: '另外一个输入来源的新问题', source };
+    await emit('bubble-queued', next);
+
+    expect(document.getElementById('userMessage').textContent).toBe('先回答当前的问题');
+    expect(dom.body.textContent).toContain('当前回复正在逐步展开');
+    expect(document.getElementById('chatFeedback').textContent).toBe('已收到，等这句说完');
+    expect(document.getElementById('conversationHistory').textContent).toBe('');
+    await emit('bubble-tool-event', { request_id: 2, tool_name: 'create_reminder', phase: 'failed' });
+    expect(isVisible(document.getElementById('toolStatus'))).toBe(false);
+
+    await emit('bubble-end', { request_id: 1, text: '当前问题已经完整回答。' });
+    api.consume.mockResolvedValue('这才是排队问题的回复。');
+    await emit('bubble-start', next);
+    expect(document.getElementById('userMessage').textContent).toBe(next.user_text);
+    expect(dom.body.textContent).toContain('这才是排队问题的回复');
+    expect(document.getElementById('conversationHistory').textContent).toContain('当前问题已经完整回答');
+    expect(dom.input.value).toBe('还没发送的下一句');
+    expect(document.getElementById('chatFeedback').hidden).toBe(true);
+  });
+
+  it('keeps the new owner when old tool, end, cancellation and snapshot results arrive', async () => {
+    await beginReply('第一轮');
+    const oldRead = deferred();
+    api.snapshot.mockImplementationOnce(() => oldRead.promise);
+    await vi.advanceTimersByTimeAsync(120);
+    await emit('bubble-end', { request_id: 1, text: '第一轮的完整结果。' });
+    api.consume.mockResolvedValue('第二轮正在生成的内容。');
+    await emit('bubble-start', { request_id: 2, user_text: '第二轮真实问题', source: 'voice' });
+    await emit('bubble-tool-event', { request_id: 1, phase: 'failed', tool_name: 'read_file' });
+    await emit('bubble-end', { request_id: 1, text: '第一轮迟到的旧结果。' });
+    await emit('bubble-cancelled', { request_id: 1 });
+    oldRead.resolve({ request_id: 1, user_text: '第一轮', source: 'text', text: '第一轮迟到的轮询内容。', streaming: true });
+    await flushPromises();
+
+    expect(document.getElementById('userMessage').textContent).toBe('第二轮真实问题');
+    expect(dom.body.textContent).toContain('第二轮正在生成的内容');
+    expect(dom.content.textContent).not.toContain('第一轮迟到');
+    expect(isVisible(document.getElementById('toolStatus'))).toBe(false);
+    expect(dom.send.getAttribute('aria-label')).toBe('停止回复');
+    await emit('bubble-end', { request_id: 2, text: '第二轮正常完成。' });
+    expect(dom.body.textContent).toContain('第二轮正常完成');
+  });
+
+  it('preserves a newly written identical draft when start and end arrive before the acknowledgement', async () => {
+    const acknowledgement = deferred();
+    api.submit.mockImplementationOnce(() => acknowledgement.promise);
+    server.autoStart = false;
+    await openChat();
+    typeDraft('再说一次同样的话');
+    pressEnter();
+    await flushPromises();
+    const request = { request_id: 1, user_text: '再说一次同样的话', source: 'text' };
+    await emit('bubble-queued', request);
+    await emit('bubble-start', request);
+    await emit('bubble-end', { request_id: 1, text: '这一轮已经结束。' });
+    typeDraft('再说一次同样的话');
+    const reads = api.snapshot.mock.calls.length;
+    acknowledgement.resolve();
+    await flushPromises();
+
+    expect(api.snapshot.mock.calls.length).toBe(reads);
+    expect(dom.input.value).toBe('再说一次同样的话');
+    expect(dom.body.textContent).toContain('这一轮已经结束');
+    expect(dom.send.getAttribute('aria-label')).toBe('发送消息');
+  });
+
+  it('does not let an old acknowledgement replace a newer voice question', async () => {
+    const acknowledgement = deferred();
+    api.submit.mockImplementationOnce(() => acknowledgement.promise);
+    await openChat();
+    typeDraft('文字问题');
+    pressEnter();
+    await flushPromises();
+    await emit('bubble-start', { request_id: 1, user_text: '文字问题', source: 'text' });
+    await emit('bubble-end', { request_id: 1, text: '文字问题已回答。' });
+    api.consume.mockResolvedValue('正在回答后来的语音问题。');
+    await emit('bubble-start', { request_id: 2, user_text: '后来的语音问题', source: 'voice' });
+    typeDraft('下一句草稿');
+    acknowledgement.resolve();
+    await flushPromises();
+
+    expect(document.getElementById('userMessage').textContent).toBe('后来的语音问题');
+    expect(dom.body.textContent).toContain('正在回答后来的语音问题');
+    expect(dom.input.value).toBe('下一句草稿');
+    expect(dom.send.getAttribute('aria-label')).toBe('停止回复');
+  });
+
+  it.each(['resolve', 'reject'])('protects later input when an earlier cancellation promise will %s', async (outcome) => {
+    const cancellation = deferred();
+    api.cancel.mockImplementationOnce(() => cancellation.promise);
+    await beginReply('正在执行的问题');
+    await emit('bubble-queued', { request_id: 2, user_text: '停止之前排队的语音', source: 'voice' });
+    typeDraft('停止后保留的草稿');
+    dom.send.click();
+    await flushPromises();
+    expect(api.cancel.mock.calls[0][0]).toEqual({ throughRequestId: 2 });
+    api.consume.mockResolvedValue('停止之后的新请求正在回答。');
+    await emit('bubble-queued', { request_id: 3, user_text: '停止之后的新问题', source: 'gamepad' });
+    await emit('bubble-start', { request_id: 3, user_text: '停止之后的新问题', source: 'gamepad' });
+    if (outcome === 'resolve') cancellation.resolve({ request_id: 2 });
+    else cancellation.reject(new Error('旧停止确认失败'));
+    await flushPromises();
+    await emit('bubble-cancelled', { request_id: 2 });
+
+    expect(document.getElementById('userMessage').textContent).toBe('停止之后的新问题');
+    expect(dom.body.textContent).toContain('停止之后的新请求正在回答');
+    expect(dom.input.value).toBe('停止后保留的草稿');
+    expect(dom.send.getAttribute('aria-label')).toBe('停止回复');
+    expect(dom.send.disabled).toBe(false);
+    expect(document.getElementById('conversationHistory').textContent).not.toContain('停止之前排队的语音');
+  });
+
+  it('keeps its own late start hidden after collapse while retaining the next draft', async () => {
+    const acknowledgement = deferred();
+    api.submit.mockImplementationOnce(() => acknowledgement.promise);
+    server.autoStart = false;
+    await openChat();
+    typeDraft('提交后马上收起的问题');
+    pressEnter();
+    await flushPromises();
+    typeDraft('回来以后接着写');
+    dom.collapse.click();
+    await vi.advanceTimersByTimeAsync(220);
+    const request = { request_id: 1, user_text: '提交后马上收起的问题', source: 'text' };
+    await emit('bubble-queued', request);
+    await emit('bubble-start', request);
+    await emit('bubble-end', { request_id: 1, text: '这轮结束后保持收起。' });
+    acknowledgement.resolve();
+    await flushPromises();
+    expect(document.body.classList.contains('hidden')).toBe(true);
+    await openChat();
+    expect(dom.body.textContent).toContain('这轮结束后保持收起');
+    expect(dom.input.value).toBe('回来以后接着写');
+  });
+
+  it('shows a later explicit voice request without reviving the collapsed request', async () => {
+    await beginReply('收起之前的问题');
+    typeDraft('暂存草稿');
+    dom.collapse.click();
+    await vi.advanceTimersByTimeAsync(220);
+    await emit('bubble-end', { request_id: 1, text: '旧问题在后台完成。' });
+    api.consume.mockResolvedValue('这是后来语音请求的回复。');
+    await emit('bubble-queued', { request_id: 2, user_text: '后来明确说出的新问题', source: 'voice' });
+    expect(document.body.classList.contains('hidden')).toBe(true);
+    await emit('bubble-start', { request_id: 2, user_text: '后来明确说出的新问题', source: 'voice' });
+    expect(document.body.classList.contains('hidden')).toBe(false);
+    expect(document.getElementById('userMessage').textContent).toBe('后来明确说出的新问题');
+    expect(dom.body.textContent).toContain('这是后来语音请求的回复');
+    expect(dom.input.value).toBe('暂存草稿');
+  });
+
+  it('keeps a request already queued before collapse hidden until the user reopens chat', async () => {
+    await beginReply('当前问题');
+    const queued = { request_id: 2, user_text: '收起之前已经排队的语音', source: 'voice' };
+    await emit('bubble-queued', queued);
+    dom.collapse.click();
+    await vi.advanceTimersByTimeAsync(220);
+    await emit('bubble-end', { request_id: 1, text: '第一轮完整结束。' });
+    await emit('bubble-start', queued);
+    await emit('bubble-end', { request_id: 2, text: '排队的语音也在后台回答完。' });
+    expect(document.body.classList.contains('hidden')).toBe(true);
+    await openChat();
+    expect(document.getElementById('userMessage').textContent).toBe(queued.user_text);
+    expect(dom.body.textContent).toContain('排队的语音也在后台回答完');
+  });
+
+  it('restores the actual request and question from a cold snapshot', async () => {
+    api.snapshot.mockResolvedValueOnce({
+      request_id: 7, user_text: '页面初始化前说出的语音问题', source: 'voice',
+      text: '初始化前已经生成的正文。', streaming: true,
+    });
+    await mountBubble(null);
+    expect(document.getElementById('userMessage').textContent).toBe('页面初始化前说出的语音问题');
+    expect(dom.body.textContent).toContain('初始化前已经生成的正文');
+    expect(dom.send.getAttribute('aria-label')).toBe('停止回复');
+  });
+
+  it('shows a newer cold notice while caching the completed conversation for explicit open', async () => {
+    const completed = {
+      request_id: 7, user_text: '旧会话里真实的问题', source: 'voice',
+      text: '旧会话完整的回复。', streaming: false,
+    };
+    api.snapshot.mockResolvedValueOnce(completed);
+    await mountBubble('这是一条后来出现的新通知。');
+    expect(dom.body.textContent).toContain('这是一条后来出现的新通知');
+    expect(dom.body.textContent).not.toContain('旧会话完整的回复');
+    expect(isVisible(dom.inputRow)).toBe(false);
+    await openChat();
+    expect(document.getElementById('userMessage').textContent).toBe(completed.user_text);
+    expect(dom.body.textContent).toContain(completed.text);
+    expect(document.getElementById('conversationHistory').textContent).toBe('');
+
+    api.submit.mockResolvedValueOnce({ request_id: 8 });
+    api.consume.mockResolvedValue('新问题自己的回复。');
+    typeDraft('现在开始新的问题');
+    pressEnter();
+    await flushPromises();
+    const history = document.getElementById('conversationHistory').textContent;
+    expect(history).toContain(completed.user_text);
+    expect(history).toContain(completed.text);
+    expect(history).not.toContain('后来出现的新通知');
+  });
+
+  it('recovers a cold completed reply with a new view-bound read when chat opens before initialization finishes', async () => {
+    const initial = deferred();
+    const opened = deferred();
+    const completed = {
+      request_id: 7, user_text: '冷窗口里已经完成的问题', source: 'voice',
+      text: '明确打开聊天后恢复的完整回复。', streaming: false,
+    };
+    api.snapshot.mockImplementationOnce(() => initial.promise).mockImplementationOnce(() => opened.promise);
+    await mountBubble('初始的普通通知。');
+    await openChat();
+    typeDraft('打开后开始写的草稿');
+    opened.resolve(completed);
+    await flushPromises();
+    expect(document.getElementById('userMessage').textContent).toBe(completed.user_text);
+    expect(dom.body.textContent).toContain(completed.text);
+    expect(dom.input.value).toBe('打开后开始写的草稿');
+
+    initial.resolve({ ...completed, text: '初始读取时尚未结束的部分。', streaming: true });
+    await flushPromises();
+    expect(dom.body.textContent).toContain(completed.text);
+    expect(dom.body.textContent).not.toContain('初始读取时尚未结束');
+    expect(dom.body.textContent).not.toContain('初始的普通通知');
+    expect(dom.send.getAttribute('aria-label')).toBe('发送消息');
+  });
+
+  it('keeps cold initialization and explicit-open reads from reopening a later collapsed view', async () => {
+    const initial = deferred();
+    const opened = deferred();
+    const completed = {
+      request_id: 7, user_text: '收起前请求恢复的问题', source: 'voice',
+      text: '两条旧读取后来才返回的回复。', streaming: false,
+    };
+    api.snapshot.mockImplementationOnce(() => initial.promise).mockImplementationOnce(() => opened.promise);
+    await mountBubble('一条普通通知。');
+    await openChat();
+    typeDraft('收起后仍然保留的草稿');
+    dom.collapse.click();
+    await vi.advanceTimersByTimeAsync(220);
+    initial.resolve(completed);
+    opened.resolve(completed);
+    await flushPromises();
+    expect(document.body.classList.contains('hidden')).toBe(true);
+    expect(isVisible(dom.inputRow)).toBe(false);
+    expect(dom.body.textContent).not.toContain(completed.text);
+
+    api.snapshot.mockResolvedValueOnce(completed);
+    await openChat();
+    expect(dom.body.textContent).toContain(completed.text);
+    expect(dom.input.value).toBe('收起后仍然保留的草稿');
+  });
+
+  it('keeps a deferred-start accepted request stoppable without submitting the next draft', async () => {
+    server.autoStart = false;
+    await openChat();
+    typeDraft('已经接受、还没开始的问题');
+    pressEnter();
+    await flushPromises();
+    const thinking = document.getElementById('thinking');
+    expect(thinking.textContent).toContain('正在准备回复');
+    expect(thinking.getAttribute('aria-label')).toContain('准备回复');
+    expect(dom.send.getAttribute('aria-label')).toBe('停止回复');
+    expect(dom.send.disabled).toBe(false);
+    expect(dom.input.value).toBe('');
+    expect(isVisible(document.getElementById('userMessage'))).toBe(false);
+    expect(document.getElementById('chatFeedback').hidden).toBe(true);
+    typeDraft('等的时候先写下一句');
+    pressEnter();
+    await flushPromises();
+    expect(submittedTexts()).toEqual(['已经接受、还没开始的问题']);
+    expect(dom.input.value).toBe('等的时候先写下一句');
+    expect(document.getElementById('chatFeedback').textContent).toContain('可以先写下一句');
+
+    dom.send.click();
+    await flushPromises();
+    expect(api.cancel.mock.calls[0][0]).toEqual({ throughRequestId: 1 });
+    expect(dom.input.value).toBe('等的时候先写下一句');
+    expect(isVisible(thinking)).toBe(false);
+    pressEnter();
+    await flushPromises();
+    expect(thinking.textContent).toContain('正在准备回复');
+    await emit('bubble-start', { request_id: 2, user_text: '等的时候先写下一句', source: 'text' });
+    expect(thinking.textContent).toContain('正在想');
+    expect(thinking.getAttribute('aria-label')).toBe('猫正在想');
+    expect(document.getElementById('userMessage').textContent).toBe('等的时候先写下一句');
+  });
+
+  it('switches to preparation between queued replies without replacing the completed question', async () => {
+    await beginReply('先完成这一句');
+    await emit('bubble-queued', { request_id: 2, user_text: '接下来才开始的语音问题', source: 'voice' });
+    await emit('bubble-end', { request_id: 1, text: '这一句已经完整回答。' });
+    const thinking = document.getElementById('thinking');
+    expect(thinking.textContent).toContain('正在准备回复');
+    expect(isVisible(thinking)).toBe(true);
+    expect(dom.send.getAttribute('aria-label')).toBe('停止回复');
+    expect(dom.send.disabled).toBe(false);
+    expect(document.getElementById('userMessage').textContent).toBe('先完成这一句');
+    expect(dom.body.textContent).toContain('这一句已经完整回答');
+    expect(document.getElementById('chatFeedback').hidden).toBe(true);
+    await emit('bubble-start', { request_id: 2, user_text: '接下来才开始的语音问题', source: 'voice' });
+    expect(thinking.textContent).toContain('正在想');
+    expect(document.getElementById('userMessage').textContent).toBe('接下来才开始的语音问题');
+  });
+
+  it('ignores unbound chat events and keeps notices out of an active reply', async () => {
+    await beginReply('编号明确的问题');
+    api.consume.mockResolvedValue('这轮正确的正文。');
+    await vi.advanceTimersByTimeAsync(120);
+    handlers.get('bubble-end')({ payload: { text: '没有编号的旧正文' } });
+    handlers.get('bubble-tool-event')({ payload: { phase: 'failed', tool_name: 'read_file' } });
+    handlers.get('bubble-cancelled')({ payload: {} });
+    api.consume.mockResolvedValue('一条普通通知。');
+    window.__bubble_onShow();
+    await flushPromises();
+    expect(dom.body.textContent).toContain('这轮正确的正文');
+    expect(dom.content.textContent).not.toContain('没有编号');
+    expect(dom.send.getAttribute('aria-label')).toBe('停止回复');
+    expect(isVisible(document.getElementById('toolStatus'))).toBe(false);
+  });
 
   it('keeps an active draft beyond five seconds and restores it after collapse', async () => {
     await openChat();
@@ -662,6 +1051,7 @@ describe('bubble production lifecycle', () => {
 
     const nextAcknowledgement = deferred();
     api.submit.mockImplementationOnce(() => nextAcknowledgement.promise);
+    server.autoStart = false;
     api.consume.mockResolvedValue('');
     typeDraft('现在回答新问题');
     pressEnter();
@@ -672,18 +1062,18 @@ describe('bubble production lifecycle', () => {
     const historyBeforeOldEnd = history.textContent;
     const readsBeforeOldEnd = api.consume.mock.calls.length;
 
-    await emit('bubble-end', { text: '旧问题迟到的最终结束文字。' });
+    await emit('bubble-end', { request_id: 1, text: '旧问题迟到的最终结束文字。' });
     expect(api.consume.mock.calls.length).toBe(readsBeforeOldEnd);
     expect(dom.send.getAttribute('aria-label')).toBe('停止回复');
     expect(dom.send.disabled).toBe(false);
-    expect(document.getElementById('userMessage').textContent).toBe('现在回答新问题');
+    expect(document.getElementById('userMessage').textContent).toBe('先回答旧问题');
     expect(history.textContent).toBe(historyBeforeOldEnd);
     expect(dom.content.textContent).not.toContain('旧问题迟到的最终结束文字');
 
-    await emit('bubble-cancelled');
+    await emit('bubble-cancelled', { request_id: 1 });
     expect(dom.send.getAttribute('aria-label')).toBe('停止回复');
     expect(dom.send.disabled).toBe(false);
-    expect(document.getElementById('userMessage').textContent).toBe('现在回答新问题');
+    expect(document.getElementById('userMessage').textContent).toBe('先回答旧问题');
     expect(history.textContent).toBe(historyBeforeOldEnd);
 
     api.consume.mockResolvedValue('这是新问题正在生成的回复。');
@@ -820,7 +1210,7 @@ describe('bubble production lifecycle', () => {
     expect(dom.content.scrollTop).toBe(readerPosition);
   });
 
-  it.each(['poll result', 'end already in flight', 'end received after collapse'])(
+  it.each(['poll result', 'end before collapse', 'end received after collapse'])(
     'keeps the bubble collapsed when a late %s arrives', async (lateEvent) => {
       await openChat();
       const pending = deferred();
@@ -828,15 +1218,17 @@ describe('bubble production lifecycle', () => {
       typeDraft('请慢慢回答');
       dom.send.click();
       await flushPromises();
-      if (lateEvent === 'end already in flight') {
-        handlers.get('bubble-end')({ payload: undefined });
+      if (lateEvent === 'end before collapse') {
+        server.streaming = false;
+        handlers.get('bubble-end')({ payload: { request_id: server.currentId, text: '收起前已完成的回复。' } });
         await flushPromises();
       }
 
       dom.collapse.click();
       await vi.advanceTimersByTimeAsync(220);
       if (lateEvent === 'end received after collapse') {
-        handlers.get('bubble-end')({ payload: undefined });
+        server.streaming = false;
+        handlers.get('bubble-end')({ payload: { request_id: server.currentId, text: '收起后才收到的最终回复。' } });
         await flushPromises();
       }
       pending.resolve('这条迟到的回复不能重新打开窗口。');

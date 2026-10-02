@@ -1,8 +1,8 @@
 //! 手柄轮询、AI 对话循环与共享业务状态管理。
 //!
 //! 本模块是应用运行期的中枢：80ms 手柄轮询主循环（[`gamepad_loop`]）读取 SDL2 输入，
-//! 独立的 [`chat_loop`] 消费前端提交的聊天消息并定时聚合长期记忆，
-//! 两者通过 [`SharedChatCore`] 共享对话记忆、用户画像等业务状态。
+//! 独立的 [`chat_loop`] 按接受顺序消费文字、语音和手柄请求，
+//! 正文结束后由单一后台收尾线程更新情绪、长期记忆和定时画像。
 //!
 //! 设计上将手柄物理层（按钮检测、按住态）与 AI 对话链（上下文构建 → agent 调用 → 流式输出）
 //! 解耦，确保无手柄或手柄断开时对话链仍可正常运行。
@@ -25,7 +25,6 @@ use bitcat_core::action::{ActionConfig, ActionDef};
 use bitcat_core::agent::{
     parse_tool_failure_stop, AgentStreamEvent, ChatError, PetAgent, ToolPhase,
 };
-use bitcat_core::agent_reaction::{extract_agent_reaction, fallback_agent_reaction};
 use bitcat_core::bridge::{handle_button_press, PetCommand};
 use bitcat_core::device::button_name;
 use bitcat_core::hotkey;
@@ -36,7 +35,7 @@ use bitcat_core::pet_event::{
     PetNotificationKind,
 };
 use bitcat_core::user_profile::UserProfile;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -58,12 +57,11 @@ pub fn commands_to_events(cmds: &[PetCommand]) -> Vec<PetEvent> {
         .collect()
 }
 
-/// 根据按钮索引生成宠物事件（状态切换 + 气泡）。
+/// 根据按钮索引生成本地互动事件，AI 状态由实际消费请求的正文循环发送。
 pub fn process_button(button_index: u32) -> Vec<PetEvent> {
     let (_agent_msg, pet_cmd) = handle_button_press(button_index, "");
     let mut events = Vec::new();
     match button_index {
-        11 => events.push(PetEvent::ai_thinking()),
         10 => events.push(PetEvent::set_mode(PetMode::Sleep)),
         0 => {
             events.push(PetEvent::react(PetMood::Happy));
@@ -83,9 +81,10 @@ fn emit_pet_event(app: &AppHandle, event: PetEvent) {
 }
 
 /// 初始化失败时回应用户请求，避免输入框已经开始等待却没有结束消息。
-fn show_agent_unavailable(app: &AppHandle) {
+fn show_agent_unavailable(app: &AppHandle, request: &bubble::ChatRequest) {
     if let Err(e) = bubble::show_chat_message(
         app,
+        request,
         "对话暂时不可用。AI 连接尚未准备好，请到设置检查 API Key 和服务地址，保存后重启应用。",
     ) {
         warn!(error = %e, "AI unavailable feedback failed");
@@ -93,11 +92,11 @@ fn show_agent_unavailable(app: &AppHandle) {
 }
 
 /// 已开始的回复写入静态说明后结束，正文写入失败时也结束前端等待。
-fn finish_chat_feedback(app: &AppHandle, message: &str) {
-    if let Err(e) = bubble::append_bubble_chunk(app, message) {
+fn finish_chat_feedback(app: &AppHandle, request_id: u64, message: &str) {
+    if let Err(e) = bubble::append_bubble_chunk(app, request_id, message) {
         warn!(error = %e, "chat feedback append failed");
     }
-    if let Err(e) = bubble::finalize_bubble(app) {
+    if let Err(e) = bubble::finalize_bubble(app, request_id) {
         warn!(error = %e, "chat feedback finalization failed");
     }
 }
@@ -107,38 +106,26 @@ fn finish_chat_feedback(app: &AppHandle, message: &str) {
 // ========================================================================
 
 /// 已提交的对话请求，编号从排队到运行保持不变，停止时不会因取出队列而失效。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PendingChatRequest {
-    /// 已校验的用户文本，运行前不再从可变队列中读取。
-    pub text: String,
-    /// 提交时预留的编号，用于停止排队或已经取走的请求。
-    pub generation: u64,
-}
+pub type PendingChatRequest = bubble::ChatRequest;
 
-/// 单槽消息队列：前端 `cmd_submit_chat` 写入，[`chat_loop`] 每 80ms 轮询消费。
+/// 所有已接受请求的 FIFO 队列，只有 chat_loop 可以消费。
 ///
-/// 后写入的消息会覆盖先前的，确保只有最新的一条用户输入被发送给 AI。
+/// 编号、原文和来源在排队期间保持不变，停止按编号清理，不覆盖其他输入。
 pub struct SharedPendingChat {
-    pending: Mutex<Option<PendingChatRequest>>,
+    pending: Mutex<VecDeque<PendingChatRequest>>,
 }
 
 impl SharedPendingChat {
     pub fn new() -> Self {
         Self {
-            pending: Mutex::new(None),
+            pending: Mutex::new(VecDeque::new()),
         }
     }
 
-    /// 置入已预留取消编号的请求，较早提交但迟到的写入不会覆盖新请求。
-    pub fn set(&self, request: PendingChatRequest) -> Result<(), String> {
+    /// 在接受请求的生命周期锁内调用，保留每条请求及其接受顺序。
+    fn set(&self, request: PendingChatRequest) -> Result<(), String> {
         let mut pending = self.pending.lock().map_err(|e| e.to_string())?;
-        if pending
-            .as_ref()
-            .is_some_and(|newer| newer.generation > request.generation)
-        {
-            return Ok(());
-        }
-        *pending = Some(request);
+        pending.push_back(request);
         Ok(())
     }
 
@@ -147,18 +134,13 @@ impl SharedPendingChat {
         self.pending
             .lock()
             .ok()
-            .and_then(|mut pending| pending.take())
+            .and_then(|mut pending| pending.pop_front())
     }
 
     /// 清理停止操作覆盖的待执行请求，保留停止后新提交的请求。
     fn cancel_through(&self, generation: u64) -> Result<(), String> {
         let mut pending = self.pending.lock().map_err(|e| e.to_string())?;
-        if pending
-            .as_ref()
-            .is_some_and(|request| request.generation <= generation)
-        {
-            *pending = None;
-        }
+        pending.retain(|request| request.request_id > generation);
         Ok(())
     }
 }
@@ -177,6 +159,7 @@ pub struct SharedChatCancel {
     current_generation: AtomicU64,
     cancelled_until_generation: AtomicU64,
     cancellation_changed: tokio::sync::Notify,
+    lifecycle: Mutex<()>,
 }
 
 impl SharedChatCancel {
@@ -185,16 +168,29 @@ impl SharedChatCancel {
             current_generation: AtomicU64::new(0),
             cancelled_until_generation: AtomicU64::new(0),
             cancellation_changed: tokio::sync::Notify::new(),
+            lifecycle: Mutex::new(()),
         }
     }
 
     /// 为新请求预留编号，必须在写入待执行队列之前调用。
     pub fn begin_chat(&self) -> u64 {
+        let _guard = self.lifecycle.lock().expect("chat lifecycle lock poisoned");
         self.current_generation.fetch_add(1, Ordering::SeqCst) + 1
     }
 
     pub fn cancel_current(&self) -> u64 {
-        let generation = self.current_generation.load(Ordering::SeqCst);
+        self.cancel_through(self.latest_request_id())
+    }
+
+    /// 当前已预留的编号，不能据此跳过 FIFO 中较早但仍有效的请求。
+    pub fn latest_request_id(&self) -> u64 {
+        self.current_generation.load(Ordering::SeqCst)
+    }
+
+    /// 取消截至给定编号的请求，迟到的停止不会取消之后提交的请求。
+    pub fn cancel_through(&self, requested_id: u64) -> u64 {
+        let _guard = self.lifecycle.lock().expect("chat lifecycle lock poisoned");
+        let generation = requested_id.min(self.latest_request_id());
         if generation > 0 {
             self.cancelled_until_generation
                 .fetch_max(generation, Ordering::SeqCst);
@@ -203,12 +199,28 @@ impl SharedChatCancel {
         generation
     }
 
+    /// 与接受新请求和停止共用一个锁，确保旧情绪检查与发送之间不会插入新会话。
+    pub(crate) fn publish_if_current<T>(
+        &self,
+        request_id: u64,
+        publish: impl FnOnce() -> T,
+    ) -> Option<T> {
+        let _guard = self.lifecycle.lock().ok()?;
+        if self.latest_request_id() != request_id
+            || self.is_cancelled(request_id)
+            || crate::shutdown::is_requested()
+        {
+            return None;
+        }
+        Some(publish())
+    }
+
     pub fn is_cancelled(&self, generation: u64) -> bool {
         generation > 0 && generation <= self.cancelled_until_generation.load(Ordering::SeqCst)
     }
 
     /// 停止后丢弃整个流式 future，避免仅隐藏输出却继续启动后续工具。
-    async fn run_until_cancelled<T>(
+    pub(crate) async fn run_until_cancelled<T>(
         &self,
         generation: u64,
         work: impl std::future::Future<Output = T>,
@@ -240,39 +252,103 @@ impl Default for SharedChatCancel {
 
 /// 前端触发的"提交聊天消息"命令，通过 ActionBus 写入 [`SharedPendingChat`]。
 #[tauri::command]
-pub async fn cmd_submit_chat(app: AppHandle, text: String) -> Result<(), String> {
-    let trimmed = text.trim().to_string();
-    if trimmed.is_empty() {
-        return Err("消息不能为空".into());
-    }
-    crate::action_bus::ActionBus::dispatch(
+pub async fn cmd_submit_chat(
+    app: AppHandle,
+    text: String,
+) -> Result<bubble::ChatSubmission, String> {
+    crate::action_bus::ActionBus::submit_chat(
         &app,
-        crate::action_bus::Action::SubmitChat(trimmed),
+        text,
+        bubble::ChatSource::Text,
         crate::action_bus::ActionSource::Frontend {
             cmd: "cmd_submit_chat".into(),
         },
-    );
-    Ok(())
+    )
 }
 
 /// 停止排队或运行的请求并通知 bubble 进入停止态，已执行的外部动作无法撤销。
 #[tauri::command]
-pub async fn cmd_cancel_chat(app: AppHandle) -> Result<(), String> {
+pub async fn cmd_cancel_chat(
+    app: AppHandle,
+    through_request_id: Option<u64>,
+) -> Result<bubble::ChatCancelled, String> {
     let cancel: State<'_, SharedChatCancel> = app.state();
-    let generation = cancel.cancel_current();
+    let generation =
+        cancel.cancel_through(through_request_id.unwrap_or_else(|| cancel.latest_request_id()));
     info!(generation, "[chat] cancel requested");
     let pending: State<'_, SharedPendingChat> = app.state();
     if let Err(e) = pending.cancel_through(generation) {
         warn!(error = %e, "cancel pending chat cleanup failed");
     }
     // 生成保护由运行中的 future 实际结束后释放，避免停止与最后一个回调之间被通知覆盖。
-    let _ = app.emit_to("bubble", "bubble-cancelled", ());
-    Ok(())
+    let payload = bubble::ChatCancelled {
+        request_id: generation,
+    };
+    let _ = app.emit_to("bubble", "bubble-cancelled", payload);
+    Ok(payload)
+}
+
+/// 原子接受请求并发布排队事件，正文开始后才由 chat_loop 切换当前问题。
+pub(crate) fn queue_chat(
+    app: &AppHandle,
+    text: String,
+    source: bubble::ChatSource,
+) -> Result<bubble::ChatSubmission, String> {
+    let pending: State<SharedPendingChat> = app.state();
+    let cancel: State<SharedChatCancel> = app.state();
+    accept_chat(&pending, &cancel, text, source, |request| {
+        if let Err(error) = app.emit_to("bubble", "bubble-queued", request.clone()) {
+            warn!(%error, request_id = request.request_id, "chat queued event failed");
+        }
+    })
+}
+
+pub(crate) fn accept_chat(
+    pending: &SharedPendingChat,
+    cancel: &SharedChatCancel,
+    text: String,
+    source: bubble::ChatSource,
+    accepted: impl FnOnce(&PendingChatRequest),
+) -> Result<bubble::ChatSubmission, String> {
+    let user_text = text.trim().to_string();
+    if user_text.is_empty() {
+        return Err("消息不能为空".into());
+    }
+    let _guard = cancel.lifecycle.lock().map_err(|e| e.to_string())?;
+    if crate::shutdown::is_requested() {
+        return Err("应用正在关闭".into());
+    }
+    let request = PendingChatRequest {
+        request_id: cancel.current_generation.fetch_add(1, Ordering::SeqCst) + 1,
+        user_text,
+        source,
+    };
+    pending.set(request.clone())?;
+    accepted(&request);
+    Ok(bubble::ChatSubmission {
+        request_id: request.request_id,
+    })
 }
 
 /// 原子性地取出并清空待消费的聊天消息，返回 `None` 表示无新消息。
 pub fn take_pending_chat(state: &State<'_, SharedPendingChat>) -> Option<PendingChatRequest> {
     state.take()
+}
+
+/// 唯一正文循环的消费步骤；执行完成后立即返回，后台收尾不参与此执行链。
+pub(crate) fn consume_next(
+    pending: &SharedPendingChat,
+    cancel: &SharedChatCancel,
+    execute: impl FnOnce(&PendingChatRequest),
+) -> bool {
+    let Some(request) = pending.take() else {
+        return false;
+    };
+    if cancel.is_cancelled(request.request_id) {
+        return false;
+    }
+    execute(&request);
+    true
 }
 
 // ========================================================================
@@ -289,21 +365,21 @@ pub fn take_pending_chat(state: &State<'_, SharedPendingChat>) -> Option<Pending
 ///
 /// | 字段 | 写入线程 | 读取线程 |
 /// |------|---------|---------|
-/// | `memory` | chat_loop、gamepad_loop（run_ai_chat） | 同左 |
-/// | `long_term` | chat_loop（run_ai_chat 写入 + 聚合标记） | gamepad_loop（run_ai_chat 读取） |
-/// | `profile` | chat_loop（聚合更新） | gamepad_loop（run_ai_chat 读取） |
-/// | `user_profile` | 仅初始化时写入（config/user.yml） | gamepad_loop、chat_loop |
-/// | `last_aggregation` | chat_loop（聚合后更新） | chat_loop（定时检查） |
+/// | `memory` | chat_loop（下一轮开始前同步） | chat_loop |
+/// | `long_term` | 收尾 worker（持久化事务后刷新缓存） | chat_loop 每轮从最新文件刷新 |
+/// | `profile` | 收尾 worker（聚合后更新） | chat_loop |
+/// | `user_profile` | 初始化与设置页 | chat_loop |
+/// | `last_aggregation` | 收尾 worker | 收尾 worker |
 pub struct SharedChatCore {
-    /// 短期对话记忆（滚动窗口），由 `chat_loop` 和 `gamepad_loop` 读写。
+    /// 短期对话记忆（滚动窗口），仅 chat_loop 执行对话时读写。
     pub memory: Mutex<MemoryStore>,
-    /// 长期记忆条目，由 `chat_loop` 聚合并写入，`gamepad_loop` 检索。
+    /// 最新长期记忆缓存；写入必须走共享持久化事务，缓存不能直接覆盖文件。
     pub long_term: Mutex<LongTermMemory>,
     /// 自动聚合的用户画像，优先级低于 `user_profile`。
     pub profile: Mutex<ProfileStore>,
     /// 用户显式声明的身份信息（config/user.yml），为空时回退到 `profile`。
     pub user_profile: Mutex<UserProfile>,
-    /// 上次画像聚合时间戳，`chat_loop` 用于判断是否触发定时聚合。
+    /// 上次画像聚合时间戳，由后台收尾 worker 检查和更新。
     pub last_aggregation: Mutex<std::time::Instant>,
 }
 
@@ -491,17 +567,6 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
         Ok(s) => s,
         Err(e) => {
             error!(error = %e, "SDL2 初始化失败");
-            return;
-        }
-    };
-
-    let rt = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(r) => r,
-        Err(e) => {
-            error!(error = %e, "Tokio 运行时创建失败");
             return;
         }
     };
@@ -770,18 +835,15 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                         }
 
                         if let Some(msg) = &agent_msg {
-                            let agent_state: State<SharedAgent> = app.state();
-                            if let Some(ag) = agent_state.get_or_init() {
-                                let core: State<SharedChatCore> = app.state();
-                                let preview = log_preview(msg, 60);
-                                info!(
-                                    msg_chars = msg.chars().count(),
-                                    msg_preview = %preview,
-                                    "gamepad chat requested"
-                                );
-                                run_ai_chat(&rt, ag, app, msg, "", &core);
-                            } else {
-                                show_agent_unavailable(app);
+                            if let Err(error) = crate::action_bus::ActionBus::submit_chat(
+                                app,
+                                msg.clone(),
+                                bubble::ChatSource::Gamepad,
+                                crate::action_bus::ActionSource::Gamepad {
+                                    button: name.to_string(),
+                                },
+                            ) {
+                                warn!(%error, "gamepad chat request not accepted");
                             }
                         }
 
@@ -891,17 +953,15 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                                 voice_preview = %preview,
                                 "[voice] 识别完成"
                             );
-                            let agent_state: State<SharedAgent> = app.state();
-                            if let Some(ag) = agent_state.get_or_init() {
-                                let core: State<SharedChatCore> = app.state();
-                                run_ai_chat(&rt, ag, app, &text, "[voice]", &core);
-                                bitcat_core::points::award(
-                                    bitcat_core::points::PointsEventKind::VoiceChat,
-                                    None,
-                                );
-                            } else {
-                                warn!("[voice] AI Agent 未初始化");
-                                show_agent_unavailable(app);
+                            if let Err(error) = crate::action_bus::ActionBus::submit_chat(
+                                app,
+                                text,
+                                bubble::ChatSource::Voice,
+                                crate::action_bus::ActionSource::Gamepad {
+                                    button: "voice".into(),
+                                },
+                            ) {
+                                warn!(%error, "voice chat request not accepted");
                             }
                         }
                     }
@@ -962,10 +1022,10 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
     }
 }
 
-/// 独立业务循环：消费 bubble 输入 + 定时聚合长期记忆
+/// 唯一的正文执行循环，消费文字、语音和手柄 FIFO，同步写入短期记忆。
 ///
 /// 与 gamepad_loop **平级独立运行**。没有手柄、手柄断开、手柄未识别时，
-/// 本循环依然按常规节奏处理前端 `cmd_submit_chat` 提交的消息以及记忆聚合。
+/// 本循环按常规节奏消费所有入口的请求，提取与画像聚合由后台 worker 执行。
 #[instrument(skip(app))]
 pub fn chat_loop(app: &tauri::AppHandle) {
     info!("[chat_loop] 已启动（独立于手柄）");
@@ -987,207 +1047,70 @@ pub fn chat_loop(app: &tauri::AppHandle) {
             info!("[chat_loop] shutdown requested, exiting");
             break;
         }
-        let chat_msg = {
-            let pc: State<SharedPendingChat> = app.state();
-            take_pending_chat(&pc)
-        };
-        if let Some(request) = chat_msg {
-            let cancel: State<SharedChatCancel> = app.state();
+        let pending: State<SharedPendingChat> = app.state();
+        let cancel: State<SharedChatCancel> = app.state();
+        consume_next(&pending, &cancel, |request| {
             let agent_state: State<SharedAgent> = app.state();
-            if cancel.is_cancelled(request.generation) {
+            if cancel.is_cancelled(request.request_id) {
                 info!(
-                    generation = request.generation,
+                    generation = request.request_id,
                     "[chat] queued request cancelled before start"
                 );
             } else if let Some(ag) = agent_state.get_or_init() {
                 let core: State<SharedChatCore> = app.state();
-                let preview = log_preview(&request.text, 60);
+                let preview = log_preview(&request.user_text, 60);
                 info!(
-                    msg_chars = request.text.chars().count(),
+                    msg_chars = request.user_text.chars().count(),
                     msg_preview = %preview,
                     "[chat] bubble input received"
                 );
-                run_ai_chat_request(&rt, ag, app, &request, "[chat]", &core);
+                run_ai_chat_request(&rt, ag, app, request, "[chat]", &core);
             } else {
-                let preview = log_preview(&request.text, 60);
+                let preview = log_preview(&request.user_text, 60);
                 warn!(
-                    msg_chars = request.text.chars().count(),
+                    msg_chars = request.user_text.chars().count(),
                     msg_preview = %preview,
                     "[chat] AI Agent 未就绪，结束本轮对话并展示设置说明"
                 );
-                show_agent_unavailable(app);
+                show_agent_unavailable(app, request);
             }
-        }
-
-        // --- 2. 定时聚合长期记忆 → 用户画像 ---
-        {
-            let prompts_cfg = bitcat_core::prompts::PromptsConfig::load();
-            let core: State<SharedChatCore> = app.state();
-            let agg_interval = std::time::Duration::from_secs(
-                (prompts_cfg.memory_v2.aggregation_interval_min as u64) * 60,
-            );
-            let snapshot = {
-                let lt = match core.long_term.lock() {
-                    Ok(g) => g,
-                    Err(_) => {
-                        std::thread::sleep(std::time::Duration::from_millis(80));
-                        continue;
-                    }
-                };
-                let pf = match core.profile.lock() {
-                    Ok(g) => g,
-                    Err(_) => {
-                        std::thread::sleep(std::time::Duration::from_millis(80));
-                        continue;
-                    }
-                };
-                let la = match core.last_aggregation.lock() {
-                    Ok(g) => g,
-                    Err(_) => {
-                        std::thread::sleep(std::time::Duration::from_millis(80));
-                        continue;
-                    }
-                };
-                (
-                    lt.unaggregated_entries().len(),
-                    pf.profile_text.is_empty(),
-                    la.elapsed(),
-                )
-            };
-            let (unagg_count, profile_empty, elapsed) = snapshot;
-            let should_aggregate = unagg_count >= 20 || (!profile_empty && elapsed >= agg_interval);
-
-            if should_aggregate && unagg_count > 0 {
-                match bitcat_core::ai_config::AiConfig::load() {
-                    Ok(cfg) => {
-                        // 快照条目和现有画像（持锁克隆一次，聚合 IO 不持锁）
-                        let (entries_cloned, cur_profile) = {
-                            let lt = core.long_term.lock().unwrap();
-                            let pf = core.profile.lock().unwrap();
-                            let entries: Vec<bitcat_core::memory::LongTermEntry> =
-                                lt.unaggregated_entries().into_iter().cloned().collect();
-                            (entries, pf.profile_text.clone())
-                        };
-                        info!(
-                            count = unagg_count,
-                            "[chat_loop] 开始聚合长期记忆 → 用户画像"
-                        );
-                        let entry_refs: Vec<&bitcat_core::memory::LongTermEntry> =
-                            entries_cloned.iter().collect();
-                        let agg_prompt = bitcat_core::prompts::PromptsConfig::default()
-                            .aggregation
-                            .prompt;
-                        let agg_result = match catch_unwind(AssertUnwindSafe(|| {
-                            rt.block_on(bitcat_core::memory::aggregate_profile(
-                                &entry_refs,
-                                &cur_profile,
-                                &cfg,
-                                &agg_prompt,
-                            ))
-                        })) {
-                            Ok(result) => result,
-                            Err(_) => {
-                                warn!(
-                                    "[chat_loop] profile aggregation panicked; skipped this round"
-                                );
-                                continue;
-                            }
-                        };
-                        match agg_result {
-                            Ok(patch) => {
-                                let applied = if let Ok(mut pf) = core.profile.lock() {
-                                    match pf.apply_patch(&patch, &entry_refs) {
-                                        Ok(()) => {
-                                            bitcat_core::memory::record_profile_aggregation_diagnostic(
-                                                "profile_patch_applied",
-                                                None,
-                                                &pf,
-                                                &entry_refs,
-                                                Some(&patch),
-                                            );
-                                            let _ = pf.save();
-                                            true
-                                        }
-                                        Err(e) => {
-                                            bitcat_core::memory::record_profile_aggregation_diagnostic(
-                                                "profile_patch_rejected",
-                                                Some(&e),
-                                                &pf,
-                                                &entry_refs,
-                                                Some(&patch),
-                                            );
-                                            warn!(
-                                                error = %e,
-                                                "[chat_loop] 用户画像 patch 校验失败，下次重试"
-                                            );
-                                            false
-                                        }
-                                    }
-                                } else {
-                                    warn!("profile 锁中毒，跳过用户画像 patch 应用");
-                                    false
-                                };
-                                if !applied {
-                                    continue;
-                                }
-                                if let Ok(mut lt) = core.long_term.lock() {
-                                    lt.mark_all_aggregated();
-                                    let _ = lt.save();
-                                }
-                                if let Ok(mut la) = core.last_aggregation.lock() {
-                                    *la = std::time::Instant::now();
-                                }
-                                let new_len = core
-                                    .profile
-                                    .lock()
-                                    .map(|p| p.profile_text.chars().count())
-                                    .unwrap_or(0);
-                                info!(profile_len = new_len, "[chat_loop] 用户画像已更新");
-                            }
-                            Err(e) => {
-                                warn!(error = %e, "[chat_loop] 记忆聚合失败，下次重试")
-                            }
-                        }
-                    }
-                    Err(e) => warn!(error = %e, "[chat_loop] AI 配置加载失败，跳过聚合"),
-                }
-            }
-        }
+        });
 
         std::thread::sleep(std::time::Duration::from_millis(80));
     }
 }
 
-/// RAII 守卫：创建时标记 AI 生成开始，`Drop` 时仅释放生成保护。
+/// RAII 守卫：监督当前请求的结束路径，按同一编号完成尚未结束的流。
 ///
 /// **设计意图**：AI 对话期间截屏线程应跳过 Vision 分析（避免并发 token 消耗和
-/// 内容冲突）。无论 `run_ai_chat` 通过正常返回、`?` 提前退出还是 panic 退出，
-/// 守卫的 `Drop` 都会执行；用户仍在输入或阅读时继续保留对应保护。
+/// 内容冲突）。无论正文正常返回、提前退出还是 panic，守卫都会完成自己的请求；
+/// 已结束或过期的守卫不会重复通知，也不会释放下一轮请求或用户交互的保护。
 struct ChatActiveGuard {
     app: tauri::AppHandle,
     log_prefix: String,
+    request_id: u64,
 }
 
 impl ChatActiveGuard {
-    /// 创建守卫并立即开启生成保护，不改变用户交互状态。
-    fn new(app: &tauri::AppHandle, log_prefix: &str) -> Self {
-        let bubble_state: tauri::State<'_, bubble::SharedBubble> = app.state();
-        bubble_state.set_generation_active(true);
-        info!("{log_prefix}[chat_guard] generation_active=true (生成期间避让观察)");
+    /// 记录本轮所有权；生成保护由 start_streaming_bubble 开启。
+    fn new(app: &tauri::AppHandle, request_id: u64, log_prefix: &str) -> Self {
         Self {
             app: app.clone(),
             log_prefix: log_prefix.to_string(),
+            request_id,
         }
     }
 }
 
 impl Drop for ChatActiveGuard {
     fn drop(&mut self) {
-        let bubble_state: tauri::State<'_, bubble::SharedBubble> = self.app.state();
-        bubble_state.set_generation_active(false);
+        if let Err(error) = bubble::finalize_bubble(&self.app, self.request_id) {
+            warn!(%error, request_id = self.request_id, "chat guard finalization failed");
+        }
         info!(
-            "{prefix}[chat_guard] generation_active=false (用户交互保护保留)",
-            prefix = self.log_prefix
+            request_id = self.request_id,
+            prefix = %self.log_prefix,
+            "chat request scope closed"
         );
     }
 }
@@ -1200,22 +1123,6 @@ impl Drop for ChatActiveGuard {
 /// - 写入记忆时再次短锁
 ///
 /// 截屏互斥：函数入口开启生成保护，RAII guard 在 panic/return 时只释放生成保护。
-pub fn run_ai_chat(
-    rt: &tokio::runtime::Runtime,
-    agent: &PetAgent,
-    app: &tauri::AppHandle,
-    msg: &str,
-    log_prefix: &str,
-    core: &SharedChatCore,
-) {
-    let cancel: State<SharedChatCancel> = app.state();
-    let request = PendingChatRequest {
-        text: msg.to_string(),
-        generation: cancel.begin_chat(),
-    };
-    run_ai_chat_request(rt, agent, app, &request, log_prefix, core);
-}
-
 /// 执行已经预留编号的请求，排队消息不得重新分配编号而绕过停止操作。
 fn run_ai_chat_request(
     rt: &tokio::runtime::Runtime,
@@ -1226,7 +1133,7 @@ fn run_ai_chat_request(
     core: &SharedChatCore,
 ) {
     let cancel_state: State<SharedChatCancel> = app.state();
-    let chat_generation = request.generation;
+    let chat_generation = request.request_id;
     if cancel_state.is_cancelled(chat_generation) {
         info!(
             generation = chat_generation,
@@ -1234,7 +1141,7 @@ fn run_ai_chat_request(
         );
         return;
     }
-    let msg = request.text.as_str();
+    let msg = request.user_text.as_str();
     let tag = if log_prefix.is_empty() { "" } else { " " };
     let msg_preview = log_preview(msg, 60);
     info!(
@@ -1245,11 +1152,15 @@ fn run_ai_chat_request(
     );
 
     // RAII 锁：整个 chat 期间阻止截屏线程进入 Vision 分析；panic 或 early return 时自动释放
-    let _chat_guard = ChatActiveGuard::new(app, log_prefix);
+    let _chat_guard = ChatActiveGuard::new(app, chat_generation, log_prefix);
 
-    if let Err(e) = bubble::start_streaming_bubble(app) {
+    if let Err(e) = bubble::start_streaming_bubble(app, request) {
         warn!(error = %e, "{log_prefix}气泡启动错误");
-        finish_chat_feedback(app, "这次没能回复。对话窗口没有准备好，请重启应用后再试。");
+        finish_chat_feedback(
+            app,
+            chat_generation,
+            "这次没能回复。对话窗口没有准备好，请重启应用后再试。",
+        );
         return;
     }
 
@@ -1262,7 +1173,11 @@ fn run_ai_chat_request(
         Ok(g) => g.build_context(memory_config),
         Err(e) => {
             warn!(error = %e, "memory 锁中毒，跳过上下文");
-            finish_chat_feedback(app, "这次没能回复。对话记录暂时读不了，请重启应用后再试。");
+            finish_chat_feedback(
+                app,
+                chat_generation,
+                "这次没能回复。对话记录暂时读不了，请重启应用后再试。",
+            );
             return;
         }
     };
@@ -1286,20 +1201,28 @@ fn run_ai_chat_request(
     } else {
         String::new()
     };
-    let long_term_ctx = match core.long_term.lock() {
-        Ok(g) => g.retrieve_with(
-            &bitcat_core::memory::LongTermMemoryQuery {
-                text: msg.to_string(),
-                ..Default::default()
-            },
-            long_term_budget_chars,
-        ),
-        Err(e) => {
-            warn!(error = %e, "long_term 锁中毒，跳过上下文");
-            finish_chat_feedback(app, "这次没能回复。记忆暂时读不了，请重启应用后再试。");
+    let latest_long_term = match LongTermMemory::load_checked() {
+        Ok(store) => store,
+        Err(error) => {
+            warn!(%error, "读取最新长期记忆失败");
+            finish_chat_feedback(
+                app,
+                chat_generation,
+                "这次没能回复。记忆暂时读不了，请到设置查看记录后再试。",
+            );
             return;
         }
     };
+    let long_term_ctx = latest_long_term.retrieve_with(
+        &bitcat_core::memory::LongTermMemoryQuery {
+            text: msg.to_string(),
+            ..Default::default()
+        },
+        long_term_budget_chars,
+    );
+    if let Ok(mut cache) = core.long_term.lock() {
+        *cache = latest_long_term;
+    }
     let summary_store = bitcat_core::screen_summary::ScreenSummaryStore::load();
     let summary_config = bitcat_core::prompts::PromptsConfig::load().screen_summary;
     let summary_ctx = summary_store.build_context(&summary_config);
@@ -1378,7 +1301,7 @@ fn run_ai_chat_request(
                     chunk_chars = text.chars().count(),
                     "{prefix_for_log}{tag}AI chunk"
                 );
-                let _ = bubble::append_bubble_chunk(&app_for_chunks, &text);
+                let _ = bubble::append_bubble_chunk(&app_for_chunks, chat_generation, &text);
             }
             AgentStreamEvent::Status { status } => {
                 if cancel_for_stream.is_cancelled(chat_generation) {
@@ -1421,6 +1344,7 @@ fn run_ai_chat_request(
                 let _ = bubble::emit_tool_event(
                     &app_for_chunks,
                     bubble::BubbleToolPayload {
+                        request_id: chat_generation,
                         tool_name: event.tool_name,
                         label: event.label,
                         kind: event.kind.as_str().to_string(),
@@ -1462,14 +1386,15 @@ fn run_ai_chat_request(
     );
 
     let Some(stream_result) = stream_result.filter(|_| !chat_cancelled) else {
-        let _ = bubble::finalize_bubble(app);
+        let _ = bubble::finalize_bubble(app, chat_generation);
         info!(generation = chat_generation, "{prefix}AI chat cancelled");
         return;
     };
 
     match stream_result {
         Ok(reply) => {
-            let _ = bubble::finalize_bubble(app);
+            let completed_at = std::time::Instant::now();
+            let _ = bubble::finalize_bubble(app, chat_generation);
             // 短期记忆：短锁写入
             if let Ok(mut memory) = core.memory.lock() {
                 memory.record_conversation(msg, &reply, memory_config);
@@ -1488,6 +1413,9 @@ fn run_ai_chat_request(
                 "{prefix}AI chat completed"
             );
             bitcat_core::points::award(bitcat_core::points::PointsEventKind::ChatCompleted, None);
+            if request.source == bubble::ChatSource::Voice {
+                bitcat_core::points::award(bitcat_core::points::PointsEventKind::VoiceChat, None);
+            }
             let reply_for_tts = reply.clone();
             let tts_on = bitcat_core::app_settings::AppSettings::load()
                 .appearance
@@ -1499,65 +1427,15 @@ fn run_ai_chat_request(
             }
 
             let summaries = tool_summaries.lock().map(|g| g.clone()).unwrap_or_default();
-            info!(
-                tool_summary_count = summaries.len(),
-                "{prefix}AgentReaction extraction started"
-            );
-            let reaction_result = catch_unwind(AssertUnwindSafe(|| {
-                rt.block_on(async {
-                    tokio::time::timeout(
-                        std::time::Duration::from_secs(8),
-                        extract_agent_reaction(&agent.config, msg, &reply, &summaries),
-                    )
-                    .await
-                })
-            }));
-            let reaction = match reaction_result {
-                Ok(Ok(Ok(reaction))) => {
-                    info!(
-                        mood = ?reaction.mood,
-                        memory_candidates = reaction.memory_candidates.len(),
-                        "{prefix}AgentReaction extraction completed"
-                    );
-                    reaction
-                }
-                Ok(Ok(Err(e))) => fallback_agent_reaction(&reply, &e),
-                Ok(Err(_)) => fallback_agent_reaction(&reply, "AgentReaction timed out"),
-                Err(_) => fallback_agent_reaction(&reply, "AgentReaction panicked"),
-            };
-            let speech = if reaction.speech.is_empty() {
-                None
-            } else {
-                Some(reaction.speech.clone())
-            };
-            debug!(mood = ?reaction.mood, "{prefix}emitting pet reaction");
-            emit_pet_event(
-                app,
-                PetEvent::React {
-                    mood: reaction.mood,
-                    speech,
-                    ttl_ms: None,
-                },
-            );
-
-            if !reaction.memory_candidates.is_empty() {
-                if let Ok(mut long_term) = core.long_term.lock() {
-                    let max_entries = prompts_cfg.memory_v2.long_term_max_entries;
-                    for candidate in &reaction.memory_candidates {
-                        long_term.record_candidate(candidate, msg, &reply, max_entries);
-                    }
-                    if let Err(e) = long_term.save() {
-                        warn!(error = %e, "保存长期记忆候选失败");
-                    } else if !reaction.memory_candidates.is_empty() {
-                        bitcat_core::points::award(
-                            bitcat_core::points::PointsEventKind::MemoryCreated,
-                            Some(&format!("{} 条", reaction.memory_candidates.len())),
-                        );
-                    }
-                } else {
-                    warn!("long_term 锁中毒，跳过长期记忆候选写入");
-                }
-            }
+            let worker: State<crate::chat_reaction::SharedChatReaction> = app.state();
+            worker.submit(crate::chat_reaction::ReactionJob {
+                request: request.clone(),
+                reply,
+                config: agent.config.clone(),
+                tool_summaries: summaries,
+                max_entries: prompts_cfg.memory_v2.long_term_max_entries,
+                completed_at,
+            });
         }
         Err(e) => {
             // 结构化诊断日志（完整信息写入日志，不暴露给用户）
@@ -1605,7 +1483,7 @@ fn run_ai_chat_request(
                     },
                 }
             };
-            finish_chat_feedback(app, &format!("\n\n{user_reply}"));
+            finish_chat_feedback(app, chat_generation, &format!("\n\n{user_reply}"));
             if let Ok(mut memory) = core.memory.lock() {
                 memory.record_conversation(msg, &user_reply, memory_config);
                 if let Err(save_err) = memory.save() {
@@ -1847,8 +1725,7 @@ mod tests {
     #[test]
     fn test_process_button_start() {
         let events = process_button(11);
-        assert!(!events.is_empty());
-        assert!(matches!(events[0], PetEvent::Notify { .. }));
+        assert!(events.is_empty(), "排队中的按键请求不提前宣称开始思考");
     }
 
     #[test]
@@ -1871,83 +1748,138 @@ mod tests {
     }
 
     #[test]
-    fn test_pending_chat_submit_and_take() {
-        let pc = SharedPendingChat::new();
-        let request = PendingChatRequest {
-            text: "你好 AI".into(),
-            generation: 7,
-        };
-        pc.set(request.clone()).unwrap();
-        assert_eq!(pc.take(), Some(request));
-        assert!(pc.take().is_none());
-    }
-
-    #[test]
-    fn test_pending_chat_submit_overwrites() {
-        let pc = SharedPendingChat::new();
-        pc.set(PendingChatRequest {
-            text: "第一条".into(),
-            generation: 1,
-        })
-        .unwrap();
-        let second = PendingChatRequest {
-            text: "第二条".into(),
-            generation: 2,
-        };
-        pc.set(second.clone()).unwrap();
-        assert_eq!(pc.take(), Some(second));
-    }
-
-    #[test]
-    fn test_stop_clears_queued_request_and_preserves_later_submission() {
+    fn test_all_sources_preserve_fifo_and_metadata() {
         let pending = SharedPendingChat::new();
         let cancel = SharedChatCancel::new();
-        let generation = cancel.begin_chat();
-        pending
-            .set(PendingChatRequest {
-                text: "即将停止的消息".into(),
-                generation,
+        let mut accepted = Vec::new();
+        for (text, source) in [
+            ("文字原话", bubble::ChatSource::Text),
+            ("语音原话", bubble::ChatSource::Voice),
+            ("手柄原话", bubble::ChatSource::Gamepad),
+        ] {
+            let ack = accept_chat(&pending, &cancel, text.into(), source, |request| {
+                accepted.push(request.clone())
             })
             .unwrap();
-        let stopped = cancel.cancel_current();
-        pending.cancel_through(stopped).unwrap();
+            assert_eq!(accepted.last().unwrap().request_id, ack.request_id);
+        }
+        for request in accepted {
+            assert_eq!(pending.take(), Some(request));
+        }
         assert!(pending.take().is_none());
+    }
 
-        let next = PendingChatRequest {
-            text: "停止后新发的消息".into(),
-            generation: cancel.begin_chat(),
-        };
-        pending.set(next.clone()).unwrap();
-        pending
-            .set(PendingChatRequest {
-                text: "停止前预留但迟到的旧消息".into(),
-                generation,
-            })
-            .unwrap();
-        // 迟到的旧停止操作不能移除下一轮输入。
+    #[test]
+    fn test_concurrent_producers_preserve_every_accepted_request_in_order() {
+        use std::sync::{Arc, Barrier};
+        let pending = Arc::new(SharedPendingChat::new());
+        let cancel = Arc::new(SharedChatCancel::new());
+        let barrier = Arc::new(Barrier::new(4));
+        let mut handles = Vec::new();
+        for (producer, source) in [
+            bubble::ChatSource::Text,
+            bubble::ChatSource::Voice,
+            bubble::ChatSource::Gamepad,
+            bubble::ChatSource::Text,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let pending = pending.clone();
+            let cancel = cancel.clone();
+            let barrier = barrier.clone();
+            handles.push(std::thread::spawn(move || {
+                barrier.wait();
+                for item in 0..16 {
+                    accept_chat(
+                        &pending,
+                        &cancel,
+                        format!("{producer}:{item}"),
+                        source,
+                        |_| {},
+                    )
+                    .unwrap();
+                }
+            }));
+        }
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        let requests = std::iter::from_fn(|| pending.take()).collect::<Vec<_>>();
+        assert_eq!(requests.len(), 64);
+        for (index, request) in requests.iter().enumerate() {
+            assert_eq!(request.request_id, index as u64 + 1);
+        }
+        let texts = requests
+            .iter()
+            .map(|r| r.user_text.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(texts.len(), 64);
+    }
+
+    #[test]
+    fn test_stop_clears_queued_requests_and_preserves_later_submission() {
+        let pending = SharedPendingChat::new();
+        let cancel = SharedChatCancel::new();
+        let first = accept_chat(
+            &pending,
+            &cancel,
+            "停止前第一句".into(),
+            bubble::ChatSource::Text,
+            |_| {},
+        )
+        .unwrap()
+        .request_id;
+        let second = accept_chat(
+            &pending,
+            &cancel,
+            "停止前第二句".into(),
+            bubble::ChatSource::Voice,
+            |_| {},
+        )
+        .unwrap()
+        .request_id;
+        let third = accept_chat(
+            &pending,
+            &cancel,
+            "停止后新发的消息".into(),
+            bubble::ChatSource::Text,
+            |_| {},
+        )
+        .unwrap()
+        .request_id;
+        let stopped = cancel.cancel_through(second);
         pending.cancel_through(stopped).unwrap();
-        assert_eq!(pending.take(), Some(next.clone()));
-        assert!(!cancel.is_cancelled(next.generation));
+        assert!(cancel.is_cancelled(first));
+        assert!(cancel.is_cancelled(second));
+        assert!(!cancel.is_cancelled(third));
+        assert_eq!(pending.take().unwrap().request_id, third);
+        assert!(pending.take().is_none());
+        // 迟到的旧停止不能取消新编号。
+        assert_eq!(cancel.cancel_through(first), first);
+        assert!(!cancel.is_cancelled(third));
     }
 
     #[tokio::test]
     async fn test_stop_after_queue_take_prevents_starting_stream() {
         use std::sync::atomic::AtomicBool;
-
         let pending = SharedPendingChat::new();
         let cancel = SharedChatCancel::new();
-        pending
-            .set(PendingChatRequest {
-                text: "已经取走但还没运行的消息".into(),
-                generation: cancel.begin_chat(),
-            })
-            .unwrap();
+        let ack = accept_chat(
+            &pending,
+            &cancel,
+            "已取走但尚未运行".into(),
+            bubble::ChatSource::Text,
+            |_| {},
+        )
+        .unwrap();
         let request = pending.take().unwrap();
-        pending.cancel_through(cancel.cancel_current()).unwrap();
-
+        pending
+            .cancel_through(cancel.cancel_through(ack.request_id))
+            .unwrap();
         let started = AtomicBool::new(false);
         let result = cancel
-            .run_until_cancelled(request.generation, async {
+            .run_until_cancelled(request.request_id, async {
                 started.store(true, Ordering::SeqCst);
             })
             .await;

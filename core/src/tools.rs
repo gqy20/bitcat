@@ -9,6 +9,7 @@
 //! 执行器均为纯函数（async 用 `tokio::process`），方便独立测试。
 //! shell 执行按平台选择 shell（Windows 用 powershell，其他平台用 `$SHELL`），
 //! 与 `agent.rs`（注册工具到 rig Agent）和 `bridge.rs`（解析工具调用）交互。
+//! 长期记忆工具通过 `LongTermMemory` 的持久化事务与后台收尾、人工删除协调写入。
 
 use crate::action::launch_program;
 use crate::agent_reaction::MemoryCandidate;
@@ -400,8 +401,10 @@ pub fn execute_search_memory(args: &SearchMemoryArgs, store: &LongTermMemory) ->
 
 /// Search the persisted long-term memory store.
 pub fn execute_search_memory_live(args: &SearchMemoryArgs) -> ToolResult {
-    let store = LongTermMemory::load();
-    execute_search_memory(args, &store)
+    match LongTermMemory::load_checked() {
+        Ok(store) => execute_search_memory(args, &store),
+        Err(e) => ToolResult::err(format!("failed to load long-term memory: {e}")),
+    }
 }
 
 /// Add one explicit durable memory note to an already-loaded store.
@@ -420,13 +423,16 @@ pub fn execute_remember_into(
         args.importance.unwrap_or(4).clamp(1, 5),
         normalize_memory_tags(&args.tags),
     );
+    let previous_last_id = store.entries.last().map(|entry| entry.id.clone());
     store.record_candidate(
         &candidate,
         "remember tool request",
         &candidate.text,
         max_entries,
     );
-    if let Some(entry) = store.entries.last_mut() {
+    if let Some(entry) = store.entries.last_mut()
+        && previous_last_id.as_deref() != Some(entry.id.as_str())
+    {
         entry.source = Some("remember_tool".to_string());
     }
     ToolResult::ok(format!(
@@ -436,16 +442,18 @@ pub fn execute_remember_into(
     ))
 }
 
-/// Add one explicit durable memory note to the persisted long-term store.
+/// Add one durable note in a transaction with the latest persisted store.
 pub fn execute_remember(args: &RememberArgs) -> ToolResult {
-    let mut store = LongTermMemory::load();
-    let result = execute_remember_into(args, &mut store, DEFAULT_LONG_TERM_MEMORY_MAX_ENTRIES);
-    if !result.success {
-        return result;
-    }
-    match store.save() {
-        Ok(()) => result,
-        Err(e) => ToolResult::err(format!("failed to save long-term memory: {e}")),
+    match LongTermMemory::update_latest(|store| {
+        let result = execute_remember_into(args, store, DEFAULT_LONG_TERM_MEMORY_MAX_ENTRIES);
+        if result.success {
+            Ok(result)
+        } else {
+            Err(result.output)
+        }
+    }) {
+        Ok((_, result)) => result,
+        Err(e) => ToolResult::err(format!("failed to remember long-term memory: {e}")),
     }
 }
 
@@ -1010,6 +1018,40 @@ mod tests {
         assert_eq!(store.entries[0].importance, Some(5));
         assert_eq!(store.entries[0].tags, vec!["preference"]);
         assert_eq!(store.entries[0].source.as_deref(), Some("remember_tool"));
+    }
+
+    #[test]
+    fn duplicate_remember_preserves_unrelated_record_source() {
+        let mut store = LongTermMemory {
+            entries: Vec::new(),
+        };
+        for text in ["User prefers quiet UI", "User works on BitCat"] {
+            store.record_candidate(
+                &MemoryCandidate::explicit(text.into(), 4, vec![]),
+                "conversation",
+                "reply",
+                10,
+            );
+        }
+
+        let result = execute_remember_into(
+            &RememberArgs {
+                text: "User prefers quiet UI".into(),
+                importance: Some(4),
+                tags: vec![],
+            },
+            &mut store,
+            10,
+        );
+
+        assert!(result.success);
+        assert_eq!(store.entries.len(), 2);
+        assert!(
+            store
+                .entries
+                .iter()
+                .all(|entry| entry.source.as_deref() == Some("agent_reaction"))
+        );
     }
 
     #[test]
