@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
 
 (function () {
+  const CANVAS_UI_FONT = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement).getPropertyValue("--font-ui").trim() || "monospace" : "monospace";
   const GRAVITY = -36;
   const FLOOR_Y = 0;
   const STAGE_HALF_WIDTH = 4.95;
@@ -669,7 +670,7 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
     canvas.height = 96;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.font = '700 44px system-ui, sans-serif';
+    ctx.font = `700 44px ${CANVAS_UI_FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineWidth = 8;
@@ -695,7 +696,7 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
     canvas.height = opts.height || 128;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.font = opts.font || '800 72px "Microsoft YaHei", "Segoe UI", sans-serif';
+    ctx.font = opts.font || `800 72px ${CANVAS_UI_FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineWidth = opts.strokeWidth ?? 10;
@@ -1054,7 +1055,7 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
     const glyph = createTextSprite('咒', {
       width: 128,
       height: 128,
-      font: '900 74px "Microsoft YaHei", serif',
+      font: `900 74px ${CANVAS_UI_FONT}`,
       color: '#ff9cff',
       stroke: 'rgba(38, 0, 48, 0.92)',
       strokeWidth: 7,
@@ -1688,7 +1689,7 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
       const soul = createTextSprite('魂', {
         width: 256,
         height: 256,
-        font: '900 128px "Microsoft YaHei", serif',
+        font: `900 128px ${CANVAS_UI_FONT}`,
         color: '#ffc864',
         stroke: 'rgba(24, 14, 6, 0.9)',
         opacity: 0.58,
@@ -1723,7 +1724,7 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
         const glyph = createTextSprite(side < 0 ? '封' : '煞', {
           width: 128,
           height: 192,
-          font: '900 82px "Microsoft YaHei", serif',
+          font: `900 82px ${CANVAS_UI_FONT}`,
           color: side < 0 ? '#082b44' : '#3b0730',
           stroke: 'rgba(255,255,255,0.28)',
           strokeWidth: 4,
@@ -1741,7 +1742,7 @@ import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
           const tag = createTextSprite(i === 1 ? '妖' : '灵', {
             width: 96,
             height: 192,
-            font: '800 70px "Microsoft YaHei", serif',
+            font: `800 70px ${CANVAS_UI_FONT}`,
             color: '#f8d37b',
             stroke: 'rgba(28, 16, 8, 0.85)',
             strokeWidth: 6,

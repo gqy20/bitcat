@@ -1,0 +1,84 @@
+/* Shared typography, loaded by fonts.css in both light and dark windows.
+ * Size roles describe purpose; geometry-specific line boxes are explicit exceptions.
+ * Change role values here, never by adding local numeric font sizes. */
+:root {
+  --type-page: 26px;
+  --type-page-compact: 23px;
+  --type-section: 16px;
+  --type-item: 15px;
+  --type-body: 14px;
+  --type-control: 13px;
+  --type-caption: 12px;
+  --type-tag: 11px;
+  --type-code: 13px;
+  --type-brand: 24px;
+  --type-metric: 23px;
+  --type-metric-compact: 20px;
+  --type-metric-small: 18px;
+  --type-metric-tight: 16px;
+  --type-hero: 34px;
+  /* Fixed-size auxiliary windows: titles, content, metadata, tiny status badges. */
+  --type-dense-title: 14px;
+  --type-dense-body: 13px;
+  --type-dense-caption: 12px;
+  --type-dense-meta: 11px;
+  --type-dense-badge: 10px;
+  /* Icons and game display numerals are not body text. */
+  --type-icon: 20px;
+  --type-icon-small: 18px;
+  --type-icon-large: 44px;
+  --type-game-display: 54px;
+  --type-code-inline: .9em;
+  --type-table-relative: .92em;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-display: 800;
+  --leading-flat: 1;
+  --leading-tight: 1.1;
+  --leading-label: 1.25;
+  --leading-heading: 1.3;
+  --leading-compact: 1.4;
+  --leading-body: 1.5;
+  --leading-reading: 1.6;
+  /* Text vertically centered in fixed-height controls, not prose line spacing. */
+  --line-dense-badge: 14px;
+  --line-dense-meta: 16px;
+  --line-dense-body: 18px;
+  --line-dense-row: 22px;
+  --line-control-small: 24px;
+  --line-control-medium: 25px;
+  --line-control-large: 30px;
+
+  /* Complete text styles for new components. --font-ui is supplied by fonts.css. */
+  --font-page: var(--weight-bold) var(--type-page)/var(--leading-heading) var(--font-ui);
+  --font-section: var(--weight-bold) var(--type-section)/var(--leading-heading) var(--font-ui);
+  --font-item: var(--weight-semibold) var(--type-item)/var(--leading-heading) var(--font-ui);
+  --font-body: var(--weight-regular) var(--type-body)/var(--leading-body) var(--font-ui);
+  --font-caption: var(--weight-regular) var(--type-caption)/var(--leading-compact) var(--font-ui);
+  --font-control: var(--weight-semibold) var(--type-control)/var(--leading-label) var(--font-ui);
+  --font-dense-title: var(--weight-bold) var(--type-dense-title)/var(--leading-label) var(--font-ui);
+  --font-dense-body: var(--weight-regular) var(--type-dense-body)/var(--leading-compact) var(--font-ui);
+
+  /* Existing component aliases: all values resolve to the same role source. */
+  --text-xs: var(--type-tag);
+  --text-sm: var(--type-caption);
+  --text-md: var(--type-body);
+  --text-lg: var(--type-section);
+  --text-xl: var(--type-metric-compact);
+  --text-2xl: var(--type-page);
+  --text-3xl: var(--type-hero);
+  --font-size-control: var(--type-body);
+  --font-size-control-sm: var(--type-control);
+  --font-size-code: var(--type-code);
+  --font-size-page-title: var(--type-page);
+  --font-size-hero-title: var(--type-hero);
+  --font-size-section-title: var(--type-section);
+  --font-size-icon: var(--type-icon);
+  --font-size-icon-sm: var(--type-icon-small);
+  --font-size-metric-lg: var(--type-metric);
+  --font-size-metric-md: var(--type-metric-compact);
+  --font-size-metric-sm: var(--type-metric-small);
+}

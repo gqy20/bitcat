@@ -82,6 +82,18 @@ pub fn install_claude_code_hooks() -> Result<String, String> {
     )?;
     Ok(report.message("Claude Code", &script_path))
 }
+
+/// 探测 `~/.claude/settings.json` 中是否仍有 BitCat hook 配置。
+pub fn is_installed() -> bool {
+    settings_path()
+        .and_then(|path| std::fs::read_to_string(path).map_err(|e| e.to_string()))
+        .map(|content| settings_has_marker(&content))
+        .unwrap_or(false)
+}
+
+fn settings_has_marker(content: &str) -> bool {
+    content.contains(BITCAT_HOOK_MARKER)
+}
 fn read_settings_json(path: &PathBuf) -> Result<Value, String> {
     if !path.exists() {
         return Ok(json!({}));

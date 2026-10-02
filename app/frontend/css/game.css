@@ -37,8 +37,8 @@ body {
 }
 
 .hud .title {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: var(--type-metric-small);
+  font-weight: var(--weight-bold);
   margin-bottom: 6px;
 }
 
@@ -46,7 +46,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  font: 600 13px/1.2 "Segoe UI", "Microsoft YaHei", sans-serif;
+  font: var(--weight-semibold) var(--type-control)/var(--leading-label) var(--font-ui);
 }
 
 .stats span {
@@ -140,7 +140,7 @@ body.arena-active .arena-hud {
   position: absolute;
   top: 11px;
   color: #f8fbff;
-  font: 900 25px/1 "Segoe UI", "Microsoft YaHei", sans-serif;
+  font: var(--weight-display) var(--type-page)/var(--leading-flat) var(--font-ui);
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.75), 0 0 18px currentColor;
   white-space: nowrap;
 }
@@ -205,7 +205,7 @@ body.arena-active .arena-hud {
   min-width: 118px;
   padding: 9px 14px 8px;
   color: #ffffff;
-  font: 900 54px/0.9 "Segoe UI", "Microsoft YaHei", sans-serif;
+  font: var(--weight-display) var(--type-game-display)/var(--leading-flat) var(--font-ui);
   background: linear-gradient(180deg, rgba(12, 14, 22, 0.96), rgba(3, 5, 10, 0.92));
   border: 3px solid rgba(255, 209, 102, 0.78);
   clip-path: polygon(12% 0, 88% 0, 100% 50%, 88% 100%, 12% 100%, 0 50%);
@@ -215,7 +215,7 @@ body.arena-active .arena-hud {
 .arena-round {
   margin-top: 5px;
   color: #ffd166;
-  font: 900 18px/1 "Segoe UI", "Microsoft YaHei", sans-serif;
+  font: var(--weight-display) var(--type-metric-small)/var(--leading-flat) var(--font-ui);
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.85);
 }
 
@@ -324,13 +324,13 @@ body.arena-active .stats #length::before {
 }
 
 .overlay-title {
-  font-size: 22px;
-  font-weight: 800;
+  font-size: var(--type-metric-compact);
+  font-weight: var(--weight-display);
   margin-bottom: 8px;
 }
 
 .overlay-text {
-  font-size: 13px;
+  font-size: var(--type-control);
   opacity: 0.82;
 }
 
@@ -350,7 +350,7 @@ body.arena-active .stats #length::before {
   height: 36px;
   padding: 0 14px;
   color: #f7fbff;
-  font: 700 13px/1 "Segoe UI", "Microsoft YaHei", sans-serif;
+  font: var(--weight-bold) var(--type-control)/var(--leading-flat) var(--font-ui);
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.09);
