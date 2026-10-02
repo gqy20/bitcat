@@ -279,7 +279,6 @@ AI Agent 通过 `create_reminder` / `list_reminders` / `cancel_reminder` Tool �
 | `insta`（yaml+redactions） | 快照测试：serde 序列化、API 请求体、配置解析 | core |
 | `rstest` | 参数化测试 + 测试夹具，替代重复的 test 函数 | core |
 | `wiremock` | HTTP mock：模拟 Anthropic API 响应 | core |
-| `mockall` | Trait mock（预留，暂未使用） | core |
 | `proptest` | 属性测试：状态机、边界条件 | core |
 | `tauri::test` | MockRuntime IPC 测试，需 `ipc-tests` feature | app |
 | `vitest` + `jsdom` | 前端单元测试 | frontend |
