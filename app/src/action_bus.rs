@@ -6,6 +6,7 @@
 //! 这样设计是为了让 gamepad_loop 不再直接耦合各业务的实现细节，新增动作类型时
 //! 只需扩展 [`Action`] 枚举和 `dispatch` 的 match 分支。
 //! 各输入源通过 [`ActionSource`] 标记来源，便于日志审计和问题排查。
+//! 打开与退出对话只更新用户交互保护，AI 生成保护由对话执行链独立管理。
 
 use bitcat_core::action::ActionDef;
 use bitcat_core::logging::log_preview;
@@ -33,7 +34,7 @@ pub enum Action {
     TogglePanel,
     /// 打开对话输入（创建 bubble 窗口 + showInput）
     OpenChat,
-    /// 退出对话（截图恢复写 bubble）
+    /// 退出用户交互（生成未结束时继续避让观察）
     ExitChat,
     /// 提交一条对话消息（写入 SharedPendingChat，由 chat_loop 消费）
     SubmitChat(String),
@@ -157,7 +158,7 @@ impl ActionBus {
                 info!(?source, action = "ExitChat", "action dispatch");
                 let state: tauri::State<'_, crate::bubble::SharedBubble> =
                     tauri::Manager::state(app);
-                state.set_chat_active(false);
+                state.set_interaction_active(false);
             }
             Action::OpenChat => {
                 info!(?source, action = "OpenChat", "action dispatch");
@@ -307,16 +308,27 @@ pub(crate) fn action_for_start_game_kind(kind: bitcat_core::game_request::StartG
     }
 }
 
-/// 将聊天文本写入 [`SharedPendingChat`]，由 [`chat_loop`](crate::gamepad::chat_loop) 消费。
+/// 先预留取消编号，再将请求写入 [`SharedPendingChat`]，由 chat_loop 消费。
 fn submit_chat_impl(app: &AppHandle, text: String) {
     let trimmed = text.trim().to_string();
     if trimmed.is_empty() {
         warn!("empty SubmitChat action skipped");
         return;
     }
+    let cancel: tauri::State<'_, crate::gamepad::SharedChatCancel> = tauri::Manager::state(app);
+    let generation = cancel.begin_chat();
     let state: tauri::State<'_, crate::gamepad::SharedPendingChat> = tauri::Manager::state(app);
-    if let Err(e) = state.set(trimmed) {
+    if let Err(e) = state.set(crate::gamepad::PendingChatRequest {
+        text: trimmed,
+        generation,
+    }) {
         warn!(error = %e, "SharedPendingChat write failed");
+        if let Err(e) = crate::bubble::show_chat_message(
+            app,
+            "这句话没有发出去。对话暂时不能继续，请重启应用后再试。",
+        ) {
+            warn!(error = %e, "pending chat failure feedback failed");
+        }
     }
 }
 
@@ -340,10 +352,7 @@ fn open_chat_impl(app: &AppHandle) {
     };
 
     let state: tauri::State<'_, crate::bubble::SharedBubble> = app.state();
-    if let Ok(mut g) = state.pending_text.lock() {
-        *g = Some(String::new());
-    }
-    state.set_chat_active(true);
+    state.set_interaction_active(true);
 
     crate::bubble::position_above_pet(app, &window);
     let _ = window.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));

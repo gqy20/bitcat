@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BitCat 对话预览</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #24332d; background: #fafbfa; font: 14px/1.5 system-ui, sans-serif; }
+    header { padding: 22px 28px; border-bottom: 1px solid #e0e6e2; }
+    h1 { margin: 0; font-size: 24px; }
+    p { margin: 6px 0 0; color: #5b6b62; }
+    .layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); min-height: calc(100vh - 110px); }
+    aside { padding: 20px; background: #f0f3f0; }
+    button { display: block; width: 100%; margin: 0 0 9px; padding: 9px; font: inherit; cursor: pointer; border: 1px solid #d3ddd4; border-radius: 5px; background: #fafbfa; color: inherit; text-align: left; }
+    button:hover { background: #e6eee8; }
+    button:focus-visible { outline: 2px solid #28764f; outline-offset: 2px; }
+    button:disabled { opacity: .55; cursor: default; }
+    [data-open] { border-color: #387a53; background: #e1ede4; }
+    .desktop { display: flex; min-width: 0; align-items: center; overflow: auto; background: #e8eee8; }
+    .scene { display: flex; flex: none; width: max-content; min-width: 100%; flex-direction: column; align-items: center; padding: 28px 22px; }
+    iframe { display: block; width: 300px; height: 120px; flex: none; border: 0; background: transparent; }
+    canvas { width: 90px; height: 100px; flex: none; }
+    #status { margin-top: 16px; }
+    @media (max-width: 720px) {
+      header { padding: 18px 20px; }
+      .layout { grid-template-columns: minmax(0, 1fr); }
+      aside { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 16px; }
+      button { margin: 0; }
+      #status { grid-column: 1 / -1; margin-top: 4px; }
+      .desktop { min-height: 440px; }
+      .scene { padding: 22px 12px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>对话预览</h1>
+    <p>体验短回应、连续追问和长文阅读。这里使用示例内容，不会联系 AI 服务。</p>
+  </header>
+  <div class="layout">
+    <aside aria-label="选择体验场景">
+      <button type="button" data-open disabled>开始聊天 / 恢复</button>
+      <button type="button" data-case="short" disabled>下一条：短回复</button>
+      <button type="button" data-case="long" disabled>下一条：长文</button>
+      <button type="button" data-case="error" disabled>下一条：发送失败</button>
+      <button type="button" data-notice disabled>普通短回应</button>
+      <button type="button" data-tool="planned" disabled>提醒处理中</button>
+      <button type="button" data-tool="blocked" disabled>文件访问受限</button>
+      <button type="button" data-tool="failed" disabled>提醒失败</button>
+      <p id="status" role="status" aria-live="polite" aria-atomic="true">正在加载对话预览…</p>
+    </aside>
+    <main class="desktop" aria-label="猫与对话界面">
+      <div class="scene">
+        <iframe id="chatFrame" title="BitCat 对话界面"></iframe>
+        <canvas id="pet" width="180" height="200" role="img" aria-label="陪在对话旁边的猫"></canvas>
+      </div>
+    </main>
+  </div>
+  <script>
+    (() => {
+      const frame = document.getElementById('chatFrame');
+      const status = document.getElementById('status');
+      const buttons = [...document.querySelectorAll('aside button')];
+      let preview = null;
+
+      function setStatus(text) {
+        status.textContent = text;
+      }
+
+      window.addEventListener('message', event => {
+        if (event.source !== frame.contentWindow || event.origin !== location.origin) return;
+        const data = event.data;
+        if (!data || typeof data !== 'object') return;
+        if (data.type === 'size' && Number.isFinite(data.width) && Number.isFinite(data.height) && data.width > 0 && data.height > 0) {
+          frame.style.width = data.width + 'px';
+          frame.style.height = data.height + 'px';
+        }
+        if (data.type === 'hidden') frame.style.visibility = 'hidden';
+        if (data.type === 'shown') frame.style.visibility = 'visible';
+      });
+
+      document.querySelector('[data-open]').onclick = () => {
+        if (!preview) return;
+        preview.open();
+        setStatus('在输入框说一句话，猫会用示例回复。可以继续追问、停止或收起。');
+      };
+
+      const scenarioCopy = {
+        short: '下一次发送会显示一段短回复。在输入框说一句话试试。',
+        long: '下一次发送会显示一篇长文，可以展开阅读并上下滚动。',
+        error: '下一次发送会模拟失败，可以检查草稿是否保留，再点发送重试。',
+      };
+      document.querySelectorAll('[data-case]').forEach(button => {
+        button.onclick = () => {
+          if (!preview) return;
+          preview.next(button.dataset.case);
+          preview.open();
+          setStatus(scenarioCopy[button.dataset.case]);
+        };
+      });
+
+      document.querySelector('[data-notice]').onclick = () => {
+        if (!preview) return;
+        if (!preview.notice()) {
+          setStatus('聊天或回复中会保留当前内容。先收起聊天，再看短回应。');
+          return;
+        }
+        setStatus('猫的一句短回应会自动收起。点「开始聊天 / 恢复」可以接着聊。');
+      };
+
+      document.querySelectorAll('[data-tool]').forEach(button => {
+        button.onclick = () => {
+          if (!preview) return;
+          preview.open();
+          const phase = button.dataset.tool;
+          preview.tool(phase, phase === 'blocked' ? { tool_name: 'read_file' } : undefined);
+          setStatus({
+            planned: '这是提醒处理中的状态示例，没有创建真实提醒。',
+            blocked: '这是文件访问受限时的提示示例，没有读取真实文件。',
+            failed: '这是提醒失败时的提示示例，没有创建真实提醒。',
+          }[phase]);
+        };
+      });
+
+      frame.onload = () => {
+        const child = frame.contentWindow;
+        if (!child || !child.__preview) {
+          if (frame.srcdoc) setStatus('对话预览没有加载完整。请刷新页面重试。');
+          return;
+        }
+        preview = child.__preview;
+        if (typeof preview.open !== 'function' || typeof preview.next !== 'function' || typeof preview.notice !== 'function' || typeof preview.tool !== 'function') {
+          preview = null;
+          setStatus('对话预览没有加载完整。请刷新页面重试。');
+          return;
+        }
+        buttons.forEach(button => { button.disabled = false; });
+        frame.style.visibility = 'visible';
+        preview.notice();
+        setStatus('先看看猫的一句短回应，再点「开始聊天 / 恢复」说句话。');
+      };
+
+      fetch('/bubble.html', { cache: 'no-store' })
+        .then(response => {
+          if (!response.ok) throw new Error('Bubble page unavailable');
+          return response.text();
+        })
+        .then(html => {
+          const page = new DOMParser().parseFromString(html, 'text/html');
+          const base = page.createElement('base');
+          base.href = location.origin + '/';
+          const mock = page.createElement('script');
+          mock.src = '/tools/chat-preview-mock.js';
+          page.head.prepend(base, mock);
+          // 预览每次加载当前源码，避免 srcdoc 复用旧脚本与旧样式。
+          const revision = String(Date.now());
+          page.querySelectorAll('script[src], link[rel="stylesheet"][href]').forEach(asset => {
+            const attribute = asset.tagName === 'SCRIPT' ? 'src' : 'href';
+            const url = new URL(asset.getAttribute(attribute), base.href);
+            url.searchParams.set('preview_revision', revision);
+            asset.setAttribute(attribute, url.href);
+          });
+          frame.srcdoc = '<!doctype html>\n' + page.documentElement.outerHTML;
+        })
+        .catch(() => {
+          setStatus('对话界面暂时没有加载成功。请确认预览服务还在运行，再刷新页面。');
+        });
+
+      fetch('/__fixtures__/pets/cat-tabby/manifest.json')
+        .then(response => {
+          if (!response.ok) throw new Error('Pet manifest unavailable');
+          return response.json();
+        })
+        .then(manifest => {
+          const image = new Image();
+          image.onload = () => {
+            const context = document.getElementById('pet').getContext('2d');
+            context.drawImage(image, 0, 0, manifest.sprite.frameWidth, manifest.sprite.frameHeight, 16, 8, 148, 160);
+          };
+          image.src = '/__fixtures__/pets/cat-tabby/' + manifest.sprite.image;
+        })
+        .catch(() => {
+          document.getElementById('pet').setAttribute('aria-label', '猫的图片暂时无法加载，对话仍可使用');
+        });
+    })();
+  </script>
+</body>
+</html>

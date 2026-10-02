@@ -8,6 +8,10 @@
 //! 解耦，确保无手柄或手柄断开时对话链仍可正常运行。
 //! 对外通过 Tauri IPC 命令（`cmd_submit_chat` / `cmd_open_chat` 等）接收前端事件，
 //! 对内通过 `pet-event` 通知前端宠物状态变化。
+//! AI 生成保护由守卫管理，前端输入与阅读独立保持交互保护，停止回复不会退出会话。
+//! 初始化失败与早退也发送完整回复结束协议，技术详情只记录在诊断日志中。
+//! 请求提交时预留取消编号；停止清理排队请求并丢弃运行中的回复 future，避免继续启动工具。
+//! 已经执行的外部动作无法撤销，正在执行的阻塞操作也可能继续完成。
 
 use crate::bubble;
 use crate::commands::SharedWindowState;
@@ -78,15 +82,44 @@ fn emit_pet_event(app: &AppHandle, event: PetEvent) {
     bus.emit(app, event);
 }
 
+/// 初始化失败时回应用户请求，避免输入框已经开始等待却没有结束消息。
+fn show_agent_unavailable(app: &AppHandle) {
+    if let Err(e) = bubble::show_chat_message(
+        app,
+        "对话暂时不可用。AI 连接尚未准备好，请到设置检查 API Key 和服务地址，保存后重启应用。",
+    ) {
+        warn!(error = %e, "AI unavailable feedback failed");
+    }
+}
+
+/// 已开始的回复写入静态说明后结束，正文写入失败时也结束前端等待。
+fn finish_chat_feedback(app: &AppHandle, message: &str) {
+    if let Err(e) = bubble::append_bubble_chunk(app, message) {
+        warn!(error = %e, "chat feedback append failed");
+    }
+    if let Err(e) = bubble::finalize_bubble(app) {
+        warn!(error = %e, "chat feedback finalization failed");
+    }
+}
+
 // ========================================================================
 // 聊天输入系统（前端提交 → chat_loop 消费）
 // ========================================================================
+
+/// 已提交的对话请求，编号从排队到运行保持不变，停止时不会因取出队列而失效。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingChatRequest {
+    /// 已校验的用户文本，运行前不再从可变队列中读取。
+    pub text: String,
+    /// 提交时预留的编号，用于停止排队或已经取走的请求。
+    pub generation: u64,
+}
 
 /// 单槽消息队列：前端 `cmd_submit_chat` 写入，[`chat_loop`] 每 80ms 轮询消费。
 ///
 /// 后写入的消息会覆盖先前的，确保只有最新的一条用户输入被发送给 AI。
 pub struct SharedPendingChat {
-    pending: Mutex<Option<String>>,
+    pending: Mutex<Option<PendingChatRequest>>,
 }
 
 impl SharedPendingChat {
@@ -96,9 +129,36 @@ impl SharedPendingChat {
         }
     }
 
-    /// 置入一条待消费的聊天文本（由 chat_loop 拉取）。
-    pub fn set(&self, text: String) -> Result<(), String> {
-        *self.pending.lock().map_err(|e| e.to_string())? = Some(text);
+    /// 置入已预留取消编号的请求，较早提交但迟到的写入不会覆盖新请求。
+    pub fn set(&self, request: PendingChatRequest) -> Result<(), String> {
+        let mut pending = self.pending.lock().map_err(|e| e.to_string())?;
+        if pending
+            .as_ref()
+            .is_some_and(|newer| newer.generation > request.generation)
+        {
+            return Ok(());
+        }
+        *pending = Some(request);
+        Ok(())
+    }
+
+    /// 短锁取走请求；运行时仍检查原编号是否已经取消。
+    fn take(&self) -> Option<PendingChatRequest> {
+        self.pending
+            .lock()
+            .ok()
+            .and_then(|mut pending| pending.take())
+    }
+
+    /// 清理停止操作覆盖的待执行请求，保留停止后新提交的请求。
+    fn cancel_through(&self, generation: u64) -> Result<(), String> {
+        let mut pending = self.pending.lock().map_err(|e| e.to_string())?;
+        if pending
+            .as_ref()
+            .is_some_and(|request| request.generation <= generation)
+        {
+            *pending = None;
+        }
         Ok(())
     }
 }
@@ -109,13 +169,14 @@ impl Default for SharedPendingChat {
     }
 }
 
-/// 当前 AI 对话的软取消状态。
+/// 已提交和正在运行的 AI 对话取消状态。
 ///
-/// 每次新对话开始都会递增 generation；前端点"停止"时取消当前 generation。
-/// 底层模型流如果不能立刻中断，app 层也会丢弃后续 chunk，并跳过记忆写入。
+/// 提交请求时预留 generation，执行时使用原编号；停止同时覆盖排队和运行的请求。
+/// 运行中的模型流通过 select 丢弃 future，已开始的外部动作无法撤销。
 pub struct SharedChatCancel {
     current_generation: AtomicU64,
     cancelled_until_generation: AtomicU64,
+    cancellation_changed: tokio::sync::Notify,
 }
 
 impl SharedChatCancel {
@@ -123,9 +184,11 @@ impl SharedChatCancel {
         Self {
             current_generation: AtomicU64::new(0),
             cancelled_until_generation: AtomicU64::new(0),
+            cancellation_changed: tokio::sync::Notify::new(),
         }
     }
 
+    /// 为新请求预留编号，必须在写入待执行队列之前调用。
     pub fn begin_chat(&self) -> u64 {
         self.current_generation.fetch_add(1, Ordering::SeqCst) + 1
     }
@@ -134,13 +197,38 @@ impl SharedChatCancel {
         let generation = self.current_generation.load(Ordering::SeqCst);
         if generation > 0 {
             self.cancelled_until_generation
-                .store(generation, Ordering::SeqCst);
+                .fetch_max(generation, Ordering::SeqCst);
+            self.cancellation_changed.notify_waiters();
         }
         generation
     }
 
     pub fn is_cancelled(&self, generation: u64) -> bool {
         generation > 0 && generation <= self.cancelled_until_generation.load(Ordering::SeqCst)
+    }
+
+    /// 停止后丢弃整个流式 future，避免仅隐藏输出却继续启动后续工具。
+    async fn run_until_cancelled<T>(
+        &self,
+        generation: u64,
+        work: impl std::future::Future<Output = T>,
+    ) -> Option<T> {
+        tokio::select! {
+            biased;
+            _ = async {
+                loop {
+                    let notified = self.cancellation_changed.notified();
+                    tokio::pin!(notified);
+                    // 先登记等待者再检查编号，防止检查与 await 之间丢失停止通知。
+                    notified.as_mut().enable();
+                    if self.is_cancelled(generation) {
+                        return;
+                    }
+                    notified.await;
+                }
+            } => None,
+            result = work => Some(result),
+        }
     }
 }
 
@@ -167,21 +255,24 @@ pub async fn cmd_submit_chat(app: AppHandle, text: String) -> Result<(), String>
     Ok(())
 }
 
-/// 前端触发的"停止生成"命令：软取消当前 AI 对话并通知 bubble 进入停止态。
+/// 停止排队或运行的请求并通知 bubble 进入停止态，已执行的外部动作无法撤销。
 #[tauri::command]
 pub async fn cmd_cancel_chat(app: AppHandle) -> Result<(), String> {
     let cancel: State<'_, SharedChatCancel> = app.state();
     let generation = cancel.cancel_current();
     info!(generation, "[chat] cancel requested");
-    let bubble_state: State<'_, bubble::SharedBubble> = app.state();
-    bubble_state.set_chat_active(false);
+    let pending: State<'_, SharedPendingChat> = app.state();
+    if let Err(e) = pending.cancel_through(generation) {
+        warn!(error = %e, "cancel pending chat cleanup failed");
+    }
+    // 生成保护由运行中的 future 实际结束后释放，避免停止与最后一个回调之间被通知覆盖。
     let _ = app.emit_to("bubble", "bubble-cancelled", ());
     Ok(())
 }
 
 /// 原子性地取出并清空待消费的聊天消息，返回 `None` 表示无新消息。
-pub fn take_pending_chat(state: &State<'_, SharedPendingChat>) -> Option<String> {
-    state.pending.lock().ok().and_then(|mut g| g.take())
+pub fn take_pending_chat(state: &State<'_, SharedPendingChat>) -> Option<PendingChatRequest> {
+    state.take()
 }
 
 // ========================================================================
@@ -313,17 +404,17 @@ pub async fn cmd_exit_chat(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 轻量"进入 chat"命令：只置位 chat_active=true，不负责开窗口/展示 UI。
+/// 轻量"进入 chat"命令：保护用户输入或阅读，不负责开窗口/展示 UI。
 ///
 /// 与 cmd_open_chat 的区别：
 /// - cmd_open_chat 走"点击嘴巴"路径，会创建窗口 + eval showInput
-/// - cmd_enter_chat 给前端用：无论通过哪条路径展开了输入框（bubble-end 自动展开、
-///   稳定检测兜底、双击气泡、用户点击 input），都通知后端立刻锁住截图 / Vision。
+/// - cmd_enter_chat 给前端用：用户主动聊天或阅读时通知后端避让截图 / Vision；
+///   生成结束与停止不会释放这份保护，直到 cmd_exit_chat 或收起窗口。
 #[tauri::command]
 pub async fn cmd_enter_chat(app: AppHandle) -> Result<(), String> {
     let state: State<bubble::SharedBubble> = app.state();
     let was_active = state.is_chat_active();
-    state.set_chat_active(true);
+    state.set_interaction_active(true);
     if !was_active {
         info!("[cmd_enter_chat] chat 模式开启（截图已锁定）");
     }
@@ -689,6 +780,8 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                                     "gamepad chat requested"
                                 );
                                 run_ai_chat(&rt, ag, app, msg, "", &core);
+                            } else {
+                                show_agent_unavailable(app);
                             }
                         }
 
@@ -808,6 +901,7 @@ pub fn gamepad_loop(app: &tauri::AppHandle) {
                                 );
                             } else {
                                 warn!("[voice] AI Agent 未初始化");
+                                show_agent_unavailable(app);
                             }
                         }
                     }
@@ -897,24 +991,31 @@ pub fn chat_loop(app: &tauri::AppHandle) {
             let pc: State<SharedPendingChat> = app.state();
             take_pending_chat(&pc)
         };
-        if let Some(msg) = chat_msg {
+        if let Some(request) = chat_msg {
+            let cancel: State<SharedChatCancel> = app.state();
             let agent_state: State<SharedAgent> = app.state();
-            if let Some(ag) = agent_state.get_or_init() {
-                let core: State<SharedChatCore> = app.state();
-                let preview = log_preview(&msg, 60);
+            if cancel.is_cancelled(request.generation) {
                 info!(
-                    msg_chars = msg.chars().count(),
+                    generation = request.generation,
+                    "[chat] queued request cancelled before start"
+                );
+            } else if let Some(ag) = agent_state.get_or_init() {
+                let core: State<SharedChatCore> = app.state();
+                let preview = log_preview(&request.text, 60);
+                info!(
+                    msg_chars = request.text.chars().count(),
                     msg_preview = %preview,
                     "[chat] bubble input received"
                 );
-                run_ai_chat(&rt, ag, app, &msg, "[chat]", &core);
+                run_ai_chat_request(&rt, ag, app, &request, "[chat]", &core);
             } else {
-                let preview = log_preview(&msg, 60);
+                let preview = log_preview(&request.text, 60);
                 warn!(
-                    msg_chars = msg.chars().count(),
+                    msg_chars = request.text.chars().count(),
                     msg_preview = %preview,
-                    "[chat] AI Agent 未就绪，消息被丢弃"
+                    "[chat] AI Agent 未就绪，结束本轮对话并展示设置说明"
                 );
+                show_agent_unavailable(app);
             }
         }
 
@@ -1057,22 +1158,22 @@ pub fn chat_loop(app: &tauri::AppHandle) {
     }
 }
 
-/// RAII 守卫：创建时将 `chat_active` 置为 `true`，`Drop` 时自动还原为 `false`。
+/// RAII 守卫：创建时标记 AI 生成开始，`Drop` 时仅释放生成保护。
 ///
 /// **设计意图**：AI 对话期间截屏线程应跳过 Vision 分析（避免并发 token 消耗和
 /// 内容冲突）。无论 `run_ai_chat` 通过正常返回、`?` 提前退出还是 panic 退出，
-/// 守卫的 `Drop` 都会执行，保证截图线程在下一轮恢复工作。
+/// 守卫的 `Drop` 都会执行；用户仍在输入或阅读时继续保留对应保护。
 struct ChatActiveGuard {
     app: tauri::AppHandle,
     log_prefix: String,
 }
 
 impl ChatActiveGuard {
-    /// 创建守卫并立即将 `chat_active` 置为 `true`，锁定截图线程。
+    /// 创建守卫并立即开启生成保护，不改变用户交互状态。
     fn new(app: &tauri::AppHandle, log_prefix: &str) -> Self {
         let bubble_state: tauri::State<'_, bubble::SharedBubble> = app.state();
-        bubble_state.set_chat_active(true);
-        info!("{log_prefix}[chat_guard] chat_active=true (截屏已锁定)");
+        bubble_state.set_generation_active(true);
+        info!("{log_prefix}[chat_guard] generation_active=true (生成期间避让观察)");
         Self {
             app: app.clone(),
             log_prefix: log_prefix.to_string(),
@@ -1083,9 +1184,9 @@ impl ChatActiveGuard {
 impl Drop for ChatActiveGuard {
     fn drop(&mut self) {
         let bubble_state: tauri::State<'_, bubble::SharedBubble> = self.app.state();
-        bubble_state.set_chat_active(false);
+        bubble_state.set_generation_active(false);
         info!(
-            "{prefix}[chat_guard] chat_active=false (截屏已解锁)",
+            "{prefix}[chat_guard] generation_active=false (用户交互保护保留)",
             prefix = self.log_prefix
         );
     }
@@ -1098,7 +1199,7 @@ impl Drop for ChatActiveGuard {
 /// - 流式网络 IO 期间 **完全不持锁**，不阻塞其他线程
 /// - 写入记忆时再次短锁
 ///
-/// 截屏互斥：函数入口 set chat_active=true，RAII guard 保证 panic/return 都会 false。
+/// 截屏互斥：函数入口开启生成保护，RAII guard 在 panic/return 时只释放生成保护。
 pub fn run_ai_chat(
     rt: &tokio::runtime::Runtime,
     agent: &PetAgent,
@@ -1107,6 +1208,33 @@ pub fn run_ai_chat(
     log_prefix: &str,
     core: &SharedChatCore,
 ) {
+    let cancel: State<SharedChatCancel> = app.state();
+    let request = PendingChatRequest {
+        text: msg.to_string(),
+        generation: cancel.begin_chat(),
+    };
+    run_ai_chat_request(rt, agent, app, &request, log_prefix, core);
+}
+
+/// 执行已经预留编号的请求，排队消息不得重新分配编号而绕过停止操作。
+fn run_ai_chat_request(
+    rt: &tokio::runtime::Runtime,
+    agent: &PetAgent,
+    app: &tauri::AppHandle,
+    request: &PendingChatRequest,
+    log_prefix: &str,
+    core: &SharedChatCore,
+) {
+    let cancel_state: State<SharedChatCancel> = app.state();
+    let chat_generation = request.generation;
+    if cancel_state.is_cancelled(chat_generation) {
+        info!(
+            generation = chat_generation,
+            "{log_prefix}chat cancelled before start"
+        );
+        return;
+    }
+    let msg = request.text.as_str();
     let tag = if log_prefix.is_empty() { "" } else { " " };
     let msg_preview = log_preview(msg, 60);
     info!(
@@ -1118,11 +1246,10 @@ pub fn run_ai_chat(
 
     // RAII 锁：整个 chat 期间阻止截屏线程进入 Vision 分析；panic 或 early return 时自动释放
     let _chat_guard = ChatActiveGuard::new(app, log_prefix);
-    let cancel_state: tauri::State<'_, SharedChatCancel> = app.state();
-    let chat_generation = cancel_state.begin_chat();
 
     if let Err(e) = bubble::start_streaming_bubble(app) {
         warn!(error = %e, "{log_prefix}气泡启动错误");
+        finish_chat_feedback(app, "这次没能回复。对话窗口没有准备好，请重启应用后再试。");
         return;
     }
 
@@ -1135,6 +1262,7 @@ pub fn run_ai_chat(
         Ok(g) => g.build_context(memory_config),
         Err(e) => {
             warn!(error = %e, "memory 锁中毒，跳过上下文");
+            finish_chat_feedback(app, "这次没能回复。对话记录暂时读不了，请重启应用后再试。");
             return;
         }
     };
@@ -1168,6 +1296,7 @@ pub fn run_ai_chat(
         ),
         Err(e) => {
             warn!(error = %e, "long_term 锁中毒，跳过上下文");
+            finish_chat_feedback(app, "这次没能回复。记忆暂时读不了，请重启应用后再试。");
             return;
         }
     };
@@ -1238,73 +1367,75 @@ pub fn run_ai_chat(
     let tool_summaries = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
     let tool_summaries_for_stream = tool_summaries.clone();
     emit_pet_event(app, PetEvent::ai_thinking());
-    let stream_result = rt.block_on(agent.chat_stream(&enriched_msg, move |event| match event {
-        AgentStreamEvent::Text { text } => {
-            if cancel_for_stream.is_cancelled(chat_generation) {
-                return;
-            }
-            trace!(
-                chunk_chars = text.chars().count(),
-                "{prefix_for_log}{tag}AI chunk"
-            );
-            let _ = bubble::append_bubble_chunk(&app_for_chunks, &text);
-        }
-        AgentStreamEvent::Status { status } => {
-            if cancel_for_stream.is_cancelled(chat_generation) {
-                return;
-            }
-            debug!(status = ?status, "{prefix_for_log}{tag}AI stream status");
-            emit_pet_event(&app_for_chunks, agent_status_to_pet_event(status));
-        }
-        AgentStreamEvent::Tool { event } => {
-            if cancel_for_stream.is_cancelled(chat_generation) {
-                return;
-            }
-            debug!(
-                tool = %event.tool_name,
-                phase = ?event.phase,
-                "{prefix_for_log}{tag}AI tool event"
-            );
-            if let Some(pet_event) = tool_event_to_pet_event(&event) {
-                emit_pet_event(&app_for_chunks, pet_event);
-            }
-            if event.phase != ToolPhase::Planned {
-                if let Ok(mut summaries) = tool_summaries_for_stream.lock() {
-                    let preview = event.result_preview.as_deref().unwrap_or("");
-                    summaries.push(format!(
-                        "{}:{} success={:?} elapsed={:?} {}",
-                        event.tool_name,
-                        event.phase.as_str(),
-                        event.success,
-                        event.elapsed_ms,
-                        preview
-                    ));
+    let stream_result = rt.block_on(cancel_state.run_until_cancelled(
+        chat_generation,
+        agent.chat_stream(&enriched_msg, move |event| match event {
+            AgentStreamEvent::Text { text } => {
+                if cancel_for_stream.is_cancelled(chat_generation) {
+                    return;
                 }
+                trace!(
+                    chunk_chars = text.chars().count(),
+                    "{prefix_for_log}{tag}AI chunk"
+                );
+                let _ = bubble::append_bubble_chunk(&app_for_chunks, &text);
             }
-            if event.tool_name == "create_reminder"
-                && event.phase == ToolPhase::Finished
-                && event.success == Some(true)
-            {
-                let _ = app_for_chunks.emit_to("settings", "reminders-updated", ());
+            AgentStreamEvent::Status { status } => {
+                if cancel_for_stream.is_cancelled(chat_generation) {
+                    return;
+                }
+                debug!(status = ?status, "{prefix_for_log}{tag}AI stream status");
+                emit_pet_event(&app_for_chunks, agent_status_to_pet_event(status));
             }
-            let _ = bubble::emit_tool_event(
-                &app_for_chunks,
-                bubble::BubbleToolPayload {
-                    tool_name: event.tool_name,
-                    label: event.label,
-                    kind: event.kind.as_str().to_string(),
-                    phase: event.phase.as_str().to_string(),
-                    call_id: event.call_id,
-                    internal_call_id: event.internal_call_id,
-                    result_preview: event.result_preview,
-                    success: event.success,
-                    elapsed_ms: event.elapsed_ms,
-                },
-            );
-        }
-    }));
+            AgentStreamEvent::Tool { event } => {
+                if cancel_for_stream.is_cancelled(chat_generation) {
+                    return;
+                }
+                debug!(
+                    tool = %event.tool_name,
+                    phase = ?event.phase,
+                    "{prefix_for_log}{tag}AI tool event"
+                );
+                if let Some(pet_event) = tool_event_to_pet_event(&event) {
+                    emit_pet_event(&app_for_chunks, pet_event);
+                }
+                if event.phase != ToolPhase::Planned {
+                    if let Ok(mut summaries) = tool_summaries_for_stream.lock() {
+                        let preview = event.result_preview.as_deref().unwrap_or("");
+                        summaries.push(format!(
+                            "{}:{} success={:?} elapsed={:?} {}",
+                            event.tool_name,
+                            event.phase.as_str(),
+                            event.success,
+                            event.elapsed_ms,
+                            preview
+                        ));
+                    }
+                }
+                if event.tool_name == "create_reminder"
+                    && event.phase == ToolPhase::Finished
+                    && event.success == Some(true)
+                {
+                    let _ = app_for_chunks.emit_to("settings", "reminders-updated", ());
+                }
+                let _ = bubble::emit_tool_event(
+                    &app_for_chunks,
+                    bubble::BubbleToolPayload {
+                        tool_name: event.tool_name,
+                        label: event.label,
+                        kind: event.kind.as_str().to_string(),
+                        phase: event.phase.as_str().to_string(),
+                        call_id: event.call_id,
+                        internal_call_id: event.internal_call_id,
+                        result_preview: event.result_preview,
+                        success: event.success,
+                        elapsed_ms: event.elapsed_ms,
+                    },
+                );
+            }
+        }),
+    ));
     let chat_cancelled = cancel_state.is_cancelled(chat_generation);
-    let _ = bubble::finalize_bubble(app);
     emit_pet_event(
         app,
         PetEvent::ClearNotification {
@@ -1330,13 +1461,15 @@ pub fn run_ai_chat(
         },
     );
 
-    if chat_cancelled {
+    let Some(stream_result) = stream_result.filter(|_| !chat_cancelled) else {
+        let _ = bubble::finalize_bubble(app);
         info!(generation = chat_generation, "{prefix}AI chat cancelled");
         return;
-    }
+    };
 
     match stream_result {
         Ok(reply) => {
+            let _ = bubble::finalize_bubble(app);
             // 短期记忆：短锁写入
             if let Ok(mut memory) = core.memory.lock() {
                 memory.record_conversation(msg, &reply, memory_config);
@@ -1441,34 +1574,38 @@ pub fn run_ai_chat(
 
             // 工具连续失败走独立分支（结构化错误，优先级高于 ChatError 分类）
             // 注意：tool_failure_stop 格式是 "tool_failure_stop:name:detail"，不是 ChatError
-            let user_reply = if let Some((tool_name, detail)) =
+            let user_reply = if let Some((tool_name, _detail)) =
                 parse_tool_failure_stop(&e.to_string())
             {
                 if tool_name == "create_reminder" {
-                    format!("喵呜，提醒没有创建成功：{detail}")
+                    "提醒没有创建成功。这次操作没能完成，请检查提醒内容后再试。".to_string()
                 } else {
-                    format!("工具 {tool_name} 没有完成：{detail}")
+                    "这次操作没有完成。执行过程遇到问题，请检查授权和设置后再试。".to_string()
                 }
             } else {
                 // 根据 ChatError 分类生成用户友好消息
                 match &e {
                     ChatError::RecoverableStream { .. } => {
                         // 部分恢复：模型说了些话但没说完
-                        "喵…好像信号不太好，我说了一半断掉了 😿".to_string()
+                        "回复中途断开了。连接可能不稳定，请稍后重新发送这条消息。".to_string()
                     }
                     ChatError::Fatal { reason, .. } => match reason.as_str() {
-                        "network" => "喵呜，连不上 AI 服务器了，网络是不是有问题？🐱💦".to_string(),
-                        "auth" => "喵！API 密钥好像有问题，检查一下配置？😿".to_string(),
-                        "rate_limit" => "喵…请求太频繁了，稍等一下再试吧 😸".to_string(),
-                        "max_turns" => {
-                            "喵！这个问题太复杂了，我转了好几圈都没转出来 🌀".to_string()
+                        "network" => "暂时连不上 AI 服务。请检查网络和服务地址后再试。".to_string(),
+                        "auth" => {
+                            "AI 服务没有接受这次请求。API Key 可能不可用，请到设置检查后再试。"
+                                .to_string()
                         }
-                        _ => "喵呜，出了点问题，稍后再试试？😿".to_string(),
+                        "rate_limit" => {
+                            "AI 服务暂时无法继续回复。请求太频繁，请稍等片刻再试。".to_string()
+                        }
+                        "max_turns" => {
+                            "这次没有完成回复。需要处理的步骤太多，请把问题拆小后再试。".to_string()
+                        }
+                        _ => "这次没能完成回复。AI 服务返回了异常，请稍后再试。".to_string(),
                     },
                 }
             };
-            let _ = bubble::append_bubble_chunk(app, &user_reply);
-            let _ = bubble::finalize_bubble(app);
+            finish_chat_feedback(app, &format!("\n\n{user_reply}"));
             if let Ok(mut memory) = core.memory.lock() {
                 memory.record_conversation(msg, &user_reply, memory_config);
                 if let Err(save_err) = memory.save() {
@@ -1730,27 +1867,141 @@ mod tests {
     #[test]
     fn test_pending_chat_default_empty() {
         let pc = SharedPendingChat::new();
-        assert!(pc.pending.lock().unwrap().is_none());
+        assert!(pc.take().is_none());
     }
 
     #[test]
     fn test_pending_chat_submit_and_take() {
         let pc = SharedPendingChat::new();
-        *pc.pending.lock().unwrap() = Some("你好 AI".into());
-        let taken = pc.pending.lock().unwrap().take();
-        assert_eq!(taken, Some("你好 AI".to_string()));
-        assert!(pc.pending.lock().unwrap().is_none());
+        let request = PendingChatRequest {
+            text: "你好 AI".into(),
+            generation: 7,
+        };
+        pc.set(request.clone()).unwrap();
+        assert_eq!(pc.take(), Some(request));
+        assert!(pc.take().is_none());
     }
 
     #[test]
     fn test_pending_chat_submit_overwrites() {
         let pc = SharedPendingChat::new();
-        *pc.pending.lock().unwrap() = Some("第一条".into());
-        *pc.pending.lock().unwrap() = Some("第二条".into());
-        assert_eq!(
-            pc.pending.lock().unwrap().take(),
-            Some("第二条".to_string())
-        );
+        pc.set(PendingChatRequest {
+            text: "第一条".into(),
+            generation: 1,
+        })
+        .unwrap();
+        let second = PendingChatRequest {
+            text: "第二条".into(),
+            generation: 2,
+        };
+        pc.set(second.clone()).unwrap();
+        assert_eq!(pc.take(), Some(second));
+    }
+
+    #[test]
+    fn test_stop_clears_queued_request_and_preserves_later_submission() {
+        let pending = SharedPendingChat::new();
+        let cancel = SharedChatCancel::new();
+        let generation = cancel.begin_chat();
+        pending
+            .set(PendingChatRequest {
+                text: "即将停止的消息".into(),
+                generation,
+            })
+            .unwrap();
+        let stopped = cancel.cancel_current();
+        pending.cancel_through(stopped).unwrap();
+        assert!(pending.take().is_none());
+
+        let next = PendingChatRequest {
+            text: "停止后新发的消息".into(),
+            generation: cancel.begin_chat(),
+        };
+        pending.set(next.clone()).unwrap();
+        pending
+            .set(PendingChatRequest {
+                text: "停止前预留但迟到的旧消息".into(),
+                generation,
+            })
+            .unwrap();
+        // 迟到的旧停止操作不能移除下一轮输入。
+        pending.cancel_through(stopped).unwrap();
+        assert_eq!(pending.take(), Some(next.clone()));
+        assert!(!cancel.is_cancelled(next.generation));
+    }
+
+    #[tokio::test]
+    async fn test_stop_after_queue_take_prevents_starting_stream() {
+        use std::sync::atomic::AtomicBool;
+
+        let pending = SharedPendingChat::new();
+        let cancel = SharedChatCancel::new();
+        pending
+            .set(PendingChatRequest {
+                text: "已经取走但还没运行的消息".into(),
+                generation: cancel.begin_chat(),
+            })
+            .unwrap();
+        let request = pending.take().unwrap();
+        pending.cancel_through(cancel.cancel_current()).unwrap();
+
+        let started = AtomicBool::new(false);
+        let result = cancel
+            .run_until_cancelled(request.generation, async {
+                started.store(true, Ordering::SeqCst);
+            })
+            .await;
+        assert!(result.is_none());
+        assert!(!started.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn test_stop_running_stream_drops_future_before_next_tool() {
+        use std::sync::atomic::AtomicBool;
+
+        struct DropMarker<'a>(&'a AtomicBool);
+        impl Drop for DropMarker<'_> {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::SeqCst);
+            }
+        }
+
+        let cancel = SharedChatCancel::new();
+        let generation = cancel.begin_chat();
+        let stream_started = AtomicBool::new(false);
+        let future_dropped = AtomicBool::new(false);
+        let next_tool_started = AtomicBool::new(false);
+        let work = async {
+            let _drop_marker = DropMarker(&future_dropped);
+            stream_started.store(true, Ordering::SeqCst);
+            std::future::pending::<()>().await;
+            next_tool_started.store(true, Ordering::SeqCst);
+        };
+        let stop = async {
+            while !stream_started.load(Ordering::SeqCst) {
+                tokio::task::yield_now().await;
+            }
+            cancel.cancel_current();
+        };
+        let (result, ()) = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            tokio::join!(cancel.run_until_cancelled(generation, work), stop)
+        })
+        .await
+        .expect("停止应及时结束流式等待");
+
+        assert!(result.is_none());
+        assert!(future_dropped.load(Ordering::SeqCst));
+        assert!(!next_tool_started.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn test_stream_completion_without_stop_preserves_result() {
+        let cancel = SharedChatCancel::new();
+        let generation = cancel.begin_chat();
+        let result = cancel
+            .run_until_cancelled(generation, async { "完成回复" })
+            .await;
+        assert_eq!(result, Some("完成回复"));
     }
 
     #[test]

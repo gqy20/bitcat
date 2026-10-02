@@ -1,18 +1,22 @@
-//! 气泡窗口模块：流式 AI 文本渲染 + 动态高度调整 + 实时跟随宠物。
+//! 气泡窗口模块：流式 AI 文本渲染、动态高度调整与普通回应跟随宠物。
 //!
 //! 核心协议是三段式流式推送：`start_streaming_bubble` → `append_bubble_chunk`×N →
-//! `finalize_bubble`。前端通过轮询 `cmd_consume_bubble_text` 读取累积文本，
-//! 并用 `bubble-end` 事件结束流式状态和启动自动隐藏定时器。
+//! `finalize_bubble`。`bubble-start` 通知前端进入流式状态，轮询
+//! `cmd_consume_bubble_text` 读取累积文本，`bubble-end` 携带 `{ text }` 最终快照通知生成结束。
+//! 新窗口可能错过开始事件，初次拉取待消费文本作为兜底；空正文不代表正在生成。
+//! 用户主动聊天或阅读时继续保护会话。
+//! 用户请求的静态说明通过 `show_chat_message` 复用完整回复协议，普通通知继续避让会话。
 //!
 //! **动态高度**：气泡窗口默认 120px，前端根据文本量调整 CSS 高度后通过
 //! `cmd_reposition_bubble` 通知 Rust 端重新计算窗口尺寸和位置，最大 680px。
 //! 超长内容由前端内部滚轮翻阅（Win32 子类转发 `WM_MOUSEWHEEL`）。
 //!
 //! **follower 机制**：`spawn_bubble_follower` 启动独立线程，50ms 轮询宠物窗口位置，
-//! 气泡可见时自动对齐到宠物上方/下方（空间不足时翻边），与手柄循环解耦。
+//! 普通回应可见时自动对齐到宠物上方/下方（空间不足时翻边），与手柄循环解耦。
+//! 主动聊天或阅读期间暂停持续跟随，打开会话与显式尺寸调整仍执行定位和屏幕边界修正。
 //!
-//! **chat 优先级**：`chat_active` 标记阻止截图摘要覆盖正在进行的聊天。
-//! 截图线程在发起 Vision API 前检查此标记，避免打断对话。
+//! **chat 优先级**：生成中与用户聊天/阅读使用独立标记，任一有效时均避让后台观察。
+//! 截图线程在发起 Vision API 前查询共享状态，普通通知也不会覆盖流式正文。
 
 use std::sync::Mutex;
 use tracing::{debug, info};
@@ -155,35 +159,101 @@ fn compute_bubble_placement(
     }
 }
 
-/// 气泡共享状态：待消费文本 + chat 模式标记。
+/// 对话保护状态，生成结束与用户收起会话各自释放对应的标记。
+#[derive(Default)]
+struct ChatActivity {
+    generating: bool,
+    interacting: bool,
+}
+
+impl ChatActivity {
+    fn is_active(&self) -> bool {
+        self.generating || self.interacting
+    }
+}
+
+/// 气泡共享状态：待消费文本与独立的生成、交互保护标记。
 ///
 /// 首次创建窗口时 emit 时机可能早于前端 listen 注册，
 /// 因此把文本暂存于 `pending_text`，前端 init 时主动 invoke 拉取。
 pub struct SharedBubble {
+    /// 最近的完整累积正文；轮询读取保留内容，下一轮生成开始时重置。
     pub pending_text: Mutex<Option<String>>,
-    /// chat 模式标记：输入框展开或正在流式回复时为 true
-    /// 截图线程检查此标记，跳过 show_bubble 避免覆盖
-    pub chat_active: Mutex<bool>,
+    activity: Mutex<ChatActivity>,
 }
 
 impl SharedBubble {
+    /// 创建空闲状态，等待普通通知或新的用户会话。
     pub fn new() -> Self {
         Self {
             pending_text: Mutex::new(None),
-            chat_active: Mutex::new(false),
+            activity: Mutex::new(ChatActivity::default()),
         }
     }
 
-    /// 检查是否处于 chat 模式（供截图线程查询）
+    /// 生成中或用户正在聊天/阅读时避让观察；状态异常时也保持保护。
     pub fn is_chat_active(&self) -> bool {
-        self.chat_active.lock().is_ok_and(|g| *g)
+        self.activity.lock().map_or(true, |g| g.is_active())
     }
 
-    /// 进入 chat 模式（chat 输入 / 流式回复开始）
-    pub fn set_chat_active(&self, active: bool) {
-        if let Ok(mut g) = self.chat_active.lock() {
-            *g = active;
+    /// 用户正在聊天/阅读时保持窗口位置；状态异常时也暂停持续跟随。
+    pub fn is_interacting(&self) -> bool {
+        self.activity.lock().map_or(true, |g| g.interacting)
+    }
+
+    /// 更新 AI 生成状态，不改变用户聊天或阅读的保护。
+    pub fn set_generation_active(&self, active: bool) {
+        if let Ok(mut activity) = self.activity.lock() {
+            activity.generating = active;
         }
+    }
+
+    /// 更新用户交互状态，收起会话时仍保留进行中的生成保护。
+    pub fn set_interaction_active(&self, active: bool) {
+        if let Ok(mut activity) = self.activity.lock() {
+            activity.interacting = active;
+        }
+    }
+
+    /// 新回复开始时清空旧正文，并在同一保护区内标记生成开始。
+    fn begin_stream(&self) -> Result<(), String> {
+        let mut activity = self.activity.lock().map_err(|e| e.to_string())?;
+        let mut pending = self.pending_text.lock().map_err(|e| e.to_string())?;
+        activity.generating = true;
+        *pending = Some(String::new());
+        Ok(())
+    }
+
+    /// 显式回复写入累积正文，用户聊天/阅读保护不会阻止本轮请求的反馈。
+    fn append_stream_text(&self, chunk: &str) -> Result<(), String> {
+        self.pending_text
+            .lock()
+            .map_err(|e| e.to_string())?
+            .get_or_insert_with(String::new)
+            .push_str(chunk);
+        Ok(())
+    }
+
+    /// 释放生成保护前取得不可变的最终正文，后续通知不会污染回复结束事件。
+    fn finish_stream(&self) -> Result<String, String> {
+        let mut activity = self.activity.lock().map_err(|e| e.to_string())?;
+        let text = self
+            .pending_text
+            .lock()
+            .map_err(|e| e.to_string())
+            .map(|pending| pending.clone().unwrap_or_default());
+        activity.generating = false;
+        text
+    }
+
+    /// 普通通知仅在会话空闲时写入，避免在途观察覆盖流式正文或阅读内容。
+    fn set_notice_text(&self, text: &str) -> Result<bool, String> {
+        let activity = self.activity.lock().map_err(|e| e.to_string())?;
+        if activity.is_active() {
+            return Ok(false);
+        }
+        *self.pending_text.lock().map_err(|e| e.to_string())? = Some(text.to_string());
+        Ok(true)
     }
 }
 
@@ -191,6 +261,12 @@ impl Default for SharedBubble {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// 回复结束时的正文快照；空串也是明确的最终结果。
+#[derive(serde::Serialize, Clone)]
+pub struct BubbleEndPayload {
+    pub text: String,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -216,7 +292,7 @@ pub struct AgentToastPayload {
 
 /// 显示气泡：按需创建窗口、定位到宠物上方，并写入待消费文本。
 ///
-/// 跳过条件：跳舞中或 `chat_active` 为 true 时仅更新 pending 文本不显示。
+/// 跳舞、生成或用户聊天/阅读期间跳过，不改写当前正文。
 pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
     let state: State<SharedBubble> = app.state();
 
@@ -229,18 +305,13 @@ pub fn show_bubble(app: &AppHandle, text: &str) -> Result<(), String> {
     }
 
     // chat 模式优先级：截图摘要不覆盖聊天内容
-    if state.is_chat_active() {
+    if !state.set_notice_text(text)? {
         debug!(
             text_len = text.chars().count(),
-            "bubble deferred while chat is active"
+            "bubble skipped while chat is active"
         );
-        // 只更新 pending 文本，不显示/不 emit（等 chat 结束后自然消费）
-        *state.pending_text.lock().map_err(|e| e.to_string())? = Some(text.to_string());
         return Ok(());
     }
-
-    // 写入 pending text
-    *state.pending_text.lock().map_err(|e| e.to_string())? = Some(text.to_string());
 
     // 取或创建窗口
     let window = match app.get_webview_window("bubble") {
@@ -344,14 +415,13 @@ pub fn precreate_bubble_window(app: &AppHandle) -> Result<(), tauri::Error> {
     Ok(())
 }
 
-/// 流式回复开始：清空 pending、设置 `chat_active`、确保窗口可见并定位。
+/// 流式回复开始：清空 pending、标记生成开始、显示窗口并发送 `bubble-start`。
 ///
-/// 不 emit 事件（WebView2 首次 show 后 JS 可能未加载完），
-/// 前端 init 时通过 `cmd_consume_bubble_text` 拉取已有累积文本。
+/// 新窗口的 WebView2 可能尚未注册监听，前端初次拉取已有累积文本作为兜底。
+/// 已有窗口使用开始事件重新启动轮询，覆盖语音等未经过输入框提交的对话。
 pub fn start_streaming_bubble(app: &AppHandle) -> Result<(), String> {
     let state: State<SharedBubble> = app.state();
-    *state.pending_text.lock().map_err(|e| e.to_string())? = Some(String::new());
-    state.set_chat_active(true); // 流式回复中，截图不应覆盖
+    state.begin_stream()?;
 
     let window = match app.get_webview_window("bubble") {
         Some(w) => w,
@@ -361,20 +431,23 @@ pub fn start_streaming_bubble(app: &AppHandle) -> Result<(), String> {
     // Windows WebView2: builder 的 background_color 可能不够，运行时再设一次确保透明
     let _ = window.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
     let _ = window.show();
+    let _ = app.emit_to("bubble", "bubble-start", ());
     Ok(())
 }
 
 /// 流式追加：累加到 `pending_text`，前端轮询读取完整累积文本。
 pub fn append_bubble_chunk(app: &AppHandle, chunk: &str) -> Result<(), String> {
     let state: State<SharedBubble> = app.state();
-    if let Ok(mut g) = state.pending_text.lock() {
-        if let Some(s) = g.as_mut() {
-            s.push_str(chunk);
-        } else {
-            *g = Some(chunk.to_string());
-        }
-    }
-    Ok(())
+    state.append_stream_text(chunk)
+}
+
+/// 显示用户请求的静态反馈，复用开始、累积正文、结束的完整回复协议。
+///
+/// 与普通通知不同，它可以回应已经打开的会话；启动或写入失败时也尝试结束生成。
+pub fn show_chat_message(app: &AppHandle, text: &str) -> Result<(), String> {
+    let result = start_streaming_bubble(app).and_then(|_| append_bubble_chunk(app, text));
+    let finished = finalize_bubble(app);
+    result.and(finished)
 }
 
 /// 发送工具运行时事件。工具状态独立于正文，不写入 pending_text。
@@ -383,17 +456,29 @@ pub fn emit_tool_event(app: &AppHandle, payload: BubbleToolPayload) -> Result<()
     Ok(())
 }
 
-/// 流式结束：emit `bubble-end` → 前端启动自动隐藏定时器 + 退出 chat 模式。
+/// 流式结束：先取得正文快照再释放生成保护，保留用户聊天/阅读的保护。
+///
+/// `bubble-end` 携带最终 `{ text }`，避免收起会话后的普通通知覆盖前端待读取的回复。
 pub fn finalize_bubble(app: &AppHandle) -> Result<(), String> {
     let state: State<SharedBubble> = app.state();
-    state.set_chat_active(false); // 回复截图写 bubble
-    let _ = app.emit_to("bubble", "bubble-end", ());
-    Ok(())
+    let text = state.finish_stream();
+    // 即使正文读取失败也通知前端结束等待，原始错误由调用方写入诊断日志。
+    let ended = app
+        .emit_to(
+            "bubble",
+            "bubble-end",
+            BubbleEndPayload {
+                text: text.as_ref().cloned().unwrap_or_default(),
+            },
+        )
+        .map_err(|e| e.to_string());
+    text.map(|_| ()).and(ended)
 }
 
-/// 启动一个独立的气泡跟随线程：轮询宠物窗口位置变化，
-/// 实时把气泡窗口对齐到宠物正上方。与手柄循环彻底解耦，
-/// 确保"无手柄"场景下气泡仍能实时跟随。
+/// 启动独立的气泡跟随线程，普通回应随宠物移动，主动聊天与阅读时保持位置。
+///
+/// 与手柄循环解耦，无手柄时仍能跟随；结束交互后按宠物的最新位置恢复定位。
+/// 打开会话与显式尺寸调整调用的定位不受此跟随暂停影响。
 pub fn spawn_bubble_follower(app: AppHandle) {
     std::thread::spawn(move || {
         let mut prev_pet_pos: Option<(i32, i32)> = None;
@@ -403,7 +488,8 @@ pub fn spawn_bubble_follower(app: AppHandle) {
                 break;
             }
             if let Some(bubble_win) = app.get_webview_window("bubble") {
-                if bubble_win.is_visible().unwrap_or(false) {
+                let state: State<SharedBubble> = app.state();
+                if bubble_win.is_visible().unwrap_or(false) && !state.is_interacting() {
                     let pet = app
                         .get_webview_window("pet")
                         .filter(|w| w.is_visible().unwrap_or(false))
@@ -586,7 +672,7 @@ pub async fn cmd_consume_bubble_text(
     Ok(t.clone())
 }
 
-/// 前端自动隐藏定时到了 → 调用此 cmd 隐藏窗口
+/// 前端收起或普通通知自动隐藏时调用，结束交互并隐藏窗口。
 #[tauri::command]
 pub async fn cmd_hide_bubble(app: AppHandle) -> Result<(), String> {
     hide_bubble_window(&app)
@@ -601,11 +687,13 @@ pub async fn cmd_reposition_bubble(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 隐藏气泡窗口（前端自动隐藏定时器到期时调用）。
+/// 隐藏气泡窗口并结束用户交互，生成中的回复继续避让后台观察。
 pub fn hide_bubble_window(app: &AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("bubble") {
         w.hide().map_err(|e| e.to_string())?;
     }
+    let state: State<SharedBubble> = app.state();
+    state.set_interaction_active(false);
     Ok(())
 }
 
@@ -675,51 +763,114 @@ mod tests {
         assert!(json.contains("data"));
     }
 
-    // ---- chat_active 状态 ----
+    // ---- 生成与用户交互的独立保护 ----
 
     #[test]
     fn test_chat_active_default_false() {
         let b = SharedBubble::new();
         assert!(!b.is_chat_active());
+        assert!(!b.is_interacting());
     }
 
     #[test]
-    fn test_set_chat_active_true() {
+    fn test_generation_completion_preserves_reading_and_reply() {
         let b = SharedBubble::new();
-        b.set_chat_active(true);
+        b.set_interaction_active(true);
+        b.begin_stream().unwrap();
+        *b.pending_text.lock().unwrap() = Some("正在阅读的回复".into());
+
+        // 生成完成或停止只释放生成保护，阅读中的正文仍不能被观察结果覆盖。
+        b.set_generation_active(false);
         assert!(b.is_chat_active());
-    }
+        assert!(b.is_interacting());
+        assert!(!b.set_notice_text("后台屏幕观察").unwrap());
+        assert_eq!(
+            b.pending_text.lock().unwrap().as_deref(),
+            Some("正在阅读的回复")
+        );
 
-    #[test]
-    fn test_set_chat_active_false() {
-        let b = SharedBubble::new();
-        b.set_chat_active(true);
-        b.set_chat_active(false);
+        b.set_interaction_active(false);
         assert!(!b.is_chat_active());
+        assert!(!b.is_interacting());
+        assert!(b.set_notice_text("新的轻提示").unwrap());
     }
 
     #[test]
-    fn test_chat_active_isolated() {
+    fn test_collapsing_chat_preserves_in_progress_generation() {
         let b = SharedBubble::new();
-        b.set_chat_active(true);
-        // pending_text 不受影响
-        *b.pending_text.lock().unwrap() = Some("test".into());
+        b.set_interaction_active(true);
+        b.begin_stream().unwrap();
+        *b.pending_text.lock().unwrap() = Some("尚未说完".into());
+
+        // 隐藏窗口或退出输入不代表当前请求已经结束。
+        b.set_interaction_active(false);
         assert!(b.is_chat_active());
-        b.set_chat_active(false);
+        assert!(!b.is_interacting());
+        assert!(!b.set_notice_text("后台摄像头观察").unwrap());
+        assert_eq!(b.pending_text.lock().unwrap().as_deref(), Some("尚未说完"));
+
+        b.set_generation_active(false);
         assert!(!b.is_chat_active());
-        assert_eq!(b.pending_text.lock().unwrap().as_deref(), Some("test"));
+        assert_eq!(b.pending_text.lock().unwrap().as_deref(), Some("尚未说完"));
+    }
+
+    #[test]
+    fn test_new_reply_replaces_idle_notice_and_blocks_new_notice() {
+        let b = SharedBubble::new();
+        assert!(b.set_notice_text("之前的轻提示").unwrap());
+        b.begin_stream().unwrap();
+        assert!(b.is_chat_active());
+        assert!(!b.is_interacting());
+        assert_eq!(b.pending_text.lock().unwrap().as_deref(), Some(""));
+        assert!(!b.set_notice_text("刚返回的屏幕观察").unwrap());
+        assert_eq!(b.pending_text.lock().unwrap().as_deref(), Some(""));
+    }
+
+    #[test]
+    fn test_static_chat_feedback_completes_with_reading_protected() {
+        let b = SharedBubble::new();
+        b.set_interaction_active(true);
+        assert!(!b.set_notice_text("后台观察").unwrap());
+
+        b.begin_stream().unwrap();
+        b.append_stream_text("对话暂时不可用，请检查设置后再试。")
+            .unwrap();
+        b.set_generation_active(false);
+
+        assert!(!b.activity.lock().unwrap().generating);
+        assert!(b.is_interacting());
+        assert!(!b.set_notice_text("后返回的后台观察").unwrap());
+        assert_eq!(
+            b.pending_text.lock().unwrap().as_deref(),
+            Some("对话暂时不可用，请检查设置后再试。")
+        );
+    }
+
+    #[test]
+    fn test_final_reply_snapshot_survives_notice_after_collapse() {
+        let b = SharedBubble::new();
+        b.set_interaction_active(true);
+        b.begin_stream().unwrap();
+        b.append_stream_text("收起时仍在生成的最终回复").unwrap();
+        b.set_interaction_active(false);
+
+        let final_text = b.finish_stream().unwrap();
+        assert!(!b.is_chat_active());
+        assert!(b.set_notice_text("后到的普通通知").unwrap());
+
+        assert_eq!(final_text, "收起时仍在生成的最终回复");
+        assert_eq!(
+            b.pending_text.lock().unwrap().as_deref(),
+            Some("后到的普通通知")
+        );
     }
 
     #[test]
     fn test_pending_accumulates() {
         let b = SharedBubble::new();
-        *b.pending_text.lock().unwrap() = Some(String::new());
-        if let Some(s) = b.pending_text.lock().unwrap().as_mut() {
-            s.push_str("Hello");
-        }
-        if let Some(s) = b.pending_text.lock().unwrap().as_mut() {
-            s.push_str(" World");
-        }
+        b.begin_stream().unwrap();
+        b.append_stream_text("Hello").unwrap();
+        b.append_stream_text(" World").unwrap();
         let taken = b.pending_text.lock().unwrap().take();
         assert_eq!(taken, Some("Hello World".to_string()));
     }

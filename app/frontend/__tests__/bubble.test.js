@@ -245,20 +245,6 @@ describe('bubble chat input', () => {
     expect(dom.inputRow.classList.contains('visible')).toBe(true);
   });
 
-  it('收起输入框后隐藏并清空文本', () => {
-    dom.input.value = 'hello';
-    dom.inputRow.classList.add('visible');
-    dom.inputRow.style.display = '';
-
-    // 模拟收起
-    dom.inputRow.classList.remove('visible');
-    dom.inputRow.style.display = 'none';
-    dom.input.value = '';
-
-    expect(dom.inputRow.classList.contains('visible')).toBe(false);
-    expect(dom.input.value).toBe('');
-  });
-
   it('Enter 提交非空文本（非 IME 组合状态）', () => {
     let submitted = null;
     const submitHandler = (text) => { submitted = text; };
@@ -329,29 +315,6 @@ describe('bubble chat input', () => {
 
     expect(submitted).toBeNull();
     expect(callCount).toBe(0);
-  });
-
-  it('Escape 收起输入框', () => {
-    dom.inputRow.classList.add('visible');
-    dom.inputRow.style.display = '';
-    dom.input.value = '未发送的文字';
-
-    const handler = (e) => {
-      if (e.key === 'Escape') {
-        dom.inputRow.classList.remove('visible');
-        dom.inputRow.style.display = 'none';
-        dom.input.value = '';
-      }
-    };
-    dom.input.addEventListener('keydown', handler);
-    dom.input.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Escape',
-      bubbles: true,
-      cancelable: true,
-    }));
-
-    expect(dom.inputRow.classList.contains('visible')).toBe(false);
-    expect(dom.input.value).toBe('');
   });
 
   it('点击发送按钮等同于 Enter', () => {
@@ -774,9 +737,4 @@ describe('bubble quick action contracts', () => {
     expect(bubbleScript).toContain("submitPrompt(chip.dataset.prompt || chip.textContent || '')");
   });
 
-  it('finalized replies force a bottom follow after rendering', () => {
-    expect(bubbleScript).toContain('function scrollToBottomSoon()');
-    expect(bubbleScript).toContain('setText(finalText, { forceScrollBottom: true })');
-    expect(bubbleScript).toContain('setText(text, { forceScrollBottom: true })');
-  });
 });

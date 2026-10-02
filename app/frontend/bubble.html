@@ -9,41 +9,63 @@
 </head>
 <body class="hidden">
   <div class="bubble">
-    <button class="collapse-btn" id="collapseBtn" type="button" title="收起" aria-label="收起气泡">
-      <span></span>
-    </button>
+    <div class="bubble-header">
+      <div class="conversation-status" id="conversationStatus">
+        <div class="thinking" id="thinking" role="status" aria-label="猫正在想" style="display:none;">
+          <span class="progress-dot" aria-hidden="true"></span><span class="progress-label">正在想…</span>
+        </div>
+        <div class="header-progress" id="toolProgress" role="status" aria-live="polite" aria-atomic="true" style="display:none;">
+          <span class="progress-dot" aria-hidden="true"></span><span class="progress-label"></span>
+        </div>
+        <span class="control-note" id="controlNote" role="status" style="display:none;">已停止</span>
+      </div>
+      <div class="chat-controls" id="chatControls" style="display: none;">
+        <button class="control-chip stop" id="stopBtn" type="button" style="display: none;" title="停止" aria-label="停止回复">
+          <span class="control-icon" aria-hidden="true">■</span><span class="control-label">停止</span>
+        </button>
+        <button class="control-chip" id="replyChip" type="button" style="display: none;" title="继续说" aria-label="继续说">
+          <span class="control-icon" aria-hidden="true">+</span><span class="control-label">继续说</span>
+        </button>
+        <button class="control-chip icon-only" id="readChip" type="button" style="display: none;" title="展开阅读" aria-label="展开阅读">
+          <svg class="control-svg icon-expand" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <path d="M5 2H2v3m9-3h3v3M2 11v3h3m9-3v3h-3" />
+          </svg>
+          <svg class="control-svg icon-contract" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <path d="M1 5h4V1m6 0v4h4m0 6h-4v4m-6 0v-4H1" />
+          </svg>
+          <span class="control-label sr-only">展开阅读</span>
+        </button>
+        <button class="control-chip icon-only" id="copyChip" type="button" style="display: none;" title="复制" aria-label="复制回复">
+          <svg class="control-svg icon-copy" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
+            <path d="M10.5 3.5v-1H2.5v8h1" />
+          </svg>
+          <svg class="control-svg icon-check" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <path d="m3 8 3.5 3.5L13 5" />
+          </svg>
+          <span class="control-label sr-only">复制</span>
+        </button>
+      </div>
+      <button class="collapse-btn" id="collapseBtn" type="button" title="收起" aria-label="收起气泡">
+        <span aria-hidden="true"></span>
+      </button>
+    </div>
     <div class="content idle" id="content">
-      <div class="tool-status" id="toolStatus" style="display:none;"></div>
+      <div class="conversation-history" id="conversationHistory" role="group" aria-label="刚才的对话"></div>
+      <div class="user-message" id="userMessage" aria-label="你刚才说的话" hidden></div>
+      <div class="tool-status" id="toolStatus" role="status" aria-live="polite" aria-atomic="true" style="display:none;"></div>
       <div class="content-body" id="contentBody"></div>
       <span class="typing-cursor" id="typingCursor" aria-hidden="true"></span>
     </div>
-    <!-- 思考中指示器（流开始前显示） -->
-    <div class="thinking" id="thinking" style="display:none;">
-      <span></span><span></span><span></span>
-    </div>
-    <div class="chat-controls" id="chatControls" style="display: none;">
-      <button class="control-chip stop" id="stopBtn" type="button" style="display: none;" title="停止" aria-label="停止回复">
-        <span class="control-icon" aria-hidden="true">■</span><span class="control-label">停止</span>
-      </button>
-      <span class="control-note" id="controlNote" style="display: none;">已停止</span>
-      <button class="control-chip" id="replyChip" type="button" style="display: none;" title="继续说" aria-label="继续说">
-        <span class="control-icon" aria-hidden="true">+</span><span class="control-label">继续说</span>
-      </button>
-      <button class="control-chip" id="readChip" type="button" style="display: none;" title="展开阅读" aria-label="展开阅读">
-        <span class="control-icon" aria-hidden="true">□</span><span class="control-label">展开阅读</span>
-      </button>
-      <button class="control-chip" id="copyChip" type="button" style="display: none;" title="复制" aria-label="复制回复">
-        <span class="control-icon" aria-hidden="true">⧉</span><span class="control-label">复制</span>
-      </button>
-    </div>
+    <div class="chat-feedback" id="chatFeedback" role="status" aria-live="polite" aria-atomic="true" hidden></div>
     <div class="input-row" id="inputRow" style="display: none;">
-      <input type="text" id="chatInput" placeholder="说点什么..." autocomplete="off" />
-      <button id="chatSend" title="发送" aria-label="发送消息">发送</button>
+      <textarea id="chatInput" rows="1" placeholder="说点什么…" aria-label="想对猫说的话" autocomplete="off" spellcheck="false"></textarea>
+      <button id="chatSend" type="button" title="发送" aria-label="发送消息">发送</button>
     </div>
     <!-- 调整大小手柄（hover 渐显，右下角） -->
     <div class="resize-grip" id="resizeGrip"></div>
     <!-- 三角箭头（DOM 元素，跟随气泡方向） -->
-    <div class="bubble-arrow"></div>
+    <div class="bubble-arrow" aria-hidden="true"></div>
   </div>
   <script src="/js/vendor/marked.min.js"></script>
   <script src="/js/bubble.js"></script>

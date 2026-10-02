@@ -2,7 +2,7 @@
 //
 // 策略: 前端通过定时轮询 cmd_consume_bubble_text 拉取后端累积的文本,
 // 完全不依赖逐 chunk 事件的到达时序。
-// bubble-end 事件仅用于知道流式何时结束(停止轮询 + 启动隐藏定时)。
+// bubble-start/end 表达生成生命周期；主动会话保留输入与草稿，短回应按时退场。
 //
 // 滚动: Tauri 透明无框窗口中 native scroll 经常失效,
 //       用 wheel 事件手动 scrollTop 兜底 + 动态调整窗口高度。
@@ -22,14 +22,17 @@
   const READER_MAX_H = 560;
   const STREAM_READING_W = 360;
   const STREAM_EXPANDED_W = 400;
-  const COMPOSE_W = 360;
+  const COMPOSE_W = 400;
+  const CHAT_H = 340;
+  const CHAT_MIN_H = 240;
   const NOTICE_W = 300;
   const MIN_W = 260;
   const MAX_W = 480;
   const ABS_MAX_H = 680;      // 用户手动拖拽时的绝对最大高度
-  const PADDING_TOTAL = 50;   // body top(6) + bubble padding-top(14) + padding-bottom(14) + body bottom(12) + 余量(4)
+  const SHELL_PADDING_H = 50;
+  const HEADER_MIN_H = 32;
+  const HEADER_GAP_H = 6;
   const INPUT_ROW_H = 50;     // input-row extra height, including divider and spacing
-  const CHAT_CONTROLS_H = 42;  // chat-controls extra height, including divider and spacing
   const AUTO_RESIZE_DEBOUNCE_MS = 140;
   const LONG_REPLY_CHARS = 280;
   let hideTimer = null;
@@ -37,6 +40,10 @@
   let contentEl = null;
   let bodyEl = null;           // #contentBody：唯一被 innerHTML 覆盖的节点
   let toolStatusEl = null;
+  let toolProgressEl = null;
+  let toolProgressLabelEl = null;
+  let thinkingEl = null;
+  let headerStatus = 'none'; // 'none' | 'thinking' | 'tool' | 'stopped'
   let pollTimer = null;
   let currentWinH = MIN_H;
   let currentWinW = NOTICE_W;
@@ -46,6 +53,7 @@
   let sendBtnEl = null;
   let resizeGripEl = null;      // resize 手柄元素
   let collapseBtnEl = null;
+  let bubbleHeaderEl = null;
   let chatControlsEl = null;
   let replyChipEl = null;
   let readChipEl = null;
@@ -56,6 +64,27 @@
   let userScrolledUp = false;  // 用户是否手动向上滚动了（锁定自动跟底）
   let streaming = false;        // 是否处于流式输出中（bubble-end 后为 false 拦截迟到的轮询）
   let cancelled = false;
+  let chatSessionActive = false;
+  let hiddenByUser = false;
+  let submitting = false;
+  let stopping = false;
+  let awaitingStreamStart = false;
+  let submissionStarted = false;
+  let pollEpoch = 0;
+  let viewEpoch = 0;
+  let hideWindowTimer = null;
+  let userMessageEl = null;
+  let chatFeedbackEl = null;
+  let initialized = false;
+  let conversationHistoryEl = null;
+  let conversationHistory = [];
+  let lastConversationText = '';
+  let lastConversationUser = '';
+  let conversationScrollTop = 0;
+  let conversationReadingMode = false;
+  let readingAnchorPending = false;
+  let lastReplyStopped = false;
+  let pendingDraft = null;
   let autoSizeStage = 'compact'; // 'compact' | 'reading' | 'expanded'
   let autoResizeTimer = null;
   let lastAutoResizeAt = 0;
@@ -88,6 +117,12 @@
   function setReadingMode(enabled) {
     readingMode = !!enabled;
     document.body.classList.toggle('reading-mode', readingMode);
+    if (readingMode) {
+      chatSessionActive = true;
+      document.body.classList.add('chat-session');
+      clearHideTimer();
+      notifyChatEnter('reading');
+    }
   }
 
   function isReplyControlState(mode) {
@@ -185,28 +220,18 @@
 
   function ensureVisible(options) {
     var opts = options || {};
-    var applyUserPref = Object.prototype.hasOwnProperty.call(opts, 'applyUserPref')
-      ? opts.applyUserPref
-      : bubbleMode === 'compose';
+    if (hiddenByUser && !opts.userInitiated) return;
+    if (opts.userInitiated) hiddenByUser = false;
+    if (hideWindowTimer) { clearTimeout(hideWindowTimer); hideWindowTimer = null; }
+    var wasHidden = document.body.classList.contains('hidden');
     document.body.classList.remove('hidden');
-    void document.body.offsetWidth;
-    // 只有主动聊天/输入态应用用户手动尺寸；普通提醒保持轻量 toast。
-    if (applyUserPref && resizeMode === 'auto' && userPrefSize && window.__TAURI__ && window.__TAURI__.window) {
-      diag('resize: ensureVisible applying pref w=' + userPrefSize.w + ' h=' + userPrefSize.h +
-           ' current=' + currentWinW + 'x' + currentWinH);
-      resizeMode = 'manual';
-      resizeBubbleWindow(
-        Math.max(MIN_W, Math.min(MAX_W, userPrefSize.w)),
-        Math.max(MIN_H, Math.min(ABS_MAX_H, userPrefSize.h)),
-        true
-      );
-    } else {
-      diag('resize: ensureVisible no pref apply mode=' + resizeMode +
-           ' hasPref=' + !!userPrefSize +
-           ' hasTauriWindow=' + !!(window.__TAURI__ && window.__TAURI__.window) +
-           ' current=' + currentWinW + 'x' + currentWinH);
-    }
+    if (wasHidden) void document.body.offsetWidth;
     document.body.classList.add('show');
+    if (opts.applyUserPref && resizeMode === 'auto' && userPrefSize) {
+      resizeMode = 'manual';
+      var size = clampManualSize(userPrefSize.w, userPrefSize.h);
+      resizeBubbleWindow(size.w, Math.max(CHAT_MIN_H, size.h), true);
+    }
   }
 
   function clearHideTimer() {
@@ -222,30 +247,99 @@
 
   function startHideTimer() {
     clearHideTimer();
-    if (readingMode) return;
+    if (readingMode || chatSessionActive || submitting) return;
     hideTimer = setTimeout(hide, HIDE_AFTER_MS);
+  }
+
+  function updateComposer() {
+    if (!sendBtnEl) return;
+    sendBtnEl.disabled = !streaming && (submitting || stopping || !(inputEl && inputEl.value.trim()));
+    sendBtnEl.textContent = streaming ? '停止' : (stopping ? '稍等' : (submitting ? (cancelled ? '稍等' : '发送中') : '发送'));
+    sendBtnEl.title = streaming ? '停止回复' : '发送消息';
+    sendBtnEl.setAttribute('aria-label', streaming ? '停止回复' : '发送消息');
+    sendBtnEl.classList.toggle('stop', streaming);
+    var stopText = stopping ? '正在停止' : '已停止';
+    if (controlNoteEl && controlNoteEl.textContent !== stopText) controlNoteEl.textContent = stopText;
+    if (inputRowEl) inputRowEl.setAttribute('aria-busy', submitting || stopping ? 'true' : 'false');
+    renderHeaderStatus();
+  }
+
+  // 普通过程与停止共用一处；失败说明独立留在正文，避免窄栏截断。
+  function setHeaderStatus(kind) {
+    headerStatus = kind;
+    renderHeaderStatus();
+  }
+
+  function renderHeaderStatus() {
+    if (thinkingEl) thinkingEl.style.display = headerStatus === 'thinking' ? 'flex' : 'none';
+    if (toolProgressEl) toolProgressEl.style.display = headerStatus === 'tool' ? 'flex' : 'none';
+    if (controlNoteEl) controlNoteEl.style.display = headerStatus === 'stopped' ? 'inline-flex' : 'none';
+  }
+
+  function setFeedback(text, kind) {
+    if (!chatFeedbackEl) return;
+    chatFeedbackEl.textContent = text || '';
+    chatFeedbackEl.hidden = !text;
+    chatFeedbackEl.dataset.kind = kind || 'info';
+    chatFeedbackEl.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+  }
+
+  function setUserMessage(text, follow) {
+    if (!userMessageEl) return;
+    userMessageEl.textContent = text || '';
+    userMessageEl.hidden = !text;
+    if (follow) scrollToBottomSoon();
+  }
+
+  function archiveConversationTurn() {
+    if (!lastConversationText) return;
+    conversationHistory.push({ user: lastConversationUser, reply: lastConversationText, stopped: lastReplyStopped });
+    conversationHistory = conversationHistory.slice(-2);
+    if (conversationHistoryEl) {
+      conversationHistoryEl.innerHTML = conversationHistory.map(function(turn) {
+        return '<section class="conversation-turn">' +
+          (turn.user ? '<div class="user-message">' + escapeHtml(turn.user) + '</div>' : '') +
+          '<div class="previous-reply">' + renderMarkdownText(turn.reply) + '</div>' +
+          (turn.stopped ? '<span class="previous-status">已停止</span>' : '') +
+          '</section>';
+      }).join('');
+    }
+  }
+
+  function syncInputLayout() {
+    if (inputEl && inputEl.tagName === 'TEXTAREA') {
+      inputEl.style.height = 'auto';
+      inputEl.style.height = Math.max(32, Math.min(74, inputEl.scrollHeight)) + 'px';
+    }
+    updateComposer();
+    autoResize();
   }
 
   function setChatControls(state) {
     if (!chatControlsEl) return;
     var mode = state || 'hidden';
     chatControlState = mode;
-    var visible = mode !== 'hidden';
-    chatControlsEl.style.display = visible ? 'flex' : 'none';
-    if (stopBtnEl) stopBtnEl.style.display = mode === 'streaming' ? 'inline-flex' : 'none';
-    if (replyChipEl) replyChipEl.style.display = isReplyControlState(mode) ? 'inline-flex' : 'none';
+    var canReply = isReplyControlState(mode);
+    var canRead = canReply && hasLongReplyText();
+    var canCopy = canReply && hasReplyText();
+    var legacyStop = mode === 'streaming' && !chatSessionActive;
+    var legacyReply = canReply && !chatSessionActive;
+    chatControlsEl.style.display = canRead || canCopy || legacyStop || legacyReply ? 'flex' : 'none';
+    if (stopBtnEl) stopBtnEl.style.display = legacyStop ? 'inline-flex' : 'none';
+    if (replyChipEl) replyChipEl.style.display = legacyReply ? 'inline-flex' : 'none';
     if (readChipEl) {
-      var canRead = isReplyControlState(mode) && hasLongReplyText();
       readChipEl.style.display = canRead ? 'inline-flex' : 'none';
-      setChipLabel(readChipEl, readingMode ? '收起' : '展开阅读');
-      readChipEl.setAttribute('aria-label', readingMode ? '收起阅读' : '展开阅读');
-      readChipEl.title = readingMode ? '收起' : '展开阅读';
+      setChipLabel(readChipEl, readingMode ? '返回聊天' : '展开阅读');
+      readChipEl.setAttribute('aria-label', readingMode ? '返回聊天' : '展开阅读');
+      readChipEl.title = readingMode ? '返回聊天' : '展开阅读';
     }
     if (copyChipEl) {
-      copyChipEl.style.display = isReplyControlState(mode) && hasReplyText() ? 'inline-flex' : 'none';
+      copyChipEl.style.display = canCopy ? 'inline-flex' : 'none';
       if (copyChipEl.dataset.state !== 'copied') setChipLabel(copyChipEl, '复制');
     }
-    if (controlNoteEl) controlNoteEl.style.display = mode === 'stopped' ? 'inline-flex' : 'none';
+    if (mode === 'stopped') setHeaderStatus('stopped');
+    else if (headerStatus === 'stopped') setHeaderStatus('none');
+    updateComposer();
   }
 
   function setChipLabel(chip, text) {
@@ -253,9 +347,11 @@
     var label = chip.querySelector('.control-label');
     if (label) {
       label.textContent = text;
-    } else {
+    } else if (!chip.classList.contains('icon-only')) {
       chip.textContent = text;
     }
+    chip.title = text;
+    chip.setAttribute('aria-label', text === '复制' ? '复制回复' : (text === '已复制' ? '已复制回复' : text));
   }
 
   function copyLastReply() {
@@ -329,6 +425,7 @@
         currentWinW = targetW;
         currentWinH = targetH;
         syncCssSize(targetW, targetH);
+        alignReadingAnchor();
         diag('resize: setSize ok w=' + targetW + ' h=' + targetH +
              ' shouldReposition=' + !!shouldReposition);
         if (shouldReposition) return repositionBubbleWindow();
@@ -427,48 +524,44 @@
   /// MANUAL 模式下：不收缩到用户设定以下，但内容多时仍可扩展
   function autoResize() {
     if (!contentEl) return;
-    var contentH = contentEl.scrollHeight;
-    var inputExtra = (inputRowEl && inputRowEl.style.display !== 'none') ? INPUT_ROW_H : 0;
-    var controlsExtra = (chatControlsEl && chatControlsEl.style.display !== 'none') ? CHAT_CONTROLS_H : 0;
-    var rawNeededH = contentH + PADDING_TOTAL + inputExtra + controlsExtra;
-    var neededH = Math.min(MAX_H, Math.max(MIN_H, rawNeededH));
-
-    // MANUAL 模式：以用户偏好为下界，绝对最大高度也放宽
-    var targetW = NOTICE_W;
-    if (readingMode) {
-      neededH = Math.min(READER_MAX_H, Math.max(EXPANDED_H, rawNeededH));
-      targetW = READER_W;
-      autoSizeStage = 'expanded';
-    } else if (resizeMode === 'manual' && userPrefSize) {
-      var manualSize = clampManualSize(userPrefSize.w, userPrefSize.h);
-      neededH = manualSize.h;
-      targetW = manualSize.w;
-      autoSizeStage = 'manual';
-      setManualSizeClass(true);
+    var targetW;
+    var neededH;
+    var headerH = bubbleMode === 'notice' ? 0 : Math.max(HEADER_MIN_H, bubbleHeaderEl ? bubbleHeaderEl.offsetHeight : 0) + HEADER_GAP_H;
+    var paddingH = SHELL_PADDING_H + headerH;
+    if (chatSessionActive) {
+      var size = userPrefSize && resizeMode === 'manual' ? clampManualSize(userPrefSize.w, userPrefSize.h) : null;
+      var composerH = inputRowEl && inputRowEl.style.display !== 'none' ? Math.max(INPUT_ROW_H, inputRowEl.offsetHeight + 10) : 0;
+      var feedbackH = chatFeedbackEl && !chatFeedbackEl.hidden ? chatFeedbackEl.offsetHeight + 8 : 0;
+      // 手动缩小时仍留出可读正文；草稿和错误提示按真实高度保留空间。
+      var minimumChatH = Math.max(CHAT_MIN_H, paddingH + 72 + composerH + feedbackH);
+      targetW = readingMode ? READER_W : (size ? size.w : COMPOSE_W);
+      neededH = readingMode ? READER_MAX_H : Math.max(minimumChatH, size ? size.h : CHAT_H);
+      autoSizeStage = readingMode ? 'expanded' : 'reading';
+      setManualSizeClass(!!size);
     } else {
-      setManualSizeClass(false);
-      var inputOpen = inputRowEl && inputRowEl.style.display !== 'none';
-      autoSizeStage = chooseAutoSizeStage(neededH, {
-        currentStage: autoSizeStage,
-        hasText: !!lastRawText,
-        streaming: streaming,
-        inputOpen: inputOpen,
-        mode: bubbleMode,
-      });
-      var stageH = heightForStage(autoSizeStage);
-      neededH = Math.min(MAX_H, Math.max(MIN_H, stageH, rawNeededH));
-      targetW = widthForStage(bubbleMode, autoSizeStage, inputOpen);
+      var contentH = contentEl.scrollHeight;
+      var inputExtra = inputRowEl && inputRowEl.style.display !== 'none' ? INPUT_ROW_H : 0;
+      var rawNeededH = contentH + paddingH + inputExtra;
+      neededH = Math.min(MAX_H, Math.max(MIN_H, rawNeededH));
+      autoSizeStage = chooseAutoSizeStage(neededH, { currentStage: autoSizeStage, hasText: !!lastRawText, streaming: streaming, inputOpen: !!inputExtra, mode: bubbleMode });
+      neededH = Math.min(MAX_H, Math.max(heightForStage(autoSizeStage), neededH));
+      targetW = widthForStage(bubbleMode, autoSizeStage, !!inputExtra);
     }
-
     var newH = Math.round(neededH);
-    var sizeChanged = (newH !== currentWinH || targetW !== currentWinW);
-
-    if (sizeChanged) {
-      scheduleResize(targetW, newH, true);
-    }
+    if (newH !== currentWinH || targetW !== currentWinW) scheduleResize(targetW, newH, true);
+    else alignReadingAnchor();
   }
 
-  /// 检测是否已在底部（阈值 40px，避免浮点抖动）
+  function alignReadingAnchor() {
+    if (!readingAnchorPending || !readingMode || !contentEl || hiddenByUser) return;
+    readingAnchorPending = false;
+    var anchor = userMessageEl && !userMessageEl.hidden ? userMessageEl : bodyEl;
+    if (!anchor) return;
+    contentEl.scrollTop += anchor.getBoundingClientRect().top - contentEl.getBoundingClientRect().top;
+  }
+
+  /// 检测是否已在底部。
+
   function isNearBottom() {
     if (!contentEl) return true;
     return contentEl.scrollHeight - contentEl.scrollTop - contentEl.clientHeight < 40;
@@ -505,11 +598,10 @@
     bodyEl.innerHTML = `
       <div class="compose-empty">
         <div class="compose-empty-title">想做点什么？</div>
-        <div class="compose-empty-subtitle">直接说就好，或者先选一个开头。</div>
         <div class="compose-empty-actions">
           <button class="compose-empty-chip" type="button" data-prompt="5分钟后提醒我">设个提醒</button>
           <button class="compose-empty-chip" type="button" data-prompt="看看我最近在做什么">看看最近</button>
-          <button class="compose-empty-chip" type="button" data-prompt="继续刚才的话题">继续聊</button>
+          ${conversationHistory.length ? '<button class="compose-empty-chip" type="button" data-prompt="继续刚才的话题">继续聊</button>' : ''}
         </div>
       </div>`;
   }
@@ -520,22 +612,12 @@
     renderComposeEmptyState();
   }
 
-  function fillInputDraft(text) {
-    if (!inputEl) return;
-    inputEl.value = text || '';
-    inputEl.focus();
-    resetInputIdleTimer();
-  }
-
   function scrollToBottomSoon() {
-    if (!contentEl) return;
+    if (!contentEl || hiddenByUser || userScrolledUp) return;
+    var epoch = viewEpoch;
     contentEl.scrollTop = contentEl.scrollHeight;
     requestAnimationFrame(function() {
-      if (!contentEl) return;
-      contentEl.scrollTop = contentEl.scrollHeight;
-      requestAnimationFrame(function() {
-        if (contentEl) contentEl.scrollTop = contentEl.scrollHeight;
-      });
+      if (contentEl && epoch === viewEpoch && !hiddenByUser && !userScrolledUp) contentEl.scrollTop = contentEl.scrollHeight;
     });
   }
 
@@ -580,6 +662,10 @@
   }
 
   function showAgentToast(payload) {
+    if (chatSessionActive || submitting || streaming) return;
+    hiddenByUser = false;
+    setUserMessage('');
+    setFeedback('');
     streaming = false;
     stopPolling();
     clearToolStatus();
@@ -591,7 +677,6 @@
       inputRowEl.style.display = 'none';
       inputRowEl.classList.remove('visible', 'hiding');
     }
-    if (inputEl) inputEl.value = '';
     hideThinking();
     resizeBubbleWindow(NOTICE_W, 68, true);
     lastRawText = '';
@@ -616,68 +701,46 @@
   function setText(text, options) {
     if (!bodyEl) return;
     options = options || {};
-    var wasAtBottom = isNearBottom();
+    var oldScrollTop = contentEl.scrollTop;
+    var shouldFollowBottom = !options.preserveScroll && (options.forceScrollBottom || (!userScrolledUp && isNearBottom()));
     lastRawText = text || '';
-
-    // 隐藏思考指示器（有内容了）
+    if (bubbleMode !== 'notice') lastConversationText = lastRawText;
     hideThinking();
-
-    var html = renderMarkdownText(lastRawText);
-
-    // 仅写正文，光标完全由 CSS + class 驱动，永不拼接到 HTML 字符串里
-    bodyEl.innerHTML = html;
-
-    // 兜底：如果没有正在轮询，强制 idle（即便 bubble-end 事件丢失也能收回光标）
+    bodyEl.innerHTML = renderMarkdownText(lastRawText);
     if (!pollTimer) setStreamingClass(false);
-
-    var shouldFollowBottom = options.forceScrollBottom || (!userScrolledUp && wasAtBottom);
-    // 用户滚回底部 → 解锁
-    if (isNearBottom()) {
-      userScrolledUp = false;
-    }
     autoResize();
-    if (shouldFollowBottom) {
-      scrollToBottomSoon();
-    }
+    if (shouldFollowBottom && !userScrolledUp) scrollToBottomSoon();
+    else contentEl.scrollTop = oldScrollTop;
   }
 
   function hide() {
+    if (bubbleMode !== 'notice') {
+      conversationScrollTop = contentEl ? contentEl.scrollTop : 0;
+      conversationReadingMode = readingMode;
+    }
+    hiddenByUser = true;
+    viewEpoch += 1;
     stopPolling();
+    clearHideTimer();
+    hideThinking();
     clearToolStatus();
     hideChatControls();
     hideInput('hide-bubble');
-    resizeMode = 'auto';
-    autoSizeStage = 'compact';
-    setReadingMode(false);
-    setManualSizeClass(false);
-    if (autoResizeTimer) {
-      clearTimeout(autoResizeTimer);
-      autoResizeTimer = null;
-    }
-    diag('resize: hide ' + (userPrefSize ? 'keep manual pref' : 'reset window to default') + ', pref=' +
-         (userPrefSize ? (userPrefSize.w + 'x' + userPrefSize.h) : 'none') +
-         ' current=' + currentWinW + 'x' + currentWinH);
-    if (!userPrefSize) {
-      resizeBubbleWindow(NOTICE_W, MIN_H, false);
-    }
+    if (autoResizeTimer) { clearTimeout(autoResizeTimer); autoResizeTimer = null; }
     document.body.classList.remove('show');
     document.body.classList.add('hidden');
+    if (hideWindowTimer) clearTimeout(hideWindowTimer);
     if (window.__TAURI__ && window.__TAURI__.core) {
-      setTimeout(function() {
-        window.__TAURI__.core.invoke('cmd_hide_bubble').catch(function(e) {
-          diag('hide bubble failed: ' + e);
-        });
+      hideWindowTimer = setTimeout(function() {
+        hideWindowTimer = null;
+        if (!hiddenByUser) return;
+        window.__TAURI__.core.invoke('cmd_hide_bubble').catch(function(e) { diag('hide bubble failed: ' + e); });
       }, HIDE_ANIM_MS);
     }
   }
 
-  // ---- 聊天输入框 ----
+  /// 同步用户正在输入或阅读的交互保护，与后台生成状态分开。
 
-  var inputIdleTimer = null;
-  const INPUT_IDLE_MS = 5000;
-
-  /// 通知 Rust：进入 chat 模式（置位 chat_active=true，锁住截图/Vision）
-  /// 任何展开输入框 / focus 输入框的路径都调此函数，幂等可多次触发
   function notifyChatEnter(source) {
     if (!window.__TAURI__ || !window.__TAURI__.core) return;
     window.__TAURI__.core.invoke('cmd_enter_chat').then(function() {
@@ -687,112 +750,104 @@
     });
   }
 
-  function resetInputIdleTimer() {
-    if (inputIdleTimer) clearTimeout(inputIdleTimer);
-    inputIdleTimer = setTimeout(function() {
-      if (inputRowEl && inputRowEl.style.display !== 'none') {
-        diag('⏰ idle timeout 触发 → hideInput (INPUT_IDLE_MS=' + INPUT_IDLE_MS + ')');
-        hideInput('idle-timeout');
-      }
-    }, INPUT_IDLE_MS);
+  function handleInputActivity() {
+    // 主动会话由用户收起；输入暂停不会清空草稿或退出交互。
+    clearHideTimer();
+    syncInputLayout();
   }
 
   function showInput() {
-    diag('showInput() called, inputRowEl=' + !!inputRowEl + ' inputEl=' + !!inputEl);
-    if (!inputRowEl || !inputEl) { diag('ABORT: 元素不存在'); return; }
-
-    // 第一时间通知后端锁住截图（哪怕 focus/click 尚未触发，也不会被 Vision 打断）
+    if (!inputRowEl || !inputEl) return;
+    var restoreConversation = !streaming && !!lastConversationText && (hiddenByUser || bubbleMode === 'notice');
+    if (restoreConversation) {
+      lastRawText = lastConversationText;
+      setReadingMode(conversationReadingMode);
+      setUserMessage(lastConversationUser);
+    } else if (!streaming && bubbleMode === 'notice') {
+      // 短通知属于陪伴，不成为首次聊天的问答历史。
+      lastRawText = '';
+      if (bodyEl) bodyEl.innerHTML = '';
+      setUserMessage('');
+    }
+    chatSessionActive = true;
+    hiddenByUser = false;
+    viewEpoch += 1;
+    document.body.classList.add('chat-session');
     notifyChatEnter('showInput');
-
     inputRowEl.style.display = 'flex';
-    hideChatControls();
     inputRowEl.classList.remove('hiding');
     inputRowEl.classList.add('visible');
-    setBubbleMode('compose');
+    setBubbleMode(streaming ? 'stream' : 'compose');
     clearHideTimer();
-    maybeRenderComposeEmptyState();
-    ensureVisible({ applyUserPref: true });
+    if (lastRawText) setText(lastRawText, { preserveScroll: true });
+    else maybeRenderComposeEmptyState();
+    if (restoreConversation && contentEl) contentEl.scrollTop = conversationScrollTop;
+    ensureVisible({ applyUserPref: true, userInitiated: true });
+    setChatControls(streaming ? 'streaming' : (cancelled ? 'stopped' : (hasReplyText() ? 'reply' : 'hidden')));
+    if (streaming && !pollTimer) startPolling({ resume: true });
     requestAnimationFrame(function() {
-      if (inputEl) {
-        inputEl.focus();
-        // 检查 focus 是否真的生效（DOM 层面）
-        var hasFocus = (document.activeElement === inputEl);
-        var hasWinFocus = document.hasFocus();
-        diag('focus 尝试: activeElement==inputEl=' + hasFocus +
-             ' document.hasFocus=' + hasWinFocus +
-             ' display=' + inputEl.style.display +
-             ' readOnly=' + inputEl.readOnly +
-             ' disabled=' + inputEl.disabled);
-      }
+      if (!hiddenByUser && inputEl) inputEl.focus();
     });
-    resetInputIdleTimer();
-    autoResize();
-    diag('showInput 完成');
+    syncInputLayout();
   }
 
   function hideInput(source) {
-    diag('hideInput() called, source=' + (source || 'unknown') +
-         ' curValueLen=' + (inputEl ? inputEl.value.length : -1));
     if (!inputRowEl || !inputEl) return;
     inputRowEl.style.display = 'none';
-    inputRowEl.classList.remove('visible');
-    inputEl.value = '';
-    if (inputIdleTimer) { clearTimeout(inputIdleTimer); inputIdleTimer = null; }
-    autoResize();
-    // 通知 Rust 退出 chat 模式
-    if (window.__TAURI__ && window.__TAURI__.core) {
-      window.__TAURI__.core.invoke('cmd_exit_chat').catch(function() {});
-    }
+    inputRowEl.classList.remove('visible', 'hiding');
+    chatSessionActive = false;
+    document.body.classList.remove('chat-session');
+    if (window.__TAURI__ && window.__TAURI__.core) window.__TAURI__.core.invoke('cmd_exit_chat').catch(function() {});
+    diag('input hidden, draft retained; source=' + (source || 'unknown'));
   }
-
-  // ---- 思考指示器 ----
-
-  var thinkingEl = null;
 
   function showThinking() {
     if (!thinkingEl) return;
     setBubbleMode('stream');
     hideChatControls();
-    thinkingEl.style.display = 'flex';
+    setHeaderStatus('thinking');
     if (bodyEl) bodyEl.innerHTML = ''; // 清空正文区（光标由 class 控制，不必碰）
     autoResize();
   }
 
   function hideThinking() {
-    if (!thinkingEl) return;
-    thinkingEl.style.display = 'none';
-  }
-
-  function toggleInput() {
-    var willShow = inputRowEl && inputRowEl.style.display === 'none';
-    diag('toggleInput(): willShow=' + willShow);
-    if (willShow) {
-      showInput();
-    } else {
-      hideInput('toggleInput');
-    }
+    if (headerStatus === 'thinking') setHeaderStatus('none');
   }
 
   function submitChat() {
-    if (!inputEl || !window.__TAURI__ || !window.__TAURI__.core) {
-      diag('submitChat ABORT: inputEl=' + !!inputEl + ' tauri=' + !!window.__TAURI__);
-      return;
-    }
-    var text = inputEl.value.trim();
-    diag('submitChat(): rawLen=' + inputEl.value.length + ' trimmedLen=' + text.length);
-    if (!text) { diag('submitChat ABORT: 空文本'); return; }
-    inputEl.value = '';
-    // 发送后平滑收起输入框，流式结束后自动重新展开
-    if (inputIdleTimer) { clearTimeout(inputIdleTimer); inputIdleTimer = null; }
+    if (!inputEl || !window.__TAURI__ || !window.__TAURI__.core || submitting || stopping || streaming) return;
+    var draft = inputEl.value;
+    var text = draft.trim();
+    if (!text) return;
+    submitting = true;
+    awaitingStreamStart = true;
+    submissionStarted = false;
+    cancelled = false;
+    pendingDraft = { text: text, draft: draft };
+    setFeedback('');
+    updateComposer();
     window.__TAURI__.core.invoke('cmd_submit_chat', { text: text })
       .then(function() {
-        diag('submitChat ✓ cmd_submit_chat 成功，len=' + text.length);
-        hideInputSmooth();       // 发送成功后优雅收起
-        startPolling();          // 启动轮询等待 AI 流式回复
+        submitting = false;
+        if (inputEl.value === draft) inputEl.value = '';
+        setFeedback('');
+        syncInputLayout();
+        if (!streaming && !cancelled && !submissionStarted) startPolling({ keepSuppressed: hiddenByUser });
+        lastConversationUser = text;
+        setUserMessage(text, !hiddenByUser);
+        pendingDraft = null;
+        updateComposer();
       })
       .catch(function(e) {
-        diag('submitChat ✗ cmd_submit_chat 失败: ' + (e && e.toString ? e.toString() : e));
-        console.error('[chat] submit failed:', e);
+        submitting = false;
+        awaitingStreamStart = false;
+        pendingDraft = null;
+        // 没有修改输入时恢复原文；用户继续编辑的文字优先保留。
+        if (!inputEl.value) inputEl.value = draft;
+        setFeedback('这句话没有发出去，原文已保留。请稍后再点发送。', 'error');
+        updateComposer();
+        syncInputLayout();
+        diag('submit failed: ' + String(e));
       });
   }
 
@@ -804,8 +859,11 @@
 
   function cancelChat() {
     if (!window.__TAURI__ || !window.__TAURI__.core) return;
+    stopping = true;
     cancelled = true;
+    lastReplyStopped = true;
     streaming = false;
+    pollEpoch += 1;
     stopPolling();
     hideThinking();
     clearToolStatus();
@@ -813,26 +871,19 @@
     setChatControls('stopped');
     autoResize();
     clearHideTimer();
+    setFeedback('');
+    updateComposer();
     window.__TAURI__.core.invoke('cmd_cancel_chat').catch(function(e) {
       diag('cmd_cancel_chat failed: ' + e);
+      cancelled = false;
+      lastReplyStopped = false;
+      streaming = true;
+      startPolling({ resume: true });
+      setFeedback('停止没有成功。应用连接遇到问题，请再点停止。', 'error');
+    }).finally(function() {
+      stopping = false;
+      updateComposer();
     });
-  }
-
-  /// 平滑收起输入框（CSS 过渡动画 → 再 display:none）
-  function hideInputSmooth() {
-    if (!inputRowEl) return;
-    diag('hideInputSmooth() called');
-    inputRowEl.classList.remove('visible');
-    inputRowEl.classList.add('hiding');
-    if (inputIdleTimer) { clearTimeout(inputIdleTimer); inputIdleTimer = null; }
-    autoResize();
-    // 等 CSS 过渡完成后再彻底隐藏
-    setTimeout(function() {
-      if (inputRowEl) {
-        inputRowEl.style.display = 'none';
-        inputRowEl.classList.remove('hiding');
-      }
-    }, 280);
   }
 
   function getPerformanceToolStatusText(payload, phase, toolName) {
@@ -878,24 +929,46 @@
     return getFallbackToolStatusText(label, phase);
   }
 
-  function clearToolStatus() {
-    if (!toolStatusEl) return;
-    toolStatusEl.textContent = '';
-    toolStatusEl.style.display = 'none';
-    delete toolStatusEl.dataset.kind;
-    delete toolStatusEl.dataset.phase;
+  function clearToolStatus(options) {
+    var preserveFailure = options && options.keepFailure && toolStatusEl &&
+      (toolStatusEl.dataset.phase === 'failed' || toolStatusEl.dataset.phase === 'blocked');
+    if (toolStatusEl && !preserveFailure) {
+      toolStatusEl.textContent = '';
+      toolStatusEl.style.display = 'none';
+      delete toolStatusEl.dataset.kind;
+      delete toolStatusEl.dataset.phase;
+    }
+    if (toolProgressEl) {
+      if (toolProgressLabelEl) toolProgressLabelEl.textContent = '';
+      toolProgressEl.removeAttribute('title');
+      delete toolProgressEl.dataset.kind;
+      delete toolProgressEl.dataset.phase;
+    }
+    if (headerStatus === 'tool') setHeaderStatus('none');
   }
 
   function setToolStatus(payload) {
-    if (!toolStatusEl) return;
+    if (!toolStatusEl || !toolProgressEl || hiddenByUser || (cancelled && !streaming)) return;
     var phase = payload && payload.phase ? payload.phase : 'planned';
     var kind = payload && payload.kind ? payload.kind : 'utility';
-    toolStatusEl.textContent = getToolStatusText(payload);
-    toolStatusEl.dataset.kind = kind;
-    toolStatusEl.dataset.phase = phase;
-    toolStatusEl.style.display = 'block';
     setBubbleMode('stream');
     hideThinking();
+    clearToolStatus();
+    var text = getToolStatusText(payload);
+    var isPerformanceHandoff = kind === 'performance' && phase === 'finished' &&
+      payload && (payload.tool_name === 'perform_dance' || payload.tool_name === 'play_dance');
+    if (phase === 'failed' || phase === 'blocked') {
+      toolStatusEl.textContent = text;
+      toolStatusEl.dataset.kind = kind;
+      toolStatusEl.dataset.phase = phase;
+      toolStatusEl.style.display = 'block';
+    } else if (phase !== 'finished' || isPerformanceHandoff) {
+      if (toolProgressLabelEl) toolProgressLabelEl.textContent = text;
+      toolProgressEl.title = text;
+      toolProgressEl.dataset.kind = kind;
+      toolProgressEl.dataset.phase = phase;
+      setHeaderStatus('tool');
+    }
     ensureVisible();
     autoResize();
     if (kind === 'performance' && phase === 'finished' &&
@@ -905,15 +978,14 @@
   }
 
   function onInputKeyDown(e) {
-    diag('keydown key=' + e.key + ' code=' + e.code +
-         ' composing=' + isComposing +
-         ' valueLen=' + (inputEl ? inputEl.value.length : -1));
-    switch (e.key) {
-      case 'Enter':
-        if (!isComposing) { e.preventDefault(); submitChat(); }
-        break;
-      case 'Escape':
-        e.preventDefault(); hideInput('escape-key'); startHideTimer(); break;
+    if (isComposing || e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (streaming) setFeedback('猫还在回复，你可以先写下一句。');
+      else submitChat();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      hide();
     }
   }
 
@@ -926,23 +998,53 @@
     diag('compositionend (IME 结束), valueLen=' + (inputEl ? inputEl.value.length : -1));
   }
 
-  function startPolling() {
+  function startPolling(options) {
+    var opts = options || {};
+    if (streaming && pollTimer) return;
     stopPolling();
-    clearToolStatus();
-    streaming = true;       // 标记流式开始
-    cancelled = false;
-    setReadingMode(false);
-    setBubbleMode('stream');
+    if (!opts.resume) {
+      archiveConversationTurn();
+      pollEpoch += 1;
+      streaming = true;
+      cancelled = false;
+      if (!opts.keepSuppressed) hiddenByUser = false;
+      userScrolledUp = false;
+      lastRawText = '';
+      lastConversationText = '';
+      lastConversationUser = '';
+      lastReplyStopped = false;
+      setReadingMode(false);
+      setBubbleMode('stream');
+      clearToolStatus();
+      if (!hiddenByUser) showThinking();
+    }
     setChatControls('streaming');
-    autoSizeStage = 'compact';
-    userScrolledUp = false; // 新流式开始，重置锁定
-    // 🔧 不立即激活光标：等真正拉到非空文本再切 streaming，
-    //    避免 bubble-end 事件丢失时光标常驻
-    showThinking();         // 显示思考指示器
+    updateComposer();
+    if (hiddenByUser) return;
+    var epoch = pollEpoch;
+    function read() {
+      var view = viewEpoch;
+      pollPending().then(function(txt) { onPollResult(txt, epoch, view); });
+    }
+    pollTimer = setInterval(read, POLL_INTERVAL_MS);
+    read();
+  }
+
+  function watchForStream() {
+    stopPolling();
+    var epoch = ++pollEpoch;
     pollTimer = setInterval(function() {
-      pollPending().then(onPollResult);
+      var view = viewEpoch;
+      pollPending().then(function(txt) {
+        if (!txt || epoch !== pollEpoch || view !== viewEpoch || hiddenByUser) return;
+        stopPolling();
+        streaming = true;
+        setBubbleMode('stream');
+        setChatControls('streaming');
+        onPollResult(txt, pollEpoch, viewEpoch);
+        startPolling({ resume: true });
+      });
     }, POLL_INTERVAL_MS);
-    pollPending().then(onPollResult);
   }
 
   function stopPolling() {
@@ -956,52 +1058,53 @@
   function pollPending() {
     if (!window.__TAURI__ || !window.__TAURI__.core) return Promise.resolve('');
     return window.__TAURI__.core.invoke('cmd_consume_bubble_text')
-      .then((result) => result || '')
+      .then((result) => result == null ? null : result)
       .catch(function() { return ''; });
   }
 
   /// 轮询回调：有新文本才渲染（流式模式）
-  function onPollResult(txt) {
-    // 流已结束 → 丢弃迟到的轮询结果（clearInterval 无法取消已在途的 IPC）
-    if (!streaming) return;
-
-    const len = (txt || '').length;
-
-    if (len === 0) return;
-
+  function onPollResult(txt, epoch, view) {
+    if (!streaming || hiddenByUser || epoch !== pollEpoch || view !== viewEpoch || !txt) return;
+    if (txt === lastRawText) return;
     setText(txt);
     ensureVisible();
-    // 🔧 拉到首个非空文本后才激活光标（避免 init 即残留）
-    if (contentEl && !contentEl.classList.contains('streaming')) {
-      setStreamingClass(true);
-    }
+    setStreamingClass(true);
   }
 
-  function finishStreaming(finalText) {
-    if (cancelled) {
+  function finishStreaming(finalText, epoch, view) {
+    if (cancelled || epoch !== pollEpoch) return;
+    streaming = false;
+    awaitingStreamStart = false;
+    stopPolling();
+    hideThinking();
+    clearToolStatus({ keepFailure: true });
+    setStreamingClass(false);
+    var text = typeof finalText === 'string' ? finalText : lastRawText;
+    if (hiddenByUser || view !== viewEpoch) {
+      lastRawText = text || '';
+      lastConversationText = lastRawText;
+      updateComposer();
       return;
     }
-    streaming = false;
-    stopPolling();
-    userScrolledUp = false;
-    hideThinking();
-    clearToolStatus();
-    setStreamingClass(false);
-    if (finalText && finalText.length > 0) {
-      setText(finalText, { forceScrollBottom: true });
+    if (text) {
+      setText(text, { preserveScroll: userScrolledUp });
       ensureVisible();
-    } else if (lastRawText) {
-      setText(lastRawText, { forceScrollBottom: true });
-      ensureVisible();
-    }
-    if (lastRawText) {
       setChatControls('reply');
-      autoResize();
+    } else {
+      setText('');
+      setChatControls('hidden');
     }
+    setFeedback('');
+    updateComposer();
+    autoResize();
     startHideTimer();
   }
 
   function showNoticeText(text) {
+    if (chatSessionActive || submitting || streaming) return;
+    hiddenByUser = false;
+    setUserMessage('');
+    setFeedback('');
     streaming = false;
     stopPolling();
     clearToolStatus();
@@ -1021,15 +1124,23 @@
   /// 手动控制 scrollTop 确保滚轮可用
   function onWheel(e) {
     if (!contentEl) return;
+    var target = e.target instanceof Element ? e.target : null;
+    var nested = target && target.closest('pre, table');
+    if (nested) {
+      if (e.deltaX || e.shiftKey) return;
+      var canScroll = nested.scrollHeight > nested.clientHeight &&
+        ((e.deltaY > 0 && nested.scrollTop + nested.clientHeight < nested.scrollHeight) ||
+         (e.deltaY < 0 && nested.scrollTop > 0));
+      if (canScroll) return;
+    }
     e.preventDefault();
     contentEl.scrollTop += e.deltaY;
-    // 用户向上滚动（看历史内容）→ 锁定跟底
     if (e.deltaY < 0) userScrolledUp = true;
-    // 滚回底部附近 → 解锁
     else if (isNearBottom()) userScrolledUp = false;
   }
 
-  /// 键盘滚动兜底：方向键/PageDown/PageUp/Home/End 控制滚动
+  /// 键盘滚动兜底。
+
   function onKeyDown(e) {
     if (!contentEl) return;
     var step = 40;
@@ -1052,15 +1163,23 @@
   }
 
   function init() {
+    if (initialized) return;
+    initialized = true;
+    userMessageEl = document.getElementById('userMessage');
+    chatFeedbackEl = document.getElementById('chatFeedback');
     contentEl = document.getElementById('content');
+    conversationHistoryEl = document.getElementById('conversationHistory');
     bodyEl = document.getElementById('contentBody');
     toolStatusEl = document.getElementById('toolStatus');
+    toolProgressEl = document.getElementById('toolProgress');
+    toolProgressLabelEl = toolProgressEl && toolProgressEl.querySelector('.progress-label');
     inputRowEl = document.getElementById('inputRow');
     inputEl = document.getElementById('chatInput');
     sendBtnEl = document.getElementById('chatSend');
     thinkingEl = document.getElementById('thinking');
     resizeGripEl = document.getElementById('resizeGrip');
     collapseBtnEl = document.getElementById('collapseBtn');
+    bubbleHeaderEl = document.querySelector('.bubble-header');
     chatControlsEl = document.getElementById('chatControls');
     replyChipEl = document.getElementById('replyChip');
     readChipEl = document.getElementById('readChip');
@@ -1088,20 +1207,8 @@
 
     if (!contentEl) return;
 
-    // 滚轮兜底：监听 content 和 bubble 容器的 wheel 事件
+    // 只在内容层处理一次，避免父容器重复处理冒泡事件。
     contentEl.addEventListener('wheel', onWheel, { passive: false });
-    var bubbleEl = contentEl.closest('.bubble');
-    if (bubbleEl) {
-      bubbleEl.addEventListener('wheel', onWheel, { passive: false });
-      // 双击气泡展开输入框
-      bubbleEl.addEventListener('dblclick', function(e) {
-        // 双击输入框本身不触发 toggle
-        if (e.target === inputEl || e.target === sendBtnEl ||
-            inputEl && inputEl.contains(e.target)) return;
-        diag('bubbleEl dblclick → toggleInput');
-        toggleInput();
-      });
-    }
 
     // 键盘滚动：使 content 可聚焦，监听方向键/Page/Home/End
     contentEl.setAttribute('tabindex', '0');
@@ -1112,12 +1219,13 @@
       inputEl.addEventListener('keydown', onInputKeyDown);
       inputEl.addEventListener('compositionstart', onCompositionStart);
       inputEl.addEventListener('compositionend', onCompositionEnd);
-      // 任何输入活动重置空闲定时器
+      // 用户输入只更新布局和草稿；主动会话不按空闲时间退场
       inputEl.addEventListener('input', function(e) {
         diag('input 事件: valueLen=' + inputEl.value.length +
              ' inputType=' + (e.inputType || 'n/a') +
              ' isComposing=' + isComposing);
-        resetInputIdleTimer();
+        setFeedback('');
+        handleInputActivity();
       });
       inputEl.addEventListener('focus', function() {
         diag('✓ inputEl focus (获得键盘焦点), docHasFocus=' + document.hasFocus());
@@ -1139,7 +1247,8 @@
     if (sendBtnEl) {
       sendBtnEl.addEventListener('click', function() {
         diag('sendBtn click');
-        submitChat();
+        if (streaming) cancelChat();
+        else submitChat();
       });
     }
     if (bodyEl) {
@@ -1163,12 +1272,11 @@
         e.preventDefault();
         e.stopPropagation();
         setReadingMode(!readingMode);
+        readingAnchorPending = readingMode;
+        if (!readingMode) showInput();
         setChatControls(chatControlState === 'stopped' ? 'stopped' : 'reply');
         clearHideTimer();
         autoResize();
-        if (contentEl && readingMode) {
-          contentEl.scrollTop = 0;
-        }
       });
     }
     if (copyChipEl) {
@@ -1262,6 +1370,7 @@
                  ' userArmed=' + userResizeArmed +
                  ' programmatic=' + programmaticResize);
           }
+          syncInputLayout();
         }).catch(function(e) {
           diag('resize read failed: ' + e);
         });
@@ -1298,13 +1407,42 @@
     if (!window.__TAURI__) return;
     var listen = window.__TAURI__.event.listen;
 
-    listen('bubble-end', () => {
+    listen('bubble-start', () => {
+      if (awaitingStreamStart) {
+        awaitingStreamStart = false;
+        submissionStarted = true;
+        if (cancelled) return;
+        if (!streaming) startPolling({ keepSuppressed: hiddenByUser });
+        if (pendingDraft) {
+          lastConversationUser = pendingDraft.text;
+          setUserMessage(pendingDraft.text, !hiddenByUser);
+          if (inputEl && inputEl.value === pendingDraft.draft) inputEl.value = '';
+          syncInputLayout();
+        }
+        if (hiddenByUser) window.__TAURI__.core.invoke('cmd_hide_bubble').catch(function() {});
+      } else if (!streaming) {
+        setUserMessage('');
+        hiddenByUser = false;
+        startPolling();
+      }
+    });
+
+    listen('bubble-end', (event) => {
+      // 停止后立即再发时，上一轮结束可迟于新提交确认，但早于新开始。
+      if (event.payload && typeof event.payload.text === 'string' && awaitingStreamStart && !submissionStarted) return;
+      const epoch = pollEpoch;
+      const view = viewEpoch;
+      // 结束快照独立于共享通知缓存，收起后的短通知不能替换回复。
+      if (event.payload && typeof event.payload.text === 'string') {
+        finishStreaming(event.payload.text, epoch, view);
+        return;
+      }
       pollPending()
         .then(function(txt) {
-          finishStreaming(txt || lastRawText);
+          finishStreaming(txt || lastRawText, epoch, view);
         })
         .catch(function() {
-          finishStreaming(lastRawText);
+          finishStreaming(lastRawText, epoch, view);
         });
     });
 
@@ -1313,13 +1451,17 @@
     });
 
     listen('bubble-cancelled', () => {
+      if (!stopping && awaitingStreamStart && !submissionStarted) return;
+      pollEpoch += 1;
       cancelled = true;
+      lastReplyStopped = true;
       streaming = false;
       stopPolling();
       hideThinking();
       clearToolStatus();
       setStreamingClass(false);
       setChatControls('stopped');
+      updateComposer();
       autoResize();
     });
 
@@ -1329,15 +1471,18 @@
       showInput();
     });
 
-    // 初始化时消费 pending_text：如果有内容（截图等非流式写入），
-    // 直接渲染 + 启动隐藏定时器，不走轮询（避免稳定检测误判 showInput）
+    // 冷窗口：已有内容按短回应显示；空内容只等待，不伪装成正在生成。
+    var initialEpoch = pollEpoch;
     pollPending().then(function(txt) {
+      if (initialEpoch !== pollEpoch || hiddenByUser) return;
       if (txt && txt.length > 0) {
-        showNoticeText(txt);
-      } else {
-        startPolling();
+        if (chatSessionActive) setText(txt, { preserveScroll: true });
+        else showNoticeText(txt);
+      } else if (txt !== null) {
+        watchForStream();
       }
     });
+    updateComposer();
   }
 
   document.addEventListener('DOMContentLoaded', init);
