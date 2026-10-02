@@ -10,6 +10,11 @@ on:
         description: "要发布的 tag（如 v0.1.0）；不传则使用当前 ref"
         required: false
         default: ""
+      dry_run:
+        description: "只构建和上传验证产物，跳过创建 GitHub Release"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -105,7 +110,7 @@ jobs:
         run: cargo run -p xtask -- prepare-frontend
 
       - name: Build Tauri bundles
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -140,6 +145,12 @@ jobs:
             Write-Host "✓ $ext bundle: $dest"
           }
 
+          foreach ($ext in @('msi', 'exe')) {
+            if (-not (Test-Path "$outDir/bitcat-$tag-windows-${{ matrix.arch }}.$ext")) {
+              throw "缺少 $ext 安装包，停止上传不完整的发布产物"
+            }
+          }
+
           Write-Host "--- release-out ---"
           Get-ChildItem $outDir | ForEach-Object { Write-Host ("  {0}  ({1:N1} KB)" -f $_.Name, ($_.Length / 1KB)) }
 
@@ -153,6 +164,7 @@ jobs:
   # ── 3. 创建 GitHub Release（汇总所有平台 + checksums + CHANGELOG）──
   release:
     name: Create GitHub Release
+    if: github.event.inputs.dry_run != 'true'
     runs-on: windows-latest
     needs: build
     steps:
