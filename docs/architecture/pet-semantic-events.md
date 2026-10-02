@@ -74,7 +74,7 @@ Notification kinds currently include:
 - `StreamedUserContent::ToolResult` resolves the planned event into `Finished`, `Blocked`, or `Failed`.
 - `FinalResponse` usage is recorded through token tracking.
 
-rig 0.36 also exposes `PromptHook::on_text_delta()` and `PromptHook::on_tool_call_delta()`. The project currently does not need a custom hook for UI status because `MultiTurnStreamItem` already provides the stream nodes needed by the pet. Hook-level integration remains an option if future UI needs argument-delta previews or earlier provider-level deltas.
+The current rig 0.42 integration uses `AgentHook` and `ToolCallAction::Skip` for permission and shell-policy checks. UI status comes from `MultiTurnStreamItem`, so stream rendering does not depend on a second hook implementation. Earlier argument previews remain a future extension.
 
 ## Event Bus And Mood Policy
 

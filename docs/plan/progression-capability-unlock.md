@@ -1,6 +1,6 @@
 # BitCat 成长与能力解锁实施计划
 
-状态：积分/等级/成就第一片已落地；能力解锁、商店、每日任务和心情系统仍未实现（2026-05-30 校准）
+状态：积分/等级/成就第一片与发布版权限 gate 已落地；成长上下文、按等级能力解锁、商店、每日任务和心情系统仍未实现（2026-10-02 校准）
 前置调研：[core-gameplay-progression-research.md](../research/core-gameplay-progression-research.md)
 Steam 积分模式参考：Hades（多层货币）、Vampire Survivors（极简反馈）、Dead Cells（蓝图解锁）、Steam 成就系统、Tamagotchi（隐式状态）
 
@@ -43,7 +43,7 @@ Steam 积分模式参考：Hades（多层货币）、Vampire Survivors（极简�
 这部分对应原计划中的“第一层 Bit/积分 + 第三层成就”的最小可见闭环。尚未落地：
 
 - 成长状态注入对话上下文。
-- `FeatureId`/能力 gate 与高风险工具授权。
+- 按等级判断的 `FeatureId`/能力 gate；高风险工具的用户授权 gate 已实现。
 - 商店、库存、每日任务。
 - 隐式心情系统与可视化升级反馈。
 
@@ -64,8 +64,8 @@ Steam 积分模式参考：Hades（多层货币）、Vampire Survivors（极简�
   - `enriched_msg` 是动态成长状态注入的第一落点。
 
 - `core/src/permission_hook.rs`
-  - 当前只拦截危险 `shell`。
-  - 需要升级为“工具权限 gate”：按能力解锁和用户授权决定放行/阻止。
+  - 已按用户设置检查 shell、文件读取、剪贴板、前台控制、启动程序和热键六类操作工具，并继续拦截危险 `shell` 命令。
+  - 待补的是成长阶段/能力解锁条件；新增这层检查时继续保留已有用户授权 gate。
 
 ### 设置页
 
@@ -74,7 +74,7 @@ Steam 积分模式参考：Hades（多层货币）、Vampire Survivors（极简�
   - 后续可新增 `cmd_get_progression` / `cmd_progression_claim_reward`。
 
 - `app/frontend/js/settings.js`
-  - 可新增“成长”tab，展示等级、Bit、下一解锁、能力树。
+  - 成长信息归入“它怎么陪着我”；授权状态复用“它能做什么”和专家区权限明细。遵守已落地的 4+1 结构与用户区 ≤20 控件预算。
 
 ### 事件来源
 
@@ -753,9 +753,9 @@ happiness 钳位到 [0.0, 1.0]
 - 日上限生效；
 - 没有奖励后台观察/纯挂机。
 
-### Phase 3：工具权限 Gate
+### Phase 3：成长阶段 Gate（用户授权 Gate 已有）
 
-- 扩展 `PermissionHook`。
+- 在现有 `PermissionHook` 的用户授权检查之上补成长阶段条件。
 - 增加 `FeatureId` 与 tool_name 映射。
 - 未开放/未授权工具返回稳定错误文案。
 - 保留 shell 危险命令黑名单。
@@ -767,13 +767,12 @@ happiness 钳位到 [0.0, 1.0]
 - Lv5 授权后危险命令仍被拒绝；
 - `get_time` 始终可用。
 
-### Phase 4：设置页成长 tab + 可视化反馈
+### Phase 4：现有分区的成长信息与反馈（待产品准入）
 
 - 后端新增 `cmd_get_progression` / `cmd_get_achievements` / `cmd_get_daily_quests` / `cmd_shop_list` / `cmd_shop_buy`。
-- 前端新增 `growth` tab（四个子面板：成长概览 / 能力与权限 / 成就 / 每日任务）。
+- 前端复用“它怎么陪着我”的积分/成就区域；能力授权仍归入“它能做什么”。商店和每日任务待真实使用数据与控件预算证明后决定入口。
 - Bit 获取动画（宠物头顶浮动数字 + 计数器跳动）。
-- 等级提升全屏动画。
-- 成就解锁横幅。
+- 等级提升和成就解锁采用稀疏、可节流的轻提示，接入现有通知与宠物事件机制。
 - 心情影响宠物 idle 动画选择。
 
 验收：
@@ -782,7 +781,7 @@ happiness 钳位到 [0.0, 1.0]
 - 用户能关闭敏感能力；
 - 关闭敏感能力后不会被升级流程重新打开；
 - Bit 获取时有可见的动画反馈；
-- 等级提升时有仪式感动画；
+- 等级提升提示不打断输入，重复事件不会反复提示；
 - 成就列表按稀有度正确分组；
 - 每日任务跨日刷新无惩罚。
 
@@ -802,7 +801,7 @@ app：
 
 frontend：
 
-- `app/frontend` 用 Vitest 测成长 tab 的渲染函数。
+- `app/frontend` 用 Vitest 测已有分区的成长信息渲染和权限状态同步。
 
 手动验证：
 
@@ -826,16 +825,12 @@ frontend：
 
 ## 推荐首个 PR 范围
 
-下一步建议只做 Phase 0B + Phase 1：
+首个成长 PR 先复用现有 points 数据接入 Phase 1 的短上下文 overlay：
 
 - 评估新增 `core/src/progression.rs` 或扩展 `core/src/points.rs`
 - `core/src/lib.rs`
 - `core/src/prompts.rs` 和 `config/prompts.yml` 加 `stage_overlays`
-- `config/shop.yml`（15~20 个首版商品）
-- `config/achievements.yml`（30 个首版成就）
-- `config/daily_quests.yml`（9 个任务模板）
 - `app/src/gamepad.rs` 注入成长上下文并记录聊天完成
 - 基础测试
 
-这个 PR 完成后，BitCat 就能在对话里表现出”当前阶段”，并复用已落地的积分 / 等级 / 成就数据；每日任务和商店可以先只有配置和纯逻辑，不动工具权限和复杂设置页 UI，风险最低。
-
+这个 PR 让 BitCat 在对话里表达当前阶段，并复用已有积分、等级和成就数据。商店、额外成就配置与每日任务留在后续阶段；授权与设置页方案继续按产品规范验收。整体排期以 roadmap 的 Steam Demo 主线为准。

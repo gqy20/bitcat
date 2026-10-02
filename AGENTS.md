@@ -16,7 +16,7 @@ make test           # 完整 workspace（core + app，app 首次编译较慢）
 make nextest        # 同 make test
 
 # 前端测试（Vitest + jsdom）
-cd app/frontend && npx vitest run     # 15 个测试文件
+cd app/frontend && npx vitest run     # 运行全部前端测试
 cd app/frontend && npx vitest         # 监听模式
 
 # Arena 3D 角色资源（Blender 固定安装在 D:/tools）
@@ -171,7 +171,7 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 - **panel** — 默认 480×360 玻璃面板，2×2 网格，方向键导航，布局来自 `config/panel_action.yml`
 - **voice** — 280×40 录音条，textarea 接收 IME 注入（预创建在屏幕外）
 - **settings** — 1040×720 设置窗口，覆盖层配置、记忆/提醒审查、用量统计和 Agent Watch 管理
-- **game** — 透明置顶小游戏窗口，支持 Snake / Memory / Catch / Battle / Gomoku
+- **game** — 透明置顶小游戏窗口，支持 Snake / Memory / Catch / Battle / Gomoku / Arena / Beads / Invasion
 - **agent-watch** — 只读任务看管浮窗，展示 Claude Code / Codex 会话
 - **notification** — Agent Watch 与提醒共用的顶部通知窗口
 - **camera** — 屏幕外隐藏摄像头采样窗口，使用浏览器 `getUserMedia`
@@ -186,6 +186,10 @@ SDL2 手柄输入 → gamepad_loop() [80ms tick, lib.rs]
 - Rust→JS：`app.emit("event-name", payload)` — JS 用 `window.__TAURI__.event.listen()` 接收
 - JS→Rust：`window.__TAURI__.core.invoke("cmd_xxx", args)` — Rust 用 `#[tauri::command]` 注册
 - 共享状态：`tauri::State<'_, SharedXxx>` + `Mutex<T>` 在命令间传递
+
+### 对话气泡协议
+
+`bubble-start` 开始一轮回复；前端轮询 `cmd_consume_bubble_text` 读取累计正文；`bubble-end` 携带 `{ text }` 不可变最终快照，空串也是明确结果。普通通知不得改写生成或用户聊天/阅读中的正文，也不得混入前端最近问答。主动会话保留输入与草稿，手动收起只结束交互；生成与交互保护分别管理。请求在排队时预留取消编号，停止同时取消排队和在途回复，已经开始的外部动作可能继续完成。当前体验契约与证据见 [对话迭代评估](docs/research/chat-interface-iteration-2026-10-02.md)。
 
 ### 宠物语义事件
 
@@ -202,7 +206,7 @@ app 层通过 `SharedPetEventBus` 统一发送 `pet-event`，集中处理去重�
 
 配置优先级：环境变量 > `~/.bitcat/app_settings.json` 覆盖层 > `~/.claude/settings.json` > `.env` > 默认值。当前通过 rig `AgentBuilder` 注册 16 个内置 Tool：`launch_program` / `shell` / `read_file` / `get_time` / `recent_screenshots` / `search_memory` / `remember` / `create_reminder` / `list_reminders` / `cancel_reminder` / `send_hotkey` / `read_clipboard` / `force_foreground` / `perform_dance` / `play_dance` / `start_game`。`max_tokens` 默认 256K。
 
-主对话使用 `stream_prompt().multi_turn(MAX_AGENT_TURNS)`。`PetAgent::chat_stream()` 将 rig 的 `MultiTurnStreamItem` 拆成三类 app 可消费事件：`Text` 流式写入 bubble；`Tool` 携带 `ToolRuntimeEvent` 表达 planned / blocked / finished / failed；`Status` 从文本 delta 和 tool-call item 派生 `AiWriting` / `ToolPreparing`。`PermissionHook` 仍是 shell 安全边界，危险命令通过 `ToolCallHookAction::Skip` 返回可解释结果。
+主对话使用 `stream_prompt().max_turns(MAX_AGENT_TURNS)`。`PetAgent::chat_stream()` 将 rig 的 `MultiTurnStreamItem` 拆成三类 app 可消费事件：`Text` 流式写入 bubble；`Tool` 携带 `ToolRuntimeEvent` 表达 planned / blocked / finished / failed；`Status` 从文本 delta 和 tool-call item 派生 `AiWriting` / `ToolPreparing`。`PermissionHook` 同时检查六类操作工具的用户授权与危险 shell 命令，通过 rig 0.42 事件化 `AgentHook` 的 `ToolCallAction::Skip` 返回可解释结果。
 
 对话结束后用 rig `Extractor<AgentReaction>` 做结构化收尾：输出最终 `PetMood`、可选 speech 和 `memory_candidates`。失败或超时时 fallback 到 `Idle`，不阻塞主回复。
 
@@ -249,9 +253,9 @@ AI Agent 通过 `create_reminder` / `list_reminders` / `cancel_reminder` Tool �
 **任何用户可见的改动（窗口界面、设置项、文案、通知、默认值、入口数量）必须先读 [docs/product/design-spec.md](docs/product/design-spec.md)**——那是验收标准；判断基准（为什么）见 [docs/roadmap.md](docs/roadmap.md) 的「产品视角」节。硬规则摘要：
 
 - **三时刻模型**：陪伴(~95%)/互动/照料(<1% 但决定信任与留存)；改动先声明属于哪个时刻。照料时刻围绕四个疑问组织：它在偷看屏幕吗 / 记住了我什么 / 花了多少钱 / 刚才干了什么。
-- **设置页目标为 4+1 信息架构**（四个疑问分区 + 折叠专家模式），用户区控件 ≤20 且 zero-sum（加一个必颅移除一个）；【F1 落地中】在此之前新设置项不得加入现有 tab，一律先按 4+1 归类。
+- **设置页已落地 4+1 信息架构（F1，2026-09-09）**：四个疑问分区 + 折叠专家模式，用户区控件 ≤20 且 zero-sum（加一个必须移除一个）；新设置项一律归入对应疑问分区或专家模式。
 - **用户文案零工程术语**（token→用量、Hook→连接、宠物事件→它的反应；完整对照表见规范 §4.1）；错误消息三段式：发生了什么/为什么/怎么办。
-- **默认值必须过恐慌测试**（规范 §5.1）：每个能力 = 一句人话解释 + 显式开关 + 默认值倾向用户；截图观察正在改为首次由用户亲手开启【F3】。
+- **默认值必须过恐慌测试**（规范 §5.1）：每个能力 = 一句人话解释 + 显式开关 + 默认值倾向用户；截图观察已改为默认关闭、首次由三步信任向导让用户亲手开启（F3/D1，2026-09-11 落地）。
 - **新功能过准入清单**（规范 §7）：一句话人话解释、时刻归属、预算证明、收回路径 ≤2 次点击；无 F2 使用数据支撑的新功能默认进专家模式。砍掉功能是合法贡献。
 - **产品决策以本地 JSONL 为事实来源**（规范 §8），不引入 analytics/遥测服务。提交用户可见改动时附「产品自检」模板（规范附录 B）。
 

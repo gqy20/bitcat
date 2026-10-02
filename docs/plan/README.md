@@ -2,13 +2,15 @@
 
 `docs/plan/` 只保留仍需要决策、实现或持续打磨的计划。已经落地的阶段性方案移入 `docs/plan/archive/`，作为历史设计、实现索引和回归检查材料。
 
+> **2026-10-02 校准**：优先级以 [roadmap 的当前下一步](../roadmap.md#当前下一步2026-10-02-校准) 为准；用户界面按 [产品规范](../product/design-spec.md) 的 4+1 分区与控件预算验收。旧计划里的新增 tab、全屏反馈和功能规模需要重新过准入清单，不能直接作为实现指令。
+
 ## 活跃计划
 
 | 文档 | 状态 | 下一步 |
 |------|------|--------|
 | [minigame-system.md](minigame-system.md) | Phase 1 已完成；内置游戏启动与 AI `start_game` 工具已落地 | 收敛 GameDef 持久化、分数持久化、AI 生成游戏配置；`perform_game` 仍是未来扩展 |
-| [game-direction-review-2026-05.md](game-direction-review-2026-05.md) | 新增，整理小游戏、训练场、RPG、3D 等游戏方向 | 优先验证 BitCat 语义化小游戏原型，避免直接跳到完整 RPG 或只复刻传统小游戏 |
-| [pet-asset-packaging.md](pet-asset-packaging.md) | 新增，承接 v2 宠物资源包发布策略 | 决定哪些资源内置、哪些做外部包；补资源包体积预算和用户目录加载 |
+| [game-direction-review-2026-05.md](game-direction-review-2026-05.md) | 方向评估已形成；Invasion MVP 已落地 | 优先完成 Invasion 真机回归与 Demo 玩法收尾；完整 RPG / 3D 继续后置 |
+| [pet-asset-packaging.md](pet-asset-packaging.md) | v2 打包已落地；15 个原版猫包 + 11 个像素试用包，默认 `cat-tabby` | 补资源包体积预算、用户目录加载和资源诊断 |
 | [progression-capability-unlock.md](progression-capability-unlock.md) | 积分/等级/成就第一片已落地；能力解锁主线仍活跃 | 把现有 `points` 体系与成长上下文、权限 gate、商店/每日任务计划对齐 |
 | [music-reactive-dance-research.md](music-reactive-dance-research.md) | 第一版可用，舞感状态机仍活跃 | 扩展音乐状态机、fake source 模式、后端特征字段和调参入口 |
 | [claude-code-agent-watch.md](claude-code-agent-watch.md) | Phase 1 + 本地/远程只读看管 MVP 已落地，Phase 2 活跃 | 补 JSONL watcher、PID 存活、结构化预览、panel 收敛和控制动作审计 |
@@ -29,7 +31,7 @@
 | grep-first 记忆 | JSONL/id/软删除/search_memory 主链路 | 默认上下文瘦身、候选压缩、Agent Watch 项目摘要召回 | [../roadmap.md](../roadmap.md) §B5 |
 | AI 启动内置游戏 | `start_game(kind)` 工具、game request bridge、ActionBus 内置游戏映射 | GameDef 持久化、分数 JSONL、AI 生成/配置游戏参数 | [minigame-system.md](minigame-system.md) |
 | 积分与成就薄片 | `core/src/points.rs`、points JSONL/状态、设置页展示、对话/游戏/舞蹈/观察等奖励 hook | 能力解锁上下文、权限 gate、商店、每日任务、心情系统 | [progression-capability-unlock.md](progression-capability-unlock.md) |
-| v2 宠物资源包 | manifest loader、默认 `piggy`、多 pack catalog | bundle 体积预算、外部用户目录加载、资源诊断和发布分层 | [pet-asset-packaging.md](pet-asset-packaging.md) |
+| v2 宠物资源包 | v2 manifest loader、默认 `cat-tabby`、15 个原版猫包 + 11 个像素试用包 | bundle 体积预算、外部用户目录加载、资源诊断和发布分层 | [pet-asset-packaging.md](pet-asset-packaging.md) |
 | 音乐响应舞动 | WASAPI/fake source 到 sprite-only 音乐表演链路 | 舞感状态机、后端特征字段、调参入口、静音/强拍/高潮回落表现 | [music-reactive-dance-research.md](music-reactive-dance-research.md) |
 
 ## 已归档

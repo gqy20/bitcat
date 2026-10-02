@@ -70,4 +70,4 @@
 | Tool 注册与工具政策 prompt | `core/src/agent.rs` |
 | Tool 参数与执行逻辑 | `core/src/tools.rs` |
 | 短期/长期记忆预算与检索 | `core/src/memory.rs` |
-| Token 统计持久化 | `core/src/token_usage.rs` |
+| Token 统计持久化 | `core/src/token_tracker.rs` |

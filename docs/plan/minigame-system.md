@@ -6,21 +6,22 @@
 > - GameDef schema 历史草案：[plan/archive/structured-output-design.md](archive/structured-output-design.md) §3.2
 > - 路线图：[roadmap.md](../roadmap.md) §A2
 
-## 当前完成状态（2026-05-30）
+## 当前完成状态（2026-10-02 校准）
 
 已完成的部分：
 
 - 全屏透明 `game` 窗口、基础生命周期、键盘/手柄输入隔离和宠物 `GamePlay`/胜负状态联动。
-- 内置游戏入口已从默认 Snake 扩展为 `snake`、`memory`、`catch`、`battle`、`gomoku`。
-- `ActionBus` 已提供内置游戏动作映射：`PlayGameDefault`、`PlayMemoryDefault`、`PlayCatchDefault`、`PlayBattleDefault`、`PlayGomokuDefault`。
+- 内置游戏入口已扩展为 `snake`、`memory`、`catch`、`battle`、`gomoku`、`arena`、`beads`、`invasion`，AI `StartGameKind` 与前端游戏类型保持一致。
+- `ActionBus` 已提供八种内置游戏动作映射；panel 主推 Invasion，其余通过游戏库入口组织。
 - AI 主 Agent 已注册 `start_game(kind)` 工具。该工具只接受内置枚举，不生成代码，不绕过 Rust 校验。
 - `core/src/game_request.rs` 提供与舞蹈请求类似的 app bridge：core 工具发出启动请求，app 层消费后走现有 ActionBus/game window 路径。
 - 积分系统已对游戏启动和胜利分别记录 `GamePlayed` / `GameWon`。
+- Invasion 已有局内反馈、结束 details、专属积分事件和 [真机回归清单](../release/invasion-demo-smoke-checklist.md)。Windows 桌面窗口与手柄 smoke 仍待执行。
 
 仍未完成的部分：
 
 - AI 生成完整 `GameDef` / `perform_game` 仍是未来扩展，不属于当前 `start_game` 的职责。
-- 游戏配置持久化、用户自定义预设、分数 JSONL 仍未收敛。
+- 游戏配置持久化、用户自定义预设、分数 JSONL 尚未实现。`cmd_game_end` 的分数目前写普通运行日志，胜利积分复用 points 事件；两者不能替代每局分数存储。
 - Memory/Catch/Battle/Gomoku 的长期规则文档、分数口径和测试矩阵还需要补齐。
 
 ## 一、核心设计决策
@@ -485,9 +486,11 @@ AI 生成配置路径仍推迟到后续 Phase：
 - AI 生成参数越界时被 `validate_game_def()` 拒绝或归一化，不影响桌面应用稳定性。
 - 工具测试覆盖无效配置、保存失败、通道未初始化等路径。
 
-### Phase 3C：语义化内置小游戏原型（建议新增）
+### Phase 3C：语义化内置小游戏原型（MVP 已完成）
 
-目标：在现有 5 个内置小游戏之后，验证一个更能体现 BitCat 项目特性的玩法，而不是只新增一个传统小游戏品类。
+2026-10-02 状态：Invasion MVP、安全投影、专属积分和回归清单已落地；后续是 Windows 真机窗口/手柄回归与手感微调。以下保留原型设计依据。
+
+原型目标：验证一个能体现 BitCat 项目特性的玩法。
 
 推荐工作名：`invasion` / `桌面小怪入侵`。
 
@@ -509,11 +512,11 @@ AI 生成配置路径仍推迟到后续 Phase：
 - Rust 侧提供结构化 `GameContext` 或等价 IPC 命令，前端只消费脱敏后的游戏上下文。
 - 失败路径必须有诊断日志，但不能把敏感内容写进前端日志。
 
-建议 MVP 范围：
+MVP 设计范围（已落地）：
 
 - 新增 `MinigameType::Invasion` 和 `StartGameKind::Invasion`。
 - 新增 `GameDef::default_invasion()` 与校验。
-- 在 `game_engine.js` 新增 `InvasionEngine`，先做固定敌人类型和固定难度曲线。
+- 在独立 `js/games/invasion.js` 实现玩法，`game_engine.js` 保留注册、HUD 与输入壳层。
 - 新增安全上下文 IPC：聚合鱼干数量、记忆 tags、提醒数量 / 临近状态、Agent Watch 等待数量。
 - 前端规则测试覆盖敌人生成、偷取、拦截、胜负和计分。
 

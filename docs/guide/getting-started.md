@@ -38,11 +38,26 @@ make build
 `app/frontend` 是纯静态 HTML/JS/CSS，所以三层都能在非 Windows 机器上开发和测试：
 
 ```bash
-cargo test -p bitcat-core          # 469 个测试，约 1 秒
-cargo test -p bitcat-app --lib     # 160 个测试，app 层单测在 Linux 上同样能跑
-cd app/frontend && npx vitest run  # 187 个测试，约 1.7 秒
+make test-core                    # core 测试，配置复制由 xtask 处理
+cargo test -p bitcat-app --lib     # 仅 app 层 lib 单测
+cd app/frontend && npx vitest run  # 全部前端测试
 python3 -m http.server 4178        # 在 app/frontend 下静态起页，在浏览器里调 UI
 ```
+
+#### 静态预览入口
+
+沿用同一个 `app/frontend` 静态服务，无需启动 Tauri 或另一套构建流程：
+
+| 内容 | 预览路径 |
+| --- | --- |
+| 对话界面、长文阅读、停止与发送失败 | `/tools/chat-preview.html` |
+| 像素猫动作与资源 | `/tools/pixel-cats-preview.html` |
+| 小游戏 | `/game_dev.html` |
+| 设置页布局 | `/settings.html` |
+
+局域网访问时，在 `app/frontend` 下运行 `python3 -m http.server 4178 --bind 0.0.0.0`，其他设备打开 `http://<开发机局域网IP>:4178/tools/chat-preview.html`。已有同目录的 4178 服务时直接复用。
+
+对话预览读取生产 `bubble.html`、CSS 和 JS，只在预览页中注入示例回复与窗口尺寸模拟。它不连接真实 AI 服务，也不执行工具。`tools/` 中的预览文件不进入 `xtask prepare-frontend` 的运行时资源包。Windows 输入法、原生置顶与多显示器定位仍需桌面应用验收。
 
 仍然不能做的事：`bitcat` **可执行文件**无法在非 Windows 上链接和运行（截图 BitBlt、
 WASAPI、SendInput、TTS、托盘都是 Win32），`make dist` / UPX / Tauri bundle 同理。
@@ -55,7 +70,7 @@ WASAPI、SendInput、TTS、托盘都是 Win32），`make dist` / UPX / Tauri bun
   已做兼容修补，因此本地任意 Node 版本都能跑通；CI 钉 Node 22 只为可复现。
 - **时区**：前端测试已与运行环境时区解耦——`settings.test.js` 用 `localRfc3339()` 按本地
   时区构造 fixture，UTC / Asia-Shanghai / America-New_York / Pacific-Kiritimati 四个时区
-  实测都是 187/187。CI 的 frontend job 故意钉 `TZ: UTC`，谁再引入时区相关断言就会立刻红；
+  已做过多时区回归。测试数量以当前报告为准；CI 的 frontend job 故意钉 `TZ: UTC`，谁再引入时区相关断言就会立刻红；
   不要再把期望值写死成某个特定时区的墙上时间。
 - **clippy 必须与 CI 同版本、同 target**：CI 用 `dtolnay/rust-toolchain@stable`，本地工具链
   落后就会出现“本地绿、CI 红”（实测踩过：本地 1.90 / CI 1.98，差一年，新 lint

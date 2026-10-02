@@ -10,7 +10,7 @@
 
 | 能力 | 状态 |
 |------|------|
-| v2 宠物资源包系统（manifest + spritesheet + 设置页选择） | 已落地（2026-05-17）；最终内置只保留 15 个 `cat-*` 品种，默认 `cat-tabby` |
+| v2 宠物资源包系统（manifest + spritesheet + 设置页选择） | 已落地；当前打包保留 15 个原版猫包 + 11 个 `cat-pixel-*` 试用包，默认仍为 `cat-tabby`（2026-10-02 源码校准） |
 | 语义宠物动画（非均匀帧时长 + 瞬态 repeat+fallback + idle variants） | 已有（2026-05-13 增强，2026-05-17 收敛到 v2 pack） |
 | AI 对话（Anthropic Claude via rig 0.42，流式输出） | 已有 |
 | 16 个内置工具（launch/shell/read_file/get_time/recent_screenshots/search_memory/remember/reminder/hotkey/clipboard/foreground/dance/start_game 等） | 已有；工具说明以 rig schema 为主，prompt 只保留高风险政策 |
@@ -32,10 +32,10 @@
 | Bubble reader / 工具状态 UI | 已增强（2026-05-30）；阅读态、工具状态条和表演型工具退场体验已接入 |
 | AI 流错误分类与用户友好兜底 | 已落地（2026-05-30）；可恢复错误进入 fallback 文案，避免空白失败 |
 | Invasion / 桌面入侵核心玩法 | MVP 已落地（提交 `cc6461c`）；D4 第一轮收口已补结束 details、专属 points、局内日志和 smoke checklist，待真机窗口/手柄回归 |
-| 跨平台开发与发布流水线 | 已落地（2026-09-09）：core/app/前端可在 Linux 开发测试；CI 5 job 护栏（Windows 637 + Linux core + 前端 vitest 187）；`dev-build` 手动触发 4-7 分钟出可运行产物（含 BUILD_INFO）。D6 的工程闸门大部分已自动化 |
+| 跨平台开发与发布流水线 | 已落地：CI 5 job 覆盖 Windows 测试、Linux core、前端、Clippy 和格式检查；`dev-build` 可手动生成可运行产物（含 BUILD_INFO）。2026-10-02 已验证 Release `dry_run` 构建和安装包产物；测试数量与耗时以具体 run 为准 |
 | 设置页 4+1 信息架构（四疑问分区 + 折叠专家模式） | 已落地（F1，2026-09-09，`c9e78ef`）；专家模式分组、视觉与交互随后多轮打磨 |
 | 首次启动权限向导 + 默认收权（F3/D1） | 已落地（2026-09-11，`c8c6ee5`）：3 步信任叙事，截图观察改由用户亲手开启，发布版权限 gate |
-| 功能使用审计（`xtask audit-usage`） | 第一轮已执行（F2，2026-09-11，`e17b4ab`）：panel 收敛为「主推 + 游戏库」；第二轮复审约 2026-09-25 |
+| 功能使用审计（`xtask audit-usage`） | 第一轮已执行（F2，2026-09-11，`e17b4ab`）：panel 收敛为「主推 + 游戏库」；第二轮仍待代表性真实样本，2026-10-02 当前开发机审计数据不足 |
 | 诊断包导出 / 分析闭环 | 已落地（2026-09，`b54ad25`）：托盘「导出诊断包」+ `xtask logs analyze <zip>` |
 | 常驻资源与 IPC 性能治理 | 已收尾（2026-09）：隐藏 WebView 节流、宠物脏检查渲染、热路径 I/O 缓存、轮询事件化、事件定向广播、前端错误捕获落盘 |
 
@@ -52,7 +52,7 @@
 
 BitCat 不是工具，是陪伴物。用户的时间分布决定每个功能该待的位置：
 
-| 时刻 | 占比（估） | 用户心理 | 产品要求 | 现状 |
+| 时刻 | 占比（估） | 用户心理 | 产品要求 | 2026-09-09 记录 |
 |------|-----------|----------|----------|------|
 | **陪伴** | ~95% | “它在呢” | 存在感低、偶有惊喜 | ✅ 做得好 |
 | **互动** | ~4% | “陪我玩会儿” | 入口浅、反馈爽 | ⚠️ 入口杂：panel 8 个游戏并排 × 多条启动路径 |
@@ -87,15 +87,21 @@ T+1day  打开设置：11 个 tab         → 认知瘫痪 → 卸载
 
 ---
 
-## 当前下一步（2026-09-14）
+## 当前下一步（2026-10-02 校准）
 
 F 线三步已落地：F1 设置页 4+1 重组（2026-09-09）、F2 第一轮使用审计与 panel 收敛（2026-09-11）、F3+D1 默认收权与三步信任向导（2026-09-11）；常驻资源与 IPC 性能治理同期收尾。产品可理解性主线初步闭合，下一步转向 Steam Demo 闸门：
 
 1. **D4 Invasion 真机收口**：Windows 真机窗口/手柄 smoke 回归、敌人节奏与目标反馈微调，把 MVP 变成可反复游玩的 Demo 核心切片。
-2. **A2/B7 分数与成长闭环**：补分数 JSONL、GameDef 持久化、发布版能力开关，为 Steam Achievements/Cloud 打本地事实基础。
+2. **A2/B7 分数与成长闭环**：先补每局分数/结果 JSONL，再补 GameDef 持久化与成长授权 overlay，为 Steam Achievements/Cloud 打本地事实基础。现有发布版权限开关和操作工具 gate 已落地；按等级解锁能力仍未实现。
 3. **D2/D3 Steam 平台与合规**：SteamPipe 上传脚本、成就映射、干净机 smoke test；D3 的数据导出/删除直接落在 F1 的“它记住了我什么”分区，一次实现两处收益。
-4. **F2 第二轮复审（约 2026-09-25）**：真实使用满 2 周后重跑 `xtask audit-usage`，重点复审游戏库打开率与 AI 工具表面积。
+4. **F2 第二轮复审（待真实样本）**：原计划约 2026-09-25，尚无代表性结果。真实使用积累 2 周后重跑 `xtask audit-usage`，重点复审游戏库打开率与 AI 工具表面积；测试数据和缺失日志不能作为砍功能或判断成本瓶颈的依据。
 5. **资源观测常态化**：`resource_usage.jsonl` 已落盘，按数据决定下一轮常驻优化；A4（上班金币掉落）等新内容扩展继续让路。
+
+### 本轮工程验证（2026-10-02）
+
+- 依赖更新与未使用的 mockall 清理已完成，WASAPI 所需的两个 Windows feature 已显式声明；主分支 `de97d4c` 的[最终 CI](https://github.com/gqy20/bitcat/actions/runs/36984902965) 五项全部通过。
+- Release 已支持 `workflow_dispatch` 的 `dry_run` 开关，tauri-action v1 / gh-release v3 已升级。[构建验证](https://github.com/gqy20/bitcat/actions/runs/36982112036)使用 `eb5b2bb`，成功产出 MSI、NSIS 和 portable ZIP，并按验证模式跳过创建 GitHub Release；本地已检查安装包文件头、ZIP 完整性和配置清单。
+- 自动化结果覆盖编译、测试和产物生成；干净 Windows 用户目录、实际桌面窗口和手柄 smoke 仍待执行，不标记 D4/D6 真机验收完成。
 
 ## 源码确认的技术栈
 
@@ -106,9 +112,9 @@ BitCat 当前不是 Web 应用套壳，而是 **Windows-first 的 Rust 桌面自
 | Workspace | Rust workspace：`core` / `app` / `xtask` | `Cargo.toml` | 逻辑、桌面壳、维护命令分离 |
 | Core crate | Rust 2024 + `bitcat-core` | `core/Cargo.toml` | 纯逻辑层，无 Tauri/UI 依赖，便于快速测试 |
 | App crate | Rust 2021 + Tauri 2 | `app/Cargo.toml`, `app/tauri.conf.json` | 桌面窗口、托盘、全局快捷键、IPC |
-| UI Runtime | WebView2 via Tauri | `tauri.conf.json` `frontendDist: ./frontend` | 多窗口透明桌宠，而非浏览器页应用 |
-| Frontend | Vanilla HTML/CSS/JS + Canvas | `app/frontend/*.html`, `app/frontend/js/*.js` | 无 React/Vue/构建步骤；Node 只用于测试 |
-| Pet Assets | v2 manifest + 15 个内置猫咪品种 | `app/frontend/__fixtures__/pets/*/manifest.json`, `app/frontend/js/sprite-loader.js` | 宠物视觉不再依赖硬编码默认 sprite fallback；最终 bundle 只保留 `cat-*` 品种，默认加载 `cat-tabby` |
+| UI Runtime | WebView2 via Tauri | `tauri.conf.json` `frontendDist: ./frontend-dist` | 多窗口透明桌宠；发行目录由 `xtask prepare-frontend` 和 app build script 准备 |
+| Frontend | Vanilla HTML/CSS/JS + Canvas | `app/frontend/*.html`, `app/frontend/js/*.js` | 无框架和前端打包器；Rust 工具准备发行目录，Node 用于测试及资源生成脚本 |
+| Pet Assets | v2 manifest + 15 个原版猫包 / 11 个像素试用包 | `app/frontend/__fixtures__/pets/*/manifest.json`, `app/frontend/js/sprite-loader.js` | 默认加载 `cat-tabby`，旧非猫资源不打包；设置页展示的 preset 是选择列表，bundled 清单以资源目录与打包流程为准 |
 | Frontend Tests | Vitest 3 + jsdom | `app/frontend/package.json`, `vitest.config.ts` | 测试 `bubble/pet/game/sprite` 等纯 JS 逻辑 |
 | AI Agent | `rig` 0.42 facade + Anthropic provider | `core/src/agent.rs`, `core/src/vision.rs` | 流式对话、Tool、Extractor、Vision 结构化输出 |
 | Reminder Personalizer | rig Extractor（no-tool） | `core/src/reminder_personalizer.rs`, `config/prompts.yml` | 到期提醒短文案可选 AI 润色，失败回退原始提醒 |
@@ -182,13 +188,13 @@ Phase 1 已完成（提交 `a2105ff`）：新增全屏透明 `game` 窗口并加
 
 ```
 panel / AI start_game → ActionBus 内置游戏动作
-      → cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle / cmd_start_gomoku / cmd_start_invasion
+      → cmd_start_game / cmd_start_memory / cmd_start_catch / cmd_start_battle / cmd_start_gomoku / cmd_start_arena / cmd_start_beads / cmd_start_invasion
       → app/src/game.rs 动态创建 game 窗口
-      → game.html / game_engine.js + js/games/* 运行 Snake / Memory / Catch / Battle / Gomoku / Invasion
+      → game.html / game_engine.js + js/games/* 运行 Snake / Memory / Catch / Battle / Gomoku / Arena / Beads / Invasion
       → cmd_game_end(result, score) → 关闭窗口 + 切换 pet 状态
 ```
 
-2026-05-30 增量：`start_game(kind)` 已作为 AI 工具注册，走 `core::game_request` bridge 到 app 的 ActionBus，只接受内置枚举，不生成代码。2026-06-07 增量：`invasion` 已接入 `StartGameKind` / `MinigameType` / ActionBus / panel / Tauri IPC，玩法主体放在独立 `app/frontend/js/games/invasion.js`，`game_engine.js` 只保留外部游戏注册、HUD 和输入壳层。下一步继续复用 A1 的模式：模型通过未来 `perform_game` 提交结构化 `GameDef` → Rust validate / save → game 窗口运行游戏 → 结束联动 pet 状态。当前尚未完成的是 GameDef 持久化、用户自定义预设和分数 JSONL。
+2026-05-30 增量：`start_game(kind)` 已作为 AI 工具注册，走 `core::game_request` bridge 到 app 的 ActionBus，只接受内置枚举，不生成代码。2026-06-07 增量：`invasion` 已接入 `StartGameKind` / `MinigameType` / ActionBus / panel / Tauri IPC，玩法主体放在独立 `app/frontend/js/games/invasion.js`，`game_engine.js` 只保留外部游戏注册、HUD 和输入壳层。下一步继续复用 A1 的模式：模型通过未来 `perform_game` 提交结构化 `GameDef` → Rust validate / save → game 窗口运行游戏 → 结束联动 pet 状态。当前尚未完成的是 GameDef 持久化、用户自定义预设和分数 JSONL。2026-10-02 核对：`cmd_game_end` 已接收分数并写普通运行日志，也会记录胜利积分；这尚不等于独立、可查询的每局分数记录。
 
 内置原型游戏共享同一个 game window 生命周期：
 
@@ -334,7 +340,7 @@ panel / AI start_game → ActionBus 内置游戏动作
 - ~~呼吸微动、眨眼、走路改进~~ ✅ **已完成 (2026-05-13)** — 非均匀帧时长 + 瞬态 repeat+fallback
 - ~~硬编码小猫迁移到资源包~~ ✅ **已完成 (2026-05-17)** — v2-only manifest loader，默认 `cat-tabby`；2026-06-08 收敛为 15 个内置猫咪品种
 - ~~语义短动作 overlay~~ ✅ **已完成 (2026-05-17)** — manifest action timeline，`observe/nudge/acknowledge/blocked/dragging` 可用于截图、输入和拖拽反馈
-- ~~宠物资源包发布策略~~ ✅ **已完成 (2026-06-08)** — 最终 bundle 只打包 15 个 `cat-*` 品种，旧非猫形象从前端资源目录移除；见 [plan/pet-asset-packaging.md](plan/pet-asset-packaging.md)
+- ~~宠物资源包发布策略第一轮~~ ✅ **已完成 (2026-06-08)** — 当时收敛为 15 个 `cat-*` 原版猫包并移除旧非猫形象；2026-09-27 后新增 11 个像素试用包，当前打包边界见 [plan/pet-asset-packaging.md](plan/pet-asset-packaging.md)
 - 粒子系统迁移到 Three.js Points
 - 舞蹈系统 3D 化（真实抛物线轨迹、翻滚感）
 - 鼠标交互：hover 时猫转头看鼠标
@@ -534,6 +540,12 @@ pet/bubble/panel ──→ E2 状态呈现与手柄操作
 
 后续节奏：真实日常使用积累 2 周后跑第二轮，重点复审游戏库打开率与 AI 工具表面积。
 
+#### 第二轮状态核对（2026-10-02，当前开发机）
+
+运行 `cargo run -p xtask -- audit-usage --days 14`：窗口内只有 1 条 `ReminderCompleted`、4 次 `test-model` 调用，`tool_events.jsonl` 和 `reminder_events.jsonl` 不存在。该结果不足以代表真实日常使用，第二轮产品复审仍待有效样本。
+
+读取报告时先排除 `test-model` 等测试数据。日志缺失只能说明当前目录没有记录，不能认定功能从未被使用；还需核对实际运行设备、配置的数据目录与采样窗口。暂不据此调整工具集、删功能或选择费用优化链路。
+
 ### F3. 默认值与入口的恐慌测试
 
 > ✅ **已落地**（2026-09-11，提交 `c8c6ee5`）：默认收权 + D1 三步信任向导 + 截图观察改用户亲手开启；panel 主推重排随 `8b81757` 更新。
@@ -558,7 +570,7 @@ BitCat 当前已经具备可打包、可运行、可接 Steamworks 的 Windows �
 
 核心判断：
 
-- 技术底座已有：Tauri bundle、`make release` / `make dist`、portable zip、Steamworks 启动探针、多窗口桌宠和 5 个内置小游戏。
+- 技术底座已有：Tauri bundle、`make release` / `make dist`、portable zip、Steamworks 启动探针、多窗口桌宠和八种内置游戏。
 - 最大缺口不是“能不能启动”，而是“玩家买到的核心游戏闭环是什么”。当前 Snake / Memory / Catch / Battle / Gomoku 更像薄片，需要补一个 BitCat 专属主玩法。
 - Steam 审核风险主要来自 AI、截图/摄像头观察、读文件、shell、剪贴板和前台控制等高权限能力。发布版必须默认收敛权限，并把授权、隐私、日志和删除路径讲清楚。
 - Steam 平台能力仍处于探针级：`app/src/steam.rs` 只验证 DLL/AppID/客户端链路，尚未接成就、统计、云存档、SteamPipe depot 或 Workshop。
@@ -595,6 +607,8 @@ Steam 版必须把 AI 能力和高权限能力做成可解释、可关闭、可�
 3. **隐私与数据删除**：设置页提供数据位置、导出/清理入口，覆盖 memory、screenshots、camera、logs、points、reminders、agent watch。Steam Cloud 默认排除敏感目录。
 4. **发布版默认权限收敛**：高风险工具不因“AI 想调用”自动执行。Rust 负责 schema、权限、审计和执行边界，模型只负责建议和生成结构化意图。
 5. **诊断日志分级**：发布版日志继续保留故障复盘字段，但大文本、图片、隐私正文不裸写 INFO；用户可以关闭或清理诊断数据。
+
+2026-10-02 边界核对：单条长期记忆/提醒删除和诊断 ZIP 导出已有实现；六类数据统一查看/导出/删除仍待做。通知提示音总开关及提醒/Agent Watch 来源开关当前默认开启，与发布目标“默认静音”存在偏差；“全部收权”目前需要确认后再保存，尚未满足 ≤2 次点击的收回目标。这些偏差需在 D3 收敛并做首次启动回归。
 
 ### D4. 核心玩法收束
 
@@ -687,9 +701,9 @@ PetEvent + points + achievements + Steam stats
                   ↓
 短期        ┌─────────────────────────────────────┐
 1-3天      │  D4 Invasion 真机收口                  │  ← 补真机窗口/手柄 smoke 与手感微调
-           │  F2 第二轮复审（约 2026-09-25）         │  ← 游戏库打开率 + 工具表面积
+           │  F2 第二轮复审（待真实使用样本）         │  ← 游戏库打开率 + 工具表面积
            │  A2 分数 JSONL / GameDef 持久化         │  ← 为 Demo 分数、成就和云存档打底
-           │  B7 成长上下文 / 权限 gate             │  ← points 已有，补发布版能力开关
+           │  B7 成长上下文 / 按等级能力 gate        │  ← points 与用户授权 gate 已有
            └─────────────────────────────────────┘
                   ↓
 中期        ┌─────────────────────────────────────┐
@@ -754,7 +768,7 @@ F3(恐慌测试) ──→ D1(权限向导) 向导即首次信任建立，截图
 | **B2** | Token 追踪 + 设置页统计 | 已完成 MVP | 0 | Done |
 | **B3** | Extractor 改造主链路 | 已完成 | 0 | Done |
 | **B3 cleanup** | 删除旧 raw helper / parser / 惰性配置 | 已完成，净删为主 | 0 | Done |
-| **Pet v2 assets** | 宠物 manifest loader、默认 `cat-tabby`、15 个内置猫咪品种、catalog preset、最终 bundle 收敛 | 已完成；用户目录加载和资源诊断转为 P2 可选扩展 | 0 | Done |
+| **Pet v2 assets** | 宠物 manifest loader、默认 `cat-tabby`、15 个原版猫包 + 11 个像素试用包、catalog preset | 已完成；用户目录加载、资源诊断和体积预算为 P2 打磨 | 0 | Done/P2 follow-up |
 | **B6** | 程序化提醒 + 顶部通知 + 提示音 | create/list/cancel、scheduler、notification island、AI personalizer 已完成；剩余费用/批量/更多动作工具打磨 | 0 | Done/P2 follow-up |
 | **E1** | AI 编码工具会话监听 | 本地 Claude/Codex hook + Remote LAN ingest/viewer MVP 已完成；剩余 JSONL watcher、PID 存活和端到端回归 | 0 | Done/P1 follow-up |
 | **E2** | 桌宠化 Agent 状态管理 | 独立浮动任务栈 + 顶部通知已完成；剩余 panel 收敛、已查看去重和手柄入口 | 0 | Done/P1 follow-up |
@@ -764,12 +778,12 @@ F3(恐慌测试) ──→ D1(权限向导) 向导即首次信任建立，截图
 | **A3** | 内容扩展 | ~200-350 行/种 | 0 | P2，0.5-1 天/种 |
 | **A4** | 上班金币掉落（薪资陪伴表演） | 阶段一 ~800 行；含金币雨/下班喷泉共 ~1200 行 | 0 | P3，让路 F 线；阶段一 0.5-1 天 |
 | **B5** | grep-first 文本记忆 | JSONL/id/软删除/search_memory 主链路已完成；剩余上下文瘦身和候选压缩 | 0 | Done/P2 follow-up |
-| **B7** | 积分/等级/成就 | points 事件、等级、成就和设置页展示已完成；剩余成长上下文、权限 gate、商店/每日任务/心情 | 0 | Done/P1 follow-up |
+| **B7** | 积分/等级/成就 | points 事件、等级、成就和设置页展示已完成；剩余成长上下文、按等级能力 gate、商店/每日任务/心情 | 0 | Done/P1 follow-up |
 | **C1** | 3D 体素化 | ~1200-1800 行 | three.js | P3，4-8 天 |
 | **C2** | 动画增强 | ~300-500 行 | 0 | P3，1-3 天 |
 | **C3** | 3D 游戏生成 | ~700-1000 行 | cannon-es 等 | P3，3-6 天 |
 | **F1** | 设置页 4+1 重组（用户区/专家区拆分） | 已完成（2026-09-09 落地 + 多轮打磨提交） | 0 | Done |
-| **F2** | 功能使用审计：读本地 JSONL 出砍/藏/留清单 | 已完成第一轮（audit-usage + panel 收敛）；第二轮复审约 2026-09-25 | 0 | Done/P1 复审 |
+| **F2** | 功能使用审计：读本地 JSONL 出砍/藏/留清单 | 已完成第一轮（audit-usage + panel 收敛）；2026-10-02 第二轮核对数据不足，待真实样本 | 0 | Done/P1 复审 |
 | **F3** | 默认值恐慌测试：截图观察改首次手动开启、panel 游戏入口收敛 | 已完成（默认收权 + 三步向导 + panel 主推重排） | 0 | Done |
 | **D1-D6** | Steam 发布主流程 | Demo/EA 闸门、权限合规、SteamPipe、成就/云存档、商店素材和 smoke 回归 | Steamworks SDK / SteamPipe | P0 主线，分阶段推进 |
 | **D4 Invasion** | BitCat 语义化核心玩法 | MVP 已完成；D4 第一轮已补局内反馈、结束 details、专属积分事件和回归清单；剩真机窗口/手柄 smoke 与节奏微调 | 0 | P0，1 天收口 |
@@ -787,9 +801,9 @@ F3(恐慌测试) ──→ D1(权限向导) 向导即首次信任建立，截图
 | E1/E2 Agent Watch | 已支持本地/远程只读 hook、浮动任务栈和顶部通知 | 补 JSONL watcher、PID 存活检测、结构化 Write/Edit/Bash 预览、panel 收敛和已查看/静音/置顶 |
 | B4 工具运行时 | 生命周期事件、bubble UI 和审计日志已可用 | 用真实 token/工具日志决定 schema 预算和 dynamic tools，不做关键词意图识别 |
 | B5 记忆 | grep-first 长期记忆主链路已可用 | 减少默认预塞上下文；让 `search_memory` 按需召回后再由模型压缩判断 |
-| B7 积分与成就 | points JSONL、等级、成就和设置页展示已可用 | 接成长上下文、权限 gate、商店、每日任务和心情系统 |
+| B7 积分与成就 | points JSONL、等级、成就和设置页展示已可用 | 接成长上下文、按等级能力 gate、商店、每日任务和心情系统 |
 | D4 Invasion | MVP 可运行，真实投影、结束 details、专属 points/checklist 已接入 | 跑真机窗口/手柄 smoke；继续微调敌人节奏、目标反馈和 Steam achievement 映射 |
-| Pet v2 assets | 15 个内置猫咪品种已收敛，旧非猫资源不再打包 | P2 可选：用户目录加载、资源诊断、外部包/DLC 分层 |
+| Pet v2 assets | 15 个原版猫包 + 11 个像素试用包，默认 `cat-tabby`，旧非猫资源不打包 | P2：用户目录加载、资源诊断、体积预算、外部包/DLC 分层 |
 | 音乐响应舞动 | 第一版音乐模式可用 | 增强舞感状态机、fake source 诊断、节奏/静音/高潮回落表现 |
 
 ---

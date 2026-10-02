@@ -10,7 +10,7 @@ BitCat 常驻屏幕边缘：可以流式对话、创建确定性的本地提醒�
 
 ## 它能做什么
 
-- **AI 对话**：手柄 Start 或点击猫咪嘴巴开聊，流式回复 + 气泡，可选 TTS 朗读；中文优先
+- **AI 对话**：点击猫咪嘴巴开聊，流式回复、常驻输入与最近问答；支持长文阅读、草稿恢复和停止回复，可选 TTS 朗读；中文优先
 - **本地提醒**：「3 分钟后提醒我喝水」「每小时提醒我休息」——确定性任务，到期弹统一通知，不依赖 AI 在线
 - **屏幕观察**：默认关闭；你亲手开启后定时截图并给出保守描述（不乱猜、不记敏感内容），聊天/游戏时自动暂停
 - **摄像头观察**：默认关闭；开启后低频采样，只做保守描述，明确禁止身份识别
@@ -166,7 +166,7 @@ language: "zh-CN"
 
 ## 面向开发者
 
-Rust workspace 三 crate：`core`（纯逻辑，无 UI 依赖，529+ 测试）+ `app`（Tauri 2.0 壳，SDL2 静态链接）+ `xtask`（构建/测试/打包工具链）。前端纯静态 HTML/JS/CSS，无框架无构建，Vitest 20 个测试文件。
+Rust workspace 三 crate：`core`（纯逻辑，无 UI 依赖）+ `app`（Tauri 2.0 壳，SDL2 静态链接）+ `xtask`（构建/测试/打包工具链）。前端源码为纯静态 HTML/JS/CSS，无框架；`xtask prepare-frontend` 准备发行目录，Vitest 负责前端测试。测试数量以当前测试报告为准。
 
 ```bash
 make test-fast        # core 快速测试（~20s）
@@ -177,6 +177,11 @@ cd app/frontend && npx vitest run
 - 架构与编码约定：[CLAUDE.md](CLAUDE.md) · [docs/roadmap.md](docs/roadmap.md) · [docs/architecture/design-tradeoffs.md](docs/architecture/design-tradeoffs.md)
 - 产品验收标准：[docs/product/design-spec.md](docs/product/design-spec.md)
 - 发布：打 `v*` tag 触发 Release workflow（测试 → Tauri 构建 → 产物 + checksum + 按 tag 从 CHANGELOG 抽取发布说明）
+- 验证安装包：手动运行 Release workflow 并启用 `dry_run`，会生成 MSI、NSIS 和便携 ZIP 产物，跳过创建 GitHub Release。构建步骤会检查两个安装包是否齐全。
+
+```bash
+gh workflow run release.yml --ref master -f tag=v0.2.0-validation -f dry_run=true
+```
 
 ```bash
 git tag v0.2.0

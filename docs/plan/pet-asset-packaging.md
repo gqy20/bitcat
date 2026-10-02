@@ -1,7 +1,7 @@
 # 宠物资源包发布计划
 
 > 状态：活跃  
-> 更新日期：2026-09-27
+> 更新日期：2026-10-02
 
 当前宠物渲染已经进入 v2-only 资源包模式。内置默认不再走 `sprite.js` 硬编码 fallback，而是加载 bundled v2 pack；配置了资源包时加载失败会直接暴露错误，避免旧版本兼容路径掩盖问题。
 
@@ -30,11 +30,11 @@
 
 - v1 schema 与硬编码 fallback 已清理。
 - `cat-tabby` 成为默认 v2 内置资源包。
-- 内置 catalog 收敛为 15 个猫咪品种，不再随最终软件打包 `piggy`、终端状态风或其他角色资源。
+- 原版 catalog 已收敛为 15 个猫咪品种；后续新增 11 个像素试用包，当前共打包 26 个资源包。`piggy`、终端状态风或其他旧非猫角色资源不再随软件打包。
 - catalog 资源包统一使用 manifest 加载，并补 `metadata.qualityTier` / `assetClass` / `releaseTier`。
 - manifest `actions` 已支持 timeline；15 个猫咪资源包均提供语义动作，用于截图、输入和拖拽反馈。
 - 配置了外部资源时加载失败直接失败，不回退内置宠物。
-- 设置页已经提供 bundled preset 选择和自定义地址入口。
+- 设置页已经提供 bundled preset 选择和自定义地址入口；展示的选择列表以 `PET_ASSET_PRESETS` 为准，不保证每个 bundled 原版包都单独列出。
 
 ## 待决策
 
