@@ -18,12 +18,19 @@ const MAX_TITLE_CHARS: usize = 80;
 const MAX_MESSAGE_CHARS: usize = 280;
 const MIN_INTERVAL_MINUTES: u32 = 1;
 const MAX_INTERVAL_MINUTES: u32 = 60 * 24 * 365;
+/// How long a one-shot reminder waits before it re-notifies the user.
+const PENDING_ACK_RETRY_MINUTES: i64 = 1;
 
 /// Reminder lifecycle persisted on disk.
+///
+/// `PendingAck` means a one-shot reminder fired but the user has not yet
+/// acknowledged it: `Done` is only written by an explicit complete/snooze/cancel
+/// action, so a dismissed notification cannot silently drop the reminder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ReminderStatus {
     Active,
+    PendingAck,
     Done,
     Cancelled,
 }
@@ -32,9 +39,15 @@ impl ReminderStatus {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Active => "active",
+            Self::PendingAck => "pending_ack",
             Self::Done => "done",
             Self::Cancelled => "cancelled",
         }
+    }
+
+    /// Whether the reminder still needs the user's attention.
+    pub fn is_open(self) -> bool {
+        matches!(self, Self::Active | Self::PendingAck)
     }
 }
 
@@ -191,7 +204,7 @@ pub fn create_reminder(args: &CreateReminderArgs) -> Result<ReminderRecord, Stri
 pub fn list_reminders(args: &ListRemindersArgs) -> Result<Vec<ReminderRecord>, String> {
     let mut reminders = load_reminders()?;
     if !args.include_inactive {
-        reminders.retain(|r| r.status == ReminderStatus::Active);
+        reminders.retain(|r| r.status.is_open());
     }
     reminders.sort_by(|a, b| a.next_fire_at.cmp(&b.next_fire_at));
     Ok(reminders)
@@ -252,8 +265,9 @@ pub fn snooze_reminder_with_source(
 
 /// Acknowledge a reminder occurrence.
 ///
-/// One-shot reminders stay done after firing. Recurring reminders remain active
-/// because the scheduler has already advanced `next_fire_at` before showing UI.
+/// One-shot reminders become done only after the user acknowledges the
+/// notification. Recurring reminders remain active because the scheduler has
+/// already advanced `next_fire_at` before showing UI.
 pub fn complete_reminder(id: &str) -> Result<ReminderRecord, String> {
     complete_reminder_with_source(id, "api")
 }
@@ -465,31 +479,40 @@ fn fire_due_reminders_in_path(
     let mut reminders = load_reminders_from_path(path)?;
     let mut fired = Vec::new();
     for reminder in reminders.iter_mut() {
-        if reminder.status != ReminderStatus::Active {
-            continue;
-        }
-        let Ok(next) = DateTime::parse_from_rfc3339(&reminder.next_fire_at) else {
-            continue;
-        };
-        if next.with_timezone(&Local) > now {
-            continue;
-        }
-        reminder.last_fired_at = Some(to_rfc3339(now));
-        reminder.fire_count = reminder.fire_count.saturating_add(1);
-        match reminder.schedule.clone() {
-            ReminderSchedule::Once { .. } => {
-                reminder.status = ReminderStatus::Done;
+        match reminder.status {
+            ReminderStatus::Active => {
+                let Ok(next) = DateTime::parse_from_rfc3339(&reminder.next_fire_at) else {
+                    continue;
+                };
+                if next.with_timezone(&Local) > now {
+                    continue;
+                }
+                reminder.last_fired_at = Some(to_rfc3339(now));
+                reminder.fire_count = reminder.fire_count.saturating_add(1);
+                match reminder.schedule.clone() {
+                    ReminderSchedule::Once { .. } => {
+                        reminder.status = ReminderStatus::PendingAck;
+                    }
+                    ReminderSchedule::Interval { every_minutes } => {
+                        reminder.next_fire_at =
+                            to_rfc3339(now + ChronoDuration::minutes(every_minutes as i64));
+                    }
+                    ReminderSchedule::Daily { .. } => {
+                        reminder.next_fire_at =
+                            to_rfc3339(compute_next_fire_at(&reminder.schedule, now)?);
+                    }
+                }
+                reminder.updated_at = to_rfc3339(now);
+                fired.push(reminder.clone());
             }
-            ReminderSchedule::Interval { every_minutes } => {
-                reminder.next_fire_at =
-                    to_rfc3339(now + ChronoDuration::minutes(every_minutes as i64));
+            ReminderStatus::PendingAck => {
+                if should_retry_pending_ack(reminder, now) {
+                    reminder.updated_at = to_rfc3339(now);
+                    fired.push(reminder.clone());
+                }
             }
-            ReminderSchedule::Daily { .. } => {
-                reminder.next_fire_at = to_rfc3339(compute_next_fire_at(&reminder.schedule, now)?);
-            }
+            ReminderStatus::Done | ReminderStatus::Cancelled => {}
         }
-        reminder.updated_at = to_rfc3339(now);
-        fired.push(reminder.clone());
     }
     if !fired.is_empty() {
         save_reminders_to_path(path, &reminders)?;
@@ -498,6 +521,17 @@ fn fire_due_reminders_in_path(
         }
     }
     Ok(fired)
+}
+
+/// Keep re-notifying an unanswered one-shot reminder at a fixed interval.
+///
+/// `fire_count` is intentionally left untouched so retries reuse the same
+/// notification id and do not inflate the reminder's history.
+fn should_retry_pending_ack(reminder: &ReminderRecord, now: DateTime<Local>) -> bool {
+    let Ok(updated) = DateTime::parse_from_rfc3339(&reminder.updated_at) else {
+        return true;
+    };
+    updated.with_timezone(&Local) + ChronoDuration::minutes(PENDING_ACK_RETRY_MINUTES) <= now
 }
 
 fn build_schedule(
@@ -863,6 +897,134 @@ mod tests {
         assert_eq!(stored[0].status, ReminderStatus::Active);
         assert_eq!(stored[0].fire_count, 1);
         assert!(stored[0].next_fire_at.contains("12:00:00"));
+    }
+
+    #[test]
+    fn fire_due_once_reminder_waits_for_ack() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("reminders.json");
+        create_reminder_in_path(
+            &path,
+            &CreateReminderArgs {
+                title: "Coffee".into(),
+                message: None,
+                schedule_kind: CreateReminderKind::Once,
+                at: Some("2026-05-21 10:05".into()),
+                delay_minutes: None,
+                interval_minutes: None,
+                daily_time: None,
+            },
+            fixed_now(),
+        )
+        .unwrap();
+
+        let fired =
+            fire_due_reminders_in_path(&path, parse_local_datetime("2026-05-21 10:05").unwrap())
+                .unwrap();
+
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].status, ReminderStatus::PendingAck);
+        let stored = load_reminders_from_path(&path).unwrap();
+        assert_eq!(stored[0].status, ReminderStatus::PendingAck);
+        assert_eq!(stored[0].fire_count, 1);
+    }
+
+    #[test]
+    fn pending_ack_reminder_retries_after_delay() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("reminders.json");
+        create_reminder_in_path(
+            &path,
+            &CreateReminderArgs {
+                title: "Coffee".into(),
+                message: None,
+                schedule_kind: CreateReminderKind::Once,
+                at: Some("2026-05-21 10:05".into()),
+                delay_minutes: None,
+                interval_minutes: None,
+                daily_time: None,
+            },
+            fixed_now(),
+        )
+        .unwrap();
+        fire_due_reminders_in_path(&path, parse_local_datetime("2026-05-21 10:05").unwrap())
+            .unwrap();
+
+        let too_soon =
+            fire_due_reminders_in_path(&path, parse_local_datetime("2026-05-21 10:05").unwrap())
+                .unwrap();
+        let retry =
+            fire_due_reminders_in_path(&path, parse_local_datetime("2026-05-21 10:06").unwrap())
+                .unwrap();
+
+        assert!(too_soon.is_empty());
+        assert_eq!(retry.len(), 1);
+        assert_eq!(retry[0].status, ReminderStatus::PendingAck);
+        assert_eq!(retry[0].fire_count, 1);
+    }
+
+    #[test]
+    fn reactivated_once_reminder_can_fire_again_after_snooze_time() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("reminders.json");
+        let reminder = create_reminder_in_path(
+            &path,
+            &CreateReminderArgs {
+                title: "Coffee".into(),
+                message: None,
+                schedule_kind: CreateReminderKind::Once,
+                at: Some("2026-05-21 10:05".into()),
+                delay_minutes: None,
+                interval_minutes: None,
+                daily_time: None,
+            },
+            fixed_now(),
+        )
+        .unwrap();
+        fire_due_reminders_in_path(&path, parse_local_datetime("2026-05-21 10:05").unwrap())
+            .unwrap();
+
+        let mut reminders = load_reminders_from_path(&path).unwrap();
+        reminders[0].status = ReminderStatus::Active;
+        reminders[0].next_fire_at = "2026-05-21T10:15:00+08:00".into();
+        save_reminders_to_path(&path, &reminders).unwrap();
+
+        let fired_early =
+            fire_due_reminders_in_path(&path, parse_local_datetime("2026-05-21 10:14").unwrap())
+                .unwrap();
+        let fired_later =
+            fire_due_reminders_in_path(&path, parse_local_datetime("2026-05-21 10:15").unwrap())
+                .unwrap();
+
+        assert!(fired_early.is_empty());
+        assert_eq!(fired_later.len(), 1);
+        assert_eq!(fired_later[0].id, reminder.id);
+    }
+
+    #[test]
+    fn complete_pending_ack_once_reminder_marks_done() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("reminders.json");
+        let reminder = create_reminder_in_path(
+            &path,
+            &CreateReminderArgs {
+                title: "Coffee".into(),
+                message: None,
+                schedule_kind: CreateReminderKind::Once,
+                at: Some("2026-05-21 10:05".into()),
+                delay_minutes: None,
+                interval_minutes: None,
+                daily_time: None,
+            },
+            fixed_now(),
+        )
+        .unwrap();
+        fire_due_reminders_in_path(&path, parse_local_datetime("2026-05-21 10:05").unwrap())
+            .unwrap();
+
+        let completed = complete_reminder_in_path(&path, &reminder.id, "test").unwrap();
+
+        assert_eq!(completed.status, ReminderStatus::Done);
     }
 
     #[test]

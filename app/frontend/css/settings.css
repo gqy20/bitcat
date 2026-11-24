@@ -1466,6 +1466,13 @@ input[type="checkbox"]:checked::after {
     rgba(255, 255, 255, 0.72);
 }
 
+.reminder-entry.pending_ack {
+  border-color: rgba(var(--accent-coral-rgb), 0.34);
+  background:
+    linear-gradient(135deg, rgba(var(--accent-coral-rgb), 0.09), transparent 46%),
+    rgba(255, 255, 255, 0.74);
+}
+
 .reminder-entry.cancelled,
 .reminder-entry.done {
   opacity: 0.68;

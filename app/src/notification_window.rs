@@ -14,7 +14,7 @@ use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder,
 };
-use tracing::{debug, warn};
+use tracing::{info, warn};
 #[cfg(target_os = "windows")]
 use windows::{
     core::PCWSTR,
@@ -146,7 +146,13 @@ pub fn show_notification(app: &AppHandle, payload: NotificationPayload) -> Resul
         "if(window.__notificationShow)window.__notificationShow({json});"
     ));
     play_notification_sound(&payload);
-    debug!(id = %payload.id, source = %payload.source, "notification shown");
+    info!(
+        id = %payload.id,
+        source = %payload.source,
+        reminder_id = ?payload.reminder_id,
+        action_count = payload.actions.len(),
+        "notification shown"
+    );
     Ok(())
 }
 
@@ -174,7 +180,7 @@ fn play_notification_sound(payload: &NotificationPayload) {
         }
     }
     #[cfg(not(target_os = "windows"))]
-    debug!(tone = %payload.tone, "notification sound unsupported on this platform");
+    tracing::debug!(tone = %payload.tone, "notification sound unsupported on this platform");
 }
 
 fn should_play_notification_sound(payload: &NotificationPayload, settings: &AppSettings) -> bool {

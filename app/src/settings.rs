@@ -772,10 +772,7 @@ fn memory_review_view(store: &LongTermMemory, limit: usize) -> MemoryReviewView 
 
 fn reminder_review_view(reminders: Vec<ReminderRecord>) -> ReminderReviewView {
     let total_entries = reminders.len();
-    let active_count = reminders
-        .iter()
-        .filter(|r| r.status == bitcat_core::reminder::ReminderStatus::Active)
-        .count();
+    let active_count = reminders.iter().filter(|r| r.status.is_open()).count();
     let events_path = bitcat_core::reminder::reminder_events_path()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|e| format!("<unavailable: {e}>"));

@@ -2611,6 +2611,7 @@ async function reminderAction(command, id, extra = {}) {
 
 function reminderStatusLabel(status) {
   if (status === "active") return "活跃";
+  if (status === "pending_ack") return "待确认";
   if (status === "done") return "完成";
   if (status === "cancelled") return "已取消";
   return status || "未知";
