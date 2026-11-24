@@ -16,9 +16,13 @@ use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWi
 use tracing::{debug, info, warn};
 
 static LAST_CAMERA_ANALYSIS: Mutex<Option<Instant>> = Mutex::new(None);
+static LAST_CAMERA_PERMISSION_LOG: Mutex<Option<Instant>> = Mutex::new(None);
 static CAMERA_ANALYSIS_RUNNING: AtomicBool = AtomicBool::new(false);
 static CAMERA_WINDOW_AUTHORIZED: AtomicBool = AtomicBool::new(false);
 const OFFSCREEN: i32 = -32_000;
+/// Repeated permission-denied messages from the hidden camera page are noisy;
+/// keep one per window instead of logging every sampling tick.
+const CAMERA_PERMISSION_LOG_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 /// 预创建摄像头观察窗口。窗口默认隐藏，只承载 getUserMedia 采样脚本。
 pub fn precreate_camera_window(app: &AppHandle) -> tauri::Result<()> {
@@ -126,6 +130,13 @@ pub fn cmd_camera_ready(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn cmd_camera_log(message: String) {
+    if camera_permission_denied_message(&message) && camera_permission_log_suppressed() {
+        debug!(
+            message_chars = message.chars().count(),
+            "suppressed repeated camera permission denial"
+        );
+        return;
+    }
     info!(message = %message, "[camera/frontend]");
 }
 
@@ -239,6 +250,25 @@ fn camera_finished_recently(interval_sec: u64) -> bool {
         .is_some_and(|last| last.elapsed() < Duration::from_secs(interval_sec))
 }
 
+/// Detect the DOM permission failures the hidden camera page forwards as text.
+fn camera_permission_denied_message(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("permission denied")
+        || lower.contains("notallowederror")
+        || lower.contains("not allowed")
+}
+
+/// Throttle repeated permission-denial logs to one per interval.
+fn camera_permission_log_suppressed() -> bool {
+    let mut last = LAST_CAMERA_PERMISSION_LOG.lock().unwrap();
+    let now = Instant::now();
+    if last.is_some_and(|logged_at| logged_at.elapsed() < CAMERA_PERMISSION_LOG_INTERVAL) {
+        return true;
+    }
+    *last = Some(now);
+    false
+}
+
 fn decode_jpeg_data_url(data_url: &str) -> Result<Vec<u8>, String> {
     let Some((header, payload)) = data_url.split_once(',') else {
         return Err("摄像头帧 data URL 格式无效".into());
@@ -265,5 +295,19 @@ mod tests {
     fn decode_jpeg_data_url_decodes_payload() {
         let data = decode_jpeg_data_url("data:image/jpeg;base64,AQID").unwrap();
         assert_eq!(data, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn permission_denied_messages_are_detected() {
+        assert!(camera_permission_denied_message(
+            "camera observation failed: NotAllowedError"
+        ));
+        assert!(camera_permission_denied_message("Permission denied"));
+        assert!(camera_permission_denied_message(
+            "camera refresh listener failed: not allowed"
+        ));
+        assert!(!camera_permission_denied_message(
+            "camera frame captured 640x480"
+        ));
     }
 }

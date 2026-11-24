@@ -6,6 +6,9 @@
   let stream = null;
   let streamReady = false;
   let captureRunning = false;
+  let permissionRetryAt = 0;
+  let permissionNoticeAt = 0;
+  const PERMISSION_RETRY_MS = 5 * 60 * 1000;
 
   function log(message) {
     try {
@@ -22,6 +25,34 @@
     log("camera stream stopped");
   }
 
+  // A denied camera permission will not recover on its own: every sampling
+  // tick would otherwise re-prompt and re-log. Pause retries for 5 minutes.
+  function isPermissionError(error) {
+    const name = String(error?.name || "");
+    const message = String(error?.message || error || "").toLowerCase();
+    return (
+      name === "NotAllowedError" ||
+      name === "SecurityError" ||
+      message.includes("permission denied") ||
+      message.includes("permission dismissed") ||
+      message.includes("not allowed")
+    );
+  }
+
+  function permissionCoolingDown() {
+    return Date.now() < permissionRetryAt;
+  }
+
+  function notePermissionError(context, error) {
+    const now = Date.now();
+    permissionRetryAt = now + PERMISSION_RETRY_MS;
+    stopStream();
+    if (now - permissionNoticeAt >= PERMISSION_RETRY_MS) {
+      permissionNoticeAt = now;
+      log(`${context}: camera permission denied; retry paused for 5 minutes`);
+    }
+  }
+
   async function loadSettings() {
     const snapshot = await invoke("cmd_settings_load");
     return {
@@ -32,6 +63,7 @@
 
   async function ensureStream() {
     if (stream) return stream;
+    if (permissionCoolingDown()) return null;
     stream = await navigator.mediaDevices.getUserMedia({
       video: {
         width: { ideal: 640 },
@@ -76,7 +108,9 @@
         stopStream();
         return;
       }
+      if (permissionCoolingDown()) return;
       await ensureStream();
+      if (!streamReady) return;
       await waitForVideoReady();
       const width = video.videoWidth || 640;
       const height = video.videoHeight || 480;
@@ -88,14 +122,20 @@
       log(`camera frame captured ${width}x${height}`);
       await invoke("cmd_camera_frame", { dataUrl, width, height });
     } catch (error) {
-      log(`camera observation failed: ${error?.message || error}`);
+      if (isPermissionError(error)) {
+        notePermissionError("camera observation failed", error);
+      } else {
+        log(`camera observation failed: ${error?.message || error}`);
+      }
     } finally {
       captureRunning = false;
     }
   }
 
   async function start() {
+    if (permissionCoolingDown()) return;
     await ensureStream();
+    if (!streamReady) return;
     log("camera observation stream armed");
   }
 
@@ -103,6 +143,7 @@
     try {
       const { appearance, permissions } = await loadSettings();
       if (appearance.camera_observation_enabled && permissions.allow_camera_observation) {
+        if (permissionCoolingDown()) return;
         if (streamReady) {
           try {
             await invoke("cmd_camera_ready");
@@ -113,7 +154,11 @@
         stopStream();
       }
     } catch (error) {
-      log(`camera refresh failed: ${error?.message || error}`);
+      if (isPermissionError(error)) {
+        notePermissionError("camera refresh failed", error);
+      } else {
+        log(`camera refresh failed: ${error?.message || error}`);
+      }
     }
   }
 
