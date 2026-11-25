@@ -357,10 +357,10 @@ async function mockInvoke(command, args = {}) {
   }
   if (command === "cmd_agent_connectors_status") {
     return [
-      { source: "claude_code", installed: mockConnectorInstalled.claude_code },
-      { source: "codex", installed: mockConnectorInstalled.codex },
-      { source: "pi", installed: mockConnectorInstalled.pi },
-      { source: "opencode", installed: mockConnectorInstalled.opencode },
+      { source: "claude_code", installed: mockConnectorInstalled.claude_code, script_current: true },
+      { source: "codex", installed: mockConnectorInstalled.codex, script_current: true },
+      { source: "pi", installed: mockConnectorInstalled.pi, script_current: true },
+      { source: "opencode", installed: mockConnectorInstalled.opencode, script_current: true },
     ];
   }
   if (command === "cmd_screen_time_summary") {
@@ -2230,6 +2230,7 @@ function connectorAgoLabel(deltaMs) {
 
 function connectorState(status, lastEventAtMs, nowMs) {
   if (!status.installed) return { dot: "missing", hint: "未安装连接脚本" };
+  if (status.script_current === false) return { dot: "stale", hint: "脚本待更新 · 点修复部署新版" };
   if (!lastEventAtMs) return { dot: "idle", hint: "已安装 · 还没有事件" };
   const fresh = nowMs - lastEventAtMs < CONNECTOR_FRESH_MS;
   return {
@@ -2256,7 +2257,7 @@ function renderConnectors() {
           <strong>${escapeHtml(window.AgentSources.label(status.source))}</strong>
           <span class="row-hint">${escapeHtml(state.hint)}</span>
         </div>
-        ${status.installed ? "" : `<button class="btn small ghost" type="button" data-repair-source="${escapeAttr(status.source)}">修复</button>`}
+        ${status.installed && status.script_current !== false ? "" : `<button class="btn small ghost" type="button" data-repair-source="${escapeAttr(status.source)}">修复</button>`}
       </div>
     `;
   }).join("");

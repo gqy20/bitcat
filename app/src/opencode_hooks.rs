@@ -66,6 +66,13 @@ pub fn is_installed() -> bool {
     plugin_path().map(|path| path.is_file()).unwrap_or(false)
 }
 
+/// 探测已安装插件是否与当前代码生成的版本一致。
+pub fn is_script_current() -> bool {
+    plugin_path()
+        .map(|path| file_content_matches(&path, &plugin_script(DEFAULT_AGENT_MONITOR_PORT)))
+        .unwrap_or(false)
+}
+
 #[tauri::command]
 pub async fn cmd_install_opencode_plugin() -> Result<String, String> {
     install_opencode_plugin()

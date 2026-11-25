@@ -1597,6 +1597,7 @@ input[type="checkbox"]:checked::after {
 .connector-dot[data-state="ready"] { background: #32835c; }
 .connector-dot[data-state="idle"] { background: #79877e; }
 .connector-dot[data-state="missing"] { background: #a77624; }
+.connector-dot[data-state="stale"] { background: #b07d2a; box-shadow: 0 0 0 2px rgba(176, 125, 42, 0.25); }
 
 .connector-copy {
   display: flex;

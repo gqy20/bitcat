@@ -84,6 +84,9 @@ pub fn install_codex_hooks() -> Result<String, String> {
     let script = hook_script(DEFAULT_AGENT_MONITOR_PORT);
     report.script_updated = !file_content_matches(&script_path, &script);
     atomic_write(&script_path, &script)?;
+    if let Some(hooks_dir) = script_path.parent() {
+        crate::hook_install_common::cleanup_stale_scripts(hooks_dir);
+    }
 
     let config_path = config_path()?;
     let mut doc = read_config_toml(&config_path)?;
@@ -99,6 +102,13 @@ pub fn is_installed() -> bool {
     config_path()
         .and_then(|path| std::fs::read_to_string(path).map_err(|e| e.to_string()))
         .map(|content| config_has_marker(&content))
+        .unwrap_or(false)
+}
+
+/// 探测已安装脚本是否与当前代码生成的版本一致。
+pub fn is_script_current() -> bool {
+    hook_script_path()
+        .map(|path| file_content_matches(&path, &hook_script(DEFAULT_AGENT_MONITOR_PORT)))
         .unwrap_or(false)
 }
 

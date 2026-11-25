@@ -6,6 +6,7 @@
 //! 不静默吞错。
 
 use std::path::Path;
+use tracing::info;
 
 /// 内容一致时跳过写入，用于幂等安装。
 pub fn file_content_matches(path: &Path, expected: &str) -> bool {
@@ -36,4 +37,30 @@ pub fn backup_if_exists(path: &Path, backup_suffix: &str) -> Result<(), String> 
     let backup = path.with_file_name(format!("{backup_suffix}-{stamp}"));
     std::fs::copy(path, &backup).map_err(|e| format!("备份 {} 失败: {e}", path.display()))?;
     Ok(())
+}
+
+/// 清理 hooks 目录中已不再被任何配置引用的遗留脚本。
+///
+/// 只删除文件名匹配已知旧产品前缀的 `.ps1`（ai-pad-、ooclaw-），
+/// 不碰当前 bitcat 脚本和用户自己的文件。返回删除数量。
+pub fn cleanup_stale_scripts(hooks_dir: &Path) -> usize {
+    const STALE_PREFIXES: &[&str] = &["ai-pad-", "ooclaw-"];
+    let Ok(entries) = std::fs::read_dir(hooks_dir) else {
+        return 0;
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !name.ends_with(".ps1") {
+            continue;
+        }
+        if STALE_PREFIXES.iter().any(|p| name.starts_with(p))
+            && std::fs::remove_file(entry.path()).is_ok()
+        {
+            info!(file = %name, "removed stale hook script");
+            removed += 1;
+        }
+    }
+    removed
 }
