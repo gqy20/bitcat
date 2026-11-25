@@ -290,7 +290,8 @@ AI Agent 通过 `create_reminder` / `list_reminders` / `cancel_reminder` Tool �
 - `app/src/main.rs` — --debug 控制台分配 + 日志双写（stderr + `~/.bitcat/logs/` 按日滚动）
 - `app/src/screenshot.rs` — 截图观察线程：BitBlt 截屏 + 熄屏检测 + 缩放 JPEG + Vision API 调用 + 存储/清理
 - `app/src/camera.rs` — 隐藏摄像头窗口、帧接收、Vision 分析和记录持久化
-- `app/src/agent_monitor.rs` — Claude Code / Codex 本地与远程 hook 事件看管
+- `app/src/agent_monitor.rs` — Claude Code / Codex / ZCode 本地与远程 hook 事件看管
+- `app/src/zcode_hooks.rs` — ZCode 用户级 hook 安装、修复与脚本新鲜度探测
 - `app/src/agent_watch_window.rs` — Agent Watch 浮窗生命周期和定位
 - `app/src/audio_reactive.rs` — fake/WASAPI 音乐响应表演数据源
 - `core/src/pet.rs` — 宠物状态机（6 状态，帧动画，proptest 属性测试）

@@ -17,10 +17,10 @@ function load() {
 }
 
 describe('AgentSources shared mapping', () => {
-  it('exposes the four supported connectors in display order', () => {
+  it('exposes the five supported connectors in display order', () => {
     const sources = load();
     expect(sources.list.map(item => item.id)).toEqual([
-      'claude_code', 'codex', 'pi', 'opencode',
+      'claude_code', 'codex', 'zcode', 'pi', 'opencode',
     ]);
   });
 
@@ -28,6 +28,7 @@ describe('AgentSources shared mapping', () => {
     const sources = load();
     expect(sources.label('claude_code')).toBe('Claude Code');
     expect(sources.label('codex')).toBe('Codex');
+    expect(sources.label('zcode')).toBe('ZCode');
     expect(sources.label('pi')).toBe('pi');
     expect(sources.label('opencode')).toBe('opencode');
     expect(sources.label('gemini_cli')).toBe('gemini_cli');
@@ -38,6 +39,7 @@ describe('AgentSources shared mapping', () => {
     const sources = load();
     expect(sources.compact('Claude Code')).toBe('Claude');
     expect(sources.compact('Codex')).toBe('Codex');
+    expect(sources.compact('ZCode')).toBe('ZCode');
     expect(sources.compact('pi')).toBe('pi');
     expect(sources.compact('opencode')).toBe('opencode');
     expect(sources.compact('未知来源')).toBe('未知来源');

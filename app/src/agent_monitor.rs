@@ -1425,9 +1425,11 @@ fn parse_agent_hook_payload(raw: &str, now_ms: u64) -> Result<Option<AgentSessio
                 now_ms,
                 envelope.machine,
             ),
-            AgentSource::ClaudeCode | AgentSource::Codex => ClaudeHookEvent::from_json(&payload)?
-                .into_session_event_from(source, now_ms, envelope.machine)
-                .map(Some),
+            AgentSource::ClaudeCode | AgentSource::Codex | AgentSource::ZCode => {
+                ClaudeHookEvent::from_json(&payload)?
+                    .into_session_event_from(source, now_ms, envelope.machine)
+                    .map(Some)
+            }
         };
     }
 
@@ -1930,6 +1932,7 @@ pub async fn cmd_focus_agent_terminal(
 mod tests {
     use super::*;
     use bitcat_core::agent_session::{apply_session_event, AgentSource, AgentStatus};
+    use rstest::rstest;
 
     #[test]
     fn snapshot_sorts_and_marks_primary() {
@@ -2016,6 +2019,49 @@ mod tests {
         assert_eq!(event.status, AgentStatus::ToolRunning);
         assert_eq!(event.tool_name.as_deref(), Some("Bash"));
         assert!(event.tool_input_preview.unwrap().contains("cargo test"));
+    }
+
+    #[rstest]
+    #[case(
+        r#"{"hookEventName":"SessionStart","sessionId":"z-session","cwd":"D:\\repo","source":"startup"}"#,
+        AgentStatus::Idle
+    )]
+    #[case(
+        r#"{"hookEventName":"UserPromptSubmit","sessionId":"z-session","cwd":"D:\\repo","prompt":"修复测试"}"#,
+        AgentStatus::Working
+    )]
+    #[case(
+        r#"{"hookEventName":"PreToolUse","sessionId":"z-session","cwd":"D:\\repo","toolName":"Bash","toolInput":{"command":"cargo test"},"toolUseId":"call-1"}"#,
+        AgentStatus::ToolRunning
+    )]
+    #[case(
+        r#"{"hookEventName":"PermissionRequest","sessionId":"z-session","cwd":"D:\\repo","toolName":"Bash","toolInput":{"command":"cargo test"},"permissionSuggestions":[]}"#,
+        AgentStatus::Waiting
+    )]
+    #[case(
+        r#"{"hookEventName":"PostToolUse","sessionId":"z-session","cwd":"D:\\repo","toolName":"Bash","toolInput":{"command":"cargo test"},"toolResponse":{"ok":true}}"#,
+        AgentStatus::Working
+    )]
+    #[case(
+        r#"{"hookEventName":"PostToolUseFailure","sessionId":"z-session","cwd":"D:\\repo","toolName":"Bash","toolInput":{"command":"cargo test"},"error":"failed","isInterrupt":false}"#,
+        AgentStatus::Error
+    )]
+    #[case(
+        r#"{"hookEventName":"Stop","sessionId":"z-session","cwd":"D:\\repo","lastAssistantMessage":"修复完成"}"#,
+        AgentStatus::Done
+    )]
+    fn parses_zcode_hook_events(#[case] payload: &str, #[case] expected_status: AgentStatus) {
+        let raw = format!(
+            r#"{{"schema":"bitcat-agent-watch/1","source":"zcode","machine":"QY","payload":{payload}}}"#
+        );
+
+        let event = parse_agent_hook_payload(&raw, 42).unwrap().unwrap();
+
+        assert_eq!(event.session_id, "z-session");
+        assert_eq!(event.source, AgentSource::ZCode);
+        assert_eq!(event.machine.as_deref(), Some("QY"));
+        assert_eq!(event.workspace, "D:\\repo");
+        assert_eq!(event.status, expected_status);
     }
 
     #[test]

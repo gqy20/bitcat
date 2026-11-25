@@ -5,7 +5,7 @@
 //! 设置页「编程助手看管」的连接列表据此渲染；新增受看管的 CLI 时在 `CONNECTORS`
 //! 表加一行、在 `repair` 加一个分支即可，前端 `js/agent_sources.js` 同步一份展示名。
 
-use crate::{claude_hooks, codex_hooks, opencode_hooks, pi_hooks};
+use crate::{claude_hooks, codex_hooks, opencode_hooks, pi_hooks, zcode_hooks};
 use bitcat_core::agent_session::AgentSource;
 use serde::Serialize;
 
@@ -24,7 +24,8 @@ type ProbeFn = fn() -> bool;
 type InstallFn = fn() -> Result<String, String>;
 
 /// 受支持的连接器表：`(来源, 安装探测, 脚本新鲜度探测, 幂等修复)`。
-const CONNECTORS: [(AgentSource, ProbeFn, ProbeFn, InstallFn); 4] = [
+type ConnectorSpec = (AgentSource, ProbeFn, ProbeFn, InstallFn);
+const CONNECTORS: &[ConnectorSpec] = &[
     (
         AgentSource::ClaudeCode,
         claude_hooks::is_installed,
@@ -36,6 +37,12 @@ const CONNECTORS: [(AgentSource, ProbeFn, ProbeFn, InstallFn); 4] = [
         codex_hooks::is_installed,
         codex_hooks::is_script_current,
         codex_hooks::install_codex_hooks,
+    ),
+    (
+        AgentSource::ZCode,
+        zcode_hooks::is_installed,
+        zcode_hooks::is_script_current,
+        zcode_hooks::install_zcode_hooks,
     ),
     (
         AgentSource::Pi,
@@ -52,7 +59,7 @@ const CONNECTORS: [(AgentSource, ProbeFn, ProbeFn, InstallFn); 4] = [
 ];
 
 /// 按给定探测结果组装状态行（测试注入用，避免触真实文件系统）。
-fn connector_statuses_with(installed: &[bool; 4], current: &[bool; 4]) -> Vec<ConnectorStatus> {
+fn connector_statuses_with(installed: &[bool], current: &[bool]) -> Vec<ConnectorStatus> {
     CONNECTORS
         .iter()
         .zip(installed.iter().zip(current.iter()))
@@ -66,15 +73,15 @@ fn connector_statuses_with(installed: &[bool; 4], current: &[bool; 4]) -> Vec<Co
 
 /// 全部连接器的实时安装状态（每次调用都重新探测，文件操作开销可忽略）。
 pub fn connector_statuses() -> Vec<ConnectorStatus> {
-    let probes = CONNECTORS.map(|(_, probe, _, _)| probe());
-    let freshness = CONNECTORS.map(|(_, _, fresh, _)| fresh());
+    let probes: Vec<_> = CONNECTORS.iter().map(|(_, probe, _, _)| probe()).collect();
+    let freshness: Vec<_> = CONNECTORS.iter().map(|(_, _, fresh, _)| fresh()).collect();
     connector_statuses_with(&probes, &freshness)
 }
 
 /// 幂等修复单个来源：重新写入其连接脚本，成功时返回人话消息。
 fn repair(source: AgentSource) -> Result<String, String> {
-    for (candidate, _, _, install) in CONNECTORS {
-        if candidate == source {
+    for (candidate, _, _, install) in CONNECTORS.iter() {
+        if *candidate == source {
             return install();
         }
     }
@@ -101,22 +108,26 @@ mod tests {
 
     #[test]
     fn statuses_cover_all_sources_in_display_order() {
-        let rows =
-            connector_statuses_with(&[true, false, true, false], &[true, false, false, false]);
+        let rows = connector_statuses_with(
+            &[true, false, false, true, false],
+            &[true, false, false, false, false],
+        );
         let sources: Vec<&str> = rows.iter().map(|row| row.source.as_str()).collect();
         assert_eq!(
             sources,
             vec![
                 AgentSource::ClaudeCode.as_str(),
                 AgentSource::Codex.as_str(),
+                AgentSource::ZCode.as_str(),
                 AgentSource::Pi.as_str(),
                 AgentSource::OpenCode.as_str()
             ]
         );
         assert!(!rows[1].installed);
-        assert!(!rows[3].installed);
+        assert!(!rows[2].installed);
+        assert!(!rows[4].installed);
         assert!(rows[0].script_current);
-        assert!(!rows[2].script_current);
+        assert!(!rows[3].script_current);
     }
 
     #[test]
@@ -127,6 +138,7 @@ mod tests {
         let all = [
             AgentSource::ClaudeCode,
             AgentSource::Codex,
+            AgentSource::ZCode,
             AgentSource::Pi,
             AgentSource::OpenCode,
         ];

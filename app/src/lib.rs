@@ -54,6 +54,7 @@ pub mod steam;
 pub mod tray;
 pub mod tts;
 pub mod voice;
+pub mod zcode_hooks;
 
 use gamepad::{SharedAgent, SharedChatCancel, SharedChatCore, SharedPendingChat};
 use tauri::{Emitter, Manager};
@@ -192,6 +193,8 @@ pub fn run() {
             claude_hooks::cmd_open_claude_settings,
             codex_hooks::cmd_install_codex_hooks,
             codex_hooks::cmd_open_codex_config,
+            zcode_hooks::cmd_install_zcode_hooks,
+            zcode_hooks::cmd_open_zcode_config,
             pi_hooks::cmd_install_pi_extension,
             pi_hooks::cmd_open_pi_extensions_dir,
             opencode_hooks::cmd_install_opencode_plugin,

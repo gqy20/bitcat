@@ -456,6 +456,7 @@ describe('agent connectors panel', () => {
   const statuses = [
     { source: 'claude_code', installed: true, path: '~/.claude/settings.json' },
     { source: 'codex', installed: true, path: '~/.codex/config.toml' },
+    { source: 'zcode', installed: false, path: '~/.zcode/cli/config.json' },
     { source: 'pi', installed: false, path: '~/.pi/agent/extensions/bitcat-watch.ts' },
     { source: 'opencode', installed: true, path: '~/.config/opencode/plugins/bitcat-watch.js' },
   ];
@@ -471,12 +472,12 @@ describe('agent connectors panel', () => {
   it('renders one row per source and shows the repair button only for missing ones', () => {
     const { dom } = loadConnectors();
     const rows = [...dom.window.document.querySelectorAll('.connector-row')];
-    expect(rows.map(row => row.dataset.source)).toEqual(['claude_code', 'codex', 'pi', 'opencode']);
+    expect(rows.map(row => row.dataset.source)).toEqual(['claude_code', 'codex', 'zcode', 'pi', 'opencode']);
     expect(rows.map(row => row.querySelector('strong').textContent))
-      .toEqual(['Claude Code', 'Codex', 'pi', 'opencode']);
+      .toEqual(['Claude Code', 'Codex', 'ZCode', 'pi', 'opencode']);
     const repairButtons = dom.window.document.querySelectorAll('[data-repair-source]');
-    expect(repairButtons.length).toBe(1);
-    expect(repairButtons[0].dataset.repairSource).toBe('pi');
+    expect(repairButtons.length).toBe(2);
+    expect([...repairButtons].map(button => button.dataset.repairSource)).toEqual(['zcode', 'pi']);
     dom.window.close();
   });
 
@@ -490,6 +491,7 @@ describe('agent connectors panel', () => {
       dom.window.document.querySelector(`[data-source="${source}"] .connector-dot`).dataset.state;
     expect(stateOf('claude_code')).toBe('ready');
     expect(stateOf('codex')).toBe('idle');
+    expect(stateOf('zcode')).toBe('missing');
     expect(stateOf('pi')).toBe('missing');
     expect(stateOf('opencode')).toBe('idle');
     expect(helpers.connectorState({ source: 'pi', installed: false }, 0, now)).toEqual({

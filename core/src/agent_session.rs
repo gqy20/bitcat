@@ -25,6 +25,7 @@ const EPHEMERAL_LIFETIME_SEC: u64 = 10;
 pub enum AgentSource {
     ClaudeCode,
     Codex,
+    ZCode,
     Pi,
     OpenCode,
 }
@@ -64,6 +65,7 @@ impl AgentSource {
         match self {
             Self::ClaudeCode => "claude_code",
             Self::Codex => "codex",
+            Self::ZCode => "zcode",
             Self::Pi => "pi",
             Self::OpenCode => "opencode",
         }
@@ -73,6 +75,7 @@ impl AgentSource {
         match self {
             Self::ClaudeCode => "Claude Code",
             Self::Codex => "Codex",
+            Self::ZCode => "ZCode",
             Self::Pi => "pi",
             Self::OpenCode => "opencode",
         }
@@ -83,6 +86,7 @@ impl AgentSource {
         match value.trim().to_ascii_lowercase().as_str() {
             "claude" | "claude-code" | "claude_code" => Some(Self::ClaudeCode),
             "codex" => Some(Self::Codex),
+            "zcode" | "z-code" | "z_code" => Some(Self::ZCode),
             "pi" => Some(Self::Pi),
             "opencode" | "open-code" | "open_code" => Some(Self::OpenCode),
             _ => None,

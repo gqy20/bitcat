@@ -7,6 +7,7 @@
   const SOURCES = [
     { id: "claude_code", label: "Claude Code", compact: "Claude" },
     { id: "codex", label: "Codex", compact: "Codex" },
+    { id: "zcode", label: "ZCode", compact: "ZCode" },
     { id: "pi", label: "pi", compact: "pi" },
     { id: "opencode", label: "opencode", compact: "opencode" },
   ];
