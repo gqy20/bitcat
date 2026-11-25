@@ -33,6 +33,13 @@ const SESSION_SNAPSHOT_LOG_INTERVAL_MS: u64 = 60_000;
 const NUDGE_SKIP_LOG_INTERVAL_MS: u64 = 60_000;
 /// 恢复的会话超过该时长没有事件就丢弃：陈旧会话不如让下一个事件重建。
 const RESTORE_MAX_AGE_MS: u64 = 30 * 60 * 1000;
+/// 活跃会话（Working/ToolRunning/Compacting）沉默超过该时长视为僵尸。
+/// hook 是单向一次性连接，完成事件丢失后没有对账机制，必须有兜底上限。
+const ACTIVE_SILENCE_LIMIT_MS: u64 = 24 * 60 * 60 * 1000;
+/// Waiting 会话沉默上限放宽到 7 天：权限提示可能挂一个周末。
+const WAITING_SILENCE_LIMIT_MS: u64 = 7 * 24 * 60 * 60 * 1000;
+/// 定时清扫间隔。
+const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 /// 状态文件名（位于 ~/.bitcat/logs/）。
 const AGENT_WATCH_STATE_FILE: &str = "agent_watch_state.json";
 
@@ -176,8 +183,8 @@ impl SharedAgentMonitor {
         Ok(())
     }
 
-    /// 启动时从状态文件恢复最近的活跃会话，避免 bitcat 重启后运行中的任务"失联"。
-    /// 只恢复仍活跃或 30 分钟内更新过的会话；解析失败时静默跳过（可重建）。
+    /// 启动时从状态文件恢复最近的会话，避免 bitcat 重启后运行中的任务"失联"。
+    /// 使用统一的过期规则（含活跃会话的沉默上限），解析失败时静默跳过。
     pub fn restore_sessions(&self, now_ms: u64) {
         let Some(dir) = log_dir() else {
             return;
@@ -190,12 +197,17 @@ impl SharedAgentMonitor {
             warn!(path = %path.display(), "agent watch state 文件解析失败，跳过恢复");
             return;
         };
+        let mut expired = 0usize;
         let restored: Vec<AgentSession> = state
             .sessions
             .into_iter()
             .filter(|session| {
-                session.is_active()
-                    || now_ms.saturating_sub(session.updated_at_ms) < RESTORE_MAX_AGE_MS
+                if session_is_expired(session, now_ms) {
+                    expired += 1;
+                    false
+                } else {
+                    true
+                }
             })
             .collect();
         let count = restored.len();
@@ -204,27 +216,26 @@ impl SharedAgentMonitor {
                 sessions.insert(session.session_id.clone(), session);
             }
         }
-        if count > 0 {
-            info!(count, "agent watch sessions restored");
+        if count > 0 || expired > 0 {
+            info!(count, expired, "agent watch sessions restored");
         }
     }
 
-    /// 淘汰过期会话：安静超过 30 分钟且非活跃的历史会话从表中移除。
+    /// 淘汰过期会话（含沉默过久的活跃会话），与恢复共用 `session_is_expired`。
     ///
     /// 会话表只进不出是慢性泄漏：跑一周积累数百条历史会话，每次快照
-    /// 全量序列化、每次 persist 全量写盘（P3）。窗口与重启恢复的
-    /// `RESTORE_MAX_AGE_MS` 对齐——反正恢复时也会被同样规则过滤。
-    /// 活跃会话（Working/ToolRunning/Waiting/Compacting）永不淘汰。
+    /// 全量序列化、每次 persist 全量写盘（P3）。活跃会话也有沉默上限，
+    /// 避免完成事件丢失后僵尸会话永远占据列表和宠物模式。
     fn evict_stale_sessions(&self, now_ms: u64) -> usize {
         let mut evicted = Vec::new();
         if let Ok(mut sessions) = self.sessions.lock() {
             sessions.retain(|id, session| {
-                let stale = !session.is_active()
-                    && now_ms.saturating_sub(session.updated_at_ms) > RESTORE_MAX_AGE_MS;
-                if stale {
+                if session_is_expired(session, now_ms) {
                     evicted.push(id.clone());
+                    false
+                } else {
+                    true
                 }
-                !stale
             });
         }
         if !evicted.is_empty() {
@@ -311,6 +322,26 @@ impl SharedAgentMonitor {
             last.insert(key, now_ms);
         }
         Ok(due)
+    }
+}
+
+/// 统一的会话过期判定：恢复和淘汰共用同一条规则。
+///
+/// - 非活跃会话：安静超过 `RESTORE_MAX_AGE_MS`（30 分钟）即过期。
+/// - Waiting：安静超过 `WAITING_SILENCE_LIMIT_MS`（7 天）才过期。
+/// - 其余活跃状态（Working / ToolRunning / Compacting）：安静超过
+///   `ACTIVE_SILENCE_LIMIT_MS`（24 小时）视为僵尸。
+fn session_is_expired(session: &AgentSession, now_ms: u64) -> bool {
+    let silence = now_ms.saturating_sub(session.updated_at_ms);
+    if session.is_active() {
+        let limit = if session.status == bitcat_core::agent_session::AgentStatus::Waiting {
+            WAITING_SILENCE_LIMIT_MS
+        } else {
+            ACTIVE_SILENCE_LIMIT_MS
+        };
+        silence > limit
+    } else {
+        silence > RESTORE_MAX_AGE_MS
     }
 }
 
@@ -401,6 +432,36 @@ pub fn spawn_agent_monitor(app: AppHandle) {
         }
         info!("Claude Code monitor stopped");
     });
+}
+
+/// 定时清扫僵尸会话：每 60 秒检查一次，淘汰沉默过久的会话并落盘、刷新 UI。
+/// 独立于事件驱动路径，确保即使没有新事件也能清理。
+pub fn spawn_session_sweeper(app: AppHandle) {
+    std::thread::Builder::new()
+        .name("bitcat-session-sweeper".to_string())
+        .spawn(move || loop {
+            std::thread::sleep(SWEEP_INTERVAL);
+            if crate::shutdown::is_requested() {
+                break;
+            }
+            let monitor: tauri::State<SharedAgentMonitor> = app.state();
+            let now = now_ms();
+            let evicted = monitor.evict_stale_sessions(now);
+            if evicted > 0 {
+                monitor.persist_sessions(now);
+                if let Ok(snapshot) = monitor.snapshot(now) {
+                    crate::emit_to_windows(
+                        &app,
+                        &["agent-watch", "pet", "pet-inbox", "settings"],
+                        "agent-session-update",
+                        &snapshot,
+                    );
+                    crate::agent_watch_window::show_snapshot(&app, &snapshot);
+                    sync_pet_agent_mode(&app, &monitor);
+                }
+            }
+        })
+        .expect("failed to spawn session sweeper");
 }
 
 pub fn spawn_agent_view_server(app: AppHandle) {
@@ -1804,6 +1865,7 @@ pub async fn cmd_dismiss_agent_session(
     session_id: String,
 ) -> Result<AgentSessionsSnapshot, String> {
     monitor.remove_session(&session_id)?;
+    monitor.persist_sessions(now_ms());
     let snapshot = monitor.snapshot(now_ms())?;
     crate::emit_to_windows(
         &app,
@@ -2166,9 +2228,9 @@ mod tests {
     }
 
     #[test]
-    fn evict_stale_sessions_removes_only_old_inactive() {
+    fn evict_stale_sessions_respects_silence_limits() {
         let monitor = SharedAgentMonitor::default();
-        let now = 10 * 60 * 60 * 1000; // 10h 基准，便于构造"31 分钟前"
+        let now = 30 * 24 * 60 * 60 * 1000; // 30 天基准
         let make = |id: &str, status: AgentStatus, updated: u64| AgentSession {
             session_id: id.into(),
             source: AgentSource::ClaudeCode,
@@ -2198,28 +2260,127 @@ mod tests {
         };
         {
             let mut sessions = monitor.sessions.lock().unwrap();
-            // 活跃会话：再老也不淘汰。
+            // Working 沉默 1 小时：保留（24h 上限内）。
             sessions.insert(
-                "active".into(),
-                make("active", AgentStatus::Working, now - 60 * 60 * 1000),
+                "fresh-working".into(),
+                make("fresh-working", AgentStatus::Working, now - 60 * 60 * 1000),
             );
-            // 安静 31 分钟的 Done 会话：淘汰。
+            // Working 沉默 25 小时：僵尸，淘汰。
+            sessions.insert(
+                "zombie-working".into(),
+                make(
+                    "zombie-working",
+                    AgentStatus::Working,
+                    now - 25 * 60 * 60 * 1000,
+                ),
+            );
+            // Waiting 沉默 3 天：保留（7 天上限内）。
+            sessions.insert(
+                "fresh-waiting".into(),
+                make(
+                    "fresh-waiting",
+                    AgentStatus::Waiting,
+                    now - 3 * 24 * 60 * 60 * 1000,
+                ),
+            );
+            // Waiting 沉默 8 天：淘汰。
+            sessions.insert(
+                "zombie-waiting".into(),
+                make(
+                    "zombie-waiting",
+                    AgentStatus::Waiting,
+                    now - 8 * 24 * 60 * 60 * 1000,
+                ),
+            );
+            // Done 沉默 31 分钟：淘汰。
             sessions.insert(
                 "stale-done".into(),
                 make("stale-done", AgentStatus::Done, now - 31 * 60 * 1000),
             );
-            // 安静 29 分钟的 Done 会话：保留（30 分钟窗口内）。
+            // Done 沉默 29 分钟：保留。
             sessions.insert(
                 "fresh-done".into(),
                 make("fresh-done", AgentStatus::Done, now - 29 * 60 * 1000),
             );
         }
         let evicted = monitor.evict_stale_sessions(now);
-        assert_eq!(evicted, 1);
+        assert_eq!(evicted, 3);
         let sessions = monitor.sessions.lock().unwrap();
-        assert!(sessions.contains_key("active"));
+        assert!(sessions.contains_key("fresh-working"));
+        assert!(sessions.contains_key("fresh-waiting"));
         assert!(sessions.contains_key("fresh-done"));
+        assert!(!sessions.contains_key("zombie-working"));
+        assert!(!sessions.contains_key("zombie-waiting"));
         assert!(!sessions.contains_key("stale-done"));
+    }
+
+    #[test]
+    fn session_is_expired_covers_all_branches() {
+        let now = 100 * 24 * 60 * 60 * 1000;
+        let make = |status: AgentStatus, age_ms: u64| AgentSession {
+            session_id: "x".into(),
+            source: AgentSource::ClaudeCode,
+            workspace: "D:\\x".into(),
+            parent_session_id: None,
+            status,
+            tool_name: None,
+            tool_input_preview: None,
+            user_prompt_preview: None,
+            last_response_preview: None,
+            background: false,
+            agent_id: None,
+            agent_type: None,
+            task_id: None,
+            output_file: None,
+            pid: None,
+            machine: None,
+            first_seen_at_ms: now - age_ms,
+            has_run_tools: true,
+            tokens_in: None,
+            tokens_out: None,
+            cost_usd_micros: None,
+            waiting_reason: None,
+            updated_at_ms: now - age_ms,
+            status_changed_at_ms: now - age_ms,
+            needs_user: false,
+        };
+        // Working: 23h 保留, 25h 过期
+        assert!(!session_is_expired(
+            &make(AgentStatus::Working, 23 * 3600_000),
+            now
+        ));
+        assert!(session_is_expired(
+            &make(AgentStatus::Working, 25 * 3600_000),
+            now
+        ));
+        // ToolRunning: 同 Working
+        assert!(session_is_expired(
+            &make(AgentStatus::ToolRunning, 25 * 3600_000),
+            now
+        ));
+        // Compacting: 同 Working
+        assert!(session_is_expired(
+            &make(AgentStatus::Compacting, 25 * 3600_000),
+            now
+        ));
+        // Waiting: 6 天保留, 8 天过期
+        assert!(!session_is_expired(
+            &make(AgentStatus::Waiting, 6 * 24 * 3600_000),
+            now
+        ));
+        assert!(session_is_expired(
+            &make(AgentStatus::Waiting, 8 * 24 * 3600_000),
+            now
+        ));
+        // Done: 29 分钟保留, 31 分钟过期
+        assert!(!session_is_expired(
+            &make(AgentStatus::Done, 29 * 60_000),
+            now
+        ));
+        assert!(session_is_expired(
+            &make(AgentStatus::Done, 31 * 60_000),
+            now
+        ));
     }
 
     #[test]

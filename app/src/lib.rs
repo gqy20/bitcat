@@ -544,6 +544,7 @@ pub fn run() {
             chat_reaction::spawn_worker(app.handle().clone());
             agent_monitor::spawn_agent_monitor(app.handle().clone());
             agent_monitor::spawn_agent_view_server(app.handle().clone());
+            agent_monitor::spawn_session_sweeper(app.handle().clone());
 
             // 手柄轮询线程：SDL2 80ms tick，处理按键→命令→AI 对话。
             let handle = app.handle().clone();
