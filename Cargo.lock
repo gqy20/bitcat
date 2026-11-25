@@ -783,7 +783,7 @@ dependencies = [
  "base64 0.23.1",
  "cargo-husky",
  "chrono",
- "dirs 6.0.0",
+ "dirs 7.0.0",
  "dotenvy",
  "futures",
  "image",
