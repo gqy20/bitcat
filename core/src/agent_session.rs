@@ -124,14 +124,12 @@ impl AgentStatus {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Idle => "空闲",
-            Self::Working => "工作中",
-            Self::ToolRunning => "运行工具",
-            Self::Waiting => "等待处理",
-            Self::Compacting => "压缩上下文",
-            Self::Done => "已完成",
-            Self::Interrupted => "已中断",
-            Self::Error => "异常",
+            Self::Idle | Self::Working | Self::ToolRunning => "",
+            Self::Waiting => "等你处理",
+            Self::Compacting => "整理上下文",
+            Self::Done => "完成",
+            Self::Interrupted => "已停止",
+            Self::Error => "执行失败",
         }
     }
 
@@ -471,7 +469,7 @@ pub struct AgentSessionDisplay {
     /// 简短用量标签：金额优先（如 `$0.05`），无金额时退回 token 数（如 `12.3k`）。
     /// 空串表示没有可用数据。完整数值在 View 的 tokens/cost 字段里。
     pub usage_label: String,
-    /// 子任务摘要（如 "3 个子任务运行中"），由 `attach_subtask_summaries`
+    /// 子任务摘要（如 "3 运行中"），由 `attach_subtask_summaries`
     /// 在快照组装时填充；空串表示没有在展示的子会话。
     pub subtask_label: String,
     pub quiet: bool,
@@ -487,20 +485,15 @@ impl AgentSessionDisplay {
         let quiet = is_quiet(session, age_sec);
         let headline = match session.status {
             AgentStatus::Waiting => match session.waiting_reason {
-                Some(WaitingReason::Permission) => "等你批准操作".to_string(),
+                Some(WaitingReason::Permission) => "等你批准".to_string(),
                 _ => "需要你处理".to_string(),
             },
-            AgentStatus::Error => "任务遇到异常".to_string(),
-            AgentStatus::Compacting => "正在压缩上下文".to_string(),
-            AgentStatus::ToolRunning => action
-                .headline
-                .unwrap_or_else(|| "正在运行工具".to_string()),
-            AgentStatus::Working => action
-                .headline
-                .unwrap_or_else(|| "正在思考下一步".to_string()),
-            AgentStatus::Done => "已完成".to_string(),
-            AgentStatus::Interrupted => "已中断".to_string(),
-            AgentStatus::Idle => "空闲".to_string(),
+            AgentStatus::Error => "执行失败".to_string(),
+            AgentStatus::Compacting => "整理上下文".to_string(),
+            AgentStatus::ToolRunning | AgentStatus::Working => action.headline.unwrap_or_default(),
+            AgentStatus::Done => "完成".to_string(),
+            AgentStatus::Interrupted => "已停止".to_string(),
+            AgentStatus::Idle => String::new(),
         };
         let detail = match session.status {
             AgentStatus::Waiting => action
@@ -621,7 +614,7 @@ fn action_summary(session: &AgentSession) -> ActionSummary {
                 .or_else(|| session.agent_type.clone());
             return ActionSummary {
                 label: "Agent".to_string(),
-                headline: Some("Background agent running".to_string()),
+                headline: None,
                 detail,
             };
         }
@@ -632,7 +625,7 @@ fn action_summary(session: &AgentSession) -> ActionSummary {
                 .or_else(|| session.last_response_preview.clone());
             return ActionSummary {
                 label: "Task".to_string(),
-                headline: Some("Background task running".to_string()),
+                headline: None,
                 detail,
             };
         }
@@ -657,8 +650,8 @@ fn action_summary(session: &AgentSession) -> ActionSummary {
             label: "Patch".to_string(),
             headline: target
                 .as_deref()
-                .map(|value| format!("正在修改 {value}"))
-                .or_else(|| Some("正在应用补丁".to_string())),
+                .map(|value| format!("修改 {value}"))
+                .or_else(|| Some("应用补丁".to_string())),
             detail: target.or_else(|| patch_summary(patch)),
         };
     }
@@ -675,7 +668,7 @@ fn action_summary(session: &AgentSession) -> ActionSummary {
             .and_then(|value| compact_preview(value, 56));
         return ActionSummary {
             label: "Shell".to_string(),
-            headline: Some("正在运行".to_string()),
+            headline: Some("执行".to_string()),
             detail: description.or(command),
         };
     }
@@ -689,8 +682,8 @@ fn action_summary(session: &AgentSession) -> ActionSummary {
             label: "Read".to_string(),
             headline: target
                 .as_deref()
-                .map(|value| format!("正在读取 {value}"))
-                .or_else(|| Some("正在读取文件".to_string())),
+                .map(|value| format!("读取 {value}"))
+                .or_else(|| Some("读取文件".to_string())),
             detail: target,
         };
     }
@@ -709,8 +702,8 @@ fn action_summary(session: &AgentSession) -> ActionSummary {
             .to_string(),
             headline: target
                 .as_deref()
-                .map(|value| format!("正在修改 {value}"))
-                .or_else(|| Some("正在修改文件".to_string())),
+                .map(|value| format!("修改 {value}"))
+                .or_else(|| Some("修改文件".to_string())),
             detail: target,
         };
     }
@@ -724,8 +717,8 @@ fn action_summary(session: &AgentSession) -> ActionSummary {
             label: "Search".to_string(),
             headline: pattern
                 .as_deref()
-                .map(|value| format!("正在搜索 {value}"))
-                .or_else(|| Some("正在搜索代码".to_string())),
+                .map(|value| format!("搜索 {value}"))
+                .or_else(|| Some("搜索代码".to_string())),
             detail: pattern,
         };
     }
@@ -737,14 +730,14 @@ fn action_summary(session: &AgentSession) -> ActionSummary {
             .and_then(|value| compact_preview(value, 64));
         return ActionSummary {
             label: "Agent".to_string(),
-            headline: Some("正在分派子任务".to_string()),
+            headline: Some("分派子任务".to_string()),
             detail: description,
         };
     }
 
     ActionSummary {
         label: tool_label(tool),
-        headline: Some("正在处理任务".to_string()),
+        headline: None,
         detail: session
             .tool_input_preview
             .as_deref()
@@ -771,7 +764,7 @@ fn patch_target(value: &str) -> Option<String> {
 
 fn patch_summary(value: &str) -> Option<String> {
     if value.contains("*** Begin Patch") {
-        return Some("补丁正在应用".to_string());
+        return Some("应用补丁".to_string());
     }
     compact_preview(value, 48)
 }
@@ -957,9 +950,9 @@ pub fn attach_subtask_summaries(views: &mut [AgentSessionView]) {
         view.subtasks_active = active;
         view.subtasks_recent_done = recent_done;
         view.display.subtask_label = if active > 0 {
-            format!("{active} 个子任务运行中")
+            format!("{active} 运行中")
         } else if recent_done > 0 {
-            format!("{recent_done} 个子任务刚完成")
+            format!("{recent_done} 完成")
         } else {
             String::new()
         };
@@ -1121,7 +1114,7 @@ mod tests {
         assert_eq!(view.machine.as_deref(), Some("macbook-pro"));
         assert_eq!(view.status, "done");
         assert_eq!(view.age_sec, 5);
-        assert_eq!(view.display.headline, "已完成");
+        assert_eq!(view.display.headline, "完成");
     }
 
     // ---- 跨平台路径派生 ----
@@ -1170,7 +1163,7 @@ mod tests {
         let view = AgentSessionView::from_session(&session, 6100);
         assert_eq!(view.display.tone, "active");
         assert_eq!(view.display.action_label, "Shell");
-        assert_eq!(view.display.headline, "正在运行");
+        assert_eq!(view.display.headline, "执行");
         assert_eq!(view.display.detail, "cargo nextest run -p bitcat-core");
     }
 
@@ -1183,19 +1176,18 @@ mod tests {
         );
         let view = AgentSessionView::from_session(&session, 6100);
         assert_eq!(view.display.action_label, "Patch");
-        assert_eq!(view.display.headline, "正在修改 agent_watch.js");
+        assert_eq!(view.display.headline, "修改 agent_watch.js");
         assert!(!view.display.headline.contains("{"));
         assert!(!view.display.detail.contains("Begin Patch"));
     }
 
     #[test]
-    fn display_unknown_json_uses_generic_headline() {
+    fn display_unknown_tool_omits_generic_headline() {
         let mut session = event("abc", AgentStatus::ToolRunning, 1000).into_session();
         session.tool_name = Some("custom_tool".into());
         session.tool_input_preview = Some(r#"{"command":"large raw payload"}"#.into());
         let view = AgentSessionView::from_session(&session, 6100);
-        assert_eq!(view.display.headline, "正在处理任务");
-        assert!(!view.display.headline.contains("{"));
+        assert!(view.display.headline.is_empty());
     }
 
     #[test]
@@ -1264,7 +1256,7 @@ mod tests {
         let parent_view = views.iter().find(|v| v.session_id == "parent").unwrap();
         assert_eq!(parent_view.subtasks_active, 2);
         assert_eq!(parent_view.subtasks_recent_done, 1);
-        assert_eq!(parent_view.display.subtask_label, "2 个子任务运行中");
+        assert_eq!(parent_view.display.subtask_label, "2 运行中");
         // 子会话自身不带聚合（父不在其 parent 链上）。
         let child_view = views
             .iter()
@@ -1288,7 +1280,7 @@ mod tests {
 
         let parent_view = views.iter().find(|v| v.session_id == "parent").unwrap();
         assert_eq!(parent_view.subtasks_active, 0);
-        assert_eq!(parent_view.display.subtask_label, "1 个子任务刚完成");
+        assert_eq!(parent_view.display.subtask_label, "1 完成");
     }
 
     #[test]
@@ -1384,7 +1376,7 @@ mod tests {
         waiting.waiting_reason = Some(WaitingReason::Permission);
         apply_session_event(&mut sessions, waiting);
         let view = AgentSessionView::from_session(sessions.get("s").unwrap(), 1100);
-        assert_eq!(view.display.headline, "等你批准操作");
+        assert_eq!(view.display.headline, "等你批准");
 
         // 恢复工作后 waiting_reason 清空。
         apply_session_event(&mut sessions, event("s", AgentStatus::Working, 2000));

@@ -43,5 +43,10 @@ describe('AgentSources shared mapping', () => {
     expect(sources.compact('pi')).toBe('pi');
     expect(sources.compact('opencode')).toBe('opencode');
     expect(sources.compact('未知来源')).toBe('未知来源');
+    expect(sources.badge('claude_code')).toBe('CC');
+    expect(sources.badge('codex')).toBe('CX');
+    expect(sources.badge('zcode')).toBe('Z');
+    expect(sources.badge('pi')).toBe('PI');
+    expect(sources.badge('opencode')).toBe('OC');
   });
 });

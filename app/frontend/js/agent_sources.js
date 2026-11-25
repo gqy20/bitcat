@@ -5,11 +5,11 @@
   'use strict';
 
   const SOURCES = [
-    { id: "claude_code", label: "Claude Code", compact: "Claude" },
-    { id: "codex", label: "Codex", compact: "Codex" },
-    { id: "zcode", label: "ZCode", compact: "ZCode" },
-    { id: "pi", label: "pi", compact: "pi" },
-    { id: "opencode", label: "opencode", compact: "opencode" },
+    { id: "claude_code", label: "Claude Code", compact: "Claude", badge: "CC" },
+    { id: "codex", label: "Codex", compact: "Codex", badge: "CX" },
+    { id: "zcode", label: "ZCode", compact: "ZCode", badge: "Z" },
+    { id: "pi", label: "pi", compact: "pi", badge: "PI" },
+    { id: "opencode", label: "opencode", compact: "opencode", badge: "OC" },
   ];
   const BY_ID = new Map(SOURCES.map(item => [item.id, item]));
   const BY_LABEL = new Map(SOURCES.map(item => [item.label, item]));
@@ -23,6 +23,10 @@
     // 完整展示名 → 浮窗窄条用的短名。
     compact(label) {
       return BY_LABEL.get(label)?.compact || label;
+    },
+    // 窄卡片里的中性来源徽标；悬浮/无障碍文本仍使用完整名称。
+    badge(id) {
+      return BY_ID.get(id)?.badge || String(id || "?").slice(0, 2).toUpperCase();
     },
   };
 })();

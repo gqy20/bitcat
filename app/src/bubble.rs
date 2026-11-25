@@ -870,7 +870,7 @@ mod tests {
     #[test]
     fn test_agent_toast_payload_serializes() {
         let p = AgentToastPayload {
-            title: "data 正在等你".into(),
+            title: "data 等你处理".into(),
             context: "Claude Code".into(),
             detail: "需要确认下一步".into(),
             tone: "needs_user".into(),

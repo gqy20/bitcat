@@ -1064,7 +1064,7 @@ fn watch_page_html() -> String {
 
     function subtitleOf(session) {
       const display = session.display || {};
-      return display.headline || session.status_label || session.status || 'Task update';
+      return display.headline || session.status_label || '';
     }
 
     function detailOf(session) {
@@ -1697,7 +1697,7 @@ fn agent_toast_payload(
     };
     let title = match nudge.kind {
         AgentNudgeKind::WaitingForUser => format!(
-            "{} 正在等你",
+            "{} 等你处理",
             if project.is_empty() { "Agent" } else { project }
         ),
         AgentNudgeKind::TaskDone => format!(
@@ -2471,7 +2471,7 @@ mod tests {
 
         let toast = agent_toast_payload(&nudge, &session);
 
-        assert_eq!(toast.title, "data 正在等你");
+        assert_eq!(toast.title, "data 等你处理");
         assert_eq!(toast.context, "data · Claude Code");
         assert_eq!(toast.detail, "Shell 需要确认");
         assert!(!toast.title.contains("/mnt/"));

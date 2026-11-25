@@ -319,7 +319,7 @@ async function mockInvoke(command, args = {}) {
           session_id: "ses_preview_claude",
           source: "claude_code",
           status: "working",
-          status_label: "正在处理",
+          status_label: "",
           workspace_name: "bitcat",
           workspace: "~/workspace/project/2609/bitcat",
           machine: "preview",
@@ -334,7 +334,7 @@ async function mockInvoke(command, args = {}) {
           session_id: "ses_preview_pi",
           source: "pi",
           status: "done",
-          status_label: "已完成",
+          status_label: "完成",
           workspace_name: "docs",
           workspace: "~/workspace/project/2609/docs",
           machine: "preview",
@@ -2078,13 +2078,16 @@ async function loadReminders() {
 
 async function loadAgentSessions() {
   const status = $("aw-status");
-  if (status) status.textContent = "读取中...";
+  if (status && !status.dataset.ready) status.textContent = "读取中...";
   try {
     const snapshot = await invoke("cmd_get_agent_sessions");
     renderAgentSessions(snapshot);
     refreshConnectorActivity();
     loadRemoteDevices();
-    if (status) status.textContent = snapshot?.generated_at_ms ? `更新于 ${formatDateTime(snapshot.generated_at_ms)}` : "等待状态";
+    if (status) {
+      status.dataset.ready = "true";
+      status.textContent = snapshot?.generated_at_ms ? `最近更新 ${formatDateTime(snapshot.generated_at_ms)}` : "等待状态";
+    }
   } catch (e) {
     log("加载 Agent 会话失败: " + e);
     renderAgentSessions(null);
@@ -2162,6 +2165,66 @@ async function loadRemoteDevices() {
   }
 }
 
+function agentSessionMeta(session) {
+  const parts = [
+    window.AgentSources.label(session.source),
+    session.machine || "",
+    session.tool_name || session.display?.action_label || "",
+  ].filter(Boolean);
+  return parts.map(value => `<span>${escapeHtml(value)}</span>`).join("");
+}
+
+function updateAgentSessionRow(row, session) {
+  const status = String(session.status || "idle");
+  const headline = session.display?.headline || session.status_label || "";
+  const iconName = window.AgentIcons?.iconForSession(session) || "activity";
+  row.className = `agent-session ${escapeAttr(status)}`;
+  row.dataset.id = session.session_id;
+  row.dataset.status = status;
+  row.dataset.icon = iconName;
+
+  if (!row.__markup) {
+    row.innerHTML = `
+      <div class="agent-session-main">
+        <span class="agent-session-icon" aria-hidden="true"></span>
+        <strong></strong>
+        <span class="agent-session-status"></span>
+      </div>
+      <div class="agent-session-sub">
+        <span class="agent-session-meta"></span>
+        <code></code>
+        <span class="agent-session-prompt"></span>
+      </div>`;
+    row.__markup = true;
+  }
+  const icon = row.querySelector(".agent-session-icon");
+  if (icon && row.dataset.renderedIcon !== iconName) {
+    icon.innerHTML = window.AgentIcons?.render(iconName) || "";
+    row.dataset.renderedIcon = iconName;
+    if (window.AgentIcons?.stateForStatus(status) === "active") {
+      window.AgentIcons.pulse(icon.firstElementChild);
+    }
+  }
+  row.querySelector("strong").textContent = session.workspace_name || "未知项目";
+  const statusNode = row.querySelector(".agent-session-status");
+  window.AgentIcons?.setText(statusNode, headline);
+  statusNode.hidden = !headline;
+  const meta = row.querySelector(".agent-session-meta");
+  const metaHtml = agentSessionMeta(session);
+  if (meta && meta.__html !== metaHtml) {
+    meta.innerHTML = metaHtml;
+    meta.__html = metaHtml;
+  }
+  const path = session.workspace || session.session_id;
+  const code = row.querySelector("code");
+  code.textContent = path;
+  code.title = path;
+  const prompt = row.querySelector(".agent-session-prompt");
+  prompt.textContent = session.user_prompt_preview || "";
+  prompt.title = session.user_prompt_preview || "";
+  prompt.hidden = !session.user_prompt_preview;
+}
+
 function renderAgentSessions(snapshot) {
   const box = $("aw-sessions");
   if (!box) return;
@@ -2173,33 +2236,34 @@ function renderAgentSessions(snapshot) {
     if (typeof snapshot?.event_count === "number") parts.push(escapeHtml(`事件 ${snapshot.event_count}`));
     if (snapshot?.last_event_at_ms) parts.push(escapeHtml(`最近 ${new Date(snapshot.last_event_at_ms).toLocaleTimeString()}`));
     if (snapshot?.log_dir) parts.push(`日志 <code>${escapeHtml(snapshot.log_dir)}</code>`);
-    // 诊断辅助信息降成一行小字：不值得四颗药丸的存在感。
     diag.innerHTML = parts.length ? `<span>${parts.join(" · ")}</span>` : "";
   }
   const sessions = snapshot?.sessions || [];
   if (!sessions.length) {
-    box.innerHTML = `<div class="empty-note">暂无 Agent 会话。</div>`;
+    if (!box.querySelector(".empty-note") || box.children.length !== 1) {
+      box.innerHTML = `<div class="empty-note">暂无 Agent 会话。</div>`;
+    }
     return;
   }
-  // 每会话两行：身份行（项目·状态·来源·机器）+ 任务行（路径·提示词）。
-  box.innerHTML = sessions.map(session => {
-    const path = session.workspace || session.session_id;
-    return `
-    <div class="agent-session ${escapeAttr(session.status)}">
-      <div class="agent-session-main">
-        <strong>${escapeHtml(session.workspace_name || "未知项目")}</strong>
-        <span class="agent-session-status">${escapeHtml(session.status_label || session.status)}</span>
-        <span>${escapeHtml(window.AgentSources.label(session.source))}</span>
-        ${session.machine ? `<span>${escapeHtml(session.machine)}</span>` : ""}
-        ${session.tool_name ? `<span>${escapeHtml(session.tool_name)}</span>` : ""}
-      </div>
-      <div class="agent-session-sub">
-        <code title="${escapeAttr(path)}">${escapeHtml(path)}</code>
-        ${session.user_prompt_preview ? `<span class="agent-session-prompt" title="${escapeAttr(session.user_prompt_preview)}">${escapeHtml(session.user_prompt_preview)}</span>` : ""}
-      </div>
-    </div>
-  `;
-  }).join("");
+  box.querySelector(".empty-note")?.remove();
+  const existing = new Map(
+    [...box.querySelectorAll(".agent-session")].map((row) => [row.dataset.id, row])
+  );
+  const ordered = [];
+  for (const session of sessions) {
+    let row = existing.get(session.session_id);
+    if (!row) {
+      row = document.createElement("div");
+      box.append(row);
+    }
+    updateAgentSessionRow(row, session);
+    existing.delete(session.session_id);
+    ordered.push(row);
+  }
+  for (const row of existing.values()) row.remove();
+  ordered.forEach((row, index) => {
+    if (box.children[index] !== row) box.insertBefore(row, box.children[index] || null);
+  });
 }
 
 // ── 编程助手连接器（专家模式 · 编程助手看管）──
@@ -2230,13 +2294,14 @@ function connectorAgoLabel(deltaMs) {
 }
 
 function connectorState(status, lastEventAtMs, nowMs) {
-  if (!status.installed) return { dot: "missing", hint: "未安装连接脚本" };
-  if (status.script_current === false) return { dot: "stale", hint: "脚本待更新 · 点修复部署新版" };
-  if (!lastEventAtMs) return { dot: "idle", hint: "已安装 · 还没有事件" };
+  if (!status.installed) return { state: "missing", icon: "error", hint: "未接入" };
+  if (status.script_current === false) return { state: "stale", icon: "error", hint: "连接待更新 · 点修复" };
+  if (!lastEventAtMs) return { state: "idle", icon: "connector", hint: "已接入 · 暂无活动" };
   const fresh = nowMs - lastEventAtMs < CONNECTOR_FRESH_MS;
   return {
-    dot: fresh ? "ready" : "idle",
-    hint: `已${fresh ? "连接" : "接入"} · 最近事件 ${connectorAgoLabel(nowMs - lastEventAtMs)}`,
+    state: fresh ? "ready" : "idle",
+    icon: fresh ? "done" : "connector",
+    hint: `${fresh ? "最近有活动" : "已接入"} · ${connectorAgoLabel(nowMs - lastEventAtMs)}`,
   };
 }
 
@@ -2253,7 +2318,7 @@ function renderConnectors() {
     const state = connectorState(status, activity.get(status.source) || 0, nowMs);
     return `
       <div class="connector-row" data-source="${escapeAttr(status.source)}">
-        <span class="connector-dot" data-state="${state.dot}"></span>
+        <span class="connector-icon" data-state="${state.state}">${window.AgentIcons?.render(state.icon) || ""}</span>
         <div class="connector-copy">
           <strong>${escapeHtml(window.AgentSources.label(status.source))}</strong>
           <span class="row-hint">${escapeHtml(state.hint)}</span>
@@ -2275,8 +2340,11 @@ function refreshConnectorActivity() {
     const row = box.querySelector(`[data-source="${status.source}"]`);
     if (!row) return;
     const state = connectorState(status, activity.get(status.source) || 0, nowMs);
-    const dot = row.querySelector(".connector-dot");
-    if (dot) dot.dataset.state = state.dot;
+    const icon = row.querySelector(".connector-icon");
+    if (icon && icon.dataset.state !== state.state) {
+      icon.dataset.state = state.state;
+      icon.innerHTML = window.AgentIcons?.render(state.icon) || "";
+    }
     const hint = row.querySelector(".row-hint");
     if (hint) hint.textContent = state.hint;
   });
@@ -3561,6 +3629,7 @@ if (typeof window !== "undefined") {
     // 闭包内写连接器状态，理由同 setSnapshot。
     setConnectorStatuses: (value) => { connectorStatuses = value; },
     setLatestAgentSnapshot: (value) => { latestAgentSnapshot = value; },
+    renderAgentSessions,
     renderActionItem,
     keyMetaText,
     positionLabel,

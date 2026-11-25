@@ -1,0 +1,30 @@
+/* 运行时状态共享 token：三个窗口共用同一套语义，不改变品牌导航图标。 */
+:root {
+  --agent-active: #6f8fdc;
+  --agent-waiting: #b57b26;
+  --agent-success: #3f8f63;
+  --agent-danger: #b85c5c;
+  --agent-muted: #7b8490;
+}
+
+.agent-state-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  display: inline-block;
+  vertical-align: -3px;
+  color: var(--agent-muted);
+}
+
+.agent-state-icon.state-active { color: var(--agent-active); }
+.agent-state-icon.state-waiting { color: var(--agent-waiting); }
+.agent-state-icon.state-success { color: var(--agent-success); }
+.agent-state-icon.state-danger { color: var(--agent-danger); }
+.agent-state-icon.state-muted { color: var(--agent-muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-state-icon {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -680,7 +680,7 @@ describe('agent toast copy', () => {
       detail: '任务已完成',
     })).toBe('data · Claude Code · 已完成');
     expect(compactAgentToastLine({
-      title: 'data 正在等你',
+      title: 'data 等你处理',
       context: 'data · Claude Code',
       detail: 'Shell 需要确认',
     })).toBe('data · Claude Code · Shell 需要确认');

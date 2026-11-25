@@ -40,8 +40,9 @@ body {
   width: min(229px, calc(100vw - 10px));
   min-height: 43px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: 16px minmax(0, 1fr);
   align-items: center;
+  column-gap: 9px;
   padding: 8px 12px;
   border: 2px solid var(--line);
   border-radius: 21px;
@@ -96,6 +97,16 @@ body {
   border-color: color-mix(in srgb, var(--danger) 72%, var(--line));
 }
 
+.notification-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: start;
+  margin-top: 2px;
+}
+
 .notification-copy {
   min-width: 0;
   display: grid;
@@ -122,7 +133,7 @@ body {
 }
 
 .notification:not(.expanded) .notification-title {
-  text-align: center;
+  text-align: left;
 }
 
 .notification-body {
@@ -168,4 +179,11 @@ body {
 .notification-action:hover {
   color: var(--text);
   background: rgba(255, 255, 255, 0.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notification,
+  .notification-action {
+    transition: none;
+  }
 }

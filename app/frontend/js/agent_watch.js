@@ -1,11 +1,13 @@
 (function () {
   const invoke = window.__TAURI__?.core?.invoke;
   const listen = window.__TAURI__?.event?.listen;
+  const AgentIcons = window.AgentIcons;
   const shell = document.getElementById("agent-watch");
   const watchHeader = document.getElementById("watch-header");
   const watchTitle = document.getElementById("watch-title");
   const stack = document.getElementById("stack");
   const watchCount = document.getElementById("watch-count");
+  const tooltip = document.getElementById("watch-tooltip");
   const expanded = new Set(JSON.parse(localStorage.getItem("agentWatchExpanded") || "[]"));
   let folded = localStorage.getItem("agentWatchFolded") === "true";
   let latest = null;
@@ -14,8 +16,8 @@
   let dragging = false;
   let pendingRender = false;
   let pendingResize = false;
-  // render diff：内容没变的轮询 tick 跳过重绘与 resize
-  let lastStackHtml = null;
+  // 只在卡片结构变化时 resize；年龄/状态文字更新不触发窗口几何变化。
+  let lastResizeSignature = null;
 
   function log(msg, error) {
     const text = error ? `${msg}: ${error.message || error}` : msg;
@@ -33,6 +35,28 @@
 
   function escapeAttr(value) {
     return escapeHtml(value).replace(/'/g, "&#39;");
+  }
+
+  function showTooltip(element) {
+    if (!tooltip || !element) return;
+    const text = element.dataset.tooltip;
+    if (!text) return;
+    tooltip.textContent = text;
+    tooltip.classList.add("visible");
+    tooltip.setAttribute("aria-hidden", "false");
+    const rect = element.getBoundingClientRect();
+    const tipRect = tooltip.getBoundingClientRect();
+    let left = Math.min(Math.max(8, rect.left), window.innerWidth - tipRect.width - 8);
+    let top = rect.bottom + 6;
+    if (top + tipRect.height > window.innerHeight - 8) top = rect.top - tipRect.height - 6;
+    tooltip.style.left = `${Math.max(8, left)}px`;
+    tooltip.style.top = `${Math.max(8, top)}px`;
+  }
+
+  function hideTooltip() {
+    if (!tooltip) return;
+    tooltip.classList.remove("visible");
+    tooltip.setAttribute("aria-hidden", "true");
   }
 
   async function resizeWatch() {
@@ -101,101 +125,53 @@
     });
   }
 
+  function compactMachine(machine) {
+    return String(machine || "").trim().slice(0, 6).toUpperCase();
+  }
+
   function viewOf(session) {
     const display = session.display || {};
     const status = String(session.status || "").toLowerCase();
-    const project = display.project || session.workspace_name || "";
+    const project = display.project || session.workspace_name || "未知项目";
     const headline = display.headline || session.status_label || statusLabel(status);
     const tokens = Number(session.tokens_in ?? 0) + Number(session.tokens_out ?? 0);
     const usageTooltip = tokens
       ? `本轮用量 ${tokens.toLocaleString()} tokens`
       : "本轮用量";
+    const machine = session.machine || "";
     return {
-      title: project || headline || "Agent task",
+      title: project,
+      fullPath: session.workspace || session.session_id || project,
       headline,
       kind: display.action_label || "Task",
       detail: display.detail || "",
+      actionPreview: display.detail || session.tool_input_preview || session.last_response_preview || "",
       project,
       source: display.source_label || window.AgentSources.label(session.source),
-      machine: session.machine || "",
+      sourceBadge: window.AgentSources.badge(session.source),
+      machine,
+      deviceBadge: compactMachine(machine),
       age: display.age_label || ageLabel(session.age_sec),
       tone: display.tone || session.status || "idle",
+      iconName: AgentIcons?.iconForSession(session) || "activity",
       quiet: Boolean(display.quiet),
       usage: String(display.usage_label || ""),
       usageTooltip,
       subtaskLabel: String(display.subtask_label || ""),
-      statusText: statusLine(session, display),
+      statusText: headline,
     };
   }
 
-  function statusLine(session, display) {
-    const status = String(session.status || "").toLowerCase();
-    if (display.detail) return display.detail;
-    if (display.headline && !isDoneStatus(status)) return display.headline;
-    return statusLabel(status);
-  }
-
   function statusLabel(status) {
-    if (status === "waiting") return "等待你处理";
-    if (status === "error") return "需要检查";
-    if (status === "working") return "正在处理";
-    if (status === "tool_running") return "工具运行中";
-    if (status === "compacting") return "正在压缩上下文";
-    if (status === "done") return "已完成";
-    return "任务更新";
+    if (status === "waiting") return "等你处理";
+    if (status === "error") return "执行失败";
+    if (status === "compacting") return "整理上下文";
+    if (status === "done") return "完成";
+    return "";
   }
 
   function isDoneStatus(status) {
     return String(status || "").toLowerCase() === "done";
-  }
-
-  function lineParts(view, session, expandedRow = false) {
-    if (expandedRow) return [];
-    const parts = [];
-    if (!isNoisyActionLabel(view.kind, session)) {
-      parts.push({ value: view.kind, className: "task-kind" });
-    }
-    if (view.subtaskLabel) {
-      parts.push({ value: view.subtaskLabel, className: "task-subtask-count" });
-    }
-    if (!expandedRow && shouldShowStatusText(view, session)) {
-      parts.push({ value: view.statusText, className: "task-status-text" });
-    }
-    return parts;
-  }
-
-  function shouldShowStatusText(view, session) {
-    if (!view.statusText || isDoneStatus(session?.status)) return false;
-    const value = normalizeLine(view.statusText);
-    if (!value) return false;
-    const duplicates = [
-      view.title,
-      view.project,
-      view.headline,
-      session?.workspace_name,
-      session?.display?.project,
-    ].map(normalizeLine).filter(Boolean);
-    return !duplicates.includes(value);
-  }
-
-  function normalizeLine(value) {
-    return String(value || "").trim().toLowerCase();
-  }
-
-  function deviceHue(machine) {
-    const value = String(machine || "").trim();
-    let hash = 0;
-    for (let i = 0; i < value.length; i += 1) {
-      hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0;
-    }
-    return 190 + (Math.abs(hash) % 135);
-  }
-
-  function isNoisyActionLabel(label, session) {
-    const value = String(label || "").trim();
-    if (!value) return true;
-    if (value === "Task") return !(session?.background || session?.task_id);
-    return value.toLowerCase().includes("mcp");
   }
 
   function shouldHideSession(session, allSessions) {
@@ -218,37 +194,25 @@
     return `${Math.floor(ageSec / 3600)}h`;
   }
 
-  function renderMetaItem(item) {
-    const cls = item.className ? ` ${item.className}` : "";
-    return `<span class="task-meta-item${cls}" title="${escapeAttr(item.value)}">${escapeHtml(item.value)}</span>`;
-  }
-
-  function renderTopline(view) {
+  function renderContext(view) {
     const machine = view.machine
-      ? `<span class="task-device" title="${escapeAttr(view.machine)}">${escapeHtml(view.machine)}</span>`
+      ? `<span class="task-device" data-tooltip="设备 ${escapeAttr(view.machine)}">${escapeHtml(view.machine)}</span>`
       : "";
     const source = view.source
-      ? `<span class="task-source" title="${escapeAttr(view.source)}">${escapeHtml(window.AgentSources.compact(view.source))}</span>`
+      ? `<span class="task-source" data-tooltip="${escapeAttr(view.source)}">${escapeHtml(view.source)}</span>`
       : "";
     const usage = view.usage
-      ? `<span class="task-usage" title="${escapeAttr(view.usageTooltip)}">${escapeHtml(view.usage)}</span>`
+      ? `<span class="task-usage" data-tooltip="${escapeAttr(view.usageTooltip)}">${escapeHtml(view.usage)}</span>`
       : "";
-    return `
-      <span class="task-dot" aria-hidden="true"></span>
-      <strong class="task-title" title="${escapeAttr(view.title)}">${escapeHtml(view.title)}</strong>
-      ${machine}
-      ${source}
-      ${usage}
-      ${view.age ? `<span class="task-age">${escapeHtml(view.age)}</span>` : ""}`;
+    if (!machine && !source && !usage) return "";
+    return `${source}${machine}${usage}`;
   }
 
   function detailText(view, session) {
-    const status = String(session.status || "").toLowerCase();
     const lines = [];
-    if (status === "waiting" || status === "error") lines.push(statusLabel(status));
     pushUniqueLine(lines, view.headline, view.title);
-    pushUniqueLine(lines, view.detail, view.headline);
-    if (!lines.length && isDoneStatus(status)) lines.push("任务已完成");
+    pushUniqueLine(lines, view.actionPreview, view.headline);
+    if (!lines.length && isDoneStatus(session?.status)) lines.push("任务完成");
     return lines.filter(Boolean).join("\n");
   }
 
@@ -256,29 +220,23 @@
     const text = String(value || "").trim();
     if (!text) return;
     const compare = String(compareTo || "").trim();
-    if (compare && redundantDetailLine(text, compare)) return;
-    if (lines.some((line) => redundantDetailLine(text, line))) return;
+    if (compare && text === compare) return;
+    if (lines.includes(text)) return;
     lines.push(text);
   }
 
-  function redundantDetailLine(value, existing) {
-    if (value === existing) return true;
-    return existing.endsWith(value) && /^(正在|将|已|需要|等待|工具|任务)/.test(existing);
-  }
-
-  function summaryText(sessions) {
+  function summaryState(sessions) {
     const visible = sessions.filter((session) => !shouldHideSession(session, sessions));
-    const waiting = visible.filter((session) => {
-      const status = String(session.status || "").toLowerCase();
-      return status === "waiting" || status === "error";
-    }).length;
-    const active = visible.filter((session) => {
-      const status = String(session.status || "").toLowerCase();
-      return status === "working" || status === "tool_running" || status === "compacting";
-    }).length;
-    if (waiting) return `${waiting} 需要处理`;
-    if (active) return `${active} 运行中`;
-    return `${visible.length} 条记录`;
+    const count = (statuses) => visible.filter((session) => statuses.includes(String(session.status || "").toLowerCase())).length;
+    const errors = count(["error"]);
+    const waiting = count(["waiting"]);
+    const active = count(["working", "tool_running", "compacting"]);
+    const done = count(["done"]);
+    if (errors) return { symbol: "×", count: errors, state: "error", label: `${errors} 个任务失败` };
+    if (waiting) return { symbol: "!", count: waiting, state: "waiting", label: `${waiting} 个任务待处理` };
+    if (active) return { symbol: "▶", count: active, state: "active", label: `${active} 个任务运行中` };
+    if (done) return { symbol: "✓", count: done, state: "success", label: `${done} 个任务完成` };
+    return { symbol: "–", count: 0, state: "muted", label: "暂无任务" };
   }
 
   function subtaskRows(session, allSessions) {
@@ -300,11 +258,128 @@
               ? " subtask-done"
               : "";
         const label = display.action_label || display.headline || statusLabel(status);
-        return `<li class="task-subtask${cls}" title="${escapeAttr(display.detail || label)}">
+        return `<li class="task-subtask${cls}" data-tooltip="${escapeAttr(display.detail || label)}">
           <span class="subtask-name">${escapeHtml(label)}</span>
           <span class="subtask-age">${escapeHtml(display.age_label || ageLabel(candidate.age_sec))}</span>
         </li>`;
       });
+  }
+
+  function cardMarkup(isExpanded, hasSubtasks) {
+    return `
+      <div class="task-main">
+        <div class="task-identity">
+          <strong class="task-title"></strong>
+          <span class="task-badges">
+            <span class="task-source-badge"></span>
+            <span class="task-device-badge"></span>
+            <span class="task-subtask-count"></span>
+          </span>
+          <span class="task-age"></span>
+        </div>
+        <div class="task-activity">
+          <span class="task-icon" aria-hidden="true"></span>
+          <span class="task-status-text"></span>
+          <span class="task-action-preview"></span>
+        </div>
+        ${isExpanded ? `
+          <div class="task-context"></div>
+          <p class="task-detail"></p>
+          ${hasSubtasks ? `<ul class="task-subtasks"></ul>` : ""}
+          <div class="task-actions"><button class="task-action" type="button" data-action="open-workspace" title="打开这个任务的文件夹" aria-label="打开这个任务的文件夹">打开目录</button></div>
+        ` : ""}
+      </div>
+      <button class="task-dismiss" type="button" data-action="dismiss" title="隐藏这条任务" aria-label="隐藏这条任务">×</button>`;
+  }
+
+  function updateCard(card, session, view, isExpanded, allSessions) {
+    const status = session.status || "idle";
+    const oldStatus = card.dataset.status || "";
+    const oldIcon = card.dataset.icon || "";
+    const oldExpanded = card.dataset.expanded === "true";
+    const focusedAction = document.activeElement?.closest?.(".task-card") === card
+      ? document.activeElement.dataset.action
+      : "";
+    const subtasks = isExpanded ? subtaskRows(session, allSessions) : [];
+    const markup = cardMarkup(isExpanded, subtasks.length > 0);
+    card.className = `task-card ${status} tone-${view.tone} ${view.quiet ? "quiet" : ""} ${isExpanded ? "expanded" : ""}`;
+    card.dataset.id = session.session_id;
+    card.dataset.status = status;
+    card.dataset.icon = view.iconName;
+    card.dataset.expanded = String(isExpanded);
+    card.tabIndex = 0;
+    card.setAttribute("role", "button");
+    card.setAttribute("aria-expanded", String(isExpanded));
+    card.setAttribute("aria-label", detailText(view, session) || view.title);
+    if (card.__markup !== markup) {
+      card.innerHTML = markup;
+      card.__markup = markup;
+    }
+
+    const title = card.querySelector(".task-title");
+    AgentIcons?.setText(title, view.title);
+    title.dataset.tooltip = view.fullPath;
+    title.title = view.fullPath;
+
+    const sourceBadge = card.querySelector(".task-source-badge");
+    AgentIcons?.setText(sourceBadge, view.sourceBadge);
+    sourceBadge.dataset.tooltip = view.source;
+    sourceBadge.title = view.source;
+
+    const deviceBadge = card.querySelector(".task-device-badge");
+    AgentIcons?.setText(deviceBadge, view.deviceBadge);
+    deviceBadge.hidden = !view.deviceBadge;
+    deviceBadge.dataset.tooltip = view.machine ? `设备 ${view.machine}` : "";
+    deviceBadge.title = view.machine ? `设备 ${view.machine}` : "";
+
+    const subtaskCount = card.querySelector(".task-subtask-count");
+    AgentIcons?.setText(subtaskCount, view.subtaskLabel);
+    subtaskCount.hidden = !view.subtaskLabel;
+    subtaskCount.dataset.tooltip = view.subtaskLabel;
+
+    const age = card.querySelector(".task-age");
+    AgentIcons?.setText(age, view.age);
+    age.hidden = !view.age;
+
+    const icon = card.querySelector(".task-icon");
+    if (icon) {
+      icon.innerHTML = AgentIcons?.render(view.iconName) || "";
+      if (oldIcon !== view.iconName && AgentIcons?.stateForStatus(status) === "active") {
+        AgentIcons.pulse(icon.firstElementChild);
+      }
+    }
+
+    const statusText = card.querySelector(".task-status-text");
+    AgentIcons?.setText(statusText, view.statusText);
+    if (oldStatus !== status) AgentIcons?.pulse(statusText);
+
+    const actionPreview = card.querySelector(".task-action-preview");
+    AgentIcons?.setText(actionPreview, view.actionPreview);
+    actionPreview.hidden = !view.actionPreview;
+    actionPreview.dataset.tooltip = view.actionPreview;
+    actionPreview.title = view.actionPreview;
+
+    if (isExpanded) {
+      const context = card.querySelector(".task-context");
+      const contextHtml = renderContext(view);
+      if (context.__html !== contextHtml) {
+        context.innerHTML = contextHtml;
+        context.__html = contextHtml;
+      }
+      const detail = card.querySelector(".task-detail");
+      AgentIcons?.setText(detail, detailText(view, session));
+      detail.hidden = !detail.textContent;
+      const list = card.querySelector(".task-subtasks");
+      if (list) {
+        const subtaskHtml = subtasks.join("");
+        if (list.__html !== subtaskHtml) {
+          list.innerHTML = subtaskHtml;
+          list.__html = subtaskHtml;
+        }
+      }
+    }
+    if (focusedAction) card.querySelector(`[data-action="${focusedAction}"]`)?.focus();
+    if (oldExpanded !== isExpanded) hideTooltip();
   }
 
   function render(snapshot) {
@@ -317,54 +392,54 @@
     const renderableSessions = sortedSessions(sessions).filter(
       (session) => !shouldHideSession(session, sessions)
     );
-    watchCount.textContent = String(sessions.length);
-    if (watchTitle) watchTitle.textContent = renderableSessions.length ? `Agent Watch ${renderableSessions.length}` : "Agent Watch";
-    const summary = summaryText(sessions);
-    if (watchCount) watchCount.textContent = summary;
-    const emptyHtml = `<div class="empty">暂无 Agent 任务</div>`;
-    if (!sessions.length || !renderableSessions.length) {
-      if (lastStackHtml !== emptyHtml) {
-        stack.innerHTML = emptyHtml;
-        lastStackHtml = emptyHtml;
+    if (watchTitle) watchTitle.textContent = "Agent Watch";
+    if (watchCount) {
+      const summary = summaryState(sessions);
+      watchCount.textContent = `${summary.symbol} ${summary.count}`;
+      watchCount.dataset.state = summary.state;
+      watchCount.title = summary.label;
+      watchCount.setAttribute("aria-label", summary.label);
+    }
+
+    if (!renderableSessions.length) {
+      if (!stack.querySelector(".empty") || stack.children.length !== 1) {
+        stack.replaceChildren();
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "暂无 Agent 任务";
+        stack.append(empty);
+        lastResizeSignature = "empty";
         resizeWatch();
       }
       setFolded(false);
       return;
     }
-    const html = renderableSessions.map((session) => {
-      const id = session.session_id;
-      const status = session.status || "idle";
-      const view = viewOf(session);
-      const isExpanded = expanded.has(id);
-      const expandedClass = isExpanded ? "expanded" : "";
-      const detail = detailText(view, session);
-      const items = lineParts(view, session, isExpanded);
-      const meta = items.length
-        ? `<div class="task-meta">${items.map(renderMetaItem).join("")}</div>`
-        : "";
-      const subtasks = isExpanded ? subtaskRows(session, sessions) : [];
-      const subtaskList = subtasks.length
-        ? `<ul class="task-subtasks">${subtasks.join("")}</ul>`
-        : "";
-      const compactClass = items.length ? "" : " compact";
-      const style = view.machine ? ` style="--device-hue: ${deviceHue(view.machine)}"` : "";
-      return `
-        <article class="task-card ${escapeAttr(status)} tone-${escapeAttr(view.tone)} ${view.quiet ? "quiet" : ""} ${expandedClass}${compactClass}"${style} data-id="${escapeAttr(id)}" data-status="${escapeAttr(status)}" tabindex="0" role="button" aria-expanded="${isExpanded ? "true" : "false"}" aria-label="${escapeAttr(detail || view.title)}">
-          <div class="task-main">
-            <div class="task-topline">
-              ${renderTopline(view)}
-            </div>
-            ${meta}
-            ${isExpanded && detail ? `<p class="task-detail">${escapeHtml(detail)}</p>` : ""}
-            ${subtaskList}
-            ${isExpanded ? `<div class="task-actions"><button class="task-action" type="button" data-action="open-workspace" title="打开这个任务的文件夹" aria-label="打开这个任务的文件夹">打开目录</button></div>` : ""}
-          </div>
-          <button class="task-dismiss" type="button" data-action="dismiss" title="隐藏这条任务" aria-label="隐藏这条任务">×</button>
-        </article>`;
-    }).join("");
-    if (html !== lastStackHtml) {
-      stack.innerHTML = html;
-      lastStackHtml = html;
+
+    stack.querySelector(".empty")?.remove();
+    const existing = new Map(
+      [...stack.querySelectorAll(".task-card")].map((card) => [card.dataset.id, card])
+    );
+    const ordered = [];
+    for (const session of renderableSessions) {
+      let card = existing.get(session.session_id);
+      if (!card) {
+        card = document.createElement("article");
+        stack.append(card);
+      }
+      updateCard(card, session, viewOf(session), expanded.has(session.session_id), sessions);
+      existing.delete(session.session_id);
+      ordered.push(card);
+    }
+    for (const card of existing.values()) card.remove();
+    ordered.forEach((card, index) => {
+      if (stack.children[index] !== card) stack.insertBefore(card, stack.children[index] || null);
+    });
+
+    const resizeSignature = ordered
+      .map((card) => `${card.dataset.id}:${card.dataset.expanded}:${card.querySelectorAll(".task-subtask").length}:${card.dataset.status}`)
+      .join("|");
+    if (resizeSignature !== lastResizeSignature) {
+      lastResizeSignature = resizeSignature;
       resizeWatch();
     }
   }
@@ -427,6 +502,25 @@
     saveExpanded();
     render(latest);
   }
+
+  stack.addEventListener("pointerover", (event) => {
+    const target = event.target.closest("[data-tooltip]");
+    if (target) showTooltip(target);
+  });
+  stack.addEventListener("pointerout", (event) => {
+    const target = event.target.closest("[data-tooltip]");
+    if (target && !target.contains(event.relatedTarget)) hideTooltip();
+  });
+  stack.addEventListener("focusin", (event) => {
+    const target = event.target.closest("[data-tooltip]");
+    if (target) showTooltip(target);
+  });
+  stack.addEventListener("focusout", (event) => {
+    const target = event.target.closest("[data-tooltip]");
+    if (target && !target.contains(event.relatedTarget)) hideTooltip();
+  });
+  window.addEventListener("scroll", hideTooltip, true);
+  window.addEventListener("resize", hideTooltip);
 
   stack.addEventListener("click", (event) => {
     if (suppressNextClick) {
@@ -556,15 +650,13 @@
 
   window.__agentWatchRefresh = refresh;
   window.__agentWatchTest = {
-    // 来源标签已收敛到 agent_sources.js，导出仅作兼容测试断言。
     agentSourceLabel: source => window.AgentSources.label(source),
-    renderMetaItem,
-    lineParts,
-    deviceHue,
     render,
     viewOf,
     detailText,
-    summaryText,
+    summaryState,
+    showTooltip,
+    hideTooltip,
   };
   setFolded(folded, false);
   resizeWatch();

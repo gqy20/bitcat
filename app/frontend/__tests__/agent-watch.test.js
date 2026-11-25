@@ -7,6 +7,7 @@ const scriptPath = resolve(process.cwd(), 'js/agent_watch.js');
 const script = readFileSync(scriptPath, 'utf8');
 // agent_watch.js 依赖 agent_sources.js 提供的 window.AgentSources（与页面加载顺序一致）。
 const sourcesScript = readFileSync(resolve(process.cwd(), 'js/agent_sources.js'), 'utf8');
+const iconsScript = readFileSync(resolve(process.cwd(), 'js/agent_icons.js'), 'utf8');
 
 function createDom(invoke) {
   const dom = new JSDOM(`<!doctype html>
@@ -16,6 +17,7 @@ function createDom(invoke) {
         <div class="watch-actions"><span id="watch-count"></span></div>
       </header>
       <div id="stack"></div>
+      <div id="watch-tooltip" class="watch-tooltip"></div>
     </section>`, {
     url: 'http://localhost/agent_watch.html',
     runScripts: 'outside-only',
@@ -24,6 +26,7 @@ function createDom(invoke) {
   dom.window.localStorage.clear();
   dom.window.setInterval = () => 0;
   dom.window.eval(sourcesScript);
+  dom.window.eval(iconsScript);
   dom.window.eval(script);
   return dom;
 }
@@ -39,40 +42,20 @@ describe('agent watch metadata', () => {
     dom?.window?.close();
   });
 
-  it('builds compact row metadata from kind and status text', () => {
-    const parts = dom.window.__agentWatchTest.lineParts({
-      machine: 'qy113',
-      project: '2605',
-      source: 'Claude Code',
-      kind: 'Patch',
-      statusText: '正在修改文件',
-    }, { status: 'working' });
-    const values = parts.map((part) => part.value);
-
-    expect(values).toEqual(['Patch', '正在修改文件']);
-    expect(parts.map((part) => part.className)).toContain('task-status-text');
-  });
-
-  it('hides repeated project-only status text in collapsed rows', () => {
-    const parts = dom.window.__agentWatchTest.lineParts({
-      title: 'bx',
-      project: 'bx',
-      headline: 'bx',
-      source: 'Codex',
-      kind: 'Task',
-      statusText: 'bx',
-    }, {
-      status: 'working',
-      workspace_name: 'bx',
-      display: { project: 'bx' },
+  it('summarizes header state with a symbol and count', () => {
+    const summary = dom.window.__agentWatchTest.summaryState;
+    expect(summary([{ status: 'working' }, { status: 'tool_running' }])).toMatchObject({
+      symbol: '▶', count: 2, state: 'active',
     });
-
-    expect(parts).toEqual([]);
-  });
-
-  it('assigns stable hues for device badges', () => {
-    expect(dom.window.__agentWatchTest.deviceHue('qy113')).toBe(dom.window.__agentWatchTest.deviceHue('qy113'));
-    expect(dom.window.__agentWatchTest.deviceHue('qy113')).not.toBe(dom.window.__agentWatchTest.deviceHue('android'));
+    expect(summary([{ status: 'waiting' }, { status: 'error' }])).toMatchObject({
+      symbol: '×', count: 1, state: 'error',
+    });
+    expect(summary([{ status: 'done' }])).toMatchObject({
+      symbol: '✓', count: 1, state: 'success',
+    });
+    expect(summary([])).toMatchObject({
+      symbol: '–', count: 0, state: 'muted',
+    });
   });
 
   it('labels all supported agent sources', () => {
@@ -81,6 +64,7 @@ describe('agent watch metadata', () => {
     expect(label('codex')).toBe('Codex');
     expect(label('pi')).toBe('pi');
     expect(label('opencode')).toBe('opencode');
+    expect(label('zcode')).toBe('ZCode');
     expect(label('unknown-x')).toBe('unknown-x');
     expect(label(undefined)).toBe('Agent');
   });
@@ -108,14 +92,97 @@ describe('agent watch metadata', () => {
 
     const card = dom.window.document.querySelector('.task-card');
 
-    expect(dom.window.document.getElementById('watch-title')?.textContent).toBe('Agent Watch 1');
+    expect(dom.window.document.getElementById('watch-title')?.textContent).toBe('Agent Watch');
+    expect(dom.window.document.getElementById('watch-count')?.textContent).toBe('▶ 1');
+    expect(dom.window.document.getElementById('watch-count')?.dataset.state).toBe('active');
     expect(card.querySelector('.task-title')?.textContent).toBe('TrumanWorld');
-    expect(card.querySelector('.task-topline')?.textContent).toContain('qy113');
-    expect(card.querySelector('.task-topline')?.textContent).toContain('Codex');
-    expect(card.getAttribute('style')).toContain('--device-hue');
+    expect(card.querySelector('.task-source-badge')?.textContent).toBe('CX');
+    expect(card.querySelector('.task-device-badge')?.textContent).toBe('QY113');
+    expect(card.querySelector('.task-icon svg')).not.toBeNull();
+    expect(card.querySelector('.task-status-text')?.textContent).toBe('Running tests');
+    expect(card.querySelector('.task-action-preview')?.textContent).toBe('cargo test');
     expect(card.querySelector('.task-age')?.textContent).toBe('2s');
     expect(card.querySelectorAll('[data-action="dismiss"]')).toHaveLength(1);
     expect(card.querySelector('.task-detail')).toBeNull();
+  });
+
+  it('shows the full action preview in a tooltip on hover', () => {
+    dom.window.__agentWatchTest.render({
+      sessions: [{
+        session_id: 's-tooltip',
+        source: 'codex',
+        workspace_name: 'bitcat',
+        status: 'tool_running',
+        display: {
+          action_label: 'Shell',
+          headline: '执行',
+          detail: 'cargo test --release --all-features',
+          project: 'bitcat',
+          source_label: 'Codex',
+          tone: 'active',
+        },
+      }],
+    });
+    const preview = dom.window.document.querySelector('.task-action-preview');
+    preview.dispatchEvent(new dom.window.Event('pointerover', { bubbles: true }));
+
+    const tooltip = dom.window.document.getElementById('watch-tooltip');
+    expect(tooltip.textContent).toBe('cargo test --release --all-features');
+    expect(tooltip.classList.contains('visible')).toBe(true);
+  });
+
+  it('updates an existing card in place when only its status changes', () => {
+    const base = {
+      session_id: 's-stable',
+      source: 'claude_code',
+      workspace_name: 'bitcat',
+      display: {
+        action_label: 'Shell',
+        headline: '执行',
+        detail: 'cargo test',
+        project: 'bitcat',
+        source_label: 'Claude Code',
+        tone: 'active',
+      },
+    };
+    dom.window.__agentWatchTest.render({ sessions: [{ ...base, status: 'tool_running', age_sec: 2, display: { ...base.display, age_label: '2s' } }] });
+    const card = dom.window.document.querySelector('.task-card');
+    const titleNode = card.querySelector('.task-title');
+
+    dom.window.__agentWatchTest.render({
+      sessions: [{ ...base, status: 'tool_running', age_sec: 3, display: { ...base.display, age_label: '3s' } }],
+    });
+    expect(card.querySelector('.task-title')).toBe(titleNode);
+    expect(card.querySelector('.task-age')?.textContent).toBe('3s');
+
+    dom.window.__agentWatchTest.render({
+      sessions: [{ ...base, status: 'done', display: { ...base.display, headline: '完成', tone: 'done' } }],
+    });
+    expect(dom.window.document.querySelector('.task-card')).toBe(card);
+    expect(card.querySelector('.task-status-text')?.textContent).toBe('完成');
+  });
+
+  it('keeps an explicit completion label on collapsed done cards', () => {
+    dom.window.__agentWatchTest.render({
+      sessions: [{
+        session_id: 's-done',
+        source: 'claude_code',
+        workspace_name: 'bitcat',
+        status: 'done',
+        display: {
+          action_label: 'Shell',
+          headline: '完成',
+          detail: '',
+          project: 'bitcat',
+          source_label: 'Claude Code',
+          tone: 'done',
+        },
+      }],
+    });
+
+    const card = dom.window.document.querySelector('.task-card');
+    expect(card.querySelector('.task-status-text')?.textContent).toBe('完成');
+    expect(card.querySelector('.task-icon svg')).not.toBeNull();
   });
 
   it('expands a task row to reveal detail and contextual actions', () => {
@@ -146,13 +213,15 @@ describe('agent watch metadata', () => {
     expect(expandedCard.classList.contains('expanded')).toBe(true);
     expect(expandedCard.getAttribute('aria-expanded')).toBe('true');
     expect(expandedCard.querySelector('.task-detail')?.textContent).toContain('将执行 cargo test');
+    expect(expandedCard.querySelector('.task-context')?.textContent).toContain('Claude');
+    expect(expandedCard.querySelector('.task-context')?.textContent).toContain('qy113');
     expect(expandedCard.querySelector('.task-meta')).toBeNull();
     expect(expandedCard.querySelector('[data-action="open"]')).toBeNull();
     expect(expandedCard.querySelector('.task-expanded-actions')).toBeNull();
     expect(expandedCard.querySelector('[data-action="open-workspace"]')).not.toBeNull();
   });
 
-  it('shows usage label in the topline when the backend provides one', () => {
+  it('shows usage label in expanded context when the backend provides one', () => {
     dom.window.__agentWatchTest.render({
       sessions: [{
         session_id: 's-usage',
@@ -173,9 +242,10 @@ describe('agent watch metadata', () => {
       }],
     });
 
+    dom.window.document.querySelector('.task-card').click();
     const usage = dom.window.document.querySelector('.task-card .task-usage');
     expect(usage?.textContent).toBe('12.3k');
-    expect(usage?.getAttribute('title')).toContain('12,345');
+    expect(usage?.dataset.tooltip).toContain('12,345');
   });
 
   it('omits the usage chip when there is no usage data', () => {
@@ -208,7 +278,7 @@ describe('agent watch metadata', () => {
         status: 'tool_running',
         display: {
           action_label: 'Shell',
-          headline: '正在运行',
+          headline: '执行',
           detail: 'npm mvp:play',
           project: 'Whispering_Town',
           source_label: 'Codex',
@@ -221,7 +291,7 @@ describe('agent watch metadata', () => {
     dom.window.document.querySelector('.task-card').click();
 
     const detail = dom.window.document.querySelector('.task-detail')?.textContent || '';
-    expect(detail).toBe('正在运行\nnpm mvp:play');
+    expect(detail).toBe('执行\nnpm mvp:play');
   });
 
   it('dismisses a processed task through an action button', async () => {
@@ -285,7 +355,7 @@ describe('agent watch metadata', () => {
     expect(calls.some((call) => call.name === 'cmd_dismiss_agent_session')).toBe(false);
   });
 
-  it('does not spell out completed detail inside collapsed done rows', () => {
+  it('shows an explicit done label without technical detail on collapsed rows', () => {
     dom.window.__agentWatchTest.render({
       sessions: [{
         session_id: 's2',
@@ -308,9 +378,9 @@ describe('agent watch metadata', () => {
     const card = dom.window.document.querySelector('.task-card');
 
     expect(card.querySelector('.task-title')?.textContent).toBe('bitcat');
-    expect(card.querySelector('.task-meta')?.textContent).toContain('Shell');
-    expect(card.textContent).not.toContain('Done');
-    expect(card.textContent).not.toContain('Task finished');
+    expect(card.querySelector('.task-status-text')?.textContent).toBe('Done');
+    expect(card.querySelector('.task-action-preview')?.textContent).toBe('Task finished');
+    expect(card.textContent).not.toContain('Shell');
   });
 
   it('keeps the CSS shaped like an island header with notification rows', () => {
@@ -322,7 +392,9 @@ describe('agent watch metadata', () => {
     expect(sheet).toContain('overflow-y: auto;');
     expect(sheet).toContain('.watch-shell.folded .task-stack');
     expect(sheet).toContain('.task-card:hover .task-dismiss');
-    expect(sheet).toContain('.task-meta:empty');
+    expect(sheet).toContain('.task-identity');
+    expect(sheet).toContain('.task-activity');
+    expect(sheet).toContain('.watch-tooltip.visible');
     expect(sheet).toContain('scrollbar-width: none;');
     expect(sheet).toContain('.task-detail::-webkit-scrollbar { display: none; }');
     expect(sheet).toContain('background: transparent;');
@@ -352,7 +424,11 @@ describe('agent watch metadata', () => {
     expect(view.source).toBe('Codex');
     expect(view.kind).toBe('Shell');
     expect(view.detail).toBe('scripts/remote-install.sh');
-    expect(view.statusText).toBe('scripts/remote-install.sh');
+    expect(view.statusText).toBe('Run remote install self-check');
+    expect(view.iconName).toBe('shell');
+    expect(view.sourceBadge).toBe('CX');
+    expect(view.deviceBadge).toBe('QY113');
+    expect(view.actionPreview).toBe('scripts/remote-install.sh');
   });
 });
 
@@ -379,7 +455,7 @@ describe('agent watch subtask grouping', () => {
         project: 'bitcat',
         source_label: 'Claude Code',
         tone: 'active',
-        subtask_label: '2 个子任务运行中',
+        subtask_label: '2 运行中',
       },
     };
     const childA = {
@@ -405,7 +481,7 @@ describe('agent watch subtask grouping', () => {
     const doc = dom.window.document;
     // 只渲染主卡片；子会话聚合进去。
     expect(doc.querySelectorAll('.task-card')).toHaveLength(1);
-    expect(doc.querySelector('.task-card .task-subtask-count')?.textContent).toBe('2 个子任务运行中');
+    expect(doc.querySelector('.task-card .task-subtask-count')?.textContent).toBe('2 运行中');
 
     // 展开后显示子任务明细行。
     doc.querySelector('.task-card').click();

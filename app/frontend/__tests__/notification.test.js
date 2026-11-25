@@ -4,10 +4,12 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const script = readFileSync(resolve(process.cwd(), 'js/notification.js'), 'utf8');
+const iconsScript = readFileSync(resolve(process.cwd(), 'js/agent_icons.js'), 'utf8');
 
 function createDom(invoke = vi.fn().mockResolvedValue(undefined)) {
   const dom = new JSDOM(`<!doctype html>
     <main id="notification" class="notification hidden">
+      <span id="notificationIcon" class="notification-icon"></span>
       <section class="notification-copy">
         <div class="notification-title" id="notificationTitle"></div>
         <div class="notification-body" id="notificationBody"></div>
@@ -26,6 +28,7 @@ function createDom(invoke = vi.fn().mockResolvedValue(undefined)) {
     return 1;
   };
   dom.window.clearTimeout = vi.fn();
+  dom.window.eval(iconsScript);
   dom.window.eval(script);
   return { dom, invoke };
 }
@@ -47,6 +50,7 @@ describe('notification island', () => {
       title: '喝水',
       body: '该喝水了',
       tone: 'warning',
+      source: 'reminder',
       ttl_ms: 12000,
       reminder_id: 'rem_1',
       actions: [{ id: 'snooze_10', label: '10 分钟后' }],
@@ -57,6 +61,7 @@ describe('notification island', () => {
     expect(root.classList.contains('expanded')).toBe(true);
     expect(root.classList.contains('tone-warning')).toBe(true);
     expect(dom.window.document.getElementById('notificationTitle').textContent).toBe('喝水');
+    expect(dom.window.document.querySelector('.notification-icon svg')).not.toBeNull();
     expect(dom.window.document.querySelector('.notification-action').textContent).toBe('10 分钟后');
   });
 

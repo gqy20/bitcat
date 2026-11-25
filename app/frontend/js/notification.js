@@ -4,6 +4,7 @@
   const invoke = tauri?.core?.invoke;
 
   const root = document.getElementById("notification");
+  const iconEl = document.getElementById("notificationIcon");
   const titleEl = document.getElementById("notificationTitle");
   const bodyEl = document.getElementById("notificationBody");
   const actionsEl = document.getElementById("notificationActions");
@@ -35,10 +36,25 @@
     invoke("cmd_notification_resize", { height }).catch(() => {});
   }
 
+  function iconForPayload(payload) {
+    if (payload?.source === "reminder") return "reminder";
+    if (payload?.tone === "success") return "done";
+    if (payload?.tone === "danger") return "error";
+    if (payload?.tone === "warning") return "permission";
+    return "activity";
+  }
+
   function showNow(payload) {
     current = payload || {};
-    titleEl.textContent = escapeText(current.title || "提醒");
-    bodyEl.textContent = escapeText(current.body || "");
+    const iconName = iconForPayload(current);
+    if (iconEl) {
+      iconEl.innerHTML = window.AgentIcons?.render(iconName) || "";
+      if (current.tone === "warning" || current.tone === "danger") {
+        window.AgentIcons?.pulse(iconEl.firstElementChild);
+      }
+    }
+    window.AgentIcons?.setText(titleEl, escapeText(current.title || "提醒"));
+    window.AgentIcons?.setText(bodyEl, escapeText(current.body || ""));
     actionsEl.replaceChildren(...(current.actions || []).map(renderAction));
     setTone(current.tone);
     root.classList.toggle("expanded", Boolean(current.body) || (current.actions || []).length > 0);

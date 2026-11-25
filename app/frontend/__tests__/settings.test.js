@@ -34,6 +34,7 @@ function loadSettings(body = '', invoke = null) {
   if (invoke) dom.window.__TAURI__ = { core: { invoke } };
   // settings.js 依赖 agent_sources.js 提供的 window.AgentSources（与页面加载顺序一致）。
   dom.window.eval(fs.readFileSync(resolve(process.cwd(), 'js/agent_sources.js'), 'utf8'));
+  dom.window.eval(fs.readFileSync(resolve(process.cwd(), 'js/agent_icons.js'), 'utf8'));
   const script = fs.readFileSync(resolve(process.cwd(), 'js/settings.js'), 'utf8');
   dom.window.eval(script);
   return { dom, helpers: dom.window.__settingsTest };
@@ -488,15 +489,41 @@ describe('agent connectors panel', () => {
       { source: 'codex', updated_at_ms: now - 3 * 24 * 60 * 60 * 1000 },
     ]);
     const stateOf = source =>
-      dom.window.document.querySelector(`[data-source="${source}"] .connector-dot`).dataset.state;
+      dom.window.document.querySelector(`[data-source="${source}"] .connector-icon`).dataset.state;
     expect(stateOf('claude_code')).toBe('ready');
     expect(stateOf('codex')).toBe('idle');
     expect(stateOf('zcode')).toBe('missing');
     expect(stateOf('pi')).toBe('missing');
     expect(stateOf('opencode')).toBe('idle');
     expect(helpers.connectorState({ source: 'pi', installed: false }, 0, now)).toEqual({
-      dot: 'missing', hint: '未安装连接脚本',
+      state: 'missing', icon: 'error', hint: '未接入',
     });
+    dom.window.close();
+  });
+});
+
+describe('agent session rows', () => {
+  it('uses the shared scene icon and backend headline', () => {
+    const { dom, helpers } = loadSettings('<div id="aw-sessions"></div>');
+    helpers.renderAgentSessions({
+      sessions: [{
+        session_id: 's1',
+        source: 'claude_code',
+        machine: 'QY',
+        workspace: 'E:\\ai\\8bit',
+        workspace_name: '8bit',
+        status: 'tool_running',
+        status_label: '工具运行中',
+        tool_name: 'Bash',
+        display: { action_label: 'Shell', headline: '正在执行' },
+      }],
+    });
+
+    const row = dom.window.document.querySelector('.agent-session');
+    expect(row.querySelector('.agent-session-icon svg')).not.toBeNull();
+    expect(row.querySelector('.agent-session-status')?.textContent).toBe('正在执行');
+    expect(row.querySelector('.agent-session-meta')?.textContent).toContain('Claude Code');
+    expect(row.querySelector('.agent-session-meta')?.textContent).toContain('Bash');
     dom.window.close();
   });
 });

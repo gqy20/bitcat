@@ -146,30 +146,30 @@ impl ClaudeHookEvent {
             user_prompt_preview: self
                 .prompt
                 .as_deref()
-                .and_then(|value| preview_text(value, PREVIEW_CHARS))
+                .and_then(clean_hook_preview)
                 .or_else(|| {
                     string_field(&self.extra, "user_prompt")
                         .as_deref()
-                        .and_then(|value| preview_text(value, PREVIEW_CHARS))
+                        .and_then(clean_hook_preview)
                 })
                 .or_else(|| {
                     string_field(&self.extra, "task_subject")
                         .as_deref()
-                        .and_then(|value| preview_text(value, PREVIEW_CHARS))
+                        .and_then(clean_hook_preview)
                 })
                 .or_else(|| {
                     string_field(&self.extra, "task_description")
                         .as_deref()
-                        .and_then(|value| preview_text(value, PREVIEW_CHARS))
+                        .and_then(clean_hook_preview)
                 }),
             last_response_preview: self
                 .last_assistant_message
                 .as_deref()
-                .and_then(|value| preview_text(value, PREVIEW_CHARS))
+                .and_then(clean_hook_preview)
                 .or_else(|| {
                     string_field(&self.extra, "lastAssistantMessage")
                         .as_deref()
-                        .and_then(|value| preview_text(value, PREVIEW_CHARS))
+                        .and_then(clean_hook_preview)
                 }),
             pid: self.pid.or_else(|| u32_field(&self.extra, "pid")),
             background: background.background,
@@ -251,6 +251,24 @@ pub fn map_hook_status(name: &str) -> AgentStatus {
         "interrupted" => AgentStatus::Interrupted,
         _ => AgentStatus::Working,
     }
+}
+
+/// Keep task-notification envelopes out of user-facing previews.
+///
+/// Claude Code injects background-task completion as XML-like system text. The
+/// useful part is the short `<summary>`; task/tool ids and output paths are
+/// diagnostics and should not occupy the Agent Watch card.
+fn clean_hook_preview(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.contains("<task-notification>") {
+        let start = trimmed.find("<task-notification>")?;
+        let rest = &trimmed[start..];
+        let summary_start = rest.find("<summary>")?;
+        let after = &rest[summary_start + "<summary>".len()..];
+        let end = after.find("</summary>")?;
+        return preview_text(&after[..end], PREVIEW_CHARS);
+    }
+    preview_text(trimmed, PREVIEW_CHARS)
 }
 
 fn background_fields(
@@ -866,6 +884,44 @@ mod tests {
         assert_eq!(event.session_id, "claude:parent:task:task-9");
         assert_eq!(event.status, AgentStatus::Done);
         assert_eq!(event.parent_session_id.as_deref(), Some("parent"));
+    }
+
+    #[test]
+    fn task_notification_preview_uses_summary_only() {
+        let raw = r#"{
+            "session_id": "parent",
+            "hook_event_name": "TaskCompleted",
+            "cwd": "D:\\repo",
+            "task_id": "bg-42",
+            "last_assistant_message": "<task-notification><task-id>bg-42</task-id><tool-use-id>call-1</tool-use-id><status>completed</status><summary>Background command tests completed</summary></task-notification>"
+        }"#;
+        let event = ClaudeHookEvent::from_json(raw)
+            .unwrap()
+            .into_session_event(120)
+            .unwrap();
+
+        assert_eq!(
+            event.last_response_preview.as_deref(),
+            Some("Background command tests completed")
+        );
+        assert!(!event.last_response_preview.unwrap().contains("task-id"));
+    }
+
+    #[test]
+    fn task_notification_without_summary_is_ignored() {
+        let raw = r#"{
+            "session_id": "parent",
+            "hook_event_name": "TaskCompleted",
+            "cwd": "D:\\repo",
+            "task_id": "bg-42",
+            "last_assistant_message": "<task-notification><task-id>bg-42</task-id><status>completed</status></task-notification>"
+        }"#;
+        let event = ClaudeHookEvent::from_json(raw)
+            .unwrap()
+            .into_session_event(120)
+            .unwrap();
+
+        assert!(event.last_response_preview.is_none());
     }
 
     #[test]

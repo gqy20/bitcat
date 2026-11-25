@@ -5,20 +5,22 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Agent Watch</title>
+  <link rel="stylesheet" href="/css/agent_state.css" />
   <link rel="stylesheet" href="/css/agent_watch.css" />
 </head>
 <body>
   <main id="agent-watch" class="watch-shell">
     <header class="watch-header" id="watch-header" tabindex="0" title="Agent Watch">
-      <span class="watch-dot" aria-hidden="true"></span>
       <span id="watch-title" class="watch-title">Agent Watch</span>
       <div class="watch-actions" aria-label="Agent Watch actions">
-        <span id="watch-count" class="watch-count">0</span>
+        <span id="watch-count" class="watch-count" data-state="muted">– 0</span>
       </div>
     </header>
     <section id="stack" class="task-stack" aria-live="polite"></section>
+    <div id="watch-tooltip" class="watch-tooltip" role="tooltip" aria-hidden="true"></div>
   </main>
   <script src="/js/agent_sources.js"></script>
+  <script src="/js/agent_icons.js"></script>
   <script src="/js/agent_watch.js"></script>
 </body>
 </html>

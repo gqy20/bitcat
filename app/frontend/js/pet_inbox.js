@@ -39,7 +39,7 @@
 
   function describeAgentSession(session) {
     const display = session?.display || {};
-    const heading = display.headline || session.status_label || session.status || 'Agent 需要处理';
+    const heading = display.headline || session.status_label || 'Agent 需要处理';
     const source = display.source_label || session.source || 'Agent';
     const project = display.project || session.workspace_name || '';
     const kind = display.action_label || '';
