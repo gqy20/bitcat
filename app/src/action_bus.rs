@@ -12,7 +12,7 @@ use bitcat_core::action::ActionDef;
 use bitcat_core::logging::log_preview;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tracing::{debug, info, warn};
 
 // ---- Action 类型 ----
@@ -58,6 +58,10 @@ pub enum Action {
     PlayBeadsDefault,
     /// Start the built-in desktop invasion mode.
     PlayInvasionDefault,
+    /// Start the system-audio reactive music mode.
+    StartMusicMode,
+    /// Stop the current music/performance mode.
+    StopMusicMode,
     /// 立即截图 + Vision 分析
     ScreenshotNow,
     /// 启动程序（launch 动作）
@@ -246,6 +250,30 @@ impl ActionBus {
                     warn!(error = %e, "play invasion action failed");
                 }
             }
+            Action::StartMusicMode => {
+                info!(?source, action = "StartMusicMode", "action dispatch");
+                let shared: tauri::State<'_, crate::audio_reactive::SharedAudioReactive> =
+                    tauri::Manager::state(app);
+                if let Err(e) = crate::audio_reactive::start_wasapi_music_dance(app, shared.inner())
+                {
+                    warn!(error = %e, "start music mode action failed");
+                    let _ = app.emit_to(
+                        "pet",
+                        "performance-error",
+                        serde_json::json!({
+                            "session_id": null,
+                            "message": e,
+                            "recoverable": true,
+                        }),
+                    );
+                }
+            }
+            Action::StopMusicMode => {
+                info!(?source, action = "StopMusicMode", "action dispatch");
+                let shared: tauri::State<'_, crate::audio_reactive::SharedAudioReactive> =
+                    tauri::Manager::state(app);
+                crate::audio_reactive::stop_music_dance(app, shared.inner(), "action_stop");
+            }
             Action::ScreenshotNow => {
                 info!(?source, action = "ScreenshotNow", "action dispatch");
                 let app = app.clone();
@@ -422,6 +450,8 @@ mod tests {
             Action::PlayArenaDefault,
             Action::PlayBeadsDefault,
             Action::PlayInvasionDefault,
+            Action::StartMusicMode,
+            Action::StopMusicMode,
             Action::ScreenshotNow,
             Action::Launch {
                 program: "code".into(),

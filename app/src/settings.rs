@@ -285,6 +285,12 @@ pub struct AppearanceInput {
     pub notification_sound_agent_watch: bool,
     #[serde(default = "default_true")]
     pub notification_sound_skip_agent_tts: bool,
+    #[serde(default = "default_true")]
+    pub music_mode_enabled: bool,
+    #[serde(default = "default_music_mode_sensitivity")]
+    pub music_mode_sensitivity: f32,
+    #[serde(default = "default_music_mode_intensity")]
+    pub music_mode_intensity: f32,
     #[serde(default)]
     pub reminder_ai_personalization_enabled: bool,
     #[serde(default = "default_reminder_ai_timeout_ms")]
@@ -380,6 +386,12 @@ fn default_camera_observation_interval_sec() -> u64 {
 }
 fn default_reminder_ai_timeout_ms() -> u64 {
     3_000
+}
+fn default_music_mode_sensitivity() -> f32 {
+    1.0
+}
+fn default_music_mode_intensity() -> f32 {
+    1.0
 }
 fn default_first_nudge_after_sec() -> u64 {
     30
@@ -1086,6 +1098,9 @@ pub async fn cmd_settings_save_appearance(
         notification_sound_reminder: payload.notification_sound_reminder,
         notification_sound_agent_watch: payload.notification_sound_agent_watch,
         notification_sound_skip_agent_tts: payload.notification_sound_skip_agent_tts,
+        music_mode_enabled: payload.music_mode_enabled,
+        music_mode_sensitivity: payload.music_mode_sensitivity.clamp(0.2, 3.0),
+        music_mode_intensity: payload.music_mode_intensity.clamp(0.2, 2.0),
         reminder_ai_personalization_enabled: payload.reminder_ai_personalization_enabled,
         reminder_ai_timeout_ms: payload.reminder_ai_timeout_ms.clamp(500, 10_000),
         global_shortcut: payload.global_shortcut,

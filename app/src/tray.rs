@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, LogicalPosition, Manager, WebviewWindow,
+    AppHandle, LogicalPosition, Manager, WebviewWindow,
 };
 use tracing::info;
 
@@ -11,6 +11,7 @@ const MENU_SCREENSHOT: &str = "screenshot";
 const MENU_COLLAPSE: &str = "collapse";
 const MENU_TOP: &str = "top";
 const MENU_STOP_DANCE: &str = "stop-dance";
+const MENU_START_MUSIC: &str = "start-music";
 const MENU_RELOAD: &str = "reload";
 const MENU_SETTINGS: &str = "settings";
 const MENU_EXPORT_DIAGNOSTICS: &str = "export-diagnostics";
@@ -20,6 +21,7 @@ const PET_MENU_CHAT: &str = "pet-context-chat";
 const PET_MENU_SCREENSHOT: &str = "pet-context-screenshot";
 const PET_MENU_PANEL: &str = "pet-context-panel";
 const PET_MENU_STOP_DANCE: &str = "pet-context-stop-dance";
+const PET_MENU_START_MUSIC: &str = "pet-context-start-music";
 const PET_MENU_COLLAPSE: &str = "pet-context-collapse";
 const PET_MENU_TOP: &str = "pet-context-top";
 const PET_MENU_MORE: &str = "pet-context-more";
@@ -35,6 +37,8 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let collapse_item = MenuItem::with_id(app, MENU_COLLAPSE, "折叠", true, None::<&str>)?;
     let top_item = MenuItem::with_id(app, MENU_TOP, "取消置顶", true, None::<&str>)?;
     let stop_dance_item = MenuItem::with_id(app, MENU_STOP_DANCE, "停止舞动", true, None::<&str>)?;
+    let start_music_item =
+        MenuItem::with_id(app, MENU_START_MUSIC, "跟随音乐舞动", true, None::<&str>)?;
     let separator_state = PredefinedMenuItem::separator(app)?;
     let reload_item = MenuItem::with_id(app, MENU_RELOAD, "重新载入配置", true, None::<&str>)?;
     let diagnostics_item = MenuItem::with_id(
@@ -54,6 +58,7 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             &separator_primary,
             &collapse_item,
             &top_item,
+            &start_music_item,
             &stop_dance_item,
             &separator_state,
             &reload_item,
@@ -92,6 +97,7 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 let _ = top_item.set_text(label);
             }
             MENU_STOP_DANCE => stop_dance(app),
+            MENU_START_MUSIC => start_music_mode(app),
             MENU_RELOAD => {
                 ws_reload_config(app);
             }
@@ -138,6 +144,7 @@ pub fn handle_pet_context_menu_event(app: &AppHandle, event: MenuEvent) {
             }
         }
         PET_MENU_STOP_DANCE => stop_dance(app),
+        PET_MENU_START_MUSIC => start_music_mode(app),
         PET_MENU_COLLAPSE => {
             let _ = toggle_pet_collapse(app);
         }
@@ -176,6 +183,14 @@ pub async fn cmd_show_pet_context_menu(
         .map_err(|e| e.to_string())?;
     let separator_primary = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
     let is_performing = bitcat_core::performance::is_performing();
+    let start_music_item = MenuItem::with_id(
+        &app,
+        PET_MENU_START_MUSIC,
+        "跟随音乐舞动",
+        true,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
     let stop_dance_item = MenuItem::with_id(
         &app,
         PET_MENU_STOP_DANCE,
@@ -220,6 +235,7 @@ pub async fn cmd_show_pet_context_menu(
             &screenshot_item,
             &panel_item,
             &separator_primary,
+            &start_music_item,
             &stop_dance_item,
             &separator_performance,
             &collapse_item,
@@ -256,20 +272,24 @@ fn analyze_current_screen(app: &AppHandle) {
     });
 }
 
+fn start_music_mode(app: &AppHandle) {
+    crate::action_bus::ActionBus::dispatch(
+        app,
+        crate::action_bus::Action::StartMusicMode,
+        crate::action_bus::ActionSource::Frontend {
+            cmd: "tray:start-music".into(),
+        },
+    );
+}
+
 fn stop_dance(app: &AppHandle) {
-    let shared = app.state::<crate::audio_reactive::SharedAudioReactive>();
-    crate::audio_reactive::stop_music_dance(app, shared.inner(), "menu_stop");
-    if let Some(session) = bitcat_core::performance::current_performance() {
-        let _ = app.emit_to(
-            "pet",
-            "performance-stop",
-            serde_json::json!({
-                "session_id": session.id,
-                "reason": "menu_stop",
-            }),
-        );
-        bitcat_core::performance::stop_performance(session.id, "menu_stop");
-    }
+    crate::action_bus::ActionBus::dispatch(
+        app,
+        crate::action_bus::Action::StopMusicMode,
+        crate::action_bus::ActionSource::Frontend {
+            cmd: "tray:stop-dance".into(),
+        },
+    );
 }
 
 fn toggle_pet_collapse(app: &AppHandle) -> bool {
@@ -361,12 +381,17 @@ mod tests {
             MENU_SCREENSHOT,
             MENU_COLLAPSE,
             MENU_TOP,
+            MENU_STOP_DANCE,
+            MENU_START_MUSIC,
             MENU_RELOAD,
             MENU_SETTINGS,
+            MENU_EXPORT_DIAGNOSTICS,
             MENU_EXIT,
             PET_MENU_CHAT,
             PET_MENU_SCREENSHOT,
             PET_MENU_PANEL,
+            PET_MENU_STOP_DANCE,
+            PET_MENU_START_MUSIC,
             PET_MENU_COLLAPSE,
             PET_MENU_TOP,
             PET_MENU_MORE,

@@ -177,6 +177,21 @@ describe('music reactive performance player', () => {
     expect(frame.offset).toEqual({ x: 0, y: 0 });
     expect(frame.spriteOptions.offsetY).toBeTypeOf('number');
   });
+
+  it('applies sensitivity and intensity from music frames', () => {
+    const normal = new MusicReactivePlayer({ session_id: 9, kind: 'music-reactive' }, metrics);
+    normal.handleFrame({ energy: 0.08, bass: 0.08, onset: true, sensitivity: 1, intensity: 1 });
+    expect(normal.action).toBe('idle');
+
+    const boosted = new MusicReactivePlayer({ session_id: 9, kind: 'music-reactive' }, metrics);
+    boosted.handleFrame({ energy: 0.08, bass: 0.08, onset: true, sensitivity: 2, intensity: 2 });
+    expect(boosted.action).toBe('shake');
+
+    const normalFrame = normal.update(16);
+    const boostedFrame = boosted.update(16);
+    expect(Math.abs(boostedFrame.spriteOptions.offsetX || 0))
+      .toBeGreaterThanOrEqual(Math.abs(normalFrame.spriteOptions.offsetX || 0));
+  });
 });
 
 describe('performance event priority', () => {

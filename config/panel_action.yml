@@ -24,6 +24,13 @@ actions:
     type: builtin
     command: gamelib
 
+  music:
+    label: 跟随音乐
+    icon: "♪"
+    order: 30
+    type: builtin
+    command: music
+
   game:
     label: 毛线球大作战
     icon: "🎮"

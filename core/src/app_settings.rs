@@ -199,6 +199,15 @@ pub struct AppearanceSettings {
     pub notification_sound_agent_watch: bool,
     #[serde(default = "default_true")]
     pub notification_sound_skip_agent_tts: bool,
+    /// 是否允许手动开启系统音乐响应模式。
+    #[serde(default = "default_true")]
+    pub music_mode_enabled: bool,
+    /// 音乐响应灵敏度，影响能量阈值前的输入放大倍率。
+    #[serde(default = "default_music_mode_sensitivity")]
+    pub music_mode_sensitivity: f32,
+    /// 音乐响应动作强度，影响宠物摇摆和跳动幅度。
+    #[serde(default = "default_music_mode_intensity")]
+    pub music_mode_intensity: f32,
     #[serde(default)]
     pub reminder_ai_personalization_enabled: bool,
     #[serde(default = "default_reminder_ai_timeout_ms")]
@@ -259,6 +268,12 @@ fn default_camera_observation_interval_sec() -> u64 {
 fn default_reminder_ai_timeout_ms() -> u64 {
     3_000
 }
+fn default_music_mode_sensitivity() -> f32 {
+    1.0
+}
+fn default_music_mode_intensity() -> f32 {
+    1.0
+}
 fn default_first_nudge_after_sec() -> u64 {
     30
 }
@@ -312,6 +327,9 @@ impl Default for AppearanceSettings {
             notification_sound_reminder: true,
             notification_sound_agent_watch: true,
             notification_sound_skip_agent_tts: true,
+            music_mode_enabled: true,
+            music_mode_sensitivity: default_music_mode_sensitivity(),
+            music_mode_intensity: default_music_mode_intensity(),
             reminder_ai_personalization_enabled: false,
             reminder_ai_timeout_ms: default_reminder_ai_timeout_ms(),
             global_shortcut: default_shortcut(),
@@ -519,6 +537,9 @@ mod tests {
         assert!(a.notification_sound_reminder);
         assert!(a.notification_sound_agent_watch);
         assert!(a.notification_sound_skip_agent_tts);
+        assert!(a.music_mode_enabled);
+        assert_eq!(a.music_mode_sensitivity, 1.0);
+        assert_eq!(a.music_mode_intensity, 1.0);
         assert!(!a.reminder_ai_personalization_enabled);
         assert_eq!(a.reminder_ai_timeout_ms, 3_000);
         assert_eq!(a.global_shortcut, "CommandOrControl+Alt+Space");
@@ -556,6 +577,9 @@ mod tests {
                 notification_sound_reminder: false,
                 notification_sound_agent_watch: true,
                 notification_sound_skip_agent_tts: false,
+                music_mode_enabled: true,
+                music_mode_sensitivity: 1.4,
+                music_mode_intensity: 0.8,
                 reminder_ai_personalization_enabled: true,
                 reminder_ai_timeout_ms: 2_500,
                 global_shortcut: "F12".into(),
@@ -713,6 +737,9 @@ mod tests {
         assert!(s.appearance.notification_sound_reminder);
         assert!(s.appearance.notification_sound_agent_watch);
         assert!(s.appearance.notification_sound_skip_agent_tts);
+        assert!(s.appearance.music_mode_enabled);
+        assert_eq!(s.appearance.music_mode_sensitivity, 1.0);
+        assert_eq!(s.appearance.music_mode_intensity, 1.0);
         assert!(!s.appearance.reminder_ai_personalization_enabled);
         assert_eq!(s.appearance.reminder_ai_timeout_ms, 3_000);
         assert!(s.appearance.always_on_top); // 默认值

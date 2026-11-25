@@ -217,8 +217,8 @@ mod tests {
     fn test_panel_only_contains_minigames() {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../config/panel_action.yml");
         let config = PanelActionConfig::load(path).unwrap();
-        // F2：8 个游戏 + gamelib 入口。
-        assert_eq!(config.actions.len(), 9);
+        // F2：8 个游戏 + gamelib 入口 + music。
+        assert_eq!(config.actions.len(), 10);
         for (id, action) in &config.actions {
             assert_eq!(action.action_type, "builtin", "{id} should be builtin");
             assert!(
@@ -234,6 +234,7 @@ mod tests {
                             | "beads"
                             | "invasion"
                             | "gamelib"
+                            | "music"
                     )
                 ),
                 "{id} should launch a minigame"
@@ -258,7 +259,7 @@ mod tests {
         assert_eq!((vm.width, vm.height, vm.columns, vm.rows), (480, 420, 3, 3));
         // F2 收敛：主视图只留主推 Invasion + 游戏库入口，其余游戏收进 library。
         let ids: Vec<&str> = vm.actions.iter().map(|action| action.id.as_str()).collect();
-        assert_eq!(ids, vec!["invasion", "gamelib"]);
+        assert_eq!(ids, vec!["invasion", "gamelib", "music"]);
         let library_ids: Vec<&str> = vm.library.iter().map(|action| action.id.as_str()).collect();
         assert_eq!(
             library_ids,

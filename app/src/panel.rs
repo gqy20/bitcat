@@ -137,6 +137,17 @@ pub async fn cmd_execute_panel_action(id: String, app: AppHandle) -> Result<(), 
                 );
                 Ok(())
             }
+            "music" => {
+                hide_panel(&app)?;
+                crate::action_bus::ActionBus::dispatch(
+                    &app,
+                    crate::action_bus::Action::StartMusicMode,
+                    crate::action_bus::ActionSource::Frontend {
+                        cmd: "cmd_execute_panel_action:music".into(),
+                    },
+                );
+                Ok(())
+            }
             "settings" => {
                 crate::settings::toggle_settings(&app);
                 hide_panel(&app)?;
@@ -369,7 +380,7 @@ mod tests {
         assert_eq!(config.defaults.rows, 3);
 
         for action_id in [
-            "game", "memory", "catch", "battle", "gomoku", "arena", "beads", "invasion",
+            "game", "memory", "catch", "battle", "gomoku", "arena", "beads", "invasion", "music",
         ] {
             assert!(config.actions.contains_key(action_id));
         }
@@ -379,7 +390,7 @@ mod tests {
     fn test_panel_actions_are_builtin_games() {
         let config = bitcat_core::panel_action::PanelActionConfig::load(PANEL_CONFIG_PATH).unwrap();
         for action_id in [
-            "game", "memory", "catch", "battle", "gomoku", "arena", "beads", "invasion",
+            "game", "memory", "catch", "battle", "gomoku", "arena", "beads", "invasion", "music",
         ] {
             let action = config.actions.get(action_id).unwrap();
             assert_eq!(

@@ -8,18 +8,45 @@ use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tracing::{debug, info, warn};
 
 /// 音乐响应运行状态。
 #[derive(Default)]
 pub struct SharedAudioReactive {
     current: Mutex<Option<AudioReactiveRun>>,
+    status: Mutex<MusicModeStatus>,
 }
 
 struct AudioReactiveRun {
     session_id: u64,
     stop: Arc<AtomicBool>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MusicModePhase {
+    #[default]
+    Off,
+    Listening,
+    Reacting,
+    Silent,
+    Error,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct MusicModeStatus {
+    pub phase: MusicModePhase,
+    pub enabled: bool,
+    pub source: Option<String>,
+    pub session_id: Option<u64>,
+    pub last_error: Option<String>,
+    pub last_energy: Option<f32>,
+    pub last_bass: Option<f32>,
+    pub last_onset: bool,
+    pub last_silence: bool,
+    pub sensitivity: f32,
+    pub intensity: f32,
 }
 
 /// 发给前端音乐响应播放器的单帧分析数据。
@@ -30,6 +57,8 @@ pub struct MusicDanceFrame {
     pub bass: f32,
     pub onset: bool,
     pub silence: bool,
+    pub sensitivity: f32,
+    pub intensity: f32,
 }
 
 const FAKE_FRAME_MS: u64 = 100;
@@ -43,7 +72,7 @@ pub fn cmd_start_fake_music_dance(
     app: AppHandle,
     shared: tauri::State<'_, SharedAudioReactive>,
 ) -> Result<u64, String> {
-    start_music_source(app, &shared, "fake")
+    start_music_source(app, shared.inner(), "fake")
 }
 
 #[tauri::command]
@@ -51,7 +80,7 @@ pub fn cmd_start_wasapi_music_dance(
     app: AppHandle,
     shared: tauri::State<'_, SharedAudioReactive>,
 ) -> Result<u64, String> {
-    start_music_source(app, &shared, "wasapi")
+    start_wasapi_music_dance(&app, shared.inner())
 }
 
 #[tauri::command]
@@ -63,17 +92,56 @@ pub fn cmd_stop_music_dance(
     Ok(())
 }
 
+#[tauri::command]
+pub fn cmd_get_music_mode_status(
+    shared: tauri::State<'_, SharedAudioReactive>,
+) -> Result<MusicModeStatus, String> {
+    Ok(music_mode_status(shared.inner()))
+}
+
 /// 停止当前音乐响应数据源，并通知前端结束对应表演。
 pub fn stop_music_dance(app: &AppHandle, shared: &SharedAudioReactive, reason: &'static str) {
     stop_current(shared, Some(app), reason);
 }
 
+/// Start WASAPI music mode via the settings gate: honours `music_mode_enabled` and
+/// delegates to `start_music_source`.
+pub fn start_wasapi_music_dance(
+    app: &AppHandle,
+    shared: &SharedAudioReactive,
+) -> Result<u64, String> {
+    let appearance = bitcat_core::app_settings::AppSettings::load().appearance;
+    if !appearance.music_mode_enabled {
+        let message = "music mode is disabled in settings".to_string();
+        set_error_status(shared, "wasapi", None, message.clone());
+        warn!("[audio-reactive] start rejected: disabled in settings");
+        return Err(message);
+    }
+    start_music_source(app.clone(), shared, "wasapi")
+}
+
+pub fn music_mode_status(shared: &SharedAudioReactive) -> MusicModeStatus {
+    let mut status = shared
+        .status
+        .lock()
+        .map(|guard| guard.clone())
+        .unwrap_or_default();
+    let appearance = bitcat_core::app_settings::AppSettings::load().appearance;
+    status.enabled = appearance.music_mode_enabled;
+    status.sensitivity = appearance.music_mode_sensitivity;
+    status.intensity = appearance.music_mode_intensity;
+    status
+}
+
 fn start_music_source(
     app: AppHandle,
-    shared: &tauri::State<'_, SharedAudioReactive>,
+    shared: &SharedAudioReactive,
     source: &'static str,
 ) -> Result<u64, String> {
-    stop_current(shared.inner(), Some(&app), "replaced");
+    stop_current(shared, Some(&app), "replaced");
+    let appearance = bitcat_core::app_settings::AppSettings::load().appearance;
+    let sensitivity = appearance.music_mode_sensitivity.clamp(0.2, 3.0);
+    let intensity = appearance.music_mode_intensity.clamp(0.2, 2.0);
 
     let session = bitcat_core::performance::start_performance(
         bitcat_core::performance::PerformanceKind::MusicReactiveDance,
@@ -82,6 +150,8 @@ fn start_music_source(
         "session_id": session.id,
         "kind": "music-reactive",
         "source": source,
+        "sensitivity": sensitivity,
+        "intensity": intensity,
     });
     app.emit_to("pet", "performance-start", payload)
         .map_err(|e| format!("emit performance-start failed: {e}"))?;
@@ -95,14 +165,18 @@ fn start_music_source(
         session_id: session.id,
         stop: Arc::clone(&stop),
     });
+    set_running_status(shared, source, session.id, MusicModePhase::Listening);
 
     match source {
-        "fake" => spawn_fake_music_loop(app, session.id, stop),
-        "wasapi" => spawn_wasapi_music_loop(app, session.id, stop),
+        "fake" => spawn_fake_music_loop(app, shared, session.id, stop, sensitivity, intensity),
+        "wasapi" => spawn_wasapi_music_loop(app, shared, session.id, stop, sensitivity, intensity),
         _ => unreachable!(),
     }
 
-    info!(session_id = session.id, source, "[audio-reactive] started");
+    info!(
+        session_id = session.id,
+        source, sensitivity, intensity, "[audio-reactive] started"
+    );
     Ok(session.id)
 }
 
@@ -116,6 +190,11 @@ fn stop_current(shared: &SharedAudioReactive, app: Option<&AppHandle>, reason: &
         if let Some(app) = app {
             emit_stop(app, run.session_id, reason);
         }
+        set_off_status(shared, reason);
+        info!(
+            session_id = run.session_id,
+            reason, "[audio-reactive] stopped"
+        );
     }
 }
 
@@ -141,7 +220,96 @@ fn emit_frame(app: &AppHandle, frame: MusicDanceFrame) {
     }
 }
 
-fn spawn_fake_music_loop(app: AppHandle, session_id: u64, stop: Arc<AtomicBool>) {
+fn set_running_status(
+    shared: &SharedAudioReactive,
+    source: &str,
+    session_id: u64,
+    phase: MusicModePhase,
+) {
+    let appearance = bitcat_core::app_settings::AppSettings::load().appearance;
+    if let Ok(mut status) = shared.status.lock() {
+        status.phase = phase;
+        status.enabled = appearance.music_mode_enabled;
+        status.source = Some(source.to_string());
+        status.session_id = Some(session_id);
+        status.last_error = None;
+        status.sensitivity = appearance.music_mode_sensitivity.clamp(0.2, 3.0);
+        status.intensity = appearance.music_mode_intensity.clamp(0.2, 2.0);
+    }
+}
+
+fn set_off_status(shared: &SharedAudioReactive, reason: &str) {
+    if let Ok(mut status) = shared.status.lock() {
+        status.phase = MusicModePhase::Off;
+        status.source = None;
+        status.session_id = None;
+        status.last_error = None;
+        status.last_energy = None;
+        status.last_bass = None;
+        status.last_onset = false;
+        status.last_silence = false;
+    }
+    debug!(reason, "[audio-reactive] status -> off");
+}
+
+fn set_error_status(
+    shared: &SharedAudioReactive,
+    source: &str,
+    session_id: Option<u64>,
+    error: String,
+) {
+    let appearance = bitcat_core::app_settings::AppSettings::load().appearance;
+    if let Ok(mut status) = shared.status.lock() {
+        status.phase = MusicModePhase::Error;
+        status.enabled = appearance.music_mode_enabled;
+        status.source = Some(source.to_string());
+        status.session_id = session_id;
+        status.last_error = Some(error.clone());
+        status.sensitivity = appearance.music_mode_sensitivity.clamp(0.2, 3.0);
+        status.intensity = appearance.music_mode_intensity.clamp(0.2, 2.0);
+    }
+    warn!(source, session_id, error = %error, "[audio-reactive] status -> error");
+}
+
+fn record_frame(shared: &SharedAudioReactive, frame: MusicDanceFrame) {
+    let phase = if frame.silence || frame.energy < 0.08 {
+        MusicModePhase::Silent
+    } else {
+        MusicModePhase::Reacting
+    };
+    if let Ok(mut status) = shared.status.lock() {
+        status.phase = phase.clone();
+        status.session_id = Some(frame.session_id);
+        status.last_energy = Some(frame.energy);
+        status.last_bass = Some(frame.bass);
+        status.last_onset = frame.onset;
+        status.last_silence = frame.silence;
+        status.last_error = None;
+        status.sensitivity = frame.sensitivity;
+        status.intensity = frame.intensity;
+    }
+    if frame.onset || frame.silence {
+        debug!(
+            session_id = frame.session_id,
+            phase = ?phase,
+            energy = frame.energy,
+            bass = frame.bass,
+            onset = frame.onset,
+            silence = frame.silence,
+            "[audio-reactive] frame"
+        );
+    }
+}
+
+fn spawn_fake_music_loop(
+    app: AppHandle,
+    _shared: &SharedAudioReactive,
+    session_id: u64,
+    stop: Arc<AtomicBool>,
+    sensitivity: f32,
+    intensity: f32,
+) {
+    let shared_app = app.clone();
     tauri::async_runtime::spawn(async move {
         let start = Instant::now();
         let mut tick = tokio::time::interval(Duration::from_millis(FAKE_FRAME_MS));
@@ -165,31 +333,46 @@ fn spawn_fake_music_loop(app: AppHandle, session_id: u64, stop: Arc<AtomicBool>)
             let onset = beat.is_multiple_of(9) || (bass_pulse > 0.94 && beat.is_multiple_of(3));
             let silence = (t as u32 % 17) == 13;
 
-            emit_frame(
-                &app,
-                MusicDanceFrame {
-                    session_id,
-                    energy: if silence { 0.0 } else { 0.18 + pulse * 0.72 },
-                    bass: if silence {
-                        0.0
-                    } else {
-                        0.12 + bass_pulse * 0.86
-                    },
-                    onset,
-                    silence,
+            let frame = MusicDanceFrame {
+                session_id,
+                energy: if silence { 0.0 } else { 0.18 + pulse * 0.72 },
+                bass: if silence {
+                    0.0
+                } else {
+                    0.12 + bass_pulse * 0.86
                 },
-            );
+                onset,
+                silence,
+                sensitivity,
+                intensity,
+            };
+            let state: tauri::State<'_, SharedAudioReactive> = shared_app.state();
+            record_frame(state.inner(), frame);
+            emit_frame(&app, frame);
         }
     });
 }
 
-fn spawn_wasapi_music_loop(app: AppHandle, session_id: u64, stop: Arc<AtomicBool>) {
+fn spawn_wasapi_music_loop(
+    app: AppHandle,
+    _shared: &SharedAudioReactive,
+    session_id: u64,
+    stop: Arc<AtomicBool>,
+    sensitivity: f32,
+    intensity: f32,
+) {
     std::thread::spawn(move || {
-        let result = wasapi_loopback(session_id, &stop, |frame| emit_frame(&app, frame));
+        let result = wasapi_loopback(session_id, &stop, sensitivity, intensity, |frame| {
+            let state: tauri::State<'_, SharedAudioReactive> = app.state();
+            record_frame(state.inner(), frame);
+            emit_frame(&app, frame);
+        });
         match result {
             Ok(()) => finish_source(&app, session_id, "stopped"),
             Err(e) => {
                 warn!(error = %e, session_id, "[audio-reactive] WASAPI failed");
+                let state: tauri::State<'_, SharedAudioReactive> = app.state();
+                set_error_status(state.inner(), "wasapi", Some(session_id), e.clone());
                 let _ = app.emit_to(
                     "pet",
                     "performance-error",
@@ -263,6 +446,8 @@ fn analyze_samples(samples: &[f32], channels: usize) -> EnergyStats {
 fn wasapi_loopback(
     session_id: u64,
     stop: &AtomicBool,
+    sensitivity: f32,
+    intensity: f32,
     mut on_frame: impl FnMut(MusicDanceFrame),
 ) -> Result<(), String> {
     use std::slice;
@@ -383,6 +568,8 @@ fn wasapi_loopback(
                 bass: frame_bucket.bass,
                 onset: bucket_onset,
                 silence: frame_bucket.silence,
+                sensitivity,
+                intensity,
             });
             frame_bucket = EnergyStats {
                 energy: 0.0,
@@ -402,6 +589,8 @@ fn wasapi_loopback(
 fn wasapi_loopback(
     _session_id: u64,
     _stop: &AtomicBool,
+    _sensitivity: f32,
+    _intensity: f32,
     _on_frame: impl FnMut(MusicDanceFrame),
 ) -> Result<(), String> {
     Err("WASAPI loopback is only available on Windows".into())

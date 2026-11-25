@@ -63,6 +63,7 @@ let currentExpertPage = "prompts";
 let selectedUsageModel = "__all";
 let agentWatchCopyBound = false;
 let agentWatchTimer = null;
+let MUSIC_STATUS = null;
 let pointsSnakeRaf = null;
 let pointsSnakeLastFrame = 0;
 let pointsSnakePath = [];
@@ -131,6 +132,9 @@ async function mockInvoke(command, args = {}) {
         notification_sound_reminder: true,
         notification_sound_agent_watch: true,
         notification_sound_skip_agent_tts: true,
+        music_mode_enabled: true,
+        music_mode_sensitivity: 1,
+        music_mode_intensity: 1,
         reminder_ai_personalization_enabled: false,
         reminder_ai_timeout_ms: 3000,
         global_shortcut: "CommandOrControl+Alt+Space",
@@ -750,6 +754,8 @@ function renderOverviewNotices(ai) {
   if (!ai.effective?.model) {
     notices.push(["模型未配置", ""]);
   }
+  const musicNotice = musicModeNotice(MUSIC_STATUS);
+  if (musicNotice) notices.push(musicNotice);
   if (!notices.length) {
     box.innerHTML = `<div class="empty compact">一切正常，没有需要你处理的。</div>`;
     return;
@@ -760,6 +766,36 @@ function renderOverviewNotices(ai) {
       ${body ? `<span>${escapeHtml(body)}</span>` : ""}
     </div>
   `).join("");
+}
+
+function musicModeNotice(status) {
+  if (!status) return null;
+  if (status.phase === "error") {
+    return ["音乐模式异常", status.last_error || "系统音频监听失败"];
+  }
+  if (status.phase === "reacting") {
+    const energy = Math.round((Number(status.last_energy) || 0) * 100);
+    return ["正在跟随音乐", `能量 ${energy}%`];
+  }
+  if (status.phase === "silent") {
+    return ["音乐模式待机", "没听到系统声音"];
+  }
+  if (status.phase === "listening") {
+    return ["音乐模式监听中", "等待系统声音"];
+  }
+  if (status.enabled === false) {
+    return ["音乐模式已关闭", "设置中禁用"];
+  }
+  return null;
+}
+
+async function loadMusicModeStatus() {
+  try {
+    MUSIC_STATUS = await invoke("cmd_get_music_mode_status");
+    if (SNAPSHOT?.ai) renderOverviewNotices(SNAPSHOT.ai);
+  } catch (e) {
+    log("音乐模式状态读取失败: " + e);
+  }
 }
 
 function renderUser(user) {
@@ -1067,6 +1103,9 @@ function renderAppearance(a) {
   $("a-notify-sound-reminder").checked = a.notification_sound_reminder !== false;
   $("a-notify-sound-agent").checked = a.notification_sound_agent_watch !== false;
   $("a-notify-sound-skip-tts").checked = a.notification_sound_skip_agent_tts !== false;
+  $("a-music-enabled").checked = a.music_mode_enabled !== false;
+  $("a-music-sensitivity").value = a.music_mode_sensitivity ?? 1;
+  $("a-music-intensity").value = a.music_mode_intensity ?? 1;
   $("a-reminder-ai").checked = !!a.reminder_ai_personalization_enabled;
   $("a-reminder-ai-timeout").value = a.reminder_ai_timeout_ms ?? 3000;
   $("a-shortcut").value = a.global_shortcut;
@@ -1089,9 +1128,9 @@ function renderAppearance(a) {
   renderPetAssetChoice(a.pet_asset_url || "");
   updateOverviewAppearance(a);
 
-  ["a-top","a-collapsed","a-tts","a-notify-sound","a-notify-sound-reminder","a-notify-sound-agent","a-notify-sound-skip-tts","a-reminder-ai","a-ss-bubble","a-camera-enabled","a-camera-save","screen-time-master"].forEach(id => { $(id).onchange = () => markDirty("appearance"); });
+  ["a-top","a-collapsed","a-tts","a-notify-sound","a-notify-sound-reminder","a-notify-sound-agent","a-notify-sound-skip-tts","a-music-enabled","a-reminder-ai","a-ss-bubble","a-camera-enabled","a-camera-save","screen-time-master"].forEach(id => { $(id).onchange = () => markDirty("appearance"); });
   ["a-earnings-salary","a-earnings-start","a-earnings-end","a-earnings-workdays"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
-  ["a-shortcut","a-ss-interval","a-reminder-ai-timeout","a-pet-asset","a-storage-data","a-storage-app-data"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
+  ["a-shortcut","a-ss-interval","a-reminder-ai-timeout","a-music-sensitivity","a-music-intensity","a-pet-asset","a-storage-data","a-storage-app-data"].forEach(id => { $(id).oninput = () => markDirty("appearance"); });
   $("a-pet-asset").onchange = updatePetAssetPickerSelection;
 }
 
@@ -1116,6 +1155,10 @@ function collectAppearance() {
   const interval = Number.isFinite(rawInterval) ? Math.min(3600, Math.max(5, rawInterval)) : 30;
   const rawReminderAiTimeout = parseInt($("a-reminder-ai-timeout").value, 10);
   const reminderAiTimeout = Number.isFinite(rawReminderAiTimeout) ? Math.min(10000, Math.max(500, rawReminderAiTimeout)) : 3000;
+  const rawMusicSensitivity = parseFloat($("a-music-sensitivity").value);
+  const musicSensitivity = Number.isFinite(rawMusicSensitivity) ? Math.min(3, Math.max(0.2, rawMusicSensitivity)) : 1;
+  const rawMusicIntensity = parseFloat($("a-music-intensity").value);
+  const musicIntensity = Number.isFinite(rawMusicIntensity) ? Math.min(2, Math.max(0.2, rawMusicIntensity)) : 1;
   return {
     always_on_top: $("a-top").checked,
     default_collapsed: $("a-collapsed").checked,
@@ -1124,6 +1167,9 @@ function collectAppearance() {
     notification_sound_reminder: $("a-notify-sound-reminder").checked,
     notification_sound_agent_watch: $("a-notify-sound-agent").checked,
     notification_sound_skip_agent_tts: $("a-notify-sound-skip-tts").checked,
+    music_mode_enabled: $("a-music-enabled").checked,
+    music_mode_sensitivity: musicSensitivity,
+    music_mode_intensity: musicIntensity,
     reminder_ai_personalization_enabled: $("a-reminder-ai").checked,
     reminder_ai_timeout_ms: reminderAiTimeout,
     global_shortcut: $("a-shortcut").value.trim() || "CommandOrControl+Alt+Space",
@@ -2655,10 +2701,11 @@ async function saveAll() {
       await invoke("cmd_settings_save_prompts", { payload: collectPrompts() });
       clearDirty("prompts");
     }
-    if (dirty.appearance) {
+  if (dirty.appearance) {
       await invoke("cmd_settings_save_appearance", { payload: collectAppearance() });
       await invoke("cmd_settings_save_storage", { payload: collectStorage() });
       clearDirty("appearance");
+      await loadMusicModeStatus();
       loadScreenTimeSummary();
       loadEarningsSummary();
     }
@@ -2756,6 +2803,7 @@ async function loadSnapshot() {
     loadUsageDiagnostics();
     loadMemoryReview();
     loadReminders();
+    loadMusicModeStatus();
     if (!SNAPSHOT.permissions?.onboarding_completed) {
       switchTab("home");
       showWizard();
@@ -2888,6 +2936,7 @@ function bindGlobal() {
     await loadUsageDiagnostics();
     await loadMemoryReview();
     await loadReminders();
+    await loadMusicModeStatus();
   });
   bindRefreshButton("memory-refresh", loadMemoryReview);
   bindRefreshButton("reminder-refresh", loadReminders);

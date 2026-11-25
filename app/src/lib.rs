@@ -113,6 +113,7 @@ pub fn run() {
             audio_reactive::cmd_start_fake_music_dance,
             audio_reactive::cmd_start_wasapi_music_dance,
             audio_reactive::cmd_stop_music_dance,
+            audio_reactive::cmd_get_music_mode_status,
             game::cmd_start_game,
             game::cmd_start_battle,
             game::cmd_start_memory,

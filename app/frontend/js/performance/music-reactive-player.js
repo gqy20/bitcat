@@ -15,14 +15,18 @@ export class MusicReactivePlayer {
     this.action = 'idle';
     this.onsetMs = 9999;
     this.staleMs = 9999;
+    this.sensitivity = clampNumber(payload.sensitivity, 0.2, 3, 1);
+    this.intensity = clampNumber(payload.intensity, 0.2, 2, 1);
   }
 
   handleFrame(frame) {
     var payload = frame || {};
     this.staleMs = 0;
-    this.targetEnergy = payload.silence ? 0 : clamp01(payload.energy);
+    this.sensitivity = clampNumber(payload.sensitivity, 0.2, 3, this.sensitivity);
+    this.intensity = clampNumber(payload.intensity, 0.2, 2, this.intensity);
+    this.targetEnergy = payload.silence ? 0 : clamp01(payload.energy * this.sensitivity);
 
-    var bass = payload.bass == null ? this.targetEnergy : clamp01(payload.bass);
+    var bass = payload.bass == null ? this.targetEnergy : clamp01(payload.bass * this.sensitivity);
     if (payload.onset && this.targetEnergy > 0.12) {
       this.onsetMs = 0;
       this.action = bass > 0.55 || this.targetEnergy > 0.72 ? 'jump' : 'shake';
@@ -49,7 +53,7 @@ export class MusicReactivePlayer {
     }
 
     var progress = (this.onsetMs % 360) / 360;
-    var intensity = Math.max(0.08, this.energy);
+    var intensity = Math.max(0.08, this.energy) * this.intensity;
     var sprite = computeMusicSpriteOptions(this.action, progress, this.time, intensity);
 
     return {
@@ -65,4 +69,10 @@ export class MusicReactivePlayer {
       facingRight: sprite.facingRight,
     };
   }
+}
+
+function clampNumber(value, min, max, fallback) {
+  var n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
 }
