@@ -2346,30 +2346,30 @@ mod tests {
         };
         // Working: 23h 保留, 25h 过期
         assert!(!session_is_expired(
-            &make(AgentStatus::Working, 23 * 3600_000),
+            &make(AgentStatus::Working, 23 * 3_600_000),
             now
         ));
         assert!(session_is_expired(
-            &make(AgentStatus::Working, 25 * 3600_000),
+            &make(AgentStatus::Working, 25 * 3_600_000),
             now
         ));
         // ToolRunning: 同 Working
         assert!(session_is_expired(
-            &make(AgentStatus::ToolRunning, 25 * 3600_000),
+            &make(AgentStatus::ToolRunning, 25 * 3_600_000),
             now
         ));
         // Compacting: 同 Working
         assert!(session_is_expired(
-            &make(AgentStatus::Compacting, 25 * 3600_000),
+            &make(AgentStatus::Compacting, 25 * 3_600_000),
             now
         ));
         // Waiting: 6 天保留, 8 天过期
         assert!(!session_is_expired(
-            &make(AgentStatus::Waiting, 6 * 24 * 3600_000),
+            &make(AgentStatus::Waiting, 6 * 24 * 3_600_000),
             now
         ));
         assert!(session_is_expired(
-            &make(AgentStatus::Waiting, 8 * 24 * 3600_000),
+            &make(AgentStatus::Waiting, 8 * 24 * 3_600_000),
             now
         ));
         // Done: 29 分钟保留, 31 分钟过期
