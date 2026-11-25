@@ -339,27 +339,21 @@ fn background_fields(
         .and_then(Value::as_str)
         .map(|value| value == "async_launched")
         .unwrap_or(false);
+    let is_agent_tool = tool == "agent" || tool == "task";
 
-    if input_background || response_async {
+    // 普通后台 Shell 命令只有 backgroundTaskId，没有可靠的完成 Hook；把它们
+    // 合成常驻子任务会永久停在 working。只有真实 Agent/Task 子代理（有
+    // SubagentStop/TaskCompleted 生命周期）才进入 background 聚合。
+    if (is_agent_tool || fields.agent_id.is_some()) && (input_background || response_async) {
         fields.parent_session_id = Some(parent_session_id.to_string());
         fields.background = true;
-        if fields.agent_id.is_none() {
-            fields.agent_id = tool_response
-                .and_then(|value| value.get("agentId"))
-                .and_then(Value::as_str)
-                .map(str::to_string);
-        }
     }
 
-    if fields.background && fields.agent_id.is_none() && fields.task_id.is_none() {
-        if tool == "agent" || tool == "task" {
-            fields.task_id = fields
-                .agent_type
-                .clone()
-                .or_else(|| Some("agent".to_string()));
-        } else if input_background {
-            fields.task_id = Some(tool_label_seed(tool_name));
-        }
+    if fields.background && fields.agent_id.is_none() && fields.task_id.is_none() && is_agent_tool {
+        fields.task_id = fields
+            .agent_type
+            .clone()
+            .or_else(|| Some("agent".to_string()));
     }
 
     fields
@@ -376,18 +370,6 @@ fn background_session_id(parent_session_id: &str, fields: &BackgroundFields) -> 
         return format!("claude:{parent_session_id}:task:{task_id}");
     }
     format!("claude:{parent_session_id}:background")
-}
-
-fn tool_label_seed(tool_name: Option<&str>) -> String {
-    let value = tool_name.unwrap_or("background").trim();
-    if value.is_empty() {
-        "background".to_string()
-    } else {
-        value
-            .chars()
-            .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_' || *ch == '-')
-            .collect::<String>()
-    }
 }
 
 fn normalize_hook_name(name: &str) -> String {
@@ -752,6 +734,43 @@ mod tests {
         assert!(preview.contains("Review UI overlap"));
         assert!(preview.contains("explorer"));
         assert!(!preview.contains("delegated prompt"));
+    }
+
+    #[test]
+    fn background_bash_stays_on_parent_session() {
+        let pre = r#"{
+            "session_id": "parent",
+            "hook_event_name": "PreToolUse",
+            "cwd": "D:\\repo",
+            "tool_name": "Bash",
+            "tool_input": {"command": "cargo test", "run_in_background": true}
+        }"#;
+        let pre_event = ClaudeHookEvent::from_json(pre)
+            .unwrap()
+            .into_session_event(100)
+            .unwrap();
+        assert_eq!(pre_event.session_id, "parent");
+        assert!(!pre_event.background);
+        assert_eq!(pre_event.status, AgentStatus::ToolRunning);
+
+        let post = r#"{
+            "session_id": "parent",
+            "hook_event_name": "PostToolUse",
+            "cwd": "D:\\repo",
+            "tool_name": "Bash",
+            "tool_input": {"command": "cargo test", "run_in_background": true},
+            "tool_response": {
+                "backgroundTaskId": "bg-42",
+                "backgroundCwdHint": "D:\\repo"
+            }
+        }"#;
+        let post_event = ClaudeHookEvent::from_json(post)
+            .unwrap()
+            .into_session_event(120)
+            .unwrap();
+        assert_eq!(post_event.session_id, "parent");
+        assert!(!post_event.background);
+        assert_eq!(post_event.status, AgentStatus::Working);
     }
 
     #[test]

@@ -759,6 +759,7 @@ dependencies = [
  "ctrlc",
  "dotenvy",
  "libloading 0.9.1",
+ "rstest",
  "sdl2",
  "serde",
  "serde_json",

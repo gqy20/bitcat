@@ -29,6 +29,9 @@ libloading = "0.9"
 # stop enabling them through Cargo's feature unification.
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Media_Audio", "Win32_Media_KernelStreaming", "Win32_Media_Multimedia", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Variant"] }
 
+[dev-dependencies]
+rstest = "0.27"
+
 [features]
 default = []
 ipc-tests = ["tauri/test"]

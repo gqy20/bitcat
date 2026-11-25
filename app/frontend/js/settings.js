@@ -52,8 +52,8 @@ let connectionRevision = 0;
 let connectionBusy = false;
 let clearSavedKey = false;
 let mockConnectionAi = null;
-// 浏览器预览用的连接器安装状态；pi 初始未接入，便于预览「修复」按钮。
-const mockConnectorInstalled = { claude_code: true, codex: true, pi: false, opencode: true };
+// 浏览器预览用的连接器安装状态；ZCode 和 pi 初始未接入，便于预览「修复」按钮。
+const mockConnectorInstalled = { claude_code: true, codex: true, zcode: false, pi: false, opencode: true };
 let connectorStatuses = null;
 let connectorBusy = false;
 let latestAgentSnapshot = null;
@@ -359,6 +359,7 @@ async function mockInvoke(command, args = {}) {
     return [
       { source: "claude_code", installed: mockConnectorInstalled.claude_code, script_current: true },
       { source: "codex", installed: mockConnectorInstalled.codex, script_current: true },
+      { source: "zcode", installed: mockConnectorInstalled.zcode, script_current: true },
       { source: "pi", installed: mockConnectorInstalled.pi, script_current: true },
       { source: "opencode", installed: mockConnectorInstalled.opencode, script_current: true },
     ];

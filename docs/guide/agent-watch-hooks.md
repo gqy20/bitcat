@@ -1,6 +1,6 @@
 # Agent Watch Hooks
 
-Agent Watch observes Claude Code and Codex through read-only hooks. The hook scripts only forward local JSON events to the BitCat monitor on `127.0.0.1:5342`; they do not approve permissions, modify prompts, or control the external agent.
+Agent Watch observes Claude Code, Codex, and ZCode through read-only hooks. The hook scripts only forward local JSON events to the BitCat monitor on `127.0.0.1:5342`; they do not approve permissions, modify prompts, or control the external agent.
 
 For reachable macOS/Linux machines watched over LAN, Tailscale/tailnet, VPN, or another routable address, see [Remote Agent Watch](remote-agent-watch.md). Remote hooks send the same event shape to the Windows monitor with an additional `machine` field.
 
@@ -17,6 +17,13 @@ Codex:
 - Config: `$CODEX_HOME/config.toml`, or `~/.codex/config.toml`
 - Script: `~/.codex/hooks/bitcat-codex-hook.ps1`
 - Marker: `bitcat-codex-watch`
+
+ZCode:
+
+- Config: `~/.zcode/cli/config.json`
+- Script: `~/.zcode/hooks/bitcat-zcode-hook.ps1`
+- Marker: `bitcat-zcode-watch`
+- Scope: user-level hooks; no project files or workspace trust changes
 
 ## Hook Doctor
 
@@ -67,8 +74,22 @@ Codex hooks:
 - `PostCompact`
 - `Stop`
 
+ZCode hooks:
+
+- `SessionStart`
+- `UserPromptSubmit`
+- `PreToolUse`
+- `PermissionRequest`
+- `PostToolUse`
+- `PostToolUseFailure`
+- `Stop`
+
+ZCode currently does not expose session-end, compaction, subagent, task, notification, or token/cost hook events. A finished turn is reported by `Stop`; the session card then follows the normal quiet-period cleanup.
+
 ## Notes
 
 Claude Code or VS Code may need a restart after repair because running agent processes may have already loaded their hook configuration.
 
 Codex may additionally require trusting newly discovered hooks in the Codex UI or CLI before they execute. If Codex shows `hooks need review`, run `/hooks`, enter each BitCat hook item, and press `T` to trust it. The repair and remote install commands write the hook config but do not bypass Codex's trust model.
+
+ZCode reads user hook configuration once per session. After repair, start a new ZCode session or send `/reload`. If the user explicitly disabled all hooks in ZCode, BitCat stops without changing that choice and asks the user to enable hooks in ZCode Settings first. ZCode hooks can execute outside the sandbox, so the BitCat runner uses an absolute PowerShell path, a direct argv `process` runner, a 2-second timeout, and `onError: allow`.
