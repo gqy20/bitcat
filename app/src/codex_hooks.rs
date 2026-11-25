@@ -11,6 +11,20 @@ use tauri_plugin_opener::OpenerExt;
 use toml_edit::{value, ArrayOfTables, DocumentMut, Item, Table};
 
 const BITCAT_HOOK_MARKER: &str = "bitcat-codex-watch";
+/// Markers written by BitCat and its predecessor so reinstalling also cleans up
+/// hooks that would otherwise keep pointing at a renamed or removed script.
+const KNOWN_HOOK_MARKERS: &[&str] = &[
+    "bitcat-remote-watch",
+    "bitcat-claude-code-watch",
+    "bitcat-codex-watch",
+    "ai-pad-remote-watch",
+];
+const STALE_HOOK_COMMAND_FRAGMENTS: &[&str] = &[
+    ".ai-pad/hooks/",
+    ".ai-pad\\hooks\\",
+    "ai-pad-hook.ps1",
+    "ai-pad-codex-hook.ps1",
+];
 
 #[derive(Debug, Clone, Copy)]
 struct HookSpec {
@@ -224,16 +238,17 @@ fn ensure_array_of_tables(item: &mut Item) -> Result<&mut ArrayOfTables, String>
 
 fn remove_bitcat_hooks(groups: &mut ArrayOfTables) -> usize {
     let mut removed = 0;
-    for group in groups.iter_mut() {
+    let mut kept_groups = ArrayOfTables::new();
+    for group in groups.iter() {
+        if is_stale_bitcat_hook(group) {
+            removed += 1;
+            continue;
+        }
+        let mut group = group.clone();
         if let Some(hooks) = group["hooks"].as_array_of_tables_mut() {
             let mut kept = ArrayOfTables::new();
             for hook in hooks.iter() {
-                if hook
-                    .get("bitcat_marker")
-                    .and_then(Item::as_value)
-                    .and_then(|v| v.as_str())
-                    != Some(BITCAT_HOOK_MARKER)
-                {
+                if !is_stale_bitcat_hook(hook) {
                     kept.push(hook.clone());
                 } else {
                     removed += 1;
@@ -241,8 +256,46 @@ fn remove_bitcat_hooks(groups: &mut ArrayOfTables) -> usize {
             }
             group["hooks"] = Item::ArrayOfTables(kept);
         }
+        if !is_empty_hook_group(&group) {
+            kept_groups.push(group);
+        }
     }
+    *groups = kept_groups;
     removed
+}
+
+/// A hook group belongs to BitCat if it carries a known marker, or if it still
+/// points at the old ai-pad hook scripts from before the rename.
+fn is_stale_bitcat_hook(hook: &Table) -> bool {
+    let known_marker = ["bitcat_marker", "ai_pad_marker"].iter().any(|key| {
+        hook.get(key)
+            .and_then(Item::as_value)
+            .and_then(|value| value.as_str())
+            .is_some_and(|marker| KNOWN_HOOK_MARKERS.contains(&marker))
+    });
+    let stale_command = ["command", "commandWindows", "commandLinux"]
+        .iter()
+        .filter_map(|key| {
+            hook.get(key)
+                .and_then(Item::as_value)
+                .and_then(|value| value.as_str())
+        })
+        .any(|command| {
+            STALE_HOOK_COMMAND_FRAGMENTS
+                .iter()
+                .any(|fragment| command.contains(fragment))
+        });
+    known_marker || stale_command
+}
+
+fn is_empty_hook_group(group: &Table) -> bool {
+    group
+        .get("hooks")
+        .and_then(Item::as_array_of_tables)
+        .is_some_and(ArrayOfTables::is_empty)
+        && group
+            .iter()
+            .all(|(key, _)| key == "hooks" || key == "matcher")
 }
 
 fn ensure_hook_group<'a>(groups: &'a mut ArrayOfTables, matcher: Option<&str>) -> &'a mut Table {
@@ -289,6 +342,9 @@ $ErrorActionPreference = "Stop"
 $payload = $null
 $logDir = Join-Path $HOME ".bitcat\logs"
 $logFile = Join-Path $logDir "agent_hook_bridge.jsonl"
+$stateDir = Join-Path $HOME ".bitcat\hooks\state"
+$stateFile = Join-Path $stateDir "monitor-state"
+$probeIntervalSec = 45
 
 function Get-Field($obj, [string[]]$names) {{
   foreach ($name in $names) {{
@@ -299,7 +355,7 @@ function Get-Field($obj, [string[]]$names) {{
   return $null
 }}
 
-function Write-BitCatHookLog([string]$status, [string]$detail) {{
+function Write-BitCatHookLog([string]$status, [string]$detail, [string]$target, [string]$errorText, [int]$attempt) {{
   try {{
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
     if ((Test-Path $logFile) -and ((Get-Item $logFile).Length -gt 1048576)) {{
@@ -310,6 +366,9 @@ function Write-BitCatHookLog([string]$status, [string]$detail) {{
       source = "codex"
       status = $status
       detail = $detail
+      target = $target
+      error = $errorText
+      attempt = $attempt
       hook = Get-Field $payload @("hook_event_name", "hookEventName", "event")
       session_id = Get-Field $payload @("session_id", "sessionId")
       tool = Get-Field $payload @("tool_name", "toolName")
@@ -317,6 +376,78 @@ function Write-BitCatHookLog([string]$status, [string]$detail) {{
     }} | ConvertTo-Json -Depth 8 -Compress
     Add-Content -LiteralPath $logFile -Value $entry -Encoding UTF8
   }} catch {{}}
+}}
+
+function Get-BitCatErrorText($errorRecord) {{
+  if ($null -eq $errorRecord -or $null -eq $errorRecord.Exception) {{ return $null }}
+  $type = $errorRecord.Exception.GetType().Name
+  $message = $errorRecord.Exception.Message
+  if ([string]::IsNullOrWhiteSpace($message)) {{ return $type }}
+  return "$type`: $message"
+}}
+
+function Get-StateField([string]$key) {{
+  try {{
+    if (-not (Test-Path $stateFile)) {{ return $null }}
+    foreach ($line in Get-Content -LiteralPath $stateFile -ErrorAction Stop) {{
+      $parts = $line -split "=", 2
+      if ($parts.Length -eq 2 -and $parts[0] -eq $key) {{ return $parts[1] }}
+    }}
+  }} catch {{}}
+  return $null
+}}
+
+function Write-BitCatMonitorState([string]$status, [string]$target) {{
+  try {{
+    New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
+    @(
+      "status=$status"
+      "target=$target"
+      "checked_at=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+    ) | Set-Content -LiteralPath $stateFile -Encoding UTF8
+  }} catch {{}}
+}}
+
+function Test-BitCatProbeAllowed([string]$target) {{
+  $status = Get-StateField "status"
+  $stateTarget = Get-StateField "target"
+  $checkedAt = Get-StateField "checked_at"
+  if ($status -ne "down" -or [string]::IsNullOrWhiteSpace($checkedAt)) {{ return $true }}
+  if ($stateTarget -ne $target) {{ return $true }}
+  $parsed = 0L
+  if (-not [Int64]::TryParse($checkedAt, [ref]$parsed)) {{ return $true }}
+  return (([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $parsed) -ge $probeIntervalSec)
+}}
+
+function Send-BitCatEnvelope([string]$body, [int]$port) {{
+  $target = "127.0.0.1:$port"
+  $lastError = $null
+  if (-not (Test-BitCatProbeAllowed $target)) {{ return }}
+  $client = $null
+  $stream = $null
+  try {{
+    $client = [System.Net.Sockets.TcpClient]::new()
+    $connect = $client.BeginConnect("127.0.0.1", $port, $null, $null)
+    if (-not $connect.AsyncWaitHandle.WaitOne(250)) {{
+      throw "connect timeout after 250ms"
+    }}
+    $client.EndConnect($connect)
+    $stream = $client.GetStream()
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
+    $stream.Write($bytes, 0, $bytes.Length)
+    $stream.Flush()
+    $client.Client.Shutdown([System.Net.Sockets.SocketShutdown]::Send)
+    Write-BitCatMonitorState "up" $target
+    Write-BitCatHookLog "sent" $target $target $null 1
+    return
+  }} catch {{
+    $lastError = Get-BitCatErrorText $_
+  }} finally {{
+    if ($null -ne $stream) {{ $stream.Dispose() }}
+    if ($null -ne $client) {{ $client.Dispose() }}
+  }}
+  Write-BitCatMonitorState "down" $target
+  Write-BitCatHookLog "failed" "send-failed" $target $lastError 1
 }}
 
 $raw = [Console]::In.ReadToEnd()
@@ -331,18 +462,9 @@ try {{
     payload = $payload
   }} | ConvertTo-Json -Depth 100 -Compress
 
-  $client = [System.Net.Sockets.TcpClient]::new()
-  $client.Connect("127.0.0.1", {port})
-  $stream = $client.GetStream()
-  $bytes = [System.Text.Encoding]::UTF8.GetBytes($envelope)
-  $stream.Write($bytes, 0, $bytes.Length)
-  $stream.Flush()
-  $client.Client.Shutdown([System.Net.Sockets.SocketShutdown]::Send)
-  $stream.Dispose()
-  $client.Dispose()
-  Write-BitCatHookLog "sent" "127.0.0.1:{port}"
+  Send-BitCatEnvelope $envelope {port}
 }} catch {{
-  Write-BitCatHookLog "failed" $_.Exception.GetType().Name
+  Write-BitCatHookLog "failed" "prepare-failed" "127.0.0.1:{port}" (Get-BitCatErrorText $_) 0
   # Keep Codex hooks non-blocking for the user.
   exit 0
 }}
@@ -385,6 +507,46 @@ mod tests {
         assert!(script.contains("127.0.0.1"));
         assert!(script.contains("source = \"codex\""));
         assert!(script.contains("ConvertTo-Json"));
+    }
+
+    #[test]
+    fn hook_script_probes_with_timeout_and_state() {
+        let script = hook_script(5342);
+        assert!(script.contains("monitor-state"));
+        assert!(script.contains("probeIntervalSec"));
+        assert!(script.contains("connect timeout after 250ms"));
+    }
+
+    #[test]
+    fn removes_legacy_ai_pad_hooks() {
+        let mut doc = r#"
+[[hooks.PreToolUse]]
+matcher = "*"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "echo keep"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+commandWindows = 'powershell -File C:\Users\test\.ai-pad\hooks\ai-pad-codex-hook.ps1'
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "old remote"
+ai_pad_marker = "ai-pad-remote-watch"
+"#
+        .parse::<DocumentMut>()
+        .unwrap();
+
+        let table = doc["hooks"].as_table_mut().unwrap();
+        let groups = table["PreToolUse"].as_array_of_tables_mut().unwrap();
+        let removed = remove_bitcat_hooks(groups);
+
+        assert_eq!(removed, 2);
+        let rendered = doc.to_string();
+        assert!(rendered.contains("echo keep"));
+        assert!(!rendered.contains("ai-pad"));
     }
 
     #[test]

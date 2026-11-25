@@ -4,7 +4,7 @@
 set -eu
 
 MARKER="bitcat-remote-watch"
-KNOWN_MARKERS="bitcat-remote-watch,bitcat-claude-code-watch,bitcat-codex-watch"
+KNOWN_MARKERS="bitcat-remote-watch,bitcat-claude-code-watch,bitcat-codex-watch,ai-pad-remote-watch"
 HOST=""
 HOSTS=""
 PORT="5342"
@@ -280,6 +280,7 @@ path = os.environ["SETTINGS"]
 sender = os.environ["SENDER"]
 marker = os.environ["MARKER"]
 known_markers = {m for m in os.environ.get("KNOWN_MARKERS", marker).split(",") if m}
+old_sender_fragment = ".ai-pad/hooks/sender.sh"
 events = [
   ("UserPromptSubmit", None), ("SessionStart", None),
   ("PreToolUse", "*"), ("PostToolUse", "*"), ("PostToolUseFailure", "*"),
@@ -297,16 +298,25 @@ except Exception:
 hooks = root.setdefault("hooks", {})
 hook = {"type": "command", "command": f'BITCAT_SOURCE=claude_code bash "{sender}"', "bitcat_marker": marker}
 removed = 0
+def is_stale_hook(value):
+    if not isinstance(value, dict):
+        return False
+    command = value.get("command")
+    return (
+        value.get("bitcat_marker") in known_markers
+        or value.get("ai_pad_marker") in known_markers
+        or (isinstance(command, str) and old_sender_fragment in command)
+    )
 for event, groups in list(hooks.items()):
     if not isinstance(groups, list):
         continue
     before = len(groups)
-    groups[:] = [g for g in groups if not (isinstance(g, dict) and g.get("bitcat_marker") in known_markers)]
+    groups[:] = [g for g in groups if not is_stale_hook(g)]
     removed += before - len(groups)
     for group in groups:
         if isinstance(group, dict) and isinstance(group.get("hooks"), list):
             before_hooks = len(group["hooks"])
-            group["hooks"] = [h for h in group["hooks"] if not (isinstance(h, dict) and h.get("bitcat_marker") in known_markers)]
+            group["hooks"] = [h for h in group["hooks"] if not is_stale_hook(h)]
             removed += before_hooks - len(group["hooks"])
     hooks[event] = [g for g in groups if not (isinstance(g, dict) and g.get("hooks") == [])]
     if hooks[event] == []:
@@ -365,6 +375,14 @@ commandLinux = "BITCAT_SOURCE=codex bash ${SENDER}"
 timeout = 5
 bitcat_marker = "${MARKER}"
 
+[[hooks.SessionStart]]
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "BITCAT_SOURCE=codex bash ${SENDER}"
+commandLinux = "BITCAT_SOURCE=codex bash ${SENDER}"
+timeout = 5
+bitcat_marker = "${MARKER}"
+
 [[hooks.PreToolUse]]
 matcher = "*"
 [[hooks.PreToolUse.hooks]]
@@ -374,9 +392,36 @@ commandLinux = "BITCAT_SOURCE=codex bash ${SENDER}"
 timeout = 5
 bitcat_marker = "${MARKER}"
 
+[[hooks.PermissionRequest]]
+matcher = "*"
+[[hooks.PermissionRequest.hooks]]
+type = "command"
+command = "BITCAT_SOURCE=codex bash ${SENDER}"
+commandLinux = "BITCAT_SOURCE=codex bash ${SENDER}"
+timeout = 5
+bitcat_marker = "${MARKER}"
+
 [[hooks.PostToolUse]]
 matcher = "*"
 [[hooks.PostToolUse.hooks]]
+type = "command"
+command = "BITCAT_SOURCE=codex bash ${SENDER}"
+commandLinux = "BITCAT_SOURCE=codex bash ${SENDER}"
+timeout = 5
+bitcat_marker = "${MARKER}"
+
+[[hooks.PreCompact]]
+matcher = "*"
+[[hooks.PreCompact.hooks]]
+type = "command"
+command = "BITCAT_SOURCE=codex bash ${SENDER}"
+commandLinux = "BITCAT_SOURCE=codex bash ${SENDER}"
+timeout = 5
+bitcat_marker = "${MARKER}"
+
+[[hooks.PostCompact]]
+matcher = "*"
+[[hooks.PostCompact.hooks]]
 type = "command"
 command = "BITCAT_SOURCE=codex bash ${SENDER}"
 commandLinux = "BITCAT_SOURCE=codex bash ${SENDER}"
@@ -404,16 +449,26 @@ import json, os
 path = os.environ["SETTINGS"]
 marker = os.environ["MARKER"]
 known_markers = {m for m in os.environ.get("KNOWN_MARKERS", marker).split(",") if m}
+old_sender_fragment = ".ai-pad/hooks/sender.sh"
 with open(path, "r", encoding="utf-8") as f:
     root = json.load(f)
 hooks = root.get("hooks", {})
+def is_stale_hook(value):
+    if not isinstance(value, dict):
+        return False
+    command = value.get("command")
+    return (
+        value.get("bitcat_marker") in known_markers
+        or value.get("ai_pad_marker") in known_markers
+        or (isinstance(command, str) and old_sender_fragment in command)
+    )
 for event, groups in list(hooks.items()):
     if not isinstance(groups, list):
         continue
-    groups[:] = [g for g in groups if not (isinstance(g, dict) and g.get("bitcat_marker") in known_markers)]
+    groups[:] = [g for g in groups if not is_stale_hook(g)]
     for group in groups:
         if isinstance(group, dict) and isinstance(group.get("hooks"), list):
-            group["hooks"] = [h for h in group["hooks"] if not (isinstance(h, dict) and h.get("bitcat_marker") in known_markers)]
+            group["hooks"] = [h for h in group["hooks"] if not is_stale_hook(h)]
     hooks[event] = [g for g in groups if not (isinstance(g, dict) and g.get("hooks") == [])]
 with open(path, "w", encoding="utf-8") as f:
     json.dump(root, f, indent=2, ensure_ascii=False)
