@@ -29,6 +29,8 @@ use crate::remote_endpoint::RemoteInstallInfo;
 pub const DEFAULT_AGENT_MONITOR_PORT: u16 = 5342;
 pub const DEFAULT_AGENT_VIEW_PORT: u16 = 5344;
 const MAX_HOOK_PAYLOAD_BYTES: u64 = 512 * 1024;
+const SESSION_SNAPSHOT_LOG_INTERVAL_MS: u64 = 60_000;
+const NUDGE_SKIP_LOG_INTERVAL_MS: u64 = 60_000;
 /// 恢复的会话超过该时长没有事件就丢弃：陈旧会话不如让下一个事件重建。
 const RESTORE_MAX_AGE_MS: u64 = 30 * 60 * 1000;
 /// 状态文件名（位于 ~/.bitcat/logs/）。
@@ -42,6 +44,8 @@ pub struct SharedAgentMonitor {
     last_event_at_ms: Mutex<Option<u64>>,
     recent_events: Mutex<RecentAgentEvents>,
     last_persist_at: Mutex<Option<std::time::Instant>>,
+    last_session_snapshot_log_at_ms: Mutex<Option<u64>>,
+    nudge_skip_log_at_ms: Mutex<HashMap<String, u64>>,
 }
 
 impl Default for SharedAgentMonitor {
@@ -53,6 +57,8 @@ impl Default for SharedAgentMonitor {
             last_event_at_ms: Mutex::new(None),
             recent_events: Mutex::new(RecentAgentEvents::default()),
             last_persist_at: Mutex::new(None),
+            last_session_snapshot_log_at_ms: Mutex::new(None),
+            nudge_skip_log_at_ms: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -270,9 +276,83 @@ impl SharedAgentMonitor {
             }
         }
     }
+
+    fn should_log_full_session_snapshot(&self, now_ms: u64) -> Result<bool, String> {
+        let mut last = self
+            .last_session_snapshot_log_at_ms
+            .lock()
+            .map_err(|e| format!("agent session snapshot log lock poisoned: {e}"))?;
+        let due = last
+            .map(|last_ms| now_ms.saturating_sub(last_ms) >= SESSION_SNAPSHOT_LOG_INTERVAL_MS)
+            .unwrap_or(true);
+        if due {
+            *last = Some(now_ms);
+        }
+        Ok(due)
+    }
+
+    fn should_log_nudge_skip(
+        &self,
+        session_id: &str,
+        status: bitcat_core::agent_session::AgentStatus,
+        reason: bitcat_core::agent_nudge::AgentNudgeSkipReason,
+        now_ms: u64,
+    ) -> Result<bool, String> {
+        let key = format!("{}:{}:{}", session_id, status.as_str(), reason.as_str());
+        let mut last = self
+            .nudge_skip_log_at_ms
+            .lock()
+            .map_err(|e| format!("agent nudge skip log lock poisoned: {e}"))?;
+        let due = last
+            .get(&key)
+            .map(|last_ms| now_ms.saturating_sub(*last_ms) >= NUDGE_SKIP_LOG_INTERVAL_MS)
+            .unwrap_or(true);
+        if due {
+            last.insert(key, now_ms);
+        }
+        Ok(due)
+    }
 }
 
-/// 会话状态文件结构。
+#[derive(Debug, Clone, Serialize)]
+struct AgentSessionsCompactLogRecord {
+    schema: &'static str,
+    seq: u64,
+    at_ms: u64,
+    session_count: usize,
+    primary_session_id: Option<String>,
+    primary_status: Option<String>,
+    updated_session_id: Option<String>,
+    updated_status: Option<String>,
+    updated_source: Option<String>,
+    updated_workspace: Option<String>,
+    full_snapshot: bool,
+}
+
+impl AgentSessionsCompactLogRecord {
+    fn from_snapshot(
+        seq: u64,
+        snapshot: &AgentSessionsSnapshot,
+        updated_session: Option<&bitcat_core::agent_session::AgentSession>,
+        full_snapshot: bool,
+    ) -> Self {
+        Self {
+            schema: "bitcat.agent-sessions.compact.v1",
+            seq,
+            at_ms: snapshot.generated_at_ms,
+            session_count: snapshot.sessions.len(),
+            primary_session_id: snapshot.primary.as_ref().map(|s| s.session_id.clone()),
+            primary_status: snapshot.primary.as_ref().map(|s| s.status.clone()),
+            updated_session_id: updated_session.map(|s| s.session_id.clone()),
+            updated_status: updated_session.map(|s| s.status.as_str().to_string()),
+            updated_source: updated_session.map(|s| s.source.as_str().to_string()),
+            updated_workspace: updated_session.map(|s| s.workspace.clone()),
+            full_snapshot,
+        }
+    }
+}
+
+/// 会话状态文件结构（持久化）。
 #[derive(Debug, Serialize, Deserialize)]
 struct AgentWatchPersistedState {
     saved_at_ms: u64,
@@ -1173,8 +1253,22 @@ pub fn handle_hook_payload(app: &AppHandle, raw: &str) -> Result<(), String> {
         &snapshot,
     );
     crate::agent_watch_window::show_snapshot(app, &snapshot);
-    if let Err(e) = append_jsonl("agent_watch_sessions.jsonl", &snapshot) {
-        warn!(error = %e, "write agent watch session snapshot failed");
+    let should_log_full_snapshot = monitor.should_log_full_session_snapshot(now_ms)?;
+    if let Err(e) = append_jsonl(
+        "agent_watch_sessions.jsonl",
+        &AgentSessionsCompactLogRecord::from_snapshot(
+            seq,
+            &snapshot,
+            updated_session.as_ref(),
+            should_log_full_snapshot,
+        ),
+    ) {
+        warn!(error = %e, "write agent watch compact session log failed");
+    }
+    if should_log_full_snapshot {
+        if let Err(e) = append_jsonl("agent_watch_sessions.jsonl", &snapshot) {
+            warn!(error = %e, "write agent watch session snapshot failed");
+        }
     }
     crate::agent_monitor::sync_pet_agent_mode(app, &monitor);
     monitor.persist_sessions(now_ms);
@@ -1344,16 +1438,18 @@ fn evaluate_nudge(
             });
         }
         AgentNudgeDecision::Skip { reason, status } => {
-            write_nudge_log(AgentNudgeLogRecord {
-                seq: now_ms,
-                at_ms: now_ms,
-                session_id: session.session_id.clone(),
-                kind: "none".to_string(),
-                decision: "skipped".to_string(),
-                status: status.as_str().to_string(),
-                reason: Some(reason.as_str().to_string()),
-                message: None,
-            });
+            if monitor.should_log_nudge_skip(&session.session_id, status, reason, now_ms)? {
+                write_nudge_log(AgentNudgeLogRecord {
+                    seq: now_ms,
+                    at_ms: now_ms,
+                    session_id: session.session_id.clone(),
+                    kind: "none".to_string(),
+                    decision: "skipped_sampled".to_string(),
+                    status: status.as_str().to_string(),
+                    reason: Some(reason.as_str().to_string()),
+                    message: None,
+                });
+            }
         }
     }
     Ok(())
