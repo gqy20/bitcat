@@ -986,7 +986,7 @@ mod tests {
 
         let mut reminders = load_reminders_from_path(&path).unwrap();
         reminders[0].status = ReminderStatus::Active;
-        reminders[0].next_fire_at = "2026-05-21T10:15:00+08:00".into();
+        reminders[0].next_fire_at = to_rfc3339(parse_local_datetime("2026-05-21 10:15").unwrap());
         save_reminders_to_path(&path, &reminders).unwrap();
 
         let fired_early =
